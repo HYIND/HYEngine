@@ -1,0 +1,18 @@
+#pragma once
+
+#include "ECS/Systems/LocalInputSystem.h"
+#include "ECS/Systems/LifeTimeSystem.h"
+#include "ECS/Systems/MovementSystem.h"
+#include "ECS/Systems/RenderSystem.h"
+#include "ECS/Systems/PhysicsSystem.h"
+#include "ECS/Systems/DestroySystem.h"
+#include "ECS/Systems/HealthSystem.h"
+#include "ECS/Systems/AudioSystem.h"
+#include "ECS/Systems/CameraFollowSystem.h"
+#include "ECS/Systems/WeaponSystem.h"
+#include "ECS/Systems/AnimationSystem.h"
+#include "ECS/Systems/MapBoundarySystem.h"
+#include "ECS/Systems/LightShowSystem.h"
+#include "ECS/Systems/LightFollowSystem.h"
+#include "ECS/Systems/ParticleSystem.h"
+#include "ECS/Systems/LaserBeamSystem.h"
