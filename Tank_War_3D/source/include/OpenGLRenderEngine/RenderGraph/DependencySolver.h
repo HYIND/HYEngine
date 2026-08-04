@@ -14,8 +14,8 @@ namespace OpenGLRenderGraph
 
 	struct ResourceUsage
 	{
-		int firstPass = INT_MAX;
-		int lastPass = -1;
+		int firstBatch = INT_MAX;
+		int lastBatch = -1;
 		bool isWritten = false;
 		bool isRead = false;
 	};

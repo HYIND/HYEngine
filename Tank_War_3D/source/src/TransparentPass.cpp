@@ -2,6 +2,7 @@
 #include "OpenGLRenderEngine/General/RenderHelp.h"
 #include "Manager/ResourceManager.h"
 #include "glm/gtc/matrix_transform.hpp"
+#include <execution>
 
 TransparentPass::TransparentPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath)
 	:_shader(vertexShaderPath, fragmentShaderPath)
@@ -10,7 +11,8 @@ TransparentPass::TransparentPass(const std::string& vertexShaderPath, const std:
 
 bool TransparentPass::ShouldExecute(RenderState& state) const
 {
-	return state.flags.drawTransparent && !state.objects.sceneTransparentItems.empty();
+	bool empty = state.objects.sceneRenderData.transparentMesh.empty() && state.objects.sceneRenderData.transparentSkinnedMesh.empty();
+	return state.flags.drawTransparent && !empty;
 }
 
 void TransparentPass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
@@ -34,23 +36,43 @@ void TransparentPass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderSt
 		state.lights.shadowAtlas
 	);
 
-	std::sort(state.objects.sceneTransparentItems.begin(), state.objects.sceneTransparentItems.end(),
-		[&](const OpenGLRender::SceneTransparentItem& item1, const OpenGLRender::SceneTransparentItem& item2)-> bool
-		{
-			auto aabb1 = item1.meshinfo.mesh->GetAABB();
-			auto aabb2 = item2.meshinfo.mesh->GetAABB();
-			aabb1.MakeTransform(item1.transform);
-			aabb2.MakeTransform(item2.transform);
-			auto cernter1 = aabb1.min + (aabb1.max - aabb1.min) / 2.f;
-			auto cernter2 = aabb2.min + (aabb2.max - aabb2.min) / 2.f;
-			auto distance1 = glm::length2(state.camera.position - cernter1);
-			auto distance2 = glm::length2(state.camera.position - cernter2);
-			return distance1 > distance2;
-		}
-	);
-
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	RenderHelp::renderTransparentScene(state, _shader, state.objects.sceneTransparentItems);
+	RenderHelp::renderSceneTransparent(state, _shader, state.objects.sceneRenderData.transparentMesh, state.objects.sceneRenderData.transparentSkinnedMesh);
 	glDisable(GL_BLEND);
+}
+
+void TransparentPass::FrameBegin(RenderState& state)
+{
+	auto GetDistanceToCamera = [&](std::shared_ptr<Mesh>& mesh, const glm::mat4& transform)-> float {
+		auto aabb = mesh->GetAABB();
+		aabb.MakeTransform(transform);
+		auto cernter = aabb.min + (aabb.max - aabb.min) / 2.f;
+		return glm::length2(state.camera.position - cernter);
+		};
+
+	using TransparentMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentMeshItem;
+	using TransparentSkinnedMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentSkinnedMeshItem;
+
+	auto& meshItem = state.objects.sceneRenderData.transparentMesh;
+	if (meshItem.size() > 1)
+	{
+		std::sort(std::execution::par_unseq, meshItem.begin(), meshItem.end(),
+			[&](const TransparentMeshItem& item1, const TransparentMeshItem& item2)-> bool
+			{
+				return GetDistanceToCamera(item1.meshinfo.mesh, item1.transform) > GetDistanceToCamera(item2.meshinfo.mesh, item2.transform);
+			}
+		);
+	}
+
+	auto& skinnedItem = state.objects.sceneRenderData.transparentSkinnedMesh;
+	if (skinnedItem.size() > 1)
+	{
+		std::sort(std::execution::par_unseq, skinnedItem.begin(), skinnedItem.end(),
+			[&](const TransparentSkinnedMeshItem& item1, const TransparentSkinnedMeshItem& item2)-> bool
+			{
+				return GetDistanceToCamera(item1.meshinfo.mesh, item1.transform) > GetDistanceToCamera(item2.meshinfo.mesh, item2.transform);
+			}
+		);
+	}
 }

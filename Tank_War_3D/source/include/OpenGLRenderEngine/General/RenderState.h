@@ -119,17 +119,9 @@ struct RenderState
 
 	// 渲染对象
 	struct RenderObjects {
-		std::vector<OpenGLRender::SceneItem> sceneItems;
-		std::vector<OpenGLRender::SceneTransparentItem> sceneTransparentItems;
-		std::vector<OpenGLRender::FirstPersonItem> firstPersonItems;
-		std::vector<std::shared_ptr<BaseEffectProperties>> effectItems;
+		OpenGLRenderObjectData::SceneRenderData sceneRenderData;
+		OpenGLRenderObjectData::FirstPersonRenderData firstPersonRenderData;
 	} objects;
-
-	struct RenderObjectsGroupMapper {
-		std::shared_ptr<GroupMapper> sceneItemsGroupMapper = std::make_shared<GroupMapper>();
-		std::shared_ptr<GroupMapper> sceneTransparentItemsGroupMapper = std::make_shared<GroupMapper>();
-		std::shared_ptr<GroupMapper> firstPersonItemsGroupMapper = std::make_shared<GroupMapper>();
-	} objectsGroupMapper;
 
 	struct RayTraceParams {
 		float tMin = 0.01;

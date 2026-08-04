@@ -138,6 +138,12 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 	{
 		if (!renderModel.model) continue;
 
+		if (cameraFollow && entity == cameraFollow->target)
+		{
+			if (cameraComponent.isFirstPerson)
+				continue;
+		}
+
 		auto renderdata = std::make_shared<OpenGLRenderContext::SceneModelRenderData>();
 		auto& writeBuffer = renderModel.renderView.transformTripleBuffer->acquireWriteBuffer();
 		writeBuffer = transform.getMatrix() * renderModel.trans;
@@ -145,12 +151,6 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 
 		renderdata->transformView = renderModel.renderView;
 		renderdata->model = renderModel.model;
-
-		if (cameraFollow && entity == cameraFollow->target)
-		{
-			if (cameraComponent.isFirstPerson)
-				renderdata->isFpsSelfModel = true;
-		}
 
 		if (entity.hasComponent<SkeletonAnimatorGroup>())
 		{
@@ -289,7 +289,7 @@ void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& fra
 		if (!particle || !particle->properties)
 			continue;
 
-		auto renderdata = std::make_shared<OpenGLRenderContext::EffectRenderData>();
+		auto renderdata = std::make_shared<OpenGLRenderContext::SceneEffectRenderData>();
 		renderdata->properties = particle->properties->Clone();
 
 		auto context = std::make_shared<OpenGLRenderContext::RenderContext>();
@@ -310,7 +310,7 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& fr
 		if (!emitter.enable || !emitter.properties)
 			continue;
 
-		auto renderdata = std::make_shared<OpenGLRenderContext::EffectRenderData>();
+		auto renderdata = std::make_shared<OpenGLRenderContext::SceneEffectRenderData>();
 		renderdata->properties = emitter.properties;
 
 		auto context = std::make_shared<OpenGLRenderContext::RenderContext>();

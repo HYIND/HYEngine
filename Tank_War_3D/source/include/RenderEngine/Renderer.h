@@ -37,19 +37,19 @@ namespace Render
 		void processDebugLines(std::shared_ptr<D2DRenderContext::DebugLineRenderData> data);
 
 	private:
-		void processModel(
+		void AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state);
+
+		void processSceneModel(
 			RenderState& state,
-			std::vector<OpenGLRender::SceneItem>& items,
-			std::vector<OpenGLRender::SceneTransparentItem>& transparentItems,
-			GroupMapper& itemsGroupMapper,
-			GroupMapper& transparentItemsGroupMapper,
+			OpenGLRenderObjectData::SceneRenderData& renderData,
 			const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
 		);
 		void processFirstPersonModel(
 			RenderState& state,
-			std::vector<OpenGLRender::FirstPersonItem>& items, 
-			GroupMapper& itemsGroupMapper,
+			OpenGLRenderObjectData::FirstPersonRenderData& renderData,
 			const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data);
+
+		void SortRenderObject(RenderState& state);
 
 		void ConvertGLTextureToD2DBitmap();
 		void ConvertGLTextureToD2DBitmap1();

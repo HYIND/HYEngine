@@ -670,8 +670,8 @@ bool ResourceManager::InitOpenGLResourceInternal()
 		});
 
 
-	InitDust();
-	//InitGameScene();
+	//InitDust();
+	InitGameScene();
 	//InitSponza();
 
 	pool.stop();

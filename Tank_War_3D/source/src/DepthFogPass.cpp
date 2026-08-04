@@ -25,7 +25,6 @@ void DepthFogPass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState
 	Texture2D::CopyTexture(sceneDepthBuffer, tempDepth);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
-
 	glViewport(0, 0, state.framebuffer.width, state.framebuffer.height);
 
 	_shader.Use();

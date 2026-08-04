@@ -12,22 +12,20 @@ EffectPass::EffectPass(const std::string& vertexShaderPath, const std::string& f
 
 bool EffectPass::ShouldExecute(RenderState& state) const
 {
-	return !state.objects.effectItems.empty();
+	return !state.objects.sceneRenderData.effectItems.empty();
 }
 
 void EffectPass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
-
 	glViewport(0, 0, state.framebuffer.width, state.framebuffer.height);
 
 	_shader.Use();
 
-	for (auto& item : state.objects.effectItems)
+	for (auto& item : state.objects.sceneRenderData.effectItems)
 	{
-		if (!item)
-			continue;
+		if (!item) continue;
 
 		_shader.setInt("effectType", int(item->effectType));
 		if (item->effectType == EffectType::Particle)

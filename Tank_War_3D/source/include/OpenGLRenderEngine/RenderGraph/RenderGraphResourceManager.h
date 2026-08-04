@@ -21,6 +21,7 @@ namespace OpenGLRenderGraph
 		void UnregisterExternalTexture(const ResourceName& name);
 		std::shared_ptr<Texture2D> GetExternalTexture(const ResourceName& name) const;
 
+		void CleanupIdleResource();
 	private:
 		TexturePool _texPool;
 		std::unordered_map<ResourceName, TextureHandle> _textures;

@@ -127,7 +127,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		_dirLightShadowDepthShader.CompileFromFile(dirLightVertexShaderPath, dirLightGeometryShaderPath, dirLightFragmentShaderPath);
 		_pointLightShadowDepthShader.CompileFromFile(pointLightVertexShaderPath, pointLightGeometryShaderPath, pointLightFragmentShaderPath);
 	}
-	_atlas = std::make_shared<AtlasMap>(1024, 1024, 32768);
+	_atlas = std::make_shared<AtlasMap>(2000, 2000, 32768);
 }
 
 LightShadowDepthPass::~LightShadowDepthPass()
@@ -258,7 +258,6 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state)
 {
 	auto& dirLightsInfo = state.lights.dirLightInfos;
 	auto& spotLightsInfo = state.lights.spotLightInfos;
-	auto& renderItems = state.objects.sceneItems;
 
 	_dirLightShadowDepthShader.Use();
 	int count = 0;
@@ -297,11 +296,10 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state)
 			count++;
 			if (count >= batch_max)
 			{
-				_dirLightShadowDepthShader.setInt("count", count);
 				if (useAMDViewportExt)
-					RenderHelp::renderLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+					RenderHelp::renderSceneLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 				else
-					RenderHelp::renderLightShadowPassScene(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+					RenderHelp::renderSceneLightShadowPassScene(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 				count = 0;
 			}
 		}
@@ -339,29 +337,26 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state)
 		count++;
 		if (count >= batch_max)
 		{
-			_dirLightShadowDepthShader.setInt("count", count);
 			if (useAMDViewportExt)
-				RenderHelp::renderLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+				RenderHelp::renderSceneLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 			else
-				RenderHelp::renderLightShadowPassScene(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+				RenderHelp::renderSceneLightShadowPassScene(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 			count = 0;
 		}
 	}
 
 	if (count > 0)
 	{
-		_dirLightShadowDepthShader.setInt("count", count);
 		if (useAMDViewportExt)
-			RenderHelp::renderLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+			RenderHelp::renderSceneLightShadowPassSceneInstance(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 		else
-			RenderHelp::renderLightShadowPassScene(state, _dirLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+			RenderHelp::renderSceneLightShadowPassScene(state, _dirLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 	}
 }
 
 void LightShadowDepthPass::processPointLight(RenderState& state)
 {
 	auto& pointLightsInfo = state.lights.pointLightInfos;
-	auto& renderItems = state.objects.sceneItems;
 
 	_pointLightShadowDepthShader.Use();
 	int count = 0;
@@ -421,11 +416,10 @@ void LightShadowDepthPass::processPointLight(RenderState& state)
 			count++;
 			if (count >= batch_max)
 			{
-				_pointLightShadowDepthShader.setInt("count", count);
 				if (useAMDViewportExt)
-					RenderHelp::renderLightShadowPassSceneInstance(state, _pointLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+					RenderHelp::renderSceneLightShadowPassSceneInstance(state, _pointLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 				else
-					RenderHelp::renderLightShadowPassScene(state, _pointLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+					RenderHelp::renderSceneLightShadowPassScene(state, _pointLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 				count = 0;
 				viewProjs.clear();
 			}
@@ -434,10 +428,9 @@ void LightShadowDepthPass::processPointLight(RenderState& state)
 
 	if (count > 0)
 	{
-		_pointLightShadowDepthShader.setInt("count", count);
 		if (useAMDViewportExt)
-			RenderHelp::renderLightShadowPassSceneInstance(state, _pointLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+			RenderHelp::renderSceneLightShadowPassSceneInstance(state, _pointLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 		else
-			RenderHelp::renderLightShadowPassScene(state, _pointLightShadowDepthShader, count, renderItems, state.objectsGroupMapper.sceneItemsGroupMapper);
+			RenderHelp::renderSceneLightShadowPassScene(state, _pointLightShadowDepthShader, count, state.objects.sceneRenderData.opaqueMesh, state.objects.sceneRenderData.opaqueSkinnedModel);
 	}
 }

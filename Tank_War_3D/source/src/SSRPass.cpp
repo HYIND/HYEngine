@@ -20,7 +20,7 @@ SSRPass::SSRPass(
 
 bool SSRPass::ShouldExecute(RenderState& state) const
 {
-	if (!state.flags.ssrOn || state.ssrTraceParams.maxBounceLimit <= 0 || state.objects.sceneItems.empty())
+	if (!state.flags.ssrOn || state.ssrTraceParams.maxBounceLimit <= 0)
 		return false;
 	return true;
 }

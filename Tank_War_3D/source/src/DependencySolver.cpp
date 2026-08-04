@@ -137,38 +137,38 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 
 	for (auto* pass : sortedPasses)
 	{
-		int passIndex = pass->GetIndex();
+		int passBatch = pass->GetBatch();
 
 		// 处理输入
 		for (const auto& input : pass->GetInputs()) {
 			auto& usage = usageMap[input];
-			usage.firstPass = std::min(usage.firstPass, passIndex);
-			usage.lastPass = std::max(usage.lastPass, passIndex);
+			usage.firstBatch = std::min(usage.firstBatch, passBatch);
+			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isRead = true;
 		}
 
 		// 处理可选输入
 		for (const auto& input : pass->GetInputOptions()) {
 			auto& usage = usageMap[input];
-			usage.firstPass = std::min(usage.firstPass, passIndex);
-			usage.lastPass = std::max(usage.lastPass, passIndex);
+			usage.firstBatch = std::min(usage.firstBatch, passBatch);
+			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isRead = true;
 		}
 
 		// 处理输出
 		for (const auto& output : pass->GetOutputs()) {
 			auto& usage = usageMap[output];
-			usage.firstPass = std::min(usage.firstPass, passIndex);
-			usage.lastPass = std::max(usage.lastPass, passIndex);
+			usage.firstBatch = std::min(usage.firstBatch, passBatch);
+			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isWritten = true;
 		}
 
 		// 处理临时资源
 		for (const auto& temp : pass->GetTemps()) {
 			auto& usage = usageMap[temp];
-			// 临时资源只在当前Pass使用
-			usage.firstPass = passIndex;
-			usage.lastPass = passIndex;
+			// 临时资源只在当前Batch使用
+			usage.firstBatch = passBatch;
+			usage.lastBatch = passBatch;
 			usage.isWritten = true;
 			usage.isRead = true;
 		}
@@ -176,8 +176,8 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 		//// 不处理持久化资源，持久化资源不需要回收（Persistent）
 		//for (const auto& persistent : pass->GetPersistents()) {
 		//	auto& usage = usageMap[persistent];
-		//	usage.firstPass = std::min(usage.firstPass, passIndex);
-		//	usage.lastPass = std::max(usage.lastPass, passIndex);
+		//	usage.firstBatch = std::min(usage.firstBatch, passIndex);
+		//	usage.lastBatch = std::max(usage.lastBatch, passIndex);
 		//	usage.isRead = true;
 		//}
 	}
@@ -188,12 +188,12 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 void DependencySolver::PrintLifecycles(const std::string& name, const std::unordered_map<RenderGraphResource, ResourceUsage>& usageMap) {
 	std::cout << std::format("=== [{}] Resource Lifecycles ===\n", name);
 	for (auto& [res, usage] : usageMap) {
-		if (usage.firstPass != INT_MAX && usage.lastPass != -1) {
+		if (usage.firstBatch != INT_MAX && usage.lastBatch != -1) {
 			std::cout <<
 				std::format("Resource [{}]: Pass {} → Pass {} | {} {}\n",
 					res.name,
-					usage.firstPass,
-					usage.lastPass,
+					usage.firstBatch,
+					usage.lastBatch,
 					usage.isWritten ? "[Written]" : "",
 					usage.isRead ? "[Read]" : "");
 		}

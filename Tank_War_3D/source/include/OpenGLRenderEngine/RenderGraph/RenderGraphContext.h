@@ -16,8 +16,12 @@ namespace OpenGLRenderGraph
 
 		GLenum format = GL_RGBA;
 
-		GLenum filterMode = GL_LINEAR;
-		GLenum wrapMode = GL_CLAMP_TO_EDGE;
+		GLenum minFilterMode = GL_LINEAR;
+		GLenum magFilterMode = GL_LINEAR;
+		GLenum wrapSMode = GL_CLAMP_TO_EDGE;
+		GLenum wrapTMode = GL_CLAMP_TO_EDGE;
+
+		uint32_t maxLevel = 1;
 	};
 
 	class TextureHandle

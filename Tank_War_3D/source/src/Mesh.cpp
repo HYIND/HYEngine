@@ -37,6 +37,9 @@ void Mesh::Draw(Shader& shader)
 
 void Mesh::DrawInstanced(Shader& shader, GLsizei count)
 {
+	if (this == nullptr)
+		std::cout << "error!\n";
+
 	Need();
 
 	glBindVertexArray(VAO);

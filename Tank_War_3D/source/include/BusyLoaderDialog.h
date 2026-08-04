@@ -60,6 +60,7 @@ private:
 	void DrawAnimation();
 	void OnTimer();
 	void Cleanup();
+	void Close();
 	float CalculateEasing(float t);
 
 public:
@@ -73,6 +74,4 @@ public:
 
 	DialogResult WaitResult();
 	DialogResult WaitResultAndClose();
-
-	void Close();
 };

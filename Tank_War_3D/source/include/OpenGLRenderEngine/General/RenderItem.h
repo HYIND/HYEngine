@@ -4,28 +4,74 @@
 #include "OpenGLRenderEngine/Base/Model.h"
 #include "OpenGLRenderEngine/General/OpenGLRenderContext.h"
 
-namespace OpenGLRender
+namespace OpenGLRenderObjectData
 {
-	struct Item
+	struct SceneRenderData
 	{
-		MeshInfo meshinfo;
-		std::vector<OpenGLRenderContext::AnimatorView> animatorViews;
-		bool enable = true;
+		struct Item
+		{
+			glm::mat4 transform;
+			glm::mat4 prevTransform;
+		};
+		struct MeshItem :public Item
+		{
+			MeshInfo meshinfo;
+		};
+		struct ModelItem :public Item
+		{
+			std::vector<MeshInfo> models;
+		};
+
+		struct OpaqueMeshItem :public MeshItem {};
+		struct TransparentMeshItem :public MeshItem {};
+
+		struct Skinned {
+			std::shared_ptr<std::vector<OpenGLRenderContext::AnimatorView>> animators;
+		};
+		struct TransparentSkinnedMeshItem :public Skinned, public MeshItem {};
+		struct OpaqueSkinnedModelItem :public Skinned, public ModelItem {};
+
+
+		std::vector<OpaqueMeshItem> opaqueMesh;
+		std::vector<TransparentMeshItem> transparentMesh;
+		std::vector<OpaqueSkinnedModelItem> opaqueSkinnedModel;
+		std::vector<TransparentSkinnedMeshItem> transparentSkinnedMesh;
+
+		std::vector<size_t> opaqueMesh_SortIndex;
+		std::vector<size_t> transparentMesh_SortIndex;
+		std::vector<std::vector<size_t>> opaqueSkinnedModel_SortIndex;
+		std::vector<size_t> transparentSkinnedMesh_SortIndex;
+
+		std::vector<std::shared_ptr<BaseEffectProperties>> effectItems;
 	};
 
-	struct SceneItem :public Item
+	struct FirstPersonRenderData
 	{
-		glm::mat4 transform = glm::mat4(1.0f);
-		glm::mat4 lastTransform = glm::mat4(1.0f);
-		bool isFpsSelfModel = false;
-	};
+		struct Item
+		{
+			glm::mat4 cameraView;
+		};
+		struct MeshItem :public Item
+		{
+			MeshInfo meshinfo;
+		};
+		struct ModelItem :public Item
+		{
+			std::vector<MeshInfo> models;
+		};
 
-	struct SceneTransparentItem :public SceneItem
-	{
-	};
+		struct OpaqueMeshItem :public MeshItem {};
+		struct TransparentMeshItem :public MeshItem {};
 
-	struct FirstPersonItem : public Item
-	{
-		glm::mat4 cameraView = glm::mat4(1.0f);
+		struct Skinned {
+			std::shared_ptr<std::vector<OpenGLRenderContext::AnimatorView>> animators;
+		};
+		struct TransparentSkinnedMeshItem :public Skinned, public MeshItem {};
+		struct OpaqueSkinnedModelItem :public Skinned, public ModelItem {};
+
+		std::vector<OpaqueMeshItem> opaqueMesh;
+		std::vector<TransparentMeshItem> transparentMesh;
+		std::vector<OpaqueSkinnedModelItem> opaqueSkinnedModel;
+		std::vector<TransparentSkinnedMeshItem> transparentSkinnedMesh;
 	};
 }

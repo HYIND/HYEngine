@@ -5,7 +5,23 @@
 #include "OpenGLRenderEngine/OpenGLRenderConfig.h"
 #include "Manager/ResourceManager.h"
 
+#include "OpenGLRenderEngine/RenderPass/GeometryPass.h"
+#include "OpenGLRenderEngine/RenderPass/LightShadowDepthPass.h"
+#include "OpenGLRenderEngine/RenderPass/LightingPass.h"
+#include "OpenGLRenderEngine/RenderPass/LightDrawPass.h"
+#include "OpenGLRenderEngine/RenderPass/SSRPass.h"
+#include "OpenGLRenderEngine/RenderPass/SkyBoxPass.h"
+#include "OpenGLRenderEngine/RenderPass/SSAOPass.h"
+#include "OpenGLRenderEngine/RenderPass/EffectPass.h"
+#include "OpenGLRenderEngine/RenderPass/RayTracePass.h"
+#include "OpenGLRenderEngine/RenderPass/DepthFogPass.h"
+#include "OpenGLRenderEngine/RenderPass/TransparentPass.h"
+#include "OpenGLRenderEngine/RenderPass/AutoExposurePass.h"
+#include "OpenGLRenderEngine/RenderPass/SSGIPass.h"
+#include "OpenGLRenderEngine/RenderPass/HZBPass.h"
 
+
+#include "Manager/FocusManager.h"
 void HandleKeyboardShortcuts(RenderState& state)
 {
 	static bool s_rayTraceEnable = state.flags.rayTraceOn;
@@ -18,48 +34,53 @@ void HandleKeyboardShortcuts(RenderState& state)
 			c = std::toupper(c);
 			return 0x41 + (c - 'A');
 		};
-	if ((GetAsyncKeyState(GetCharVK('B')) & 0x8000))
+
+	if (FocusManager::Instance()->ShouldProcessInput())
 	{
-		static int64_t lasttime = 0;
-		auto now = Tool::GetTimestampMilliseconds();
-		if ((now - lasttime) > 300)
+
+		if ((GetAsyncKeyState(GetCharVK('B')) & 0x8000))
 		{
-			s_ssrOn = !s_ssrOn;
-			std::cout << std::format("SSR {}\n", s_ssrOn ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
-			lasttime = now;
+			static int64_t lasttime = 0;
+			auto now = Tool::GetTimestampMilliseconds();
+			if ((now - lasttime) > 300)
+			{
+				s_ssrOn = !s_ssrOn;
+				std::cout << std::format("SSR {}\n", s_ssrOn ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+				lasttime = now;
+			}
 		}
-	}
-	if ((GetAsyncKeyState(GetCharVK('N')) & 0x8000))
-	{
-		static int64_t lasttime = 0;
-		auto now = Tool::GetTimestampMilliseconds();
-		if ((now - lasttime) > 300)
+		if ((GetAsyncKeyState(GetCharVK('N')) & 0x8000))
 		{
-			s_rayTraceEnable = !s_rayTraceEnable;
-			std::cout << std::format("RayTrace {}\n", s_rayTraceEnable ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
-			lasttime = now;
+			static int64_t lasttime = 0;
+			auto now = Tool::GetTimestampMilliseconds();
+			if ((now - lasttime) > 300)
+			{
+				s_rayTraceEnable = !s_rayTraceEnable;
+				std::cout << std::format("RayTrace {}\n", s_rayTraceEnable ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+				lasttime = now;
+			}
 		}
-	}
-	if ((GetAsyncKeyState(GetCharVK('L')) & 0x8000))
-	{
-		static int64_t lasttime = 0;
-		auto now = Tool::GetTimestampMilliseconds();
-		if ((now - lasttime) > 300)
+		if ((GetAsyncKeyState(GetCharVK('L')) & 0x8000))
 		{
-			s_useGbuffer = !s_useGbuffer;
-			std::cout << std::format("RayTrace useGbuffer {}\n", s_useGbuffer ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
-			lasttime = now;
+			static int64_t lasttime = 0;
+			auto now = Tool::GetTimestampMilliseconds();
+			if ((now - lasttime) > 300)
+			{
+				s_useGbuffer = !s_useGbuffer;
+				std::cout << std::format("RayTrace useGbuffer {}\n", s_useGbuffer ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+				lasttime = now;
+			}
 		}
-	}
-	if ((GetAsyncKeyState(GetCharVK('H')) & 0x8000))
-	{
-		static int64_t lasttime = 0;
-		auto now = Tool::GetTimestampMilliseconds();
-		if ((now - lasttime) > 300)
+		if ((GetAsyncKeyState(GetCharVK('H')) & 0x8000))
 		{
-			s_ssgiOn = !s_ssgiOn;
-			std::cout << std::format("SSGI {}\n", s_ssgiOn ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
-			lasttime = now;
+			static int64_t lasttime = 0;
+			auto now = Tool::GetTimestampMilliseconds();
+			if ((now - lasttime) > 300)
+			{
+				s_ssgiOn = !s_ssgiOn;
+				std::cout << std::format("SSGI {}\n", s_ssgiOn ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+				lasttime = now;
+			}
 		}
 	}
 
@@ -195,14 +216,23 @@ public:
 	ResourceBuilder(std::unique_ptr<OpenGLRenderGraph::RenderGraph>& graph) :_graph(graph) {}
 
 public:
-	OpenGLRenderGraph::RenderGraphResource CreateTexture(int width, int height, GLenum format, GLenum filterMode, GLenum wrapMode, const OpenGLRenderGraph::ResourceName& name) {
-		return _graph->CreateTexture(OpenGLRenderGraph::TextureDesc{ width ,height,format,filterMode,wrapMode }, name);
+	OpenGLRenderGraph::RenderGraphResource CreateTexture(
+		int width, int height,
+		GLenum format,
+		GLenum minFilterMode, GLenum magFilterMode,
+		GLenum wrapSMode, GLenum wrapTMode,
+		const OpenGLRenderGraph::ResourceName& name,
+		uint32_t maxLevel = 1) {
+		return _graph->CreateTexture(OpenGLRenderGraph::TextureDesc{ width ,height,format,minFilterMode,magFilterMode,wrapSMode,wrapTMode,std::max(1u,maxLevel) }, name);
+	}
+	OpenGLRenderGraph::RenderGraphResource CreateTexture(int width, int height, GLenum format, GLenum filterMode, GLenum wrapMode, const OpenGLRenderGraph::ResourceName& name, uint32_t maxLevel = 1) {
+		return _graph->CreateTexture(OpenGLRenderGraph::TextureDesc{ width ,height,format,filterMode,filterMode,wrapMode,wrapMode,std::max(1u,maxLevel) }, name);
 	}
 	OpenGLRenderGraph::RenderGraphResource CreateTexture(const OpenGLRenderGraph::RenderGraphResource& other, const OpenGLRenderGraph::ResourceName& name) {
 		return _graph->CreateTexture(std::get<OpenGLRenderGraph::TextureDesc>(other.desc), name);
 	}
 	OpenGLRenderGraph::RenderGraphResource CreateTexture(const std::shared_ptr<Texture2D>& tex, const OpenGLRenderGraph::ResourceName& name) {
-		return CreateTexture(tex->GetWidth(), tex->GetHeight(), tex->GetInternalFormat(), tex->GetMinFilter(), tex->GetWrapT(), name);
+		return CreateTexture(tex->GetWidth(), tex->GetHeight(), tex->GetInternalFormat(), tex->GetMinFilter(), tex->GetMagFilter(), tex->GetWrapS(), tex->GetWrapT(), name, tex->GetMaxLevel());
 	}
 	OpenGLRenderGraph::ExternalResource CreateExternalTxture(const OpenGLRenderGraph::ResourceName& name) {
 		return _graph->CreateExternalTexture(name);
@@ -242,8 +272,8 @@ void OpenGLRenderer::InitSceneRenderGraph()
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "ssgi_Output");
 	auto atlasShadowMap = resbuilder.CreateTexture(1024, 1024, GL_DEPTH_COMPONENT, GL_LINEAR, GL_CLAMP_TO_EDGE, "atlasShadowMap");
 
-
 	// 不透明物体
+	auto hzbPass = _sceneRenderGraph->AddPass("hzbPass");
 	auto geometryPass = _sceneRenderGraph->AddPass("geometry");
 	auto lightingShadowDepthPass = _sceneRenderGraph->AddPass("lightingShadowDepth");
 	auto ssaoPass = _sceneRenderGraph->AddPass("ssaoPass");
@@ -272,7 +302,24 @@ void OpenGLRenderer::InitSceneRenderGraph()
 	auto autoExposurePass = _sceneRenderGraph->AddPass("autoExposurePass");
 
 
-	geometryPass->SetRenderPass(std::make_unique<GeometryPassPass>("shader/gbuffer/geometrypass.vs", "shader/gbuffer/geometrypass.fs"))
+	auto hzbRender = std::make_unique<HZBPass>(
+		"shader/HZB/depth.vs",
+		"shader/HZB/depth.fs",
+		"shader/HZB/HZBGenerate.comp",
+		"shader/HZB/occlusionCulling.comp"
+		);
+	auto hzbMap = resbuilder.CreateTexture(width, height, GL_R32F, GL_NEAREST, GL_CLAMP_TO_EDGE, "HZBMap", hzbRender->GetMaxLevel());
+
+	hzbPass->SetRenderPass(std::move(hzbRender))
+		.Temp(resbuilder.CreateTexture(width, height, GL_DEPTH_COMPONENT32F, GL_NEAREST, GL_CLAMP_TO_EDGE, "hzbPass_temp"))
+		.Output(hzbMap)
+		.Before(geometryPass);
+
+
+	geometryPass->SetRenderPass(std::make_unique<GeometryPass>(
+		"shader/gbuffer/geometrypass_StaticMesh.vs",
+		"shader/gbuffer/geometrypass_SkinnedMesh.vs",
+		"shader/gbuffer/geometrypass.fs"))
 		.Output(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gDepthStencilMap);
 
 	lightingShadowDepthPass->SetRenderPass(std::make_unique<LightShadowDepthPass>(
@@ -310,10 +357,10 @@ void OpenGLRenderer::InitSceneRenderGraph()
 
 	rayTracePass->SetRenderPass(std::make_unique<RayTracePass>("shader/RayTrace/rayTrace.comp", "shader/RayTrace/TAAMix.comp", "shader/General/imagedenoising.comp", "shader/General/imagescale.comp"))
 		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap)
-		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
-		.Output(rayTrace_Output)
 		.Temp(resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TempOrigin")
 			, resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TempDenoised"))
+		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
+		.Output(rayTrace_Output)
 		.Persistent(resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TAAPingPongTexture[0]")
 			, resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TAAPingPongTexture[1]"))
 		.After(copyDepthPass, skyBoxPass, lightingPass)
@@ -350,18 +397,14 @@ void OpenGLRenderer::InitSceneRenderGraph()
 					if (tex) all_tex.push_back(tex);
 				}
 			}
-
 			if (all_tex.empty())
 				return;
 
-
 			auto sceneColorBuffer = ctx.GetExternal(0);
-
 			if (!sceneColorBuffer)
 				return;
 
 			auto tempColorBuffer = ctx.GetTemp(0);
-
 			if (!Texture2D::CopyTexture(sceneColorBuffer, tempColorBuffer))
 				return;
 
@@ -480,4 +523,3 @@ void OpenGLRenderer::RenderFirstPersonLayer(RenderState& state)
 {
 	_firstPersonPass->Draw(state);
 }
-

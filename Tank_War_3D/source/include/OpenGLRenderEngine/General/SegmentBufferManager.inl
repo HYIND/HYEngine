@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <execution>
 
 template<typename SegmentID>
 SegmentBufferManager<SegmentID>::SegmentBufferManager(size_t initsize)
@@ -123,7 +124,7 @@ const void* SegmentBufferManager<SegmentID>::GetData()
 template<typename SegmentID>
 void SegmentBufferManager<SegmentID>::SortAndMegerIdleSegment()
 {
-	std::sort(_idleSegment.begin(), _idleSegment.end(),
+	std::sort(std::execution::par_unseq, _idleSegment.begin(), _idleSegment.end(),
 		[](const Segment& v1, const Segment& v2)
 		{return v1.first < v2.first; }
 	);

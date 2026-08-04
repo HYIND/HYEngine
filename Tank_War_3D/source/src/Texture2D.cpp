@@ -212,43 +212,189 @@ void GetFormatAndType(unsigned int infernalFormat, unsigned int& format, unsigne
 
 }
 
-bool Texture2D::CopyTexture(const Texture2D& src, const Texture2D& dest)
+bool IsDepthFormat(unsigned int format)
 {
-	if (&src == &dest)
+	switch (format) {
+	case GL_DEPTH_COMPONENT:
+	case GL_DEPTH_COMPONENT16:
+	case GL_DEPTH_COMPONENT24:
+	case GL_DEPTH_COMPONENT32:
+	case GL_DEPTH_COMPONENT32F:
+	case GL_DEPTH_STENCIL:
+	case GL_DEPTH24_STENCIL8:
+	case GL_DEPTH32F_STENCIL8:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool IsSingleChannelFloat(unsigned int format)
+{
+	switch (format) {
+	case GL_R32F:
+	case GL_R16F:
+	case GL_R8:
+	case GL_R16:
+	case GL_R32I:
+	case GL_R32UI:
+		return true;
+	default:
+		return false;
+	}
+}
+
+int GetChannelCount(unsigned int format)
+{
+	switch (format) {
+		// 单通道
+	case GL_R8:
+	case GL_R16:
+	case GL_R16F:
+	case GL_R32F:
+	case GL_R32I:
+	case GL_R32UI:
+	case GL_DEPTH_COMPONENT:
+	case GL_DEPTH_COMPONENT16:
+	case GL_DEPTH_COMPONENT24:
+	case GL_DEPTH_COMPONENT32:
+	case GL_DEPTH_COMPONENT32F:
+		return 1;
+
+		// 双通道
+	case GL_RG8:
+	case GL_RG16:
+	case GL_RG16F:
+	case GL_RG32F:
+		return 2;
+
+		// 三通道
+	case GL_RGB8:
+	case GL_RGB16:
+	case GL_RGB16F:
+	case GL_RGB32F:
+		return 3;
+
+		// 四通道
+	case GL_RGBA8:
+	case GL_RGBA16:
+	case GL_RGBA16F:
+	case GL_RGBA32F:
+		return 4;
+
+		// 深度+模板
+	case GL_DEPTH_STENCIL:
+	case GL_DEPTH24_STENCIL8:
+	case GL_DEPTH32F_STENCIL8:
+		return 2;  // 深度+模板
+
+	default:
+		return 0;  // 未知格式
+	}
+}
+
+unsigned int GetComponentType(unsigned int format)
+{
+	switch (format) {
+		// 浮点类型
+	case GL_R16F:
+	case GL_RG16F:
+	case GL_RGB16F:
+	case GL_RGBA16F:
+	case GL_R32F:
+	case GL_RG32F:
+	case GL_RGB32F:
+	case GL_RGBA32F:
+	case GL_DEPTH_COMPONENT32F:
+		return GL_FLOAT;
+
+		// 整数类型
+	case GL_R32I:
+	case GL_R32UI:
+		return GL_INT;
+
+		// 无符号整数
+	case GL_R8:
+	case GL_R16:
+	case GL_RG8:
+	case GL_RG16:
+	case GL_RGB8:
+	case GL_RGB16:
+	case GL_RGBA8:
+	case GL_RGBA16:
+	case GL_DEPTH_COMPONENT16:
+	case GL_DEPTH_COMPONENT24:
+	case GL_DEPTH_COMPONENT32:
+	case GL_DEPTH24_STENCIL8:
+	default:
+		return GL_UNSIGNED_BYTE;  // 默认无符号
+	}
+}
+
+bool IsCompatibleFormat(unsigned int f1, unsigned int f2)
+{
+	if (f1 == f2) return true;
+
+	if (IsDepthFormat(f1) && IsDepthFormat(f2)) return true;
+
+	if (IsDepthFormat(f1) && f2 == GL_R32F) return true;
+	if (f1 == GL_R32F && IsDepthFormat(f2)) return true;
+
+	if (IsSingleChannelFloat(f1) && IsSingleChannelFloat(f2)) return true;
+
+	if (GetChannelCount(f1) == GetChannelCount(f2) &&
+		GetComponentType(f1) == GetComponentType(f2)) return true;
+
+	return false;
+}
+
+bool Texture2D::CopyTexture(const Texture2D& src, const Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
+{
+	if (&src == &dest && srcLevel == destLevel)
 		return true;
 
-	if (src.m_Width != dest.m_Width
-		|| src.m_Height != dest.m_Height
-		|| src.m_InternalFormat != dest.m_InternalFormat
-		)
+	if (src.m_MaxLevel <= srcLevel || dest.m_MaxLevel <= destLevel)
 		return false;
 
+	if (!IsCompatibleFormat(src.m_InternalFormat, dest.m_InternalFormat))
+		return false;
+
+	uint32_t srcWidth = std::max(1u, src.m_Width >> srcLevel);
+	uint32_t srcHeight = std::max(1u, src.m_Height >> srcLevel);
+
+	uint32_t destWidth = std::max(1u, dest.m_Width >> destLevel);
+	uint32_t destHeight = std::max(1u, dest.m_Height >> destLevel);
+
+	if (srcWidth != destWidth || srcHeight != destHeight)
+		return false;
+
+
 	glCopyImageSubData(
-		src.GetID(), GL_TEXTURE_2D, 0, 0, 0, 0,
-		dest.GetID(), GL_TEXTURE_2D, 0, 0, 0, 0,
-		src.m_Width, src.m_Height, 1
+		src.GetID(), GL_TEXTURE_2D, srcLevel, 0, 0, 0,
+		dest.GetID(), GL_TEXTURE_2D, destLevel, 0, 0, 0,
+		srcWidth, srcHeight, 1
 	);
 
 	return true;
 }
 
-bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest)
+bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
 {
 	if (!src || !dest)
 		return false;
-	return CopyTexture(*src, *dest);
+	return CopyTexture(*src, *dest, srcLevel, destLevel);
 }
 
 Texture2D::Texture2D(const std::string& filepath, bool gammaCorrection)
 	: m_RendererID(0), m_Width(0), m_Height(0), m_InternalFormat(GL_RGBA8),
-	m_MinFilter(GL_LINEAR), m_MagFilter(GL_LINEAR), m_WrapS(GL_REPEAT), m_WrapT(GL_REPEAT), m_Anisotropy(false)
+	m_MinFilter(GL_LINEAR), m_MagFilter(GL_LINEAR), m_WrapS(GL_REPEAT), m_WrapT(GL_REPEAT), m_Anisotropy(false), m_MaxLevel(1)
 {
 	LoadFromFile(filepath, gammaCorrection);
 }
 
-Texture2D::Texture2D(int width, int height, unsigned int internalFormat)
-	: m_RendererID(0), m_Width(width), m_Height(height), m_InternalFormat(internalFormat), m_Anisotropy(false) {
-	CreateEmpty(width, height, internalFormat);
+Texture2D::Texture2D(int width, int height, unsigned int internalFormat, uint32_t level)
+	: m_RendererID(0), m_Width(width), m_Height(height), m_InternalFormat(internalFormat), m_Anisotropy(false), m_MaxLevel(std::max(1u, level)) {
+	CreateEmpty(width, height, internalFormat, level);
 }
 
 Texture2D::~Texture2D()
@@ -378,15 +524,20 @@ uint32_t Texture2D::GetHeight() const
 	return m_Height;
 }
 
+uint32_t Texture2D::GetMaxLevel() const
+{
+	return m_MaxLevel;
+}
+
 glm::u32vec2 Texture2D::GetSize() const
 {
 	return glm::u32vec2(m_Width, m_Height);
 }
 
-void Texture2D::UpdateTextureData(void* data, int format, int type) {
+void Texture2D::UpdateTextureData(void* data, int format, int type, uint32_t level) {
 	auto guard = THREADCONTEXT->GetBindGuard();
 	Bind(0);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_Width, m_Height,
+	glTexSubImage2D(GL_TEXTURE_2D, level, 0, 0, m_Width, m_Height,
 		format, type, data);
 }
 
@@ -444,9 +595,12 @@ bool Texture2D::LoadFromFile(const std::string& filepath, bool gammaCorrection)
 
 		stbi_image_free(data);
 
+
 		m_Width = width;
 		m_Height = height;
 		m_InternalFormat = internalFormat;
+		m_MaxLevel = 1;
+		GetFormatAndType(m_InternalFormat, m_Format, m_Type);
 
 		return true;
 	}
@@ -462,14 +616,14 @@ void Texture2D::Resize(uint32_t width, uint32_t height)
 {
 	if (width == m_Width && height == m_Height)
 		return;
-	CreateEmpty(width, height, m_InternalFormat);
+	CreateEmpty(width, height, m_InternalFormat, m_MaxLevel);
 }
 
 
 // ------------------------------------------------------------
 // 创建空纹理（用于 RenderTarget 或者后续动态更新）
 // ------------------------------------------------------------
-void Texture2D::CreateEmpty(int width, int height, unsigned int internalFormat) {
+void Texture2D::CreateEmpty(int width, int height, unsigned int internalFormat, uint32_t maxLevel) {
 	auto guard = THREADCONTEXT->GetBindGuard();
 
 	if (!IsEmpty())
@@ -485,15 +639,36 @@ void Texture2D::CreateEmpty(int width, int height, unsigned int internalFormat) 
 	m_Width = width;
 	m_Height = height;
 	m_InternalFormat = internalFormat;
+	m_MaxLevel = maxLevel;
 
 	glGenTextures(1, &m_RendererID);
 	glBindTexture(GL_TEXTURE_2D, m_RendererID);
 
 	GetFormatAndType(m_InternalFormat, m_Format, m_Type);
 
-	// 分配显存空间（不填充数据）
-	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0,
-		m_Format, m_Type, nullptr);
+	if (m_MaxLevel <= 1)
+	{
+		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0,
+			m_Format, m_Type, nullptr);
+	}
+	else
+	{
+		//for (int level = 0; level < m_MaxLevel; level++) {
+		//	int w = std::max(1, width >> level);
+		//	int h = std::max(1, height >> level);
+		//	glTexImage2D(GL_TEXTURE_2D, level, internalFormat, w, h, 0, m_Format, m_Type, nullptr);
+		//}
+
+		glTexStorage2D(GL_TEXTURE_2D, m_MaxLevel, internalFormat, width, height);
+	}
+
+	//if (m_InternalFormat == GL_R32F)
+	//{
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_RED);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, GL_RED);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
+	//}
 
 	// 设置默认参数
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, m_MinFilter);
@@ -502,4 +677,5 @@ void Texture2D::CreateEmpty(int width, int height, unsigned int internalFormat) 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, m_WrapT);
 
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, m_Anisotropy ? GetAnisotropicTextureFiltering() : 1.0f);
+
 }

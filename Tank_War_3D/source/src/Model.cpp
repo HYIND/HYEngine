@@ -193,6 +193,20 @@ void MeshInfo::DrawGeometryInstanced(Shader& shader, GLsizei count) const
 {
 	mesh->DrawInstanced(shader, count);
 }
+
+void MeshInfo::ApplyMaterial() const
+{
+	GLuint materialUBO = GetMaterialUBO();
+	glBindBuffer(GL_UNIFORM_BUFFER, materialUBO);
+	MaterialData comp_data;
+	GetMaterialCompData(comp_data);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MaterialData), &comp_data);
+	if (material && material->GetTwoSided())
+		glDisable(GL_CULL_FACE);
+	else
+		glEnable(GL_CULL_FACE);
+}
+
 void MeshInfo::GetMaterialCompData(MaterialData& comp_data) const
 {
 	if (!material)

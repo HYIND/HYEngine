@@ -491,6 +491,14 @@ void Shader::setInt(const std::string& name, int value)
 	glUniform1i(location, value);
 }
 
+void Shader::setUInt(const std::string& name, uint32_t value)
+{
+	GLint location = GetLocation(name);
+	if (location < 0)
+		return;
+	glUniform1ui(location, value);
+}
+
 void Shader::setFloat(const std::string& name, float value)
 {
 	GLint location = GetLocation(name);
@@ -706,6 +714,11 @@ void Shader::Use()
 		if (ssbo)
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, ssbo->GetID());
 	}
+}
+
+void Shader::Close()
+{
+	glUseProgram(0);
 }
 
 GLint Shader::GetLocation(const std::string& name)

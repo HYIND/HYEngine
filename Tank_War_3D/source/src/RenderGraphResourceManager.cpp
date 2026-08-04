@@ -65,3 +65,8 @@ std::shared_ptr<Texture2D> ResourceManager::GetExternalTexture(const ResourceNam
 		return nullptr;
 	return it->second;
 }
+
+void OpenGLRenderGraph::ResourceManager::CleanupIdleResource()
+{
+	_texPool.CleanupIdleTextures();
+}

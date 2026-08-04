@@ -292,6 +292,9 @@
     <ClCompile Include="source\src\PassNode.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="source\src\HZBPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="source\include\header.h">
@@ -749,6 +752,9 @@
     </ClInclude>
     <ClInclude Include="source\include\ECS\Core\View.h">
       <Filter>头文件\ECS\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\HZBPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

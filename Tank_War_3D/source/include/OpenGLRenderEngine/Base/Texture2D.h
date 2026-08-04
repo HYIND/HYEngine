@@ -9,12 +9,12 @@
 class Texture2D
 {
 public:
-	static bool CopyTexture(const Texture2D& src, const Texture2D& dest);
-	static bool CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest);
+	static bool CopyTexture(const Texture2D& src, const Texture2D& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
+	static bool CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 
 public:
-	Texture2D(const std::string& filepath, bool gammaCorrection);					// 从文件加载纹理
-	Texture2D(int width, int height, unsigned int internalFormat = GL_RGBA8);		// 创建空纹理
+	Texture2D(const std::string& filepath, bool gammaCorrection);											// 从文件加载纹理
+	Texture2D(int width, int height, unsigned int internalFormat = GL_RGBA8, uint32_t maxLevel = 1);		// 创建空纹理
 
 	~Texture2D();
 
@@ -25,7 +25,7 @@ public:
 	Texture2D& SetWrapping(unsigned int wrapS, unsigned int wrapT);
 	Texture2D& SetAnisotropy(bool anisotropy);
 
-	void UpdateTextureData(void* data, int format, int type);
+	void UpdateTextureData(void* data, int format, int type, uint32_t level = 0);
 	bool LoadFromFile(const std::string& filepath, bool gammaCorrection);
 
 	void Resize(uint32_t width, uint32_t height);			// 不保留数据！
@@ -38,6 +38,7 @@ public:
 	GLuint64 GetBindlessID() const;
 	uint32_t GetWidth() const;
 	uint32_t GetHeight() const;
+	uint32_t GetMaxLevel() const;
 	glm::u32vec2 GetSize() const;
 	bool IsEmpty() const;
 
@@ -50,7 +51,7 @@ public:
 	unsigned int GetWrapT() const;
 
 private:
-	void CreateEmpty(int width, int height, unsigned int internalFormat);
+	void CreateEmpty(int width, int height, unsigned int internalFormat, uint32_t level);
 
 private:
 	unsigned int m_RendererID;
@@ -58,6 +59,8 @@ private:
 
 	uint32_t m_Width;
 	uint32_t m_Height;
+
+	uint32_t m_MaxLevel;
 
 	unsigned int m_InternalFormat;  // 内部格式，如 GL_RGBA8
 	unsigned int m_Format;

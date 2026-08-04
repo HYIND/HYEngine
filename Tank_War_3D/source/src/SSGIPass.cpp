@@ -32,7 +32,7 @@ SSGIPass::SSGIPass(
 bool SSGIPass::ShouldExecute(RenderState& state) const
 {
 	SetEnable(state.flags.ssgiOn);
-	if (!_enable || state.ssgiTraceParams.maxBounceLimit < 0 || state.objects.sceneItems.empty())
+	if (!_enable || state.ssgiTraceParams.maxBounceLimit < 0)
 		return false;
 	return true;
 }

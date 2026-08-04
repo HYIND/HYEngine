@@ -11,8 +11,8 @@ public:
 	virtual bool ShouldExecute(RenderState& state) const { return true; }	// Excute前预判断是否需要执行Execute，但不影响FrameBegin，FrameEnd
 	virtual void Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state) = 0;	// 执行渲染
 
-	virtual void FrameBegin(RenderState& state) {};							// 每帧开始时，可执行准备任务
-	virtual void FrameEnd(RenderState& state) {};							// 每帧结束时，可执行清理任务
+	virtual void FrameBegin(RenderState& state) {};							// 每帧开始时，可执行准备任务，由Graph并行调度所有Pass，注意state线程安全问题
+	virtual void FrameEnd(RenderState& state) {};							// 每帧结束时，可执行清理任务，按照pass执行顺序，逆序调度
 
 protected:
 	bool _enabled = true;

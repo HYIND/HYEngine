@@ -16,6 +16,8 @@ public:
 	virtual bool ShouldExecute(RenderState& state) const;
 	virtual void Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
+	virtual void FrameBegin(RenderState& state);;
+
 private:
 	Shader _shader;
 };

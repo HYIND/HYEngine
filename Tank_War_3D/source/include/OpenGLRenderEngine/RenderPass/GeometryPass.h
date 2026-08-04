@@ -8,10 +8,14 @@
 #include "OpenGLRenderEngine/General/RenderState.h"
 #include "RenderPassBase.h"
 
-class GeometryPassPass :public RenderPassBase
+class GeometryPass :public RenderPassBase
 {
 public:
-	GeometryPassPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
+	GeometryPass(
+		const std::string& staticMeshVertexShaderPath, 
+		const std::string& skinnedMeshvertexShaderPath, 
+		const std::string& fragmentShaderPath
+	);
 
 	void BindTexToFbo(
 		std::shared_ptr<Texture2D>& gPosition,
@@ -24,7 +28,14 @@ public:
 
 	virtual void Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
+	virtual void FrameBegin(RenderState& state);
+	virtual void FrameEnd(RenderState& state);
+
 private:
-	Shader _shader;
+	Shader _staticShader;
+	Shader _skinnedShader;
 	GLuint _fbo;
+
+	std::vector<bool> _frustumCullResult;
+	std::vector<size_t> _renderIndex;
 };

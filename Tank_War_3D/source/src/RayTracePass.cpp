@@ -62,6 +62,16 @@ struct alignas(16) comp_MeshMatData
 	comp_MaterialData material;
 };
 
+static void WaitFence(GLsync& fence)
+{
+	if (fence && glIsSync(fence))
+	{
+		glWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
+		glDeleteSync(fence);
+		fence = NULL;
+	}
+}
+
 RayTracePass::RayTracePass(
 	const std::string& rayTraceComputerShaderPath,
 	const std::string& TAAComputerShaderPath,
@@ -76,7 +86,8 @@ RayTracePass::RayTracePass(
 	_traiangleBufferManager(1000 * 1024),
 	_traiangleExtBufferManager(3000 * 1024),
 	_meshBVHNodeBufferManager(1000 * 1024),
-	_forceFlushBuffer(false)
+	_forceFlushBuffer(false),
+	_setupfence(nullptr)
 	//_meshBVHIndicesBufferManager(100 * 1024),
 {
 	_rayTraceShader_useGbuffer.AddDefineMacro("useGbuffer", "");
@@ -96,7 +107,7 @@ RayTracePass::RayTracePass(
 
 bool RayTracePass::ShouldExecute(RenderState& state) const
 {
-	if (state.objects.sceneItems.empty() || !state.flags.rayTraceOn)
+	if (!state.flags.rayTraceOn)
 		return false;
 	return state.rayTraceParams.maxBounceLimit > 0 || !state.rayTraceParams.useGbuffer;
 }
@@ -136,9 +147,6 @@ void RayTracePass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState
 
 	data.outPutTexture = ctx.GetOutput(0);
 
-	SetEnableTAA(state.rayTraceParams.useTAA);
-	SetEnableDenoised(state.rayTraceParams.useDenoised);
-
 	if (needDraw && !DrawRayTrace(data, state)) return;
 
 	if (needDraw && useTAA && !DrawTAA(data, state)) return;
@@ -153,6 +161,24 @@ void RayTracePass::Excute(const OpenGLRenderGraph::PassContext& ctx, RenderState
 	//	task1.sync_wait();
 	//	THREADCONTEXT->Bind();
 	//	});
+}
+
+void RayTracePass::FrameBegin(RenderState& state)
+{
+	if (!ShouldExecute(state))
+		return;
+
+	auto guard = THREADCONTEXT->GetBindGuard();
+
+	SetEnableTAA(state.rayTraceParams.useTAA);
+	SetEnableDenoised(state.rayTraceParams.useDenoised);
+
+	auto& rayTraceShader = state.rayTraceParams.useGbuffer ? _rayTraceShader_useGbuffer : _rayTraceShader_pureRayTrace;
+	rayTraceShader.Use();
+	SetupMeshBuffer(rayTraceShader, state);
+
+	_setupfence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	glFlush();
 }
 
 struct Ray {
@@ -279,13 +305,12 @@ bool RayTracePass::SetupMeshBuffer(Shader& shader, RenderState& state)
 	int meshBVHIndicesCount = 0;
 
 	std::vector<comp_MeshMatData> meshmatDatas;
-	meshmatDatas.reserve(state.objects.sceneItems.size());
+	meshmatDatas.reserve(state.objects.sceneRenderData.opaqueMesh.size());
 
 	bool isBufferChange = false;
-	for (auto& item : state.objects.sceneItems)
+	for (auto& item : state.objects.sceneRenderData.opaqueMesh)
 	{
 		auto& meshInfo = item.meshinfo;
-		if (item.isFpsSelfModel) continue;
 		if (!meshInfo.mesh) continue;
 
 		AABB aabb = meshInfo.mesh->GetAABB();
@@ -344,7 +369,7 @@ bool RayTracePass::SetupMeshBuffer(Shader& shader, RenderState& state)
 		}
 		else
 		{
-			assert(newSegmentTri.first % sizeof(comp_Triangle) == 0);
+			assert(triSegData.first % sizeof(comp_Triangle) == 0);
 			meshmatdata.mesh.triangleFirst = triSegData.first / sizeof(comp_Triangle);
 		}
 
@@ -426,10 +451,11 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 
 	rayTraceShader.Use();
 
-	if (!SetupMeshBuffer(rayTraceShader, state))
-		return false;
+	//if (!SetupMeshBuffer(rayTraceShader, state))
+	//	return false;
 
-	RenderHelp::SetupLightingData(rayTraceShader,
+	RenderHelp::SetupLightingData(
+		rayTraceShader,
 		state.lights.dirLightInfos,
 		state.lights.pointLightInfos,
 		state.lights.spotLightInfos,
@@ -445,7 +471,7 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 	//rayTraceShader.setInt("maxBounce", std::min(0, OpenGLRenderConfig::RayTrace_Max_Bounce_limit));
 
 	rayTraceShader.setBool("jitter", useTAA);
-	rayTraceShader.setInt("frameIndex", state.renderRecord.frameIndex % 100000);
+	rayTraceShader.setInt("ncameIndex", state.renderRecord.frameIndex % 100000);
 
 	if (state.rayTraceParams.useGbuffer)
 	{
@@ -460,6 +486,8 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 	rayTraceShader.setTexture(data.atlasShadowMap, "atlasShadowMap", 11);
 
 	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+	WaitFence(_setupfence);
 	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);// 分发计算任务
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 

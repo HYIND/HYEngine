@@ -63,6 +63,7 @@ struct MeshInfo
 	void DrawGeometry(Shader& shader) const;
 	void DrawInstanced(Shader& shader, GLsizei count) const;
 	void DrawGeometryInstanced(Shader& shader, GLsizei count) const;
+	void ApplyMaterial() const;
 	void GetMaterialCompData(MaterialData& comp_data) const;
 };
 

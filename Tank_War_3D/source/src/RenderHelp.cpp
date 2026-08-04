@@ -5,6 +5,8 @@
 #include "ThreadPool.h"
 #include <execution>
 
+#include "OpenGLRenderEngine/General/GPUTimer.h"
+
 #ifdef far
 #undef far
 #endif
@@ -424,15 +426,18 @@ std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments
 #define STB_IMAGE_WRITE_STATIC
 #include "stb/stb_image_write.h"
 
-bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
+bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path, uint32_t level)
 {
 	if (!texture)
 		return false;
 
-	int width = texture->GetWidth();
-	int height = texture->GetHeight();
-	if (width <= 0 || height <= 0)
+	uint32_t oriWidth = texture->GetWidth();
+	uint32_t oriHeight = texture->GetHeight();
+	if (oriWidth <= 0 || oriHeight <= 0)
 		return false;
+
+	uint32_t width = std::max(1u, oriWidth >> level);
+	uint32_t height = std::max(1u, oriHeight >> level);
 
 	int internalFormat = texture->GetInternalFormat();
 	if (internalFormat == GL_RGBA16F || internalFormat == GL_RGBA32F)
@@ -444,7 +449,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_RGBA, GL_FLOAT, pixels.data());
 		}
 
 		std::vector<unsigned char> byteData(width * height * comp);
@@ -475,7 +480,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, pixels.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_RGB, GL_FLOAT, pixels.data());
 		}
 
 		std::vector<unsigned char> byteData(width * height * comp);
@@ -505,7 +510,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, byteData.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_RGBA, GL_UNSIGNED_BYTE, byteData.data());
 		}
 
 		for (int y = 0; y < height / 2; y++)
@@ -527,7 +532,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_RG, GL_FLOAT, pixels.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_RG, GL_FLOAT, pixels.data());
 		}
 
 		std::vector<unsigned char> byteData(width * height * comp);
@@ -556,7 +561,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, byteData.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_RED, GL_UNSIGNED_BYTE, byteData.data());
 		}
 
 		for (int y = 0; y < height / 2; y++)
@@ -578,7 +583,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, oriData.data());
+			glGetTexImage(GL_TEXTURE_2D, level, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, oriData.data());
 		}
 
 		std::vector<unsigned char> byteData(width * height * comp);
@@ -608,7 +613,7 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 
 		stbi_write_png(path.c_str(), width, height, comp, byteData.data(), stride);
 	}
-	else if (internalFormat == GL_DEPTH_COMPONENT || internalFormat == GL_R16F || internalFormat == GL_R32F)
+	else if (internalFormat == GL_DEPTH_COMPONENT || internalFormat == GL_DEPTH_COMPONENT32F || internalFormat == GL_R16F || internalFormat == GL_R32F)
 	{
 		int comp = 1;
 		int stride = width * comp;
@@ -617,7 +622,9 @@ bool DrawTexture(std::shared_ptr<Texture2D> texture, std::string path)
 		{
 			auto guard = THREADCONTEXT->GetBindGuard();
 			glBindTexture(GL_TEXTURE_2D, texture->GetID());
-			glGetTexImage(GL_TEXTURE_2D, 0, internalFormat == GL_DEPTH_COMPONENT ? GL_DEPTH_COMPONENT : GL_RED, GL_FLOAT, pixels.data());
+			glGetTexImage(GL_TEXTURE_2D, level,
+				internalFormat == GL_DEPTH_COMPONENT || internalFormat == GL_DEPTH_COMPONENT32F ? GL_DEPTH_COMPONENT : GL_RED,
+				GL_FLOAT, pixels.data());
 		}
 
 		std::vector<unsigned char> byteData(width * height * comp);
@@ -849,204 +856,275 @@ void SetupSpotLightData(Shader& shader, const std::vector<std::shared_ptr<SpotLi
 	spotLight_ssbo->WriteData(spotLightMetaInfos.data(), spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo), 16);
 }
 
-void RenderHelp::renderGeometryPassScene(
-	RenderState& state,
-	Shader& shader,
-	const std::vector<OpenGLRender::SceneItem>& items,
-	const std::shared_ptr<GroupMapper>& groupmapper
+
+void RenderHelp::renderSceneGeometryPassStatic(
+	RenderState& state, Shader& shader,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
+	std::vector<size_t>& renderIndex
 )
 {
-	static auto needUpdate = [](int& lastGroup, int index, const std::shared_ptr<GroupMapper>& groupmapper)-> bool
-		{
-			if (!groupmapper)
-				return true;
-
-			int curGroup = groupmapper->getGroup(index);
-			if (curGroup != -1 && curGroup == lastGroup)
-				return false;
-
-			lastGroup = curGroup;
-			return true;
-		};
-
-	if (items.empty())
+	if (opaqueMeshes.empty())
 		return;
 
-	Frustum& frustum = state.camera.frustum;
+	GLboolean isCullFaceEnabled = glIsEnabled(GL_CULL_FACE);
 
-	std::vector<glm::vec3> center;
-	std::vector<bool> FrustumCullResult;
-	center.reserve(items.size());
-	FrustumCullResult.resize(items.size(), false);
+	std::shared_ptr<Material> cur_Material;
+	glm::mat4 cur_Model = glm::mat4(1.0f);
+	glm::mat4 cur_PreModel = glm::mat4(1.0f);
 
-	std::for_each(std::execution::par, items.begin(), items.end(),
-		[&](const OpenGLRender::SceneItem& item) {
-			size_t index = &item - items.data();
+	shader.setMat4("model", cur_Model);
+	shader.setMat4("prevModel", cur_PreModel);
 
-			AABB aabbworld = item.meshinfo.mesh->GetAABB();
-			aabbworld.MakeTransform(item.transform);
-			center.push_back(aabbworld.GetCenter());
-
-			if (!item.isFpsSelfModel)
-				FrustumCullResult[index] = !frustum.IsAABBOnFrustum(aabbworld);
-		});
-
-	//std::vector<int> sortedIndices;
-	//sortedIndices.resize(items.size());
-	//std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
-	//std::sort(sortedIndices.begin(), sortedIndices.end(),
-	//	[&](int a, int b) {
-	//		if (FrustumCullResult[a] || items[a].isFpsSelfModel) return true;
-	//		if (FrustumCullResult[b] || items[b].isFpsSelfModel) return false;
-	//		float distA = glm::length2(center[a] - state.camera.position);
-	//		float distB = glm::length2(center[b] - state.camera.position);
-	//		return distA < distB;
-	//	});
-
-	int lastGroup = -1;
-	for (size_t i = 0; i < items.size(); i++)
+	for (size_t i = 0; i < renderIndex.size(); i++)
 	{
-		auto& item = items[i];
+		size_t inedx = renderIndex[i];
 
-		if (item.isFpsSelfModel || FrustumCullResult[i])
-			continue;
+		auto& mesh = opaqueMeshes[inedx];
+		auto& material = mesh.meshinfo.material;
 
-		if (needUpdate(lastGroup, i, groupmapper))
+		if (cur_Model != mesh.transform)
 		{
-			shader.setMat4("model", item.transform);
-			shader.setMat4("prevModel", item.lastTransform);
-			SetupAnimatorGroupData(shader, item.animatorViews);
-			if (item.transform != item.lastTransform)
-			{
-				int i = 0;
-				i++;
-			}
+			shader.setMat4("model", mesh.transform);
+			cur_Model = mesh.transform;
 		}
-
-		item.meshinfo.Draw(shader);
+		if (cur_PreModel != mesh.prevTransform)
+		{
+			shader.setMat4("prevModel", mesh.prevTransform);
+			cur_PreModel = mesh.prevTransform;
+		}
+		if (cur_Material != mesh.meshinfo.material)
+		{
+			mesh.meshinfo.ApplyMaterial();
+			cur_Material = mesh.meshinfo.material;
+		}
+		mesh.meshinfo.DrawGeometry(shader);
 	}
 
-	//// 1. 创建查询对象
-	//GLuint queryID;
-	//glGenQueries(1, &queryID);
-
-	//// 2. 发起查询（绘制包围盒）
-	//glBeginQuery(GL_SAMPLES_PASSED, queryID);  // ← 绑定 queryID
-	//DrawBoundingBox();
-	//glEndQuery(GL_SAMPLES_PASSED);
-
-	//// 3. 条件渲染
-	//glBeginConditionalRender(queryID, GL_QUERY_WAIT);  // ← 同一个 queryID
-	//RenderComplexGeometry();  // 这个绘制是否执行，取决于 queryID 的结果
-	//glEndConditionalRender();
-
-	glEnable(GL_CULL_FACE);
+	if (isCullFaceEnabled == GL_TRUE)
+		glEnable(GL_CULL_FACE);
+	else
+		glDisable(GL_CULL_FACE);
 }
 
-void RenderHelp::renderLightShadowPassScene(
+void RenderHelp::renderSceneGeometryPassSkinned(
+	RenderState& state, Shader& shader,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels,
+	std::vector<std::vector<size_t>>& sortIndexArrays
+)
+{
+	if (opaqueSinnedModels.empty())
+		return;
+
+	GLboolean isCullFaceEnabled = glIsEnabled(GL_CULL_FACE);
+
+	std::shared_ptr<Material> cur_Material;
+	glm::mat4 cur_Model = glm::mat4(1.0f);
+	glm::mat4 cur_PreModel = glm::mat4(1.0f);
+
+	SetupAnimatorGroupData(shader, {});
+	shader.setMat4("model", cur_Model);
+	shader.setMat4("prevModel", cur_PreModel);
+
+	for (size_t i = 0; i < opaqueSinnedModels.size(); i++)
+	{
+		auto& item = opaqueSinnedModels[i];
+
+		if (cur_Model != item.transform)
+		{
+			shader.setMat4("model", item.transform);
+			cur_Model = item.transform;
+		}
+		if (cur_PreModel != item.prevTransform)
+		{
+			shader.setMat4("prevModel", item.prevTransform);
+			cur_PreModel = item.prevTransform;
+		}
+		SetupAnimatorGroupData(shader, *item.animators);
+
+		auto& sort = sortIndexArrays[i];
+		for (int i = 0; i < sort.size(); i++)
+		{
+			auto meshIndex = sort[i];
+			auto& meshinfo = item.models[meshIndex];
+			if (cur_Material != meshinfo.material)
+			{
+				meshinfo.ApplyMaterial();
+				cur_Material = meshinfo.material;
+			}
+			meshinfo.DrawGeometry(shader);
+		}
+	}
+
+	if (isCullFaceEnabled == GL_TRUE)
+		glEnable(GL_CULL_FACE);
+	else
+		glDisable(GL_CULL_FACE);
+}
+
+void RenderHelp::renderSceneLightShadowPassScene(
 	RenderState& state,
 	Shader& shader,
 	GLsizei count,
-	const std::vector<OpenGLRender::SceneItem>& items,
-	const std::shared_ptr<GroupMapper>& groupmapper
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels
 )
 {
-	static auto needUpdate = [](int& lastGroup, int index, const std::shared_ptr<GroupMapper>& groupmapper)-> bool
-		{
-			if (!groupmapper)
-				return true;
+	shader.setInt("count", count);
 
-			int curGroup = groupmapper->getGroup(index);
-			if (curGroup != -1 && curGroup == lastGroup)
-				return false;
+	SetupAnimatorGroupData(shader, {});
+	glm::mat4 cur_Model = glm::mat4(1.0f);
 
-			lastGroup = curGroup;
-			return true;
-		};
+	shader.setMat4("model", cur_Model);
 
-	if (items.empty())
-		return;
-
-
-	int lastGroup = -1;
-	for (size_t i = 0; i < items.size(); i++)
+	for (size_t i = 0; i < opaqueMeshes.size(); i++)
 	{
-		auto& item = items[i];
+		auto& mesh = opaqueMeshes[i];
 
-		if (needUpdate(lastGroup, i, groupmapper))
+		if (cur_Model != mesh.transform)
 		{
-			SetupAnimatorGroupData(shader, item.animatorViews);
-			shader.setMat4("model", item.transform);
+			shader.setMat4("model", mesh.transform);
+			cur_Model = mesh.transform;
 		}
-
-		item.meshinfo.DrawGeometry(shader);
+		mesh.meshinfo.DrawGeometry(shader);
 	}
 
-	glEnable(GL_CULL_FACE);
+	for (size_t i = 0; i < opaqueSinnedModels.size(); i++)
+	{
+		auto& model = opaqueSinnedModels[i];
+
+		if (cur_Model != model.transform)
+		{
+			shader.setMat4("model", model.transform);
+			cur_Model = model.transform;
+		}
+		SetupAnimatorGroupData(shader, *model.animators);
+
+		for (auto& meshinfo : model.models)
+		{
+			meshinfo.DrawGeometry(shader);
+		}
+	}
 }
 
-void RenderHelp::renderLightShadowPassSceneInstance(RenderState& state, Shader& shader, GLsizei count, const std::vector<OpenGLRender::SceneItem>& items, const std::shared_ptr<GroupMapper>& groupmapper)
+void RenderHelp::renderSceneLightShadowPassSceneInstance(
+	RenderState& state, Shader& shader, GLsizei count,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels
+)
 {
-	static auto needUpdate = [](int& lastGroup, int index, const std::shared_ptr<GroupMapper>& groupmapper)-> bool
-		{
-			if (!groupmapper)
-				return true;
+	shader.setInt("count", count);
 
-			int curGroup = groupmapper->getGroup(index);
-			if (curGroup != -1 && curGroup == lastGroup)
-				return false;
+	SetupAnimatorGroupData(shader, {});
+	glm::mat4 cur_Model = glm::mat4(1.0f);
 
-			lastGroup = curGroup;
-			return true;
-		};
+	shader.setMat4("model", cur_Model);
 
-	if (items.empty())
-		return;
-
-	int lastGroup = -1;
-	for (size_t itemIndex = 0; itemIndex < items.size(); itemIndex++)
+	for (size_t i = 0; i < opaqueMeshes.size(); i++)
 	{
-		auto& item = items[itemIndex];
+		auto& mesh = opaqueMeshes[i];
 
-		if (needUpdate(lastGroup, itemIndex, groupmapper))
+		if (cur_Model != mesh.transform)
 		{
-			SetupAnimatorGroupData(shader, item.animatorViews);
-			shader.setMat4("model", item.transform);
+			shader.setMat4("model", mesh.transform);
+			cur_Model = mesh.transform;
 		}
-		item.meshinfo.DrawGeometryInstanced(shader, count);
+		mesh.meshinfo.DrawGeometryInstanced(shader, count);
 	}
 
-	glEnable(GL_CULL_FACE);
+	for (size_t i = 0; i < opaqueSinnedModels.size(); i++)
+	{
+		auto& model = opaqueSinnedModels[i];
+
+		if (cur_Model != model.transform)
+		{
+			shader.setMat4("model", model.transform);
+			cur_Model = model.transform;
+		}
+		SetupAnimatorGroupData(shader, *model.animators);
+
+		for (auto& meshinfo : model.models)
+		{
+			meshinfo.DrawGeometryInstanced(shader, count);
+		}
+	}
 }
 
-void RenderHelp::renderTransparentScene(RenderState& state, Shader& shader, const std::vector<OpenGLRender::SceneTransparentItem>& items)
+void RenderHelp::renderSceneTransparent(
+	RenderState& state, Shader& shader,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::TransparentMeshItem>& transMeshes,
+	std::vector<OpenGLRenderObjectData::SceneRenderData::TransparentSkinnedMeshItem>& transSkinnedMeshes
+)
 {
-	for (auto& item : items)
+	Frustum& frustum = state.camera.frustum;
+
+	std::vector<bool> FrustumCullResult;
+	FrustumCullResult.resize(transMeshes.size(), false);
+
+	std::for_each(std::execution::par, transMeshes.begin(), transMeshes.end(),
+		[&](OpenGLRenderObjectData::SceneRenderData::TransparentMeshItem& mesh)
+		{
+			size_t index = &mesh - transMeshes.data();
+			AABB aabbworld = mesh.meshinfo.mesh->GetAABB();
+			aabbworld.MakeTransform(mesh.transform);
+			FrustumCullResult[index] = !frustum.IsAABBOnFrustum(aabbworld);
+		});
+
+	SetupAnimatorGroupData(shader, {});
+	std::shared_ptr<Material> prevMaterial;
+	for (size_t i = 0; i < transMeshes.size(); i++)
 	{
-		if (item.isFpsSelfModel)
+		auto& mesh = transMeshes[i];
+		if (FrustumCullResult[i])
 			continue;
 
-		SetupAnimatorGroupData(shader, item.animatorViews);
+		auto& material = mesh.meshinfo.material;
 
-		shader.setMat4("model", item.transform);
+		shader.setMat4("model", mesh.transform);
 
-		shader.setFloat("IOR", item.meshinfo.material->GetIOR());
+		if (prevMaterial != mesh.meshinfo.material)
+		{
+			mesh.meshinfo.ApplyMaterial();
+			prevMaterial = mesh.meshinfo.material;
+		}
+		mesh.meshinfo.DrawGeometry(shader);
+	}
 
-		item.meshinfo.Draw(shader);
+	prevMaterial = nullptr;
+	for (size_t i = 0; i < transSkinnedMeshes.size(); i++)
+	{
+		auto& mesh = transSkinnedMeshes[i];
+		if (FrustumCullResult[i])
+			continue;
+
+		auto& material = mesh.meshinfo.material;
+		shader.setMat4("model", mesh.transform);
+		SetupAnimatorGroupData(shader, *mesh.animators);
+
+		if (prevMaterial != mesh.meshinfo.material)
+		{
+			mesh.meshinfo.ApplyMaterial();
+			prevMaterial = mesh.meshinfo.material;
+		}
+		mesh.meshinfo.DrawGeometry(shader);
 	}
 }
 
-void RenderHelp::renderFirstPersonScene(RenderState& state, Shader& shader, const std::vector<OpenGLRender::FirstPersonItem>& items)
+void RenderHelp::renderFirstPerson(
+	RenderState& state, Shader& shader,
+	std::vector<OpenGLRenderObjectData::FirstPersonRenderData::OpaqueMeshItem>& opaqueMeshes,
+	std::vector<OpenGLRenderObjectData::FirstPersonRenderData::OpaqueSkinnedModelItem>& opaqueSkinned,
+	std::vector<OpenGLRenderObjectData::FirstPersonRenderData::TransparentMeshItem>& transparentMeshes,
+	std::vector<OpenGLRenderObjectData::FirstPersonRenderData::OpaqueSkinnedModelItem>& transparentModels
+)
 {
-	for (auto& item : items)
-	{
-		SetupAnimatorGroupData(shader, item.animatorViews);
+	//for (auto& item : items)
+	//{
+	//	SetupAnimatorGroupData(shader, item.animatorViews);
 
-		shader.setMat4("model", glm::mat4(1.0f));
-		shader.setMat4("FpsView", item.cameraView);
+	//	shader.setMat4("CmaeraView", item.cameraView);
 
-		item.meshinfo.Draw(shader);
-	}
+	//	item.meshinfo.Draw(shader);
+	//}
 }
 
 void RenderHelp::renderScreenQuad()
@@ -1350,12 +1428,12 @@ void SetUpAnimatorGroupData(
 				offset += mat_count;
 				animationcount++;
 
-				*view.lastRenderMats = transforms;
+				*view.prevRenderMats = transforms;
 			}
 		}
 		else if (source == WriteAnimatorSource::Previous)
 		{
-			auto& transforms = *view.lastRenderMats;
+			auto& transforms = *view.prevRenderMats;
 			int mat_count = transforms.size();
 
 			MetaInfo info{ offset,mat_count };

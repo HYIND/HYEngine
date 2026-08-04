@@ -1,5 +1,6 @@
 #include "OpenGLRenderEngine/RenderGraph/TexturePool.h"
 #include <format>
+#include "Helper/Tools.h"
 
 using namespace OpenGLRenderGraph;
 
@@ -12,8 +13,8 @@ TextureHandle TexturePool::AllocateTexture(const TextureDesc& desc)
 	if (handle)
 		return handle;
 
-	auto tex = std::make_shared<Texture2D>(desc.width, desc.height, desc.format);
-	tex->SetFiltering(desc.filterMode).SetWrapping(desc.wrapMode);
+	auto tex = std::make_shared<Texture2D>(desc.width, desc.height, desc.format, desc.maxLevel);
+	tex->SetFiltering(desc.minFilterMode, desc.magFilterMode).SetWrapping(desc.wrapSMode, desc.wrapTMode);
 
 	handle = TextureHandle(_nextId++, desc);
 	_textures[handle] = tex;
@@ -33,12 +34,13 @@ void TexturePool::ReleaseTexture(const TextureHandle& handle) {
 	if (it == _textures.end()) return;
 
 	auto key = GenerateKey(handle.GetDesc());
-	_idleTextures[key].insert(handle);
+	_idleTextures[key].push_back(IdleInfo{ handle ,Tool::GetTimestampSecond() });
 }
 
 TexKey TexturePool::GenerateKey(const TextureDesc& desc) const
 {
-	return std::format("{}_{}_{}_{}_{}", desc.width, desc.height, desc.format, desc.filterMode, desc.wrapMode);
+	return std::format("{}_{}_{}_{}_{}_{}_{}_{}",
+		desc.width, desc.height, desc.format, desc.minFilterMode, desc.magFilterMode, desc.wrapSMode, desc.wrapTMode, desc.maxLevel);
 }
 
 TextureHandle TexturePool::FetchIdleTexture(const TexKey& key)
@@ -47,9 +49,37 @@ TextureHandle TexturePool::FetchIdleTexture(const TexKey& key)
 	if (it == _idleTextures.end() || it->second.empty())
 		return TextureHandle();
 
-	auto& set = it->second;
-	TextureHandle handle = *(set.begin());
-	set.erase(set.begin());
+	auto& deque = it->second;
+	auto info = deque.back();
+	deque.pop_back();
 
-	return handle;
+	return info.handle;
+}
+
+void TexturePool::CleanupIdleTextures()
+{
+	auto CleanupDeque = [&](int64_t expireTime, std::deque<IdleInfo>& deque) -> void
+		{
+
+			int64_t currentTime = Tool::GetTimestampSecond();
+
+			while (!deque.empty())
+			{
+				auto& info = deque.front();
+				if (info.timeStamp < expireTime)
+				{
+					_textures.erase(info.handle);
+					deque.pop_front();
+				}
+				else
+					break;
+			}
+		};
+
+	int64_t expireTime = Tool::GetTimestampSecond() - _cleanupThreshold;
+
+	for (auto& pair : _idleTextures) {
+		auto& deque = pair.second;
+		CleanupDeque(expireTime, deque);
+	}
 }

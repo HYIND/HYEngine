@@ -105,6 +105,8 @@ void CreateTestDustScene(World& world)
 			camerafollow.offset = glm::vec3(0, 2.2, 0.2);
 			//world.SetMainCamera(cameraEntity);
 		}
+
+		//CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-30, -7.6, 144), glm::identity<glm::quat>(), model);
 	}
 
 	{
@@ -180,6 +182,7 @@ void CreateTestDustScene(World& world)
 		}
 	}
 
+	if (auto model = ResFactory->GetModelRes(ResName::NewDust2))
 	{
 
 		Entity dust2 = world.createEntity();
@@ -189,29 +192,27 @@ void CreateTestDustScene(World& world)
 
 		glm::vec3 scale = glm::vec3(1.0f);
 
-		if (auto model = ResFactory->GetModelRes(ResName::NewDust2))
+		auto& physics = dust2.addComponent<Physics>();
+		physics.bodyType = Physics::BodyType::Static;
+		physics.isSensor = false;
+		physics.isBullet = true;
+		for (auto& info : model->getMeshInfos())
 		{
-			auto& physics = dust2.addComponent<Physics>();
-			physics.bodyType = Physics::BodyType::Static;
-			physics.isSensor = false;
-			physics.isBullet = true;
-			for (auto& info : model->getMeshInfos())
-			{
-				auto& mesh = info.mesh;
-				if (!mesh)continue;
-				std::vector<glm::vec3> vertices;
-				for (auto& vertex : mesh->GetVertices())
-					vertices.emplace_back(vertex.Position.x, vertex.Position.y, vertex.Position.z);
-				for (auto& v : vertices)
-					v *= scale;
-				physics.collisionShape.AddTriangleMeshShape(vertices, mesh->GetIndices());
-			}
-
-			auto& rendermodel = dust2.addComponent<RenderModel>();
-			rendermodel.model = model;
-			rendermodel.trans = glm::translate(rendermodel.trans, glm::vec3(0, 0, 0));
-			rendermodel.trans = glm::scale(rendermodel.trans, scale);
+			auto& mesh = info.mesh;
+			if (!mesh)continue;
+			std::vector<glm::vec3> vertices;
+			for (auto& vertex : mesh->GetVertices())
+				vertices.emplace_back(vertex.Position.x, vertex.Position.y, vertex.Position.z);
+			for (auto& v : vertices)
+				v *= scale;
+			physics.collisionShape.AddTriangleMeshShape(vertices, mesh->GetIndices());
 		}
+
+		auto& rendermodel = dust2.addComponent<RenderModel>();
+		rendermodel.model = model;
+		rendermodel.trans = glm::translate(rendermodel.trans, glm::vec3(0, 0, 0));
+		rendermodel.trans = glm::scale(rendermodel.trans, scale);
+
 	}
 
 	if (auto model = ResFactory->GetModelRes(ResName::AK47))
@@ -757,8 +758,8 @@ void CreateTestSponzaScene(World& world)
 
 void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world, const MapInfo& mapinfo)
 {
-	CreateTestDustScene(*world);
-	//CreateTestGameScene(*world);
+	//CreateTestDustScene(*world);
+	CreateTestGameScene(*world);
 	//CreateTestSponzaScene(*world);
 }
 

@@ -145,148 +145,13 @@ void Render::Renderer::renderOpenGLFrame(float delatTime, std::shared_ptr<Render
 	if (!framedata)
 		return;
 
-	auto& contexts = framedata->GL_Contexts;
-
 	RenderState state = RenderStateBuilder()
 		.SetCamera(framedata->projection, framedata->view,
 			framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
 			framedata->nearPlane, framedata->farPlane, framedata->fov)
 		.Build();
 
-	state.objects.sceneItems.reserve(3000);
-	state.objects.sceneTransparentItems.reserve(100);
-	state.objects.firstPersonItems.reserve(100);
-
-	auto& renderItems = state.objects.sceneItems;
-	auto& transparentRenderItems = state.objects.sceneTransparentItems;
-	auto& firstPersonRenderItem = state.objects.firstPersonItems;
-	auto& effectItem = state.objects.effectItems;
-
-	auto& dirLightInfos = state.lights.dirLightInfos;
-	auto& pointLightInfos = state.lights.pointLightInfos;;
-	auto& spotLightInfos = state.lights.spotLightInfos;
-
-	//std::sort(state.objects.sceneTransparentItems.begin(), state.objects.sceneTransparentItems.end(),
-	//	[&](const OpenGLRender::SceneTransparentItem& item1, const OpenGLRender::SceneTransparentItem& item2)-> bool
-	//	{
-	//		auto aabb1 = item1.meshinfo.mesh->GetAABB();
-	//		auto aabb2 = item2.meshinfo.mesh->GetAABB();
-	//		aabb1.MakeTransform(item1.transform);
-	//		aabb2.MakeTransform(item2.transform);
-	//		auto cernter1 = aabb1.min + (aabb1.max - aabb1.min) / 2.f;
-	//		auto cernter2 = aabb2.min + (aabb2.max - aabb2.min) / 2.f;
-	//		auto distance1 = glm::length2(state.camera.position - cernter1);
-	//		auto distance2 = glm::length2(state.camera.position - cernter2);
-	//		return distance1 > distance2;
-	//	}
-	//);
-
-	std::vector<shared_ptr<OpenGLRenderContext::SceneModelRenderData>> seceneModelContexts;
-	std::vector<shared_ptr<OpenGLRenderContext::FirstPersonRenderData>> firstModelContexts;
-
-	for (auto& context : contexts)
-	{
-		if (!context || !context->data)
-			continue;
-
-		switch (context->type)
-		{
-		case OpenGLRenderContext::RenderContextType::Model:
-		{
-			seceneModelContexts.emplace_back(std::move(std::static_pointer_cast<OpenGLRenderContext::SceneModelRenderData>(context->data)));
-			break;
-		}
-		case OpenGLRenderContext::RenderContextType::DirLight:
-		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::DirLightRenderData>(context->data);
-			if (ptr && ptr->light)
-			{
-				auto info = std::make_shared<DirLightInfo>();
-				info->light = ptr->light;
-				info->renderCube = ptr->renderCube;
-				dirLightInfos.push_back(std::move(info));
-			}
-			break;
-		}
-		case OpenGLRenderContext::RenderContextType::PointLight:
-		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::PointLightRenderData>(context->data);
-			if (ptr && ptr->light)
-			{
-				auto info = std::make_shared<PointLightInfo>();
-				info->light = ptr->light;
-				info->renderCube = ptr->renderCube;
-				pointLightInfos.push_back(std::move(info));
-			}
-			break;
-		}
-		case OpenGLRenderContext::RenderContextType::SpotLight:
-		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::SpotLightRenderData>(context->data);
-			if (ptr && ptr->light)
-			{
-				auto info = std::make_shared<SpotLightInfo>();
-				info->light = ptr->light;
-				info->renderCube = ptr->renderCube;
-				spotLightInfos.push_back(std::move(info));
-			}
-			break;
-		}
-		case OpenGLRenderContext::RenderContextType::FirstPersonModel:
-		{
-			firstModelContexts.emplace_back(std::move(std::static_pointer_cast<OpenGLRenderContext::FirstPersonRenderData>(context->data)));
-			break;
-		}
-		case OpenGLRenderContext::RenderContextType::Effect:
-		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::EffectRenderData>(context->data);
-			if (ptr && ptr->properties)
-			{
-				effectItem.push_back(ptr->properties);
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-
-	//std::sort(seceneModelContexts.begin(), seceneModelContexts.end(),
-	//	[&](const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data1, const std::shared_ptr < OpenGLRenderContext::SceneModelRenderData>& data2)-> bool
-	//	{
-	//		auto aabb1 = data1->model->GetAABB();
-	//		auto aabb2 = data2->model->GetAABB();
-	//		aabb1.MakeTransform(data1->transformView.transformTripleBuffer->acquireReadBuffer());
-	//		aabb2.MakeTransform(data2->transformView.transformTripleBuffer->acquireReadBuffer());
-	//		auto cernter1 = aabb1.min + (aabb1.max - aabb1.min) / 2.f;
-	//		auto cernter2 = aabb2.min + (aabb2.max - aabb2.min) / 2.f;
-	//		auto distance1 = glm::length2(state.camera.position - cernter1);
-	//		auto distance2 = glm::length2(state.camera.position - cernter2);
-	//		return distance1 > distance2;
-	//	}
-	//);
-
-	for (auto& data : seceneModelContexts)
-	{
-		processModel(
-			state,
-			renderItems,
-			transparentRenderItems,
-			*(state.objectsGroupMapper.sceneItemsGroupMapper),
-			*(state.objectsGroupMapper.sceneTransparentItemsGroupMapper),
-			data
-		);
-	}
-
-	for (auto& data : firstModelContexts)
-	{
-		processFirstPersonModel(
-			state,
-			firstPersonRenderItem,
-			*(state.objectsGroupMapper.firstPersonItemsGroupMapper),
-			data
-		);
-	}
+	AnalysisRenderFrameData(framedata, state);
 
 	if (auto r = _openglRenderer)
 	{
@@ -453,95 +318,268 @@ void Render::Renderer::processDebugLines(std::shared_ptr<D2DRenderContext::Debug
 	}
 }
 
-void Renderer::processModel(
+void Render::Renderer::AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state)
+{
+	auto& contexts = framedata->GL_Contexts;
+
+	auto& dirLightInfos = state.lights.dirLightInfos;
+	auto& pointLightInfos = state.lights.pointLightInfos;;
+	auto& spotLightInfos = state.lights.spotLightInfos;
+
+	for (auto& context : contexts)
+	{
+		if (!context || !context->data)
+			continue;
+
+		switch (context->type)
+		{
+		case OpenGLRenderContext::RenderContextType::Model:
+		{
+			processSceneModel(
+				state,
+				state.objects.sceneRenderData,
+				std::static_pointer_cast<OpenGLRenderContext::SceneModelRenderData>(context->data)
+			);
+			break;
+		}
+		case OpenGLRenderContext::RenderContextType::DirLight:
+		{
+			auto ptr = std::static_pointer_cast<OpenGLRenderContext::DirLightRenderData>(context->data);
+			if (ptr && ptr->light)
+			{
+				auto info = std::make_shared<DirLightInfo>();
+				info->light = ptr->light;
+				info->renderCube = ptr->renderCube;
+				dirLightInfos.push_back(std::move(info));
+			}
+			break;
+		}
+		case OpenGLRenderContext::RenderContextType::PointLight:
+		{
+			auto ptr = std::static_pointer_cast<OpenGLRenderContext::PointLightRenderData>(context->data);
+			if (ptr && ptr->light)
+			{
+				auto info = std::make_shared<PointLightInfo>();
+				info->light = ptr->light;
+				info->renderCube = ptr->renderCube;
+				pointLightInfos.push_back(std::move(info));
+			}
+			break;
+		}
+		case OpenGLRenderContext::RenderContextType::SpotLight:
+		{
+			auto ptr = std::static_pointer_cast<OpenGLRenderContext::SpotLightRenderData>(context->data);
+			if (ptr && ptr->light)
+			{
+				auto info = std::make_shared<SpotLightInfo>();
+				info->light = ptr->light;
+				info->renderCube = ptr->renderCube;
+				spotLightInfos.push_back(std::move(info));
+			}
+			break;
+		}
+		case OpenGLRenderContext::RenderContextType::FirstPersonModel:
+		{
+			processFirstPersonModel(
+				state,
+				state.objects.firstPersonRenderData,
+				std::static_pointer_cast<OpenGLRenderContext::FirstPersonRenderData>(context->data)
+			);
+			break;
+		}
+		case OpenGLRenderContext::RenderContextType::Effect:
+		{
+			auto ptr = std::static_pointer_cast<OpenGLRenderContext::SceneEffectRenderData>(context->data);
+			if (ptr && ptr->properties)
+				state.objects.sceneRenderData.effectItems.push_back(ptr->properties);
+			break;
+		}
+		default:
+			break;
+		}
+	}
+
+	SortRenderObject(state);
+}
+
+void Renderer::processSceneModel(
 	RenderState& state,
-	std::vector<OpenGLRender::SceneItem>& items,
-	std::vector<OpenGLRender::SceneTransparentItem>& transparentItems,
-	GroupMapper& itemsGroupMapper,
-	GroupMapper& transparentItemsGroupMapper,
+	OpenGLRenderObjectData::SceneRenderData& renderData,
 	const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
 )
 {
+	using OpaqueMeshItem = OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem;
+	using TransparentMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentMeshItem;
+	using OpaqueSkinnedModelItem = OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem;
+	using TransparentSkinnedMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentSkinnedMeshItem;
+
 	if (!data || !data->model)
 		return;
 
-	auto VP = state.camera.projection * state.camera.view;
+	auto transform = data->transformView.transformTripleBuffer->acquireReadBuffer();
+	auto prevTransform = *data->transformView.prevRenderTransforms;
 
-	int scene_count = 0;
-	int transp_count = 0;
-	for (auto& info : data->model->getMeshInfos())
+	*data->transformView.prevRenderTransforms = transform;
+
+	if (data->animatorViews.empty())
 	{
-		if (!info.mesh || !info.material)
-			continue;
-
-		float opacity = info.material->GetOpacity();
-		AlphaMode mode = info.material->GetAlphaMode();
-		if (opacity <= 0.f)
-			continue;
-
-		bool isTransprant = opacity < 1.0f || mode == AlphaMode::Blend;
-		if (isTransprant)
+		for (auto& info : data->model->getMeshInfos())
 		{
-			OpenGLRender::SceneTransparentItem tItem;
-			tItem.transform = data->transformView.transformTripleBuffer->acquireReadBuffer();
-			tItem.lastTransform = *data->transformView.lastRenderTransforms;
-			tItem.meshinfo = info;
-			tItem.animatorViews = data->animatorViews;
-			tItem.isFpsSelfModel = data->isFpsSelfModel;
-			transparentItems.push_back(tItem);
-			transp_count++;
+			if (!info.mesh || !info.material)
+				continue;
 
-			*data->transformView.lastRenderTransforms = tItem.transform;
-		}
-		else
-		{
-			OpenGLRender::SceneItem item;
-			item.transform = data->transformView.transformTripleBuffer->acquireReadBuffer();
-			item.lastTransform = *data->transformView.lastRenderTransforms;
-			item.meshinfo = info;
-			item.animatorViews = data->animatorViews;
-			item.isFpsSelfModel = data->isFpsSelfModel;
-			items.push_back(item);
-			scene_count++;
+			float opacity = info.material->GetOpacity();
+			AlphaMode mode = info.material->GetAlphaMode();
+			if (opacity <= 0.f)
+				continue;
 
-			*data->transformView.lastRenderTransforms = item.transform;
+			bool isTransprant = opacity < 1.0f || mode == AlphaMode::Blend;
+			if (isTransprant)
+			{
+				TransparentMeshItem item;
+				item.transform = transform;
+				item.prevTransform = prevTransform;
+				item.meshinfo = info;
+				renderData.transparentMesh.push_back(item);
+			}
+			else
+			{
+				OpaqueMeshItem item;
+				item.transform = transform;
+				item.prevTransform = prevTransform;
+				item.meshinfo = info;
+				renderData.opaqueMesh.push_back(item);
+			}
 		}
 	}
-	if (scene_count > 0)
-		itemsGroupMapper.addGroup(scene_count);
-	//if (transp_count > 0) 
-		//transparentItemsGroupMapper.addGroup(transp_count);
+	else
+	{
+		std::vector<MeshInfo> meshInfos;
+		auto shadredAnimatorViews = std::make_shared<std::vector<OpenGLRenderContext::AnimatorView>>(data->animatorViews);
+
+		for (auto& info : data->model->getMeshInfos())
+		{
+			if (!info.mesh || !info.material)
+				continue;
+
+			float opacity = info.material->GetOpacity();
+			AlphaMode mode = info.material->GetAlphaMode();
+			if (opacity <= 0.f)
+				continue;
+
+			bool isTransprant = opacity < 1.0f || mode == AlphaMode::Blend;
+			if (isTransprant)
+			{
+				TransparentSkinnedMeshItem item;
+				item.transform = transform;
+				item.prevTransform = prevTransform;
+				item.meshinfo = info;
+				item.animators = shadredAnimatorViews;
+				renderData.transparentSkinnedMesh.push_back(item);
+			}
+			else
+			{
+				meshInfos.push_back(info);
+			}
+		}
+		if (!meshInfos.empty())
+		{
+			OpaqueSkinnedModelItem item;
+			item.transform = transform;
+			item.prevTransform = prevTransform;
+			item.models = std::move(meshInfos);
+			item.animators = shadredAnimatorViews;
+			renderData.opaqueSkinnedModel.push_back(item);
+		}
+	}
 }
 
 void Renderer::processFirstPersonModel(
 	RenderState& state,
-	std::vector<OpenGLRender::FirstPersonItem>& items,
-	GroupMapper& itemsGroupMapper,
+	OpenGLRenderObjectData::FirstPersonRenderData& renderData,
 	const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data)
 {
+	using OpaqueMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::OpaqueMeshItem;
+	using TransparentMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::TransparentMeshItem;
+	using OpaqueSkinnedModelItem = OpenGLRenderObjectData::FirstPersonRenderData::OpaqueSkinnedModelItem;
+	using TransparentSkinnedMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::TransparentSkinnedMeshItem;
+
 	if (!data || !data->model)
 		return;
 
-	int count = 0;
-	for (auto& info : data->model->getMeshInfos())
+	auto cameraView = data->cameraView;
+
+	if (data->animatorViews.empty())
 	{
-		if (!info.mesh || !info.material)
-			continue;
+		for (auto& info : data->model->getMeshInfos())
+		{
+			if (!info.mesh || !info.material)
+				continue;
 
-		float opacity = info.material->GetOpacity();
-		if (opacity <= 0.f)
-			continue;
+			float opacity = info.material->GetOpacity();
+			AlphaMode mode = info.material->GetAlphaMode();
+			if (opacity <= 0.f)
+				continue;
 
-		OpenGLRender::FirstPersonItem item;
-		item.cameraView = data->cameraView;
-		item.meshinfo = info;
-		item.animatorViews = data->animatorViews;
-
-		items.push_back(item);
-		count++;
+			bool isTransprant = opacity < 1.0f || mode == AlphaMode::Blend;
+			if (isTransprant)
+			{
+				TransparentMeshItem item;
+				item.cameraView = cameraView;
+				item.meshinfo = info;
+				renderData.transparentMesh.push_back(item);
+			}
+			else
+			{
+				OpaqueMeshItem item;
+				item.cameraView = cameraView;
+				item.meshinfo = info;
+				renderData.opaqueMesh.push_back(item);
+			}
+		}
 	}
-	if (count > 0)
-		itemsGroupMapper.addGroup(count);
+	else
+	{
+		std::vector<MeshInfo> meshInfos;
+		auto shadredAnimatorViews = std::make_shared<std::vector<OpenGLRenderContext::AnimatorView>>(std::move(data->animatorViews));
+
+		for (auto& info : data->model->getMeshInfos())
+		{
+			if (!info.mesh || !info.material)
+				continue;
+
+			float opacity = info.material->GetOpacity();
+			AlphaMode mode = info.material->GetAlphaMode();
+			if (opacity <= 0.f)
+				continue;
+
+			bool isTransprant = opacity < 1.0f || mode == AlphaMode::Blend;
+			if (isTransprant)
+			{
+				TransparentSkinnedMeshItem item;
+				item.cameraView = cameraView;
+				item.meshinfo = info;
+				item.animators = shadredAnimatorViews;
+				renderData.transparentSkinnedMesh.push_back(item);
+			}
+			else
+			{
+				meshInfos.push_back(info);
+			}
+		}
+		if (!meshInfos.empty())
+		{
+			OpaqueSkinnedModelItem item;
+			item.cameraView = cameraView;
+			item.models = std::move(meshInfos);
+			item.animators = shadredAnimatorViews;
+			renderData.opaqueSkinnedModel.push_back(item);
+		}
+	}
+}
+
+void Render::Renderer::SortRenderObject(RenderState& state)
+{
 }
 
 void Render::Renderer::ConvertGLTextureToD2DBitmap()

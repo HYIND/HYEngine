@@ -4,6 +4,7 @@
 #include "RenderGraphResourceManager.h"
 #include "PassNode.h"
 #include "DependencySolver.h"
+#include "ThreadPool.h"
 
 namespace OpenGLRenderGraph
 {
@@ -50,5 +51,10 @@ namespace OpenGLRenderGraph
 		int _compiledVersion = 0;
 
 		GLuint _renderTargetFBO = 0;
+
+		ThreadPool _frameParallelPool;
+
+		int64_t _lastCleanupTimeAccumulator;
+		int64_t _CleanupThresold = 10;
 	};
 }

@@ -2,7 +2,7 @@
 #include <vector>
 #include "Helper/Tools.h"
 
-#define GPUTimer_Disable
+//#define GPUTimer_Disable
 
 #ifdef GPUTimer_Disable
 constexpr bool GPUTimer_Enable = false;

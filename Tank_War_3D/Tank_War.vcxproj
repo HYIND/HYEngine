@@ -293,6 +293,7 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\DepthFogPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\FirstPersonPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\GeometryPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\HZBPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightDrawPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightingPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightShadowDepthPass.h" />
@@ -399,6 +400,7 @@
     <ClCompile Include="source\src\GPUTimer.cpp" />
     <ClCompile Include="source\src\GroupMapper.cpp" />
     <ClCompile Include="source\src\HealthSystem.cpp" />
+    <ClCompile Include="source\src\HZBPass.cpp" />
     <ClCompile Include="source\src\LaserBeamSystem.cpp" />
     <ClCompile Include="source\src\Light.cpp" />
     <ClCompile Include="source\src\LightFollowSystem.cpp" />

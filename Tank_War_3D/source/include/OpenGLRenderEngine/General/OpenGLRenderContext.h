@@ -19,7 +19,7 @@ namespace OpenGLRenderContext
 		using MatDatasTripleBuffer = TripleBuffer<MatDatas>;
 
 		std::shared_ptr<MatDatasTripleBuffer> matTripleBuffer = std::make_shared<MatDatasTripleBuffer>();
-		std::shared_ptr<MatDatas> lastRenderMats = std::make_shared<MatDatas>();
+		std::shared_ptr<MatDatas> prevRenderMats = std::make_shared<MatDatas>();
 	};
 
 	struct TransFormView
@@ -27,53 +27,52 @@ namespace OpenGLRenderContext
 		using MatTripleBuffer = TripleBuffer<glm::mat4>;
 
 		std::shared_ptr<MatTripleBuffer> transformTripleBuffer = std::make_shared<MatTripleBuffer>();
-		std::shared_ptr<glm::mat4> lastRenderTransforms = std::make_shared<glm::mat4>();
+		std::shared_ptr<glm::mat4> prevRenderTransforms = std::make_shared<glm::mat4>();
 	};
 
 	struct BaseRenderData
 	{
 	};
 
-	struct ModelRenderData :public BaseRenderData
+	struct BaseModelRenderData :public BaseRenderData
 	{
 		std::shared_ptr<Model> model;
+		std::vector<AnimatorView> animatorViews;
+	};
+
+	struct SceneModelRenderData :public BaseModelRenderData
+	{
 		TransFormView transformView;
-		std::vector<AnimatorView> animatorViews;
 	};
 
-	struct SceneModelRenderData :public ModelRenderData
+	struct SceneEffectRenderData :public BaseRenderData
 	{
-		bool isFpsSelfModel = false;
+		std::shared_ptr<BaseEffectProperties> properties;
 	};
 
-	struct FirstPersonRenderData :public BaseRenderData
+	struct FirstPersonRenderData :public BaseModelRenderData
 	{
-		std::shared_ptr<Model> model;
-		std::vector<AnimatorView> animatorViews;
 		glm::mat4 cameraView;
 	};
 
-	struct DirLightRenderData :public BaseRenderData
+	struct BaseLightData :public BaseRenderData
+	{
+		bool renderCube;
+	};
+
+	struct DirLightRenderData :public BaseLightData
 	{
 		std::shared_ptr<DirLight> light;
-		bool renderCube = true;
 	};
 
-	struct PointLightRenderData :public BaseRenderData
+	struct PointLightRenderData :public BaseLightData
 	{
 		std::shared_ptr<PointLight> light;
-		bool renderCube = true;
 	};
 
-	struct SpotLightRenderData :public BaseRenderData
+	struct SpotLightRenderData :public BaseLightData
 	{
 		std::shared_ptr<SpotLight> light;
-		bool renderCube = true;
-	};
-
-	struct EffectRenderData :public BaseRenderData
-	{
-		std::shared_ptr<BaseEffectProperties> properties;
 	};
 
 	enum class RenderContextType

@@ -57,9 +57,11 @@ public:
 	void Release();
 
 	void Use();
+	void Close();
 
 	void setBool(const std::string& name, bool value);
 	void setInt(const std::string& name, int value);
+	void setUInt(const std::string& name, uint32_t value);
 	void setFloat(const std::string& name, float value);
 	void setMat4(const std::string& name, const glm::mat4& value);
 	void setVec2(const std::string& name, const glm::vec2& value);

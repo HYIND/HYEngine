@@ -2,22 +2,27 @@
 
 using namespace OpenGLRenderGraph;
 
-TextureDesc GetDesc(const std::shared_ptr<Texture2D>& texture)
-{
-	if (!texture)
-		return TextureDesc();
-
-	TextureDesc desc;
-	desc.width = texture->GetWidth();
-	desc.height = texture->GetHeight();
-	desc.format = texture->GetInternalFormat();
-	desc.filterMode = texture->GetMagFilter();
-	desc.wrapMode = texture->GetWrapS();
-}
-
 RenderGraph::RenderGraph(const std::string& name)
 	:_name(name)
 {
+	_frameParallelPool.start();
+
+	// 为线程池初始化共享上下文
+	RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
+		THREADCONTEXT->UnBind();
+		std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> Handles;
+		for (int i = 0; i < _frameParallelPool.workersize(); i++)
+		{
+			Handles.push_back(std::move(_frameParallelPool.submit([&]()->void {
+				auto guard = THREADCONTEXT->GetBindGuard();
+				})
+			));
+		}
+		for (auto& handle : Handles)
+			handle->get();
+
+		THREADCONTEXT->Bind();
+		});
 }
 
 RenderGraph::~RenderGraph()
@@ -95,71 +100,156 @@ void RenderGraph::Compile() {
 	_compiledVersion++;
 }
 
+#include "OpenGLRenderEngine/General/GPUTimer.h"
+
 // 执行
-void RenderGraph::Execute(RenderState& state) {
+void RenderGraph::Execute(RenderState& state)
+{
+	auto time = Tool::GetTimestampSecond();
+	if (time - _lastCleanupTimeAccumulator > _CleanupThresold)
+	{
+		if (_lastCleanupTimeAccumulator != 0)
+			_resManager.CleanupIdleResource();
+		_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
+	}
+
 	if (_needsCompile) {
 		Compile();
 	}
 
+	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
 	for (auto& pass : _sortedPasses)
-		pass->FrameBegin(state);
-
-	for (int i = 0; i < _sortedPasses.size(); i++)
 	{
-		auto* pass = _sortedPasses[i];
-		int passIndex = i;
-		if (pass->ShouldExecute(state))
-		{
-			PassContext ctx;
-			ctx.renderTargetFBO = _renderTargetFBO;
-			ctx.passName = pass->GetName();
-
-			for (const auto& input : pass->GetInputs()) {
-				ctx.inputTextures.push_back(_resManager.GetTexture(input));
-			}
-
-			for (const auto& input : pass->GetInputOptions()) {
-				ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input));
-			}
-
-			for (const auto& output : pass->GetOutputs()) {
-				ctx.outputTextures.push_back(_resManager.GetTexture(output));
-			}
-
-			for (const auto& temp : pass->GetTemps()) {
-				ctx.tempTextures.push_back(_resManager.GetTexture(temp));
-			}
-
-			for (const auto& persitent : pass->GetPersistents()) {
-				ctx.persitentTextures.push_back(_resManager.GetTexture(persitent));
-			}
-
-			for (const auto& external : pass->GetExternals()) {
-				if (external.type == ResourceType::Texture)
-					ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
-			}
-
-			pass->Execute(ctx, state);
-		}
-
-		for (auto& res : pass->GetLifeCycleResource())
-		{
-			auto it = _lifecycles.find(res);
-			if (it == _lifecycles.end())
-				return;
-
-			auto& lifecycle = it->second;
-			if (lifecycle.lastPass <= passIndex)
+		BeginHandles.push_back(std::move(_frameParallelPool.submit(
+			[pass = pass, &state]()->void
 			{
-				_resManager.ReleaseTexture(res);
-				//std::cout << std::format("release res [{}]\n", res.name);
-			}
-		}
+				pass->FrameBegin(state);
+			})
+		));
 	}
 
+	auto GetBatch = [&](int& startIndex, std::vector<int>& batchs, int& batchIndex)-> bool
+		{
+			if (startIndex >= _sortedPasses.size())
+				return false;
 
+			int lastBatch = _sortedPasses[startIndex]->GetBatch();
+			while (startIndex < _sortedPasses.size())
+			{
+				auto* pass = _sortedPasses[startIndex];
+				int currentBatch = pass->GetBatch();
+
+				if (currentBatch != lastBatch || lastBatch == -1)
+					break;
+
+				batchs.push_back(startIndex);
+				startIndex++;
+			}
+
+			batchIndex = lastBatch;
+			return !batchs.empty();
+		};
+
+	auto ExcuteBatch = [&](int batchIndex, std::vector<int>& batchs)-> void
+		{
+			std::vector<RenderGraphResource> BatchLifeCycleResource;
+
+			auto ExcutePass = [&](int passIndex)-> void
+				{
+					auto* pass = _sortedPasses[passIndex];
+
+					if (pass->ShouldExecute(state))
+					{
+						PassContext ctx;
+						ctx.renderTargetFBO = _renderTargetFBO;
+						ctx.passName = pass->GetName();
+
+						for (const auto& input : pass->GetInputs()) {
+							ctx.inputTextures.push_back(_resManager.GetTexture(input));
+						}
+
+						for (const auto& input : pass->GetInputOptions()) {
+							ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input));
+						}
+
+						for (const auto& output : pass->GetOutputs()) {
+							ctx.outputTextures.push_back(_resManager.GetTexture(output));
+						}
+
+						for (const auto& temp : pass->GetTemps()) {
+							ctx.tempTextures.push_back(_resManager.GetTexture(temp));
+						}
+
+						for (const auto& persitent : pass->GetPersistents()) {
+							ctx.persitentTextures.push_back(_resManager.GetTexture(persitent));
+						}
+
+						for (const auto& external : pass->GetExternals()) {
+							if (external.type == ResourceType::Texture)
+								ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
+						}
+
+						pass->Execute(ctx, state);
+					}
+
+					auto& passLifeTimeResource = pass->GetLifeCycleResource();
+					BatchLifeCycleResource.insert(BatchLifeCycleResource.end(), passLifeTimeResource.begin(), passLifeTimeResource.end());
+				};
+
+			std::unordered_set<int> pendingSet;
+			for (int idx : batchs) {
+				pendingSet.insert(idx);
+			}
+
+			while (!pendingSet.empty())
+			{
+				for (auto it = pendingSet.begin(); it != pendingSet.end(); )
+				{
+					int idx = *it;
+					auto& handle = BeginHandles[idx];
+
+					if (handle->is_ready())
+					{
+						it = pendingSet.erase(it);
+						ExcutePass(idx);
+					}
+					else {
+						++it;
+					}
+				}
+			}
+
+			for (auto& res : BatchLifeCycleResource)
+			{
+				auto it = _lifecycles.find(res);
+				if (it == _lifecycles.end())
+					return;
+
+				auto& lifecycle = it->second;
+				if (lifecycle.lastBatch <= batchIndex)
+				{
+					_resManager.ReleaseTexture(res);
+					//std::cout << std::format("release res [{}]\n", res.name);
+				}
+			}
+
+		};
+
+	int passIndex = 0;
+	int batchIndex = -1;
+	std::vector<int> batchs;
+	while (GetBatch(passIndex, batchs, batchIndex))
+	{
+		ExcuteBatch(batchIndex, batchs);
+		batchs.clear();
+	}
+
+	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EndHandles;
 	for (auto& pass : _sortedPasses)
-		pass->FrameEnd(state);
+		BeginHandles.push_back(std::move(_frameParallelPool.submit([pass = pass, &state]()->void {pass->FrameEnd(state); })));
+	for (auto& handle : EndHandles)
+		handle->get();
+
 }
 
 // 清空

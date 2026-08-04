@@ -16,11 +16,6 @@ public:
 	template <typename T>
 	class SubmitHandle
 	{
-	private:
-		std::shared_ptr<std::packaged_task<T()>> task_ptr;
-		uint32_t thread_id;
-		std::weak_ptr<int> taskliveflag;
-
 	public:
 		SubmitHandle(std::shared_ptr<std::packaged_task<T()>> task_ptr, uint32_t thread_id, std::weak_ptr<int> taskliveflag)
 			: task_ptr(std::move(task_ptr)), thread_id(thread_id), taskliveflag(taskliveflag) {
@@ -47,21 +42,12 @@ public:
 			return *this;
 		}
 
-		std::future<T> get_future() const
-		{
-			if (!task_ptr)
-			{
-				throw std::future_error(std::future_errc::no_state);
-			}
-			return task_ptr->get_future();
-		}
-
 		T get()
 		{
 			if (!task_ptr)
 				throw std::future_error(std::future_errc::no_state);
 
-			auto fut = task_ptr->get_future();
+			auto& fut = get_future();
 			if (taskliveflag.expired())
 			{
 				if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
@@ -96,10 +82,24 @@ public:
 				if (status == std::future_status::timeout)
 				{
 					if (taskliveflag.expired())
-						throw std::runtime_error("ThreadPool is force stopped!");
-					continue;
+					{
+						if (fut.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+						{
+							try
+							{
+								return fut.get();
+							}
+							catch (...)
+							{
+								throw;
+							}
+						}
+						else
+							throw std::runtime_error("ThreadPool is force stopped!");
+					}
 				}
-				throw std::runtime_error("Task future_status error!");
+				else
+					throw std::runtime_error("Task future_status error!");
 			}
 		}
 
@@ -109,7 +109,7 @@ public:
 			if (!task_ptr)
 				throw std::future_error(std::future_errc::no_state);
 
-			auto fut = task_ptr->get_future();
+			auto& fut = get_future();
 			if (taskliveflag.expired())
 			{
 				auto status = fut.wait_for(std::chrono::seconds(0));
@@ -124,7 +124,7 @@ public:
 						throw;
 					}
 				}
-				if (status == std::future_status::timeout)
+				else
 					throw std::runtime_error("ThreadPool is force stopped!");
 			}
 
@@ -143,8 +143,42 @@ public:
 			if (status == std::future_status::timeout)
 			{
 				if (taskliveflag.expired())
-					throw std::runtime_error("ThreadPool is force stopped!");
+				{
+					auto status = fut.wait_for(std::chrono::seconds(0));
+					if (status != std::future_status::ready)
+						throw std::runtime_error("ThreadPool is force stopped!");
+				}
 				throw std::runtime_error("Task timeout");
+			}
+			throw std::runtime_error("Task future_status error!");
+		}
+
+		bool is_ready()
+		{
+			if (!task_ptr)
+				throw std::future_error(std::future_errc::no_state);
+
+			auto& fut = get_future();
+			if (taskliveflag.expired())
+			{
+				auto status = fut.wait_for(std::chrono::seconds(0));
+				if (status != std::future_status::ready)
+					throw std::runtime_error("ThreadPool is force stopped!");
+				return true;
+			}
+
+			auto status = fut.wait_for(std::chrono::seconds(0));
+			if (status == std::future_status::ready)
+				return true;
+			if (status == std::future_status::timeout)
+			{
+				if (taskliveflag.expired())
+				{
+					auto status = fut.wait_for(std::chrono::seconds(0));
+					if (status != std::future_status::ready)
+						throw std::runtime_error("ThreadPool is force stopped!");
+				}
+				return false;
 			}
 			throw std::runtime_error("Task future_status error!");
 		}
@@ -160,6 +194,27 @@ public:
 		}
 
 		~SubmitHandle() = default;
+
+	private:
+		std::future<T>& get_future() const
+		{
+			std::call_once(future_flag, [&]()->void {
+				if (!task_ptr)
+				{
+					throw std::future_error(std::future_errc::no_state);
+				}
+				future = task_ptr->get_future();
+				});
+
+			return future;
+		}
+
+	private:
+		std::shared_ptr<std::packaged_task<T()>> task_ptr;
+		mutable std::once_flag future_flag;
+		mutable std::future<T> future;
+		uint32_t thread_id;
+		std::weak_ptr<int> taskliveflag;
 	};
 
 private:
