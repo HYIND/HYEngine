@@ -527,7 +527,7 @@ void CreateTestGameScene(World& world)
 		auto& physics = character.getComponent<Physics>();
 		physics.walkSpeed = 15.f;
 		physics.mass = 45.f;
-		character.addComponent<TagCurrentControl>();
+		//character.addComponent<TagCurrentControl>();
 
 		{
 			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
@@ -947,8 +947,8 @@ void CreateTestSponzaScene(World& world)
 
 void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world)
 {
-	CreateTestDustScene(*world);
-	//CreateTestGameScene(*world);
+	//CreateTestDustScene(*world);
+	CreateTestGameScene(*world);
 	//CreateTestSponzaScene(*world);
 }
 

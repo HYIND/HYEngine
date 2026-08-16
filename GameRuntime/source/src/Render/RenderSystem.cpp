@@ -6,6 +6,11 @@
 
 using namespace Render;
 
+RenderSystem::RenderSystem()
+	:_pool(0)
+{
+}
+
 void RenderSystem::SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer)
 {
 	_triBuffer = triBuffer;
@@ -27,24 +32,31 @@ void RenderSystem::postUpdate(float deltaTime)
 	if (!bufferframe)
 		return;
 
-	processSprite(bufferframe);
-	processGIFAnimation(bufferframe);
-	processDebugLines(bufferframe);
+	if (!_pool.running())
+		_pool.start();
+
+	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> tasks;
+
+	tasks.push_back(std::move(_pool.submit([&] {processSprite(bufferframe); })));
+	tasks.push_back(std::move(_pool.submit([&] {processGIFAnimation(bufferframe); })));
+	tasks.push_back(std::move(_pool.submit([&] {processDebugLines(bufferframe); })));
 
 	auto entities = m_world->getEntitiesWith<TagMainCamera, Transform, CameraComponent>();
 	if (!entities.empty())
 	{
 		Entity maincamera = entities[0];
 
-		processModel(bufferframe, maincamera);
-		processLight(bufferframe, maincamera);
-		processParticle(bufferframe, maincamera);
-		processLaserBeam(bufferframe, maincamera);
-		//processFirstPersonVisual(bufferframe, maincamera);
-		processSkybox(bufferframe, maincamera);
-
-		SyncGLCamera(render, bufferframe, maincamera);
+		tasks.push_back(_pool.submit([&] {processModel(bufferframe, maincamera); }));
+		tasks.push_back(_pool.submit([&] {processLight(bufferframe, maincamera); }));
+		tasks.push_back(_pool.submit([&] {processParticle(bufferframe, maincamera); }));
+		tasks.push_back(_pool.submit([&] {processLaserBeam(bufferframe, maincamera); }));
+		//tasks.push_back(_pool.submit([&] {processFirstPersonVisual(bufferframe, maincamera); }));
+		tasks.push_back(_pool.submit([&] {processSkybox(bufferframe, maincamera); }));
+		tasks.push_back(_pool.submit([&] {SyncGLCamera(render, bufferframe, maincamera); }));
 	}
+
+	for (auto& task : tasks)
+		task->get();
 
 	triBuffer->submitWriteBuffer();
 }
@@ -58,6 +70,8 @@ void RenderSystem::processSprite(std::shared_ptr<RenderFrameData>& framebuffer)
 {
 	auto entities = m_world->getViewWith<Transform2D, Sprite>();
 
+	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
+	temp.reserve(entities.size());
 	for (auto [entity, transform, sprite] : entities)
 	{
 		if (!sprite.enable ||
@@ -82,14 +96,19 @@ void RenderSystem::processSprite(std::shared_ptr<RenderFrameData>& framebuffer)
 		context->internalZOrder = sprite.internalZOrder;
 		context->data = renderdata;
 
-		framebuffer->D2D_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
+
+	LockGuard guard(_D2D_SpinLock);
+	framebuffer->D2D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processGIFAnimation(std::shared_ptr<RenderFrameData>& framebuffer)
 {
 	auto entities = m_world->getViewWith<Transform2D, GIFAnimator>();
 
+	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
+	temp.reserve(entities.size());
 	for (auto [entity, transform, gifanimator] : entities)
 	{
 		if (!gifanimator.enable || !gifanimator.gifInfo)continue;
@@ -119,12 +138,16 @@ void RenderSystem::processGIFAnimation(std::shared_ptr<RenderFrameData>& framebu
 		context->internalZOrder = gifanimator.internalZOrder;
 		context->data = renderdata;
 
-		framebuffer->D2D_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
+	LockGuard guard(_D2D_SpinLock);
+	framebuffer->D2D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processDebugLines(std::shared_ptr<Render::RenderFrameData>& framebuffer)
 {
+	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
+	temp.reserve(_DebugLines.size());
 	for (auto& line : _DebugLines)
 	{
 		auto renderdata = std::make_shared <D2DRenderContext::DebugLineRenderData>();
@@ -135,9 +158,11 @@ void RenderSystem::processDebugLines(std::shared_ptr<Render::RenderFrameData>& f
 		context->type = D2DRenderContext::RenderContextType::DebugLine;
 		context->data = renderdata;
 
-		framebuffer->D2D_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
 	_DebugLines.clear();
+	LockGuard guard(_D2D_SpinLock);
+	framebuffer->D2D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, Entity& maincamera)
@@ -146,6 +171,8 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 	auto& cameraComponent = maincamera.getComponent<CameraComponent>();
 
 	auto view = m_world->getViewWith<Transform, RenderModel>();
+	std::vector<std::shared_ptr<OpenGLRenderContext::RenderContext>> temp;
+	temp.reserve(entities.size());
 	for (auto [entity, transform, renderModel] : view)
 	{
 		if (!renderModel.enable || !renderModel.model) continue;
@@ -233,16 +260,20 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 		context->type = OpenGLRenderContext::RenderContextType::Model;
 		context->data = renderdata;
 
-		framebuffer->GL_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
+	LockGuard guard(_GL_SpinLock);
+	framebuffer->GL_Contexts.append_range(temp);
 }
 
 void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
 {
-	auto entities = m_world->getViewWith<Transform, RenderLight>();
+	auto views = m_world->getViewWith<Transform, RenderLight>();
 	auto& cameraComponent = maincamera.getComponent<CameraComponent>();
 
-	for (auto [entity, transform, renderLight] : entities)
+	std::vector<std::shared_ptr<OpenGLRenderContext::RenderContext>> temp;
+	temp.reserve(views.size());
+	for (auto [entity, transform, renderLight] : views)
 	{
 		if (!renderLight.enable)
 			continue;
@@ -268,7 +299,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				context->type = OpenGLRenderContext::RenderContextType::DirLight;
 				context->data = renderdata;
 
-				framebuffer->GL_Contexts.emplace_back(context);
+				temp.emplace_back(std::move(context));
 			}
 			break;
 		}
@@ -290,7 +321,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				context->type = OpenGLRenderContext::RenderContextType::PointLight;
 				context->data = renderdata;
 
-				framebuffer->GL_Contexts.emplace_back(context);
+				temp.emplace_back(std::move(context));
 			}
 			break;
 		}
@@ -312,14 +343,17 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				context->type = OpenGLRenderContext::RenderContextType::SpotLight;
 				context->data = renderdata;
 
-				framebuffer->GL_Contexts.emplace_back(context);
+				temp.emplace_back(std::move(context));
 			}
 			break;
 		}
 		default:
 			break;
 		}
+
 	}
+	LockGuard guard(_GL_SpinLock);
+	framebuffer->GL_Contexts.append_range(temp);
 }
 
 void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -329,6 +363,8 @@ void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& fra
 		return;
 
 	auto& particles = particleSystem->GetParticles();
+	std::vector<std::shared_ptr<OpenGLRenderContext::RenderContext>> temp;
+	temp.reserve(particles.size());
 	for (auto& particle : particles)
 	{
 		if (!particle || !particle->enable || !particle->properties)
@@ -341,17 +377,19 @@ void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& fra
 		context->type = OpenGLRenderContext::RenderContextType::Effect;
 		context->data = renderdata;
 
-		framebuffer->GL_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
+	LockGuard guard(_GL_SpinLock);
+	framebuffer->GL_Contexts.append_range(temp);
 }
 
 void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
 {
-	std::vector<Entity> entities = m_world->getEntitiesWith<LaserBeamEmitter, Transform>();
-	for (auto& entity : entities)
+	auto views = m_world->getViewWith<LaserBeamEmitter, Transform>();
+	std::vector<std::shared_ptr<OpenGLRenderContext::RenderContext>> temp;
+	temp.reserve(views.size());
+	for (auto [entity, emitter, transform] : views)
 	{
-		auto& emitter = entity.getComponent<LaserBeamEmitter>();
-
 		if (!emitter.enable || !emitter.enable || !emitter.properties)
 			continue;
 
@@ -362,8 +400,10 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& fr
 		context->type = OpenGLRenderContext::RenderContextType::Effect;
 		context->data = renderdata;
 
-		framebuffer->GL_Contexts.emplace_back(context);
+		temp.emplace_back(std::move(context));
 	}
+	LockGuard guard(_GL_SpinLock);
+	framebuffer->GL_Contexts.append_range(temp);
 }
 
 //void RenderSystem::processFirstPersonVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)

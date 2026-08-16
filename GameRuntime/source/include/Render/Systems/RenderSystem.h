@@ -4,6 +4,7 @@
 #include "ECSCore/System.h"
 #include "RenderEngine/RenderFrameManager.h"
 #include "RenderEngine/Renderer.h"
+#include "SpinLock.h"
 
 struct Line2
 {
@@ -14,6 +15,7 @@ struct Line2
 class RenderSystem :public System
 {
 public:
+	RenderSystem();
 	void SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer);
 	void SetOpenGLRender(std::shared_ptr<OpenGLRenderer> render);
 
@@ -46,4 +48,7 @@ private:
 	std::vector<Line2> _DebugLines;
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> _triBuffer;
 	std::shared_ptr<OpenGLRenderer> _render;
+	ThreadPool _pool;
+	SpinLock _GL_SpinLock;
+	SpinLock _D2D_SpinLock;
 };
