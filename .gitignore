@@ -380,3 +380,5 @@ config/*
 
 ![Bb]in/shader/
 ![Bb]in/Icons/
+
+!.gitattributes
