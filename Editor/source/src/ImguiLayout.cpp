@@ -837,6 +837,8 @@ void ImguiLayout::DrawSceneObjectList(WorldManager* worldManager)
 							auto& tag = newEntity.getComponent<NameTag>();
 							tag.name += "_copy";
 						}
+						if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel->model)
+							renderModel->model = renderModel->model->Clone(true, true, true);
 						}
 					).get();
 
@@ -1095,6 +1097,8 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 						auto& tag = newEntity.getComponent<NameTag>();
 						tag.name += "_copy";
 					}
+					if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel->model)
+						renderModel->model = renderModel->model->Clone(true, true, true);
 					}
 				).get();
 
