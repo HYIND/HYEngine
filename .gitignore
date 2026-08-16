@@ -374,7 +374,7 @@ liangliang.bmp
 #doc
 doc/*
 
-libs/*
+# libs/*
 Resource/*
 config/*
 
