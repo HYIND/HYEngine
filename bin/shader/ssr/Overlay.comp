@@ -1,0 +1,33 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+
+uniform ivec2 screenSize;
+
+uniform sampler2D colorMap;
+uniform sampler2D rawTexture;
+
+void main() 
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    vec2 pixelCenter = pixelCoord + 0.5;
+    vec2 uv = pixelCenter / screenSize;
+
+    vec3 oriColor = texture(colorMap, uv).rgb;
+    vec3 ssrColor = texture(rawTexture, uv).rgb;
+
+    imageStore(outputImage, pixelCoord, vec4(oriColor + ssrColor, 1.0));
+}

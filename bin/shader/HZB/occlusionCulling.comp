@@ -1,0 +1,176 @@
+#version 430 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+
+#ifndef work_size_y
+#define work_size_y 1
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
+
+struct AABB
+{
+    vec3 minPos;
+    vec3 maxPos;
+};
+
+layout(std430, binding = 0) buffer MeshAABB{
+    AABB aabbdata[];
+};
+layout(std430, binding = 1) buffer OcclusionResults {
+    int visibility[];  // 1 = 被遮挡, 0 = 可见
+};
+
+uniform int count = 0;
+
+uniform sampler2D hzbDepthMap;
+uniform ivec2 depthMapSize;
+uniform int maxLevel;
+
+uniform mat4 viewProj;
+
+#include "shader/dataDef/camerauboDef.comp"
+float DepthBufferConvertToViewDepth(float depth)
+{
+    float z_ndc = depth * 2.0 - 1.0;
+    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+}
+
+// vec2 ProjectToScreen(vec3 worldPos) 
+// {
+//     vec4 clipPos = viewProj * vec4(worldPos, 1.0);
+//     vec3 ndcPos = clipPos.xyz / clipPos.w;
+//     vec2 screenPos = (ndcPos.xy * 0.5 + 0.5) * depthMapSize;  
+//     return screenPos;
+// }
+
+void ProjectAABBToScreen(vec4 corners[8], out vec2 rectMin, out vec2 rectMax) 
+{
+    // 取AABB的8个顶点
+    rectMin = vec2(1e10);
+    rectMax = vec2(-1e10);
+    
+    for (int i = 0; i < 8; i++) {
+        vec2 screenPos = (corners[i].xy * 0.5 + 0.5) * depthMapSize;
+        rectMin = min(rectMin, screenPos);
+        rectMax = max(rectMax, screenPos);
+    }
+}
+
+float GetAABBMinDepth(vec4 corners[8]) 
+{   
+    float minDepth = 1.0;
+    for (int i = 0; i < 8; i++) {
+        float depth = corners[i].w > 0 ? corners[i].z : 0.f;
+        minDepth = min(minDepth, depth);
+    }
+    return minDepth;
+}
+
+void GetNDC(AABB aabb,inout vec4 corners[8])
+{
+    vec3 aabbcorners[8] = {
+        vec3(aabb.minPos.x, aabb.minPos.y, aabb.minPos.z),
+        vec3(aabb.maxPos.x, aabb.minPos.y, aabb.minPos.z),
+        vec3(aabb.minPos.x, aabb.maxPos.y, aabb.minPos.z),
+        vec3(aabb.maxPos.x, aabb.maxPos.y, aabb.minPos.z),
+        vec3(aabb.minPos.x, aabb.minPos.y, aabb.maxPos.z),
+        vec3(aabb.maxPos.x, aabb.minPos.y, aabb.maxPos.z),
+        vec3(aabb.minPos.x, aabb.maxPos.y, aabb.maxPos.z),
+        vec3(aabb.maxPos.x, aabb.maxPos.y, aabb.maxPos.z)
+    };
+
+    for (int i = 0; i < 8; i++) {
+        vec4 clipPos = viewProj * vec4(aabbcorners[i], 1.0);
+        corners[i] = vec4(clipPos.xyz / clipPos.w, clipPos.w);
+    }
+}
+
+bool IsOccluded(AABB aabb) 
+{
+    vec4 corners[8];
+    GetNDC(aabb,corners);
+
+    vec2 rectMin, rectMax;
+    ProjectAABBToScreen(corners, rectMin, rectMax);
+    
+    // 如果矩形超出屏幕太多，或者覆盖面积过大，直接认为可见
+    vec2 rectSize = rectMax - rectMin;
+    if (rectSize.x > float(depthMapSize.x) * 0.75 || rectSize.y > float(depthMapSize.y) * 0.75) {
+        // return false;
+    }
+    
+    // 裁剪到屏幕范围内
+    vec2 validMin = max(rectMin, vec2(0.0));
+    vec2 validMax = min(rectMax, depthMapSize);
+    if (validMin.x >= validMax.x || validMin.y >= validMax.y) {
+        return false;  // 八个点完全在屏幕外，不剔除（这个无法处理这种情况，应为视锥体剔除处理）
+    }
+    
+    vec2 validSize = validMax - validMin;
+    float size = max(validSize.x, validSize.y);
+    // if (size < 1.0) return true;    //像素尺寸小于1直接丢弃
+    if (size < 1.0) size = 1.0;
+
+    // 计算Mip级别
+    int mipLevel = int(floor(log2(size)));
+    mipLevel = clamp(mipLevel, 0, maxLevel - 1);
+
+    // 获取物体最近深度
+    // float zNear = DepthBufferConvertToViewDepth(GetAABBMinDepth(aabb));
+    float zNear = GetAABBMinDepth(corners);
+    if (zNear <= 0.f) return false;
+    
+    uint level_Width = max(1u, depthMapSize.x >> mipLevel);
+    uint level_Height = max(1u, depthMapSize.y >> mipLevel);
+
+    // 在HZB上采样矩形区域
+
+    vec2 samplerUVMin = validMin / vec2(depthMapSize);
+    vec2 samplerUVMax = validMax / vec2(depthMapSize);
+
+    ivec2 pixelStart = ivec2(floor(samplerUVMin * vec2(level_Width, level_Height)));
+    ivec2 pixelEnd = ivec2(ceil(samplerUVMax * vec2(level_Width, level_Height)));
+    pixelStart = max(pixelStart, ivec2(0));
+    pixelEnd = min(pixelEnd, ivec2(level_Width - 1, level_Height - 1));
+
+    // float area = float((pixelEnd.x - pixelStart.x + 1) * (pixelEnd.y - pixelStart.y + 1));
+    // if (area >= 8.0) return false;
+
+    float farthestOccluder = 0.0f;
+    for (int x = pixelStart.x; x <= pixelEnd.x; x++) {
+        for (int y = pixelStart.y; y <= pixelEnd.y; y++) {
+            // float depth = DepthBufferConvertToViewDepth(texelFetch(hzbDepthMap, ivec2(x,y), mipLevel).r);
+            float depth = texelFetch(hzbDepthMap, ivec2(x,y), mipLevel).r;
+            farthestOccluder = max(farthestOccluder, depth);
+        }
+    }
+
+   uint index = 
+            gl_GlobalInvocationID.z * gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y
+            + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x
+            + gl_GlobalInvocationID.x;
+
+    bool result = zNear - farthestOccluder > 1e-5;
+    // visibility[index] = int(result ? zNear: -zNear);
+    // visibility[index] = int(result ? farthestOccluder: -farthestOccluder);
+
+    return result;
+}
+
+void main() 
+{    
+    uint index = 
+            gl_GlobalInvocationID.z * gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y
+            + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x
+            + gl_GlobalInvocationID.x;
+
+    if (index >= count) 
+        return;
+
+    AABB aabb = aabbdata[index]; 
+    bool result = IsOccluded(aabb);
+    visibility[index] = result ? 1 : 0;
+}

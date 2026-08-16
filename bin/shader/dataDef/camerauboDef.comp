@@ -1,0 +1,29 @@
+layout(std140, binding = 0) uniform Camera { 
+    mat4 projection;
+    mat4 view;
+    mat4 projView;
+    mat4 invView;
+    mat3 invTransView;
+    vec3 position;
+    vec3 direction;
+    vec3 directionUp;
+    vec3 directionRight;
+    float nearPlane;
+    float farPlane;
+    float fov;
+} camera;
+
+layout(std140, binding = 2) uniform PrevCamera { 
+    mat4 projection;
+    mat4 view;
+    mat4 projView;
+    mat4 invView;
+    mat3 invTransView;
+    vec3 position;
+    vec3 direction;
+    vec3 directionUp;
+    vec3 directionRight;
+    float nearPlane;
+    float farPlane;
+    float fov;
+} prevcamera;

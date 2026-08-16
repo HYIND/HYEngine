@@ -1,0 +1,714 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+
+#ifndef MAX_STEPS
+#define MAX_STEPS 32
+#endif
+
+const float PI = 3.14159265359;
+
+uniform float tMin;
+uniform float tMax;
+
+uniform int sampleRayCount;
+uniform float sampleIndirectClampValue;
+uniform float GIIntensity;
+uniform float AOIntensity;
+
+uniform ivec2 screenSize;
+
+uniform sampler2D gAlbedoOpacity;
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gMetallicRoughness;
+
+uniform sampler2D colorMap;
+uniform sampler2D depthMap;
+
+uniform sampler2D hzbDepthMap;
+uniform int maxLevel;
+
+uniform sampler2D SSAOMap;
+
+uniform int frameIndex;
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float tMin;
+    float tMax;
+};
+
+void getPBRProperties(vec2 uv, inout vec3 albedo, inout float metallic, inout float roughness)
+{
+	albedo = texture(gAlbedoOpacity, uv).rgb;
+    vec2 values = texture(gMetallicRoughness, uv).rg;
+    metallic = values.r;
+    roughness = values.g;
+}
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    float z_ndc = depth * 2.0 - 1.0;
+    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+}
+float getThicknessDiff(float diff, float linearSampleDepth)
+{
+	return (diff - 0.05) / linearSampleDepth;
+}
+
+//0->追踪失败、1->追踪成功、2->采样最远处
+int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间的点出发，沿着dir方向，在colormap上取样，直到碰到colormap上的像素
+{
+	float delta = 1e-6;
+
+	vec3 dirView = normalize(camera.invTransView * ray.direction);
+	vec3 startViewPos = vec3(camera.view * vec4(ray.origin, 1.0f));	//确定光线反射的最远距离	
+	float maxDist = camera.farPlane;
+
+	// 如果光线指向相机方向（会穿过近平面）
+    if (dirView.z > 0.0) 
+    {
+        // 计算到近平面的距离
+        float distToNear = -startViewPos.z / dirView.z;
+        if (distToNear > 0.0) 
+            maxDist = min(maxDist, distToNear * 0.99);// 截断到近平面之前，留一点余量
+        else // 理论上不会发生，但以防万一
+            return 0;
+    }
+    
+    // 确保光线至少有一点长度
+    if (maxDist < 0.001) 
+        return 0;
+
+	vec3 endViewPos = startViewPos + dirView * maxDist;	//确定光线反射的最远距离
+
+	vec4 startProjPos = camera.projection * vec4(startViewPos, 1.0);	//裁切空间位置
+	vec4 endProjPos = camera.projection * vec4(endViewPos, 1.0);		//裁切空间位置
+
+    vec3 startNDC = startProjPos.xyz / startProjPos.w;
+    vec3 endNDC = endProjPos.xyz / endProjPos.w;
+
+	vec2 startTexPos = vec3(startNDC * 0.5 + 0.5).xy;	//(uv.xy, depth)
+	vec2 endTexPos = vec3(endNDC * 0.5 + 0.5).xy;		//(uv.xy, depth)
+
+	//计算出需要跨越多少个像素距离，表示这段路径在colorMap在跨越了多少个像素，意味着如果要不遗漏像素的前进，至少要在区间内分成divisions步前进
+	vec2 screenStart = startTexPos * screenSize;
+	vec2 screenEnd = endTexPos * screenSize;
+	float pixelLength = length(screenEnd -  screenStart);
+	int steps = min(int(pixelLength) + 1, MAX_STEPS);
+
+	vec2 screenStep = (screenEnd -  screenStart) / steps;
+	float zStart = -startViewPos.z;
+	float zEnd = -endViewPos.z;
+
+	float thinkness = 0.05f;
+
+	bool lastHit = false; 
+	bool potentialHit = false;
+    bool hit = false;
+    float hitT = 0.0;
+	float hitThicknessDiff = uintBitsToFloat(0x7F7FFFFFu);
+
+#ifdef SAMPLER_MAX_DIS
+	bool samplerMax = false;
+	vec2 samplerMaxTexcoord = vec2(0);
+#endif
+
+
+	for(int i = 1;i <= steps; i++)
+	{
+		float t = float(i) / float(steps); //步进比例
+
+        vec2 screenCurrent = mix(screenStart, screenEnd, t);
+		if(screenCurrent.x >= screenSize.x || screenCurrent.x <= 0.f || screenCurrent.y >= screenSize.y || screenCurrent.y <= 0.f)
+		{
+#ifdef SAMPLER_MAX_DIS
+			samplerMax = false;
+#endif
+			break;
+		}
+
+		float invZ = (1.0 - t) / zStart + t / zEnd;
+		float rayViewDepth = 1.0 / invZ;
+
+		vec2 texcoord = vec2(screenCurrent) / screenSize;
+		float samplerDepth = texture(depthMap, texcoord).r;	//深度图上取样
+		float storedViewDepth = DepthBufferConvertToViewDepth(samplerDepth);
+
+		float hitDiff = rayViewDepth - storedViewDepth;
+		float thicknessDiff  = getThicknessDiff(hitDiff, storedViewDepth);  
+        
+		if (hitDiff > 0.f && samplerDepth < 1.0f - delta)
+		{
+			if(thicknessDiff < 0.015)
+			{
+				hit = true;
+				hitT = t;
+				hitThicknessDiff = thicknessDiff;
+				break;
+			}
+			else if (!lastHit && thicknessDiff < hitThicknessDiff)
+			{	//记录潜在交叉点
+				potentialHit = true;
+				hitT = t;
+				hitThicknessDiff = thicknessDiff;
+			}
+		}
+#ifdef SAMPLER_MAX_DIS
+		else 
+		{
+			if (samplerDepth >= 1.0f - delta)
+			{
+				samplerMax = true;
+				samplerMaxTexcoord = texcoord;
+			}
+		}
+#endif
+		lastHit = hitDiff > 0.f;
+	}
+
+	float minThicknessDiff = 0.02f;
+    if (hit || potentialHit)
+    {
+		bool realHit = false;
+		
+        // 定义搜索区间 [prevT, hitT]
+        float prevT = max(hitT - 1.0 / steps, 0.0);
+        float currentT = hitT;
+        
+        // 二分搜索迭代次数
+        const int BINARY_SEARCH_ITERATIONS = 6;
+        
+		float finalT = currentT;
+
+        for (int i = 0; i < BINARY_SEARCH_ITERATIONS; i++)
+        {
+            float midT = (prevT + currentT) * 0.5;
+            
+            // 计算中间点的位置和深度
+            vec2 midScreenPos = mix(screenStart, screenEnd, midT);
+            vec2 midTexcoord = midScreenPos / screenSize;
+            
+            float midInvZ = (1.0 - midT) / zStart + midT / zEnd;
+            float midRayDepth = 1.0 / midInvZ;
+            float midStoredDepth = DepthBufferConvertToViewDepth(texture(depthMap, midTexcoord).r);
+            
+			float hitDiff = midRayDepth - midStoredDepth;    
+            if (hitDiff > 0.f)
+            {
+                currentT = midT;
+				if(hit) finalT = midT;
+            }
+            else
+            {
+                prevT = midT;
+            }
+
+			float thicknessDiff = getThicknessDiff(hitDiff, midStoredDepth);
+			if (!hit && abs(thicknessDiff) < minThicknessDiff) 
+			{
+				realHit = true;
+				minThicknessDiff = thicknessDiff;
+				finalT = midT;
+			}
+        }
+        
+		vec2 finalScreenPos = mix(screenStart, screenEnd, finalT);
+        if (hit || realHit) 
+        {
+            uv = finalScreenPos / screenSize;
+            return 1;
+        }
+    }
+#ifdef SAMPLER_MAX_DIS
+	else if(samplerMax)
+    {
+        uv = samplerMaxTexcoord;
+        return 2;
+    }
+#endif
+
+	return 0;
+}
+
+//0->追踪失败、1->追踪成功、2->采样最远处
+int RayTraceOnSceenHBZ(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间的点出发，沿着dir方向，在colormap上取样，直到碰到colormap上的像素
+{
+	float delta = 1e-6;
+
+	vec3 dirView = normalize(camera.invTransView * ray.direction);
+	vec3 startViewPos = vec3(camera.view * vec4(ray.origin, 1.0f));	//确定光线反射的最远距离	
+	float maxDist = camera.farPlane;
+    
+	
+    if (dirView.z > 0.0) // 如果光线指向相机方向（会穿过近平面）
+    {
+        // 计算到近平面的距离
+        float distToNear = -startViewPos.z / dirView.z;
+        if (distToNear > 0.0)  
+            maxDist = min(maxDist, distToNear * 0.99);// 截断到近平面之前，留一点余量
+        else  // 理论上不会发生，但以防万一
+            return 0;
+    }
+    
+    // 确保光线至少有一点长度
+    if (maxDist < 0.001) 
+        return 0;
+
+	vec3 endViewPos = startViewPos + dirView * maxDist;	//确定光线反射的最远距离
+
+	vec4 startProjPos = camera.projection * vec4(startViewPos, 1.0);	//裁切空间位置
+	vec4 endProjPos = camera.projection * vec4(endViewPos, 1.0);		//裁切空间位置
+
+    vec3 startNDC = startProjPos.xyz / startProjPos.w;
+    vec3 endNDC = endProjPos.xyz / endProjPos.w;
+
+	vec2 startTexPos = vec3(startNDC * 0.5 + 0.5).xy;	//(uv.xy, depth)
+	vec2 endTexPos = vec3(endNDC * 0.5 + 0.5).xy;		//(uv.xy, depth)
+	vec2 screenStart = startTexPos * screenSize;
+	vec2 screenEnd = endTexPos * screenSize;
+
+    float zStart = -startViewPos.z;
+    float zEnd = -endViewPos.z;
+
+    bool lastHit = false; 
+	bool potentialHit = false;
+    bool hit = false;
+    float hitT = 0.0;
+	float hitThicknessDiff = uintBitsToFloat(0x7F7FFFFFu);
+	float thinkness = 0.05f;
+
+#ifdef SAMPLER_MAX_DIS
+	bool samplerMax = false;
+	vec2 samplerMaxTexcoord = vec2(0);
+#endif
+
+    float pixelLength = length((startTexPos - endTexPos) * screenSize);
+    int startLevel = int(floor(log2(pixelLength)));
+    startLevel = clamp(startLevel, 0, min(5, maxLevel - 1));
+
+    int steps = 1;
+
+    for (int level = startLevel; level >= 0; level--) 
+    {
+        vec2 level_screenSize = vec2(max(1u, int(screenSize.x) >> level) ,max(1u, int(screenSize.y) >> level));
+
+        //计算出需要跨越多少个像素距离，表示这段路径在colorMap在跨越了多少个像素，意味着如果要不遗漏像素的前进，至少要在区间内分成divisions步前进
+        vec2 level_screenStart = startTexPos * level_screenSize;
+        vec2 level_screenEnd = endTexPos * level_screenSize;
+        float pixelLength = length(level_screenEnd -  level_screenStart);
+        steps = min(int(pixelLength) + 1 , MAX_STEPS);
+        vec2 level_screenStep = (level_screenEnd -  level_screenStart) / steps;
+
+        bool outofBroad = false;
+
+        for(int i = 1;i <= steps; i++)
+        {
+		    float t = float(i) / float(steps); //步进比例
+
+            vec2 level_screenCurrent = mix(level_screenStart, level_screenEnd, t);
+            if(level_screenCurrent.x >= level_screenSize.x || level_screenCurrent.x <= 0.f || level_screenCurrent.y >= level_screenSize.y || level_screenCurrent.y <= 0.f)
+            {
+#ifdef SAMPLER_MAX_DIS
+                samplerMax = false;
+#endif
+                outofBroad = true;
+                break;
+            }
+
+            float invZ = (1.0 - t) / zStart + t / zEnd;
+            float rayViewDepth = 1.0 / invZ;
+
+            vec2 texcoord = vec2(level_screenCurrent) / level_screenSize;
+            float samplerDepth = textureLod(hzbDepthMap, texcoord, level).r;	//深度图上取样
+            float storedViewDepth = DepthBufferConvertToViewDepth(samplerDepth);
+
+            float hitDiff = rayViewDepth - storedViewDepth;
+            
+            if(level == 0)
+            {
+                if (hitDiff > 0.f && samplerDepth < 1.0f - delta)
+                {
+                    float thicknessDiff  = getThicknessDiff(hitDiff, storedViewDepth);  
+                    if(thicknessDiff < 0.015)
+                    {
+                        hit = true;
+                        hitT = t;
+                        hitThicknessDiff = thicknessDiff;
+                        break;
+                    }
+                    else if (!lastHit && thicknessDiff < hitThicknessDiff)
+                    {	//记录潜在交叉点
+                        potentialHit = true;
+                        hitT = t;
+                        hitThicknessDiff = thicknessDiff;
+                    }
+
+                    vec2 level_screenLast = mix(level_screenStart, level_screenEnd, t - 1);
+
+                    vec2 startTexcoord = clamp(vec2(level_screenLast - level_screenStep) / level_screenSize, startTexPos, endTexPos);
+                    vec2 endTexcoord = clamp(vec2(level_screenCurrent + level_screenStep) / level_screenSize, startTexPos, endTexPos);
+
+                    startTexPos = startTexcoord;
+                    endTexPos = endTexcoord;
+                    screenStart = startTexPos * screenSize;
+                    screenEnd = endTexPos * screenSize;
+
+                    float prevT = max(float(i - 1) / float(steps), 0.0);
+                    float curT = float(i) / float(steps);
+
+                    // 把原始 zStart/zEnd 缩放到子区间
+                    float zStart_prev = 1.0 / ((1.0 - prevT) / zStart + prevT / zEnd);
+                    float zEnd_cur = 1.0 / ((1.0 - curT) / zStart + curT / zEnd);
+
+                    zStart = zStart_prev;
+                    zEnd = zEnd_cur;
+                }
+#ifdef SAMPLER_MAX_DIS
+                else 
+                {
+                    if (samplerDepth >= 1.0f - delta)
+                    {
+                        samplerMax = true;
+                        samplerMaxTexcoord = texcoord;
+                    }
+                }
+#endif
+                lastHit = hitDiff > 0.f;
+            }
+            else 
+            {
+                if (hitDiff > 0.f && samplerDepth < 1.0f - delta)
+                {
+                    vec2 level_screenLast = mix(level_screenStart, level_screenEnd, t - 1);
+
+                    vec2 startTexcoord = clamp(vec2(level_screenLast - level_screenStep * 0.5) / level_screenSize, startTexPos, endTexPos);
+                    vec2 endTexcoord = clamp(vec2(level_screenCurrent + level_screenStep * 0.5) / level_screenSize, startTexPos, endTexPos);
+
+                    startTexPos = startTexcoord;
+                    endTexPos = endTexcoord;
+                    screenStart = startTexPos * screenSize;
+                    screenEnd = endTexPos * screenSize;
+
+                    float prevT = max(float(i - 1) / float(steps), 0.0);
+                    float curT = float(i) / float(steps);
+
+                    // 把原始 zStart/zEnd 缩放到子区间
+                    float zStart_prev = 1.0 / ((1.0 - prevT) / zStart + prevT / zEnd);
+                    float zEnd_cur = 1.0 / ((1.0 - curT) / zStart + curT / zEnd);
+
+                    zStart = zStart_prev;
+                    zEnd = zEnd_cur;
+
+                    break;
+                }
+            }
+        }
+
+        if(outofBroad)
+            break;
+    }
+
+	float minThicknessDiff = 0.02f;
+    if (hit || potentialHit)
+    {
+		bool realHit = false;
+		
+        // 定义搜索区间 [prevT, hitT]
+        float prevT = max(hitT - 1.0 / steps, 0.0);
+        float currentT = hitT;
+        
+        // 二分搜索迭代次数
+        const int BINARY_SEARCH_ITERATIONS = 6;
+        
+		float finalT = currentT;
+
+        for (int i = 0; i < BINARY_SEARCH_ITERATIONS; i++)
+        {
+            float midT = (prevT + currentT) * 0.5;
+            
+            // 计算中间点的位置和深度
+            vec2 midScreenPos = mix(screenStart, screenEnd, midT);
+            vec2 midTexcoord = midScreenPos / screenSize;
+            
+            float midInvZ = (1.0 - midT) / zStart + midT / zEnd;
+            float midRayDepth = 1.0 / midInvZ;
+            float midStoredDepth = DepthBufferConvertToViewDepth(texture(depthMap, midTexcoord).r);
+            
+			float hitDiff = midRayDepth - midStoredDepth;    
+            if (hitDiff > 0.f)
+            {
+                currentT = midT;
+				if(hit) finalT = midT;
+            }
+            else
+            {
+                prevT = midT;
+            }
+
+			float thicknessDiff = getThicknessDiff(hitDiff, midStoredDepth);
+			if (!hit && abs(thicknessDiff) < minThicknessDiff) 
+			{
+				realHit = true;
+				minThicknessDiff = thicknessDiff;
+				finalT = midT;
+			}
+        }
+        
+		vec2 finalScreenPos = mix(screenStart, screenEnd, finalT);
+        if (hit || realHit) 
+        {
+            uv = finalScreenPos / screenSize;
+            return 1;
+        }
+    }
+#ifdef SAMPLER_MAX_DIS
+	else if(samplerMax)
+    {
+        uv = samplerMaxTexcoord;
+        return 2;
+    }
+#endif
+
+	return 0;
+}
+
+
+bool isEdge(vec2 texcoord, float depthThreshold)
+{
+    float centerDepth = texture(depthMap, texcoord).r;
+    
+    // 采样上下左右四个邻居
+    vec2 pixelSize = 1.0 / screenSize;
+    float leftDepth = texture(depthMap, texcoord + vec2(-pixelSize.x, 0)).r;
+    float rightDepth = texture(depthMap, texcoord + vec2(pixelSize.x, 0)).r;
+    float upDepth = texture(depthMap, texcoord + vec2(0, -pixelSize.y)).r;
+    float downDepth = texture(depthMap, texcoord + vec2(0, pixelSize.y)).r;
+    
+    float maxDepth = max(max(leftDepth, rightDepth), max(upDepth, downDepth));
+    float minDepth = min(min(leftDepth, rightDepth), min(upDepth, downDepth));
+    
+    // 如果深度差异超过阈值，说明在边缘
+    return (maxDepth - minDepth) > depthThreshold;
+}
+
+bool isNormalPass(vec2 texcoord, Ray ray)
+{
+    vec3 hitNormal = texture(gNormal, texcoord).rgb;
+    vec3 hitPos = texture(gPosition, texcoord).rgb;
+    vec3 incidentDir = normalize(hitPos - ray.origin);
+
+    // 如果法线方向和入射方向相反（法线背对光线），说明穿模了
+    if (dot(hitNormal, incidentDir) >= 0.0)
+        return false;
+
+    return true;
+}
+
+bool traceRay(Ray ray, inout vec3 indirectColor) 
+{
+	vec2 screenSize = textureSize(colorMap, 0);
+    vec2 uv;
+
+    int result = RayTraceOnSceen(ray, screenSize, uv);
+    // int result = RayTraceOnSceenHBZ(ray, screenSize, uv);
+    if (result == 0 || result == 2)
+        return false;
+    
+    if (isEdge(uv, 0.001))
+        return false;
+
+    if (!isNormalPass(uv, ray))
+        return false;
+
+    // vec3 normal = texture(gNormal, uv).rgb;
+    // if(length(normal) <= 0.001) 
+    //     return false;
+
+    vec3 fragPos = texture(gPosition, uv).rgb;
+    float dist = distance(ray.origin,fragPos);
+    float attenuation = 1.0 / (1.0 + dist * 0.25);
+
+    vec3 lightingColor = texture(colorMap, uv).rgb;
+    vec3 albedo = texture(gAlbedoOpacity, uv).rgb;
+    vec3 lightEnergy = lightingColor / (albedo + 1e-4) * attenuation;
+    indirectColor = albedo * min(lightEnergy, sampleIndirectClampValue);        //钳制入射光强
+
+    return true;
+}
+
+// 计算 Halton 序列
+float halton(int index, int base) 
+{
+    float result = 0.0;
+    float f = 1.0;
+    int i = index;
+    while (i > 0) 
+    {
+        f /= float(base);
+        result += f * float(i % base);
+        i /= base;
+    }
+    return result;
+}
+
+// 生成一对 Halton 样本（用于余弦加权半球）
+vec2 getHaltonSample(int sampleIndex, int frameIndex) 
+{
+    int idx = sampleIndex * 213 + frameIndex * 29;
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    int offset = pixelCoord.x * 79 + pixelCoord.y * 97;  // 单个偏移值
+    int baseIdx = idx + offset;
+
+    vec2 haltonRandom = vec2(halton(baseIdx, 2), halton(baseIdx, 3));
+    return haltonRandom;
+}
+
+float RandomNoise(vec2 seed)
+{
+    vec2 p = fract(seed * vec2(0.1031, 0.1030));
+    p += dot(p, p.yx + 19.19);
+    float static_hash = fract((p.x + p.y) * p.y);
+
+    // Using static hash for consistent noise without temporal accumulation
+    return fract(static_hash);
+}
+
+// 生成随机方向（法线半球）
+vec3 sampleHemisphere(vec3 normal, vec2 random, inout float weight)
+{
+    float r1 = random.x;
+    float r2 = random.y;
+    
+    vec2 seed = vec2(gl_GlobalInvocationID.xy);
+    float randomRotation = RandomNoise(seed);
+    
+    // 余弦加权采样
+    float cosTheta = sqrt(r1);
+    float theta = acos(cosTheta);
+    float phi = 2.0 * PI * r2 + randomRotation;
+    
+    vec3 dir = vec3(
+        sin(theta) * cos(phi),
+        sin(theta) * sin(phi),
+        cos(theta)
+    );
+    
+    // 将局部坐标转到世界空间（以法线为Z轴）
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+    weight = cosTheta;
+
+    return samplerDir;
+}
+
+vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, int sampleCount) 
+{
+    vec3 totalIndirect = vec3(0.0);
+    float totalWeight = 0.f;
+
+    for (int i = 0; i < sampleCount; i++) 
+    {
+        vec2 random = getHaltonSample(i, frameIndex);
+        float weight;
+        vec3 samplerDir = sampleHemisphere(normal, random, weight);
+
+        Ray ray;
+        ray.origin = fragPos + samplerDir * 0.002;
+        ray.direction = samplerDir;
+        ray.tMin = tMin;
+        ray.tMax = tMax;
+
+        vec3 indirectColor;
+
+        if(traceRay(ray, indirectColor))
+            totalIndirect += indirectColor * weight;
+
+        totalWeight += weight;
+
+        // if (totalWeight > 2.0)  // 权重和超过2，说明已经有很多样本命中
+        // {
+        //     // 检查结果是否稳定
+        //     vec3 currentAvg = totalIndirect / totalWeight;
+        //     if (length(currentAvg) > 0.5)  // 已经比较亮了
+        //         break;
+        // }
+        
+        // 能量贡献递减时提前退出
+        if (i > 4 && length(totalIndirect) < 0.001)  // 连续5个样本都没命中
+        {
+            // 这个像素可能处于阴影中，不需要更多样本
+            break;
+        }
+    }
+
+    return totalWeight > 0.f ?  totalIndirect / totalWeight : vec3(0.f);
+}
+
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}   
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    vec2 pixelCenter = pixelCoord + 0.5;
+    vec2 uv = pixelCenter / screenSize;
+
+    float depth = texture(depthMap, uv).r;
+    if(depth >= 0.99999)
+        return;
+
+ 
+    float ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
+    if (ambientOcclusion < 0.02)
+        return;
+
+    vec3 albedo;
+    float metallic, roughness;
+    getPBRProperties(uv, albedo, metallic, roughness);
+    vec3 F0 = mix(vec3(0.02), albedo, metallic);    
+
+    vec3 fragPos = texture(gPosition, uv).rgb;
+    vec3 normal = normalize(texture(gNormal, uv).rgb);
+
+    int sampleCount = max(1, sampleRayCount);
+    vec3 color = traceRayWithHemisphereSample(fragPos, normal, sampleCount);
+
+    vec3 N = normal;
+    vec3 V = normalize(camera.position - fragPos);
+
+    float NdotV = max(dot(N, V), 0.0);
+    vec3 F_env = fresnelSchlickRoughness(NdotV, F0, roughness);  // 粗糙度修正菲涅尔
+    vec3 kS_env = F_env;
+    vec3 kD = 1.0 - kS_env;
+    kD *= (1.0 - metallic);
+
+
+    vec3 result = kD * color * albedo;
+
+    result *= GIIntensity;
+    result = mix(result, result * ambientOcclusion, AOIntensity);
+
+    imageStore(outputImage, pixelCoord, vec4(result, 1.0));
+}

@@ -1,0 +1,401 @@
+
+#include "shader/dataDef/lightingssboDef.comp"
+
+const float PI = 3.14159265359;
+
+const float linera_radius_factor = 0.8;	//距离到底0.8光照半径改用线性衰减，使光强平滑衰减至0，消除截断
+const float linera_radius_factor2 = linera_radius_factor * linera_radius_factor;
+const float one_minus_linera_radius_factor = 1.0f - linera_radius_factor;
+
+float DistributionGGX(float NdotH, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+float GeometrySchlickGGX(float NdotX, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotX / (NdotX * (1.0 - k) + k);
+}
+
+float GeometrySmith(float NdotL, float NdotV, float roughness) {
+    float ggx1 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx2 = GeometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+vec3 fresnelSchlick(vec3 F0, float VdotH) {
+	float x = 1.0 - VdotH;
+	float x2 = x * x;
+	float x5 = x2 * x2 * x;
+    return F0 + (1.0 - F0) * x5;
+}
+
+DirLightCascade GetCascade(vec3 fragPosWorldSpace, int cascadeFirst, int cascadeCount);
+
+float SamplerAtlasMap(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize);
+float SamplerAtlasCubeMap(vec3 dir, sampler2D atlasMap, vec2 atlasSize, vec2 subStart[6], vec2 subSize[6]);
+float SamplerAtlasMapWithCompare(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize, float refDepth);
+float SamplerAtlasCubeMapWithCompare(vec3 dir, sampler2D atlasMap, vec2 atlasSize, vec2 subStart[6], vec2 subSize[6], float refDepth);
+
+//shadow
+vec3 NormalBias(vec3 fragPos, vec3 lightDir, vec3 normal, float biasFactor);
+float DirLightShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize);
+float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
+
+//PBR
+void CalcPBR(
+	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
+	vec3 albedo, float metallic, float roughness,
+	inout float NdotL, inout vec3 diffuse, inout vec3 specular);
+
+
+//lighting
+vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 view ,vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion);
+vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion);
+vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion);
+
+// emissive
+//vec4 CalcEmissionLight();
+
+vec3 CalcLighting(
+    mat4 view, vec3 cameraPos, sampler2D atlasMap,
+    vec3 fragPos, vec3 normal, 
+    vec3 albedo, float metallic,
+    float roughness, float ambientOcclusion
+);
+
+vec3 CalcLighting(
+    mat4 view, vec3 cameraPos, float cameraFarPlane,
+	sampler2D atlasMap,
+    vec3 fragPos, vec3 normal, 
+    vec3 albedo, float metallic, float roughness, float ambientOcclusion
+)
+{
+	vec3 viewDir = normalize(fragPos - cameraPos);		
+
+	vec3 lightColor = vec3(0.f,0.f,0.f);	
+	for(int i = 0;i < dirLightMetaData.dirLightCount; i++)
+		lightColor += CalcDirLight(dirLightMetaData.info[i], atlasMap, normal, fragPos, view, viewDir, albedo, metallic, roughness, ambientOcclusion);
+	for(int i = 0;i < spotLightMetaData.spotLightCount; i++)
+		lightColor += CalcSpotLight(spotLightMetaData.info[i], atlasMap, normal, fragPos, viewDir, albedo, metallic, roughness, ambientOcclusion);
+	for(int i = 0;i < pointLightMetaData.pointLightCount; i++)
+		lightColor += CalcPointLight(pointLightMetaData.info[i], atlasMap, normal, cameraPos, cameraFarPlane, fragPos, viewDir, albedo, metallic, roughness, ambientOcclusion);
+
+	return lightColor;
+}
+
+DirLightCascade GetCascade(vec4 fragPosViewSpace, int cascadeFirst, int cascadeCount)
+{
+    float depthValue = abs(fragPosViewSpace.z);
+
+	int start = cascadeFirst;
+	int end = cascadeFirst + cascadeCount;
+    for (int i = start; i < end; ++i)
+    {
+        if (depthValue < dirLightCascadeData.info[i].cascadePlaneDistance)
+           	return dirLightCascadeData.info[i];
+    }
+
+	return dirLightCascadeData.info[end - 1];
+}
+
+float SamplerAtlasMap(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize)
+{
+	vec2 subPixelPos = subTexPos * subSize;
+	subPixelPos.x = clamp(subPixelPos.x, 1, subSize.x - 1);
+	subPixelPos.y = clamp(subPixelPos.y, 1, subSize.y - 1);
+	vec2 atlasTexPos = (subStart + subPixelPos) * atlasSize;
+
+	return texture(atlasMap, atlasTexPos).r;
+}
+
+float SamplerAtlasCubeMap(vec3 dir, sampler2D atlasMap, vec2 atlasSize, vec2 subStart[6], vec2 subSize[6])
+{
+    vec3 absDir = abs(dir);
+
+	int faceIndex;
+    float ma;
+    vec2 sc;      // 剩余两个分量
+
+	// === 1. 判断主面 ===
+	if (absDir.x >= absDir.y && absDir.x >= absDir.z) {
+        // X 轴为主
+        if (dir.x > 0.0) {
+            faceIndex = 0; // +X (Right)
+			// sc = vec2(-dir.z, -dir.y);
+            sc = vec2(-dir.z, -dir.y);
+        } else {
+            faceIndex = 1; // -X (Left)
+			sc = vec2(dir.z, -dir.y);
+            // sc = vec2(dir.z, -dir.y);
+        }
+		ma = absDir.x;
+    } 
+    else if (absDir.y >= absDir.x && absDir.y >= absDir.z) {
+        // Y 轴为主
+        if (dir.y > 0.0) {
+            faceIndex = 2; // +Y (Top)
+            sc = vec2(dir.x, dir.z);
+        } else {
+            faceIndex = 3; // -Y (Bottom)
+            sc = vec2(dir.x, -dir.z);
+        }
+		ma = absDir.y;
+    } 
+    else {
+        // Z 轴为主
+        if (dir.z > 0.0) {
+            faceIndex = 4; // +Z (Front)
+            sc = vec2(dir.x, -dir.y);
+        } else {
+            faceIndex = 5; // -Z (Back)
+            sc = vec2(-dir.x, -dir.y);
+        }
+		ma = absDir.z;
+    }
+
+ 	// === 2. 计算 UV 坐标 (映射到 0-1) ===
+	vec2 uv = (sc / ma + 1.0) * 0.5;
+
+	return SamplerAtlasMap(uv, atlasMap, atlasSize, subStart[faceIndex], subSize[faceIndex]);
+}
+
+float SamplerAtlasMapWithCompare(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize, float refDepth)
+{
+	return SamplerAtlasMap(subTexPos, atlasMap, atlasSize, subStart, subSize) < refDepth ? 0.f : 1.f;
+}
+
+float SamplerAtlasCubeMapWithCompare(vec3 dir, sampler2D atlasMap, vec2 atlasSize, vec2 subStart[6], vec2 subSize[6], float refDepth)
+{
+	return SamplerAtlasCubeMap(dir, atlasMap, atlasSize, subStart, subSize) < refDepth ? 0.f : 1.f;
+}
+
+vec3 NormalBias(vec3 fragPos, vec3 lightDir, vec3 normal, float biasFactor)
+{
+	float bias = biasFactor * (1.0 - dot(normalize(normal), lightDir));
+	vec3 shiftedPos = fragPos + normal * bias;
+	return shiftedPos;
+}
+
+float DirLightShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize)
+{
+	vec2 texelSize = 1.0 / subSize;
+	vec2 atlasSize = 1.0 / textureSize(atlasMap, 0);
+
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    float currentDepth = projCoords.z;
+
+	if(projCoords.z >= 1.0)
+        return 0.0;
+
+	// return 1.0 - SamplerAtlasMapWithCompare(projCoords.xy, atlasMap, atlasSize, subStart, subSize, currentDepth); 
+
+	float shadow = 0.0;
+	for(int x = -1; x <= 1; ++x)
+	{
+		for(int y = -1; y <= 1; ++y)
+		{
+			// float pcfDepth = SamplerAtlasMap(projCoords.xy + vec2(x, y) * texelSize, atlasMap, atlasSize, subStart, subSize);  
+			// shadow += currentDepth > pcfDepth ? 1.0 : 0.0;     
+
+			float temp = 1.0 - SamplerAtlasMapWithCompare(projCoords.xy + vec2(x, y) * texelSize, atlasMap, atlasSize, subStart, subSize, currentDepth);  
+			shadow += temp;
+		}    
+	}
+	shadow /= 9.0;
+
+    return shadow;
+}
+
+float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
+{
+	vec3 lightToFrag = fragPos - lightPos;
+    float currentDepth = length(fragPos - lightPos);
+
+	vec2 atlasSize = 1.0 / textureSize(atlasMap, 0);
+
+    float distanceFactor = (radius - currentDepth) * 0.002;
+
+	// float distanceFactor = (radius - currentDepth) / radius;
+    // distanceFactor = distanceFactor * distanceFactor;
+	// float depthBias = distanceFactor + 0.2;
+	
+	float depthBias = distanceFactor;
+    float refDepth = (currentDepth - depthBias) / radius;
+
+	float shadow = 0.0;
+
+	int samplenumber = 1;
+	int sampleWidth = 1 + samplenumber * 2;
+	int sumsamplecount = sampleWidth * sampleWidth * sampleWidth;
+
+	float stride = (1.0 + (length(cameraPos - fragPos) / cameraFarPlane)) / 25.0;
+
+	float min_offset = -samplenumber * stride;
+	float max_offset = -min_offset;
+
+	for(float x = min_offset; x <= max_offset; x += stride)
+	{
+		for(float y = min_offset; y <= max_offset; y += stride)
+		{
+			for(float z = min_offset; z <= max_offset; z += stride)
+			{
+				float temp = SamplerAtlasCubeMapWithCompare(normalize(lightToFrag + vec3(x, y, z)), atlasMap, atlasSize, subStart, subSize, refDepth);
+				shadow += temp;
+			}
+		}
+	}
+    return 1.0f - shadow / float(sumsamplecount);
+}
+
+void CalcPBR(
+	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
+	vec3 albedo, float metallic, float roughness,
+	inout float NdotL, inout vec3 diffuse, inout vec3 specular)
+{
+	vec3 N = normalize(normal);           	// 表面法线
+	vec3 V = normalize(fragToViewDir); 		// 视线反方向（从表面指向摄像机）
+	vec3 L = normalize(fragToLightDir); 	// 光线方向（从表面指向光源）
+	vec3 H = normalize(V + L);            	// 半角向量
+	NdotL = max(dot(N, L), 0.0);			// 表面法线x指向光线
+	float NdotV = max(dot(N, V), 0.0);		// 表面法线x指向摄像机
+	float NdotH = max(dot(N, H), 0.0);		// 表面法线x半程向量
+	float VdotH = max(dot(V, H), 0.0);		// 指向摄像机x半程向量
+
+    if (NdotL <= 0.0) {
+        diffuse = vec3(0.0);
+        specular = vec3(0.0);
+		return;
+    }
+
+	vec3 F0 = mix(vec3(0.02), albedo, metallic);
+
+	// Specular = F × G × D / (4 × NdotL × NdotV)
+	float D = DistributionGGX(NdotH, roughness);			//法线分布项 D
+    float G = GeometrySmith(NdotL, NdotV, roughness);		//几何遮蔽项 G
+	vec3 F = fresnelSchlick(F0, VdotH);
+
+	specular = (F * G * D) / (4.0 * NdotL * NdotV + 0.0001);	//Specular, 0.0001防止除0
+
+	// vec3 kS = F;
+	// vec3 kD = vec3(1.0) - kS;
+	// kD *= 1.0 - metallic;	  
+
+	vec3 kD = vec3(1.0) - metallic;	//对于直接光照，忽略掉1-F的部分，防止在高光区域周围出现一圈“暗环”，视觉效果差
+	diffuse = kD * albedo / PI;
+}
+
+vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 view ,vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion)
+{
+	float NdotL;
+	vec3 diffuse = vec3(0.0);
+	vec3 specular = vec3(0.0);
+
+	CalcPBR(normal, -viewDir, -light.direction, albedo, metallic, roughness, NdotL, diffuse, specular);
+
+    vec3 radiance = light.color * light.luxIntensity;
+	vec3 Lo = (diffuse + specular) * radiance * NdotL;
+	vec3 lightingColor = Lo;
+
+    vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
+	DirLightCascade cascade = GetCascade(view * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
+	vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
+											vec2(cascade.atlasX, cascade.atlasY),
+	 										vec2(cascade.atlasWidth, cascade.atlasHeight));
+
+    shadow = clamp(shadow, 0.f, 1.f);
+	
+	vec3 result = (1.0 - shadow) * lightingColor;
+
+	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	result = max(result, ambient);
+
+	return result;
+}
+
+vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion)
+{
+	float dist = length(light.position - fragPos);
+    if(dist >= light.radius)
+		return vec3(0.f);
+
+	float NdotL;
+	vec3 diffuse = vec3(0.0);
+	vec3 specular = vec3(0.0);
+
+	CalcPBR(normal, -viewDir,  normalize(light.position - fragPos), albedo, metallic, roughness, NdotL, diffuse, specular);
+
+	float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+    vec3 radiance = light.color * light.cdIntensity * attenuation;
+	vec3 Lo = (diffuse + specular) * radiance * NdotL;	
+	vec3 lightingColor = Lo;
+
+	// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
+	float shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
+    shadow = clamp(shadow, 0.f, 1.f);
+
+	vec3 result = (1.0 - shadow) * lightingColor;
+
+	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	result = max(result, ambient);
+
+	return result;
+}
+
+vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 albedo, float metallic, float roughness, float ambientOcclusion)
+{
+    
+	float dist = length(light.position - fragPos);
+    if(dist >= light.radius)
+		return vec3(0.f);
+
+	float intensity = 1.0f;
+	float outerCutOff = min(light.cutOff ,light.outerCutOff);
+	vec3 lightDir = normalize(fragPos - light.position);
+
+    float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+
+	float theta = dot(lightDir, normalize(light.direction));
+	if(theta < outerCutOff)
+	{
+		return vec3(0.f);
+	}
+	else if (theta < light.cutOff)
+	{
+		float epsilon  = light.cutOff - outerCutOff;
+		intensity = clamp((theta - outerCutOff) / epsilon, 0.0f, 1.0f); 
+	}
+
+	float NdotL;
+	vec3 diffuse = vec3(0.0);
+	vec3 specular = vec3(0.0);
+
+	CalcPBR(normal, -viewDir,  normalize(light.position - fragPos), albedo, metallic, roughness, NdotL, diffuse, specular);
+
+    vec3 radiance = light.color * light.cdIntensity * attenuation;
+	vec3 Lo = (diffuse + specular) * radiance * NdotL;
+	vec3 lightingColor = Lo;
+
+	vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
+	vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
+    shadow = clamp(shadow, 0.f, 1.f);
+
+	vec3 result = (1.0 - shadow) * lightingColor * intensity;              
+	
+	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	result = max(result, ambient);
+
+	return result;
+}

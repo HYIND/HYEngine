@@ -1,0 +1,129 @@
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_ARB_bindless_texture : require
+
+layout(std140, binding = 1) uniform Material {
+	vec3 albedo;
+	float metallic;
+	float roughness;
+	float ambientOcclusion;
+
+	float opacity;
+
+	float IOR;
+
+	int alphamode;
+	float maskthreshold;
+
+	int twosided;
+
+	int	texture_albedo_count;
+	int	texture_metallic_count;
+	int	texture_roughness_count;
+	int	texture_normal_count;
+	int	texture_ao_count;
+	int	texture_emissive_count;
+	int	texture_metallicroughness_count;
+	int	texture_height_count;
+	int texture_opacity_count;
+
+	sampler2D texture_albedo;
+	sampler2D texture_metallic;
+	sampler2D texture_roughness;
+	sampler2D texture_ao;
+	sampler2D texture_normal;
+	sampler2D texture_emissive;
+	sampler2D texture_metallicroughness;
+	sampler2D texture_height;
+	sampler2D texture_opacity;
+
+} material;
+
+float calculateOpacityFromUBO(vec2 uv)
+{
+	if (material.alphamode == 0)
+		return material.opacity;
+
+	float opacity = material.texture_opacity_count > 0 ?
+					texture(material.texture_opacity, uv).r * material.opacity
+					: texture(material.texture_albedo, uv).a * material.opacity;
+
+	if (material.alphamode == 1)	//Mask
+		opacity = opacity > material.maskthreshold ? 1.0f : 0.f;
+
+	return opacity;
+}
+
+
+vec3 calculateNormalFromUBO(vec3 vertexNormal, mat3 TBN, vec2 uv)
+{
+	return material.texture_normal_count > 0 ?
+		normalize(TBN * normalize(texture(material.texture_normal, uv).rgb * 2.0 - 1.0))
+		: normalize(vertexNormal);
+}
+
+vec3 calculateAlbedoFromUBO(vec2 uv)
+{
+	return material.texture_albedo_count > 0 ? 
+        texture(material.texture_albedo, uv).rgb * material.albedo
+        :material.albedo;
+}
+
+float claculateMetallicFromUBO(vec2 uv)
+{
+	return material.texture_metallicroughness_count > 0 ?
+	texture(material.texture_metallicroughness, uv).b
+	:  (material.texture_metallic_count > 0 ? 
+		texture(material.texture_metallic, uv).b
+		: material.metallic);
+}
+
+float claculateRoughnessFromUBO(vec2 uv)
+{
+	return material.texture_metallicroughness_count > 0 ?
+		texture(material.texture_metallicroughness, uv).g
+		:  (material.texture_roughness_count > 0 ? 
+			texture(material.texture_roughness, uv).g
+			: material.roughness);
+}
+
+float claculateAmbientOcclusionFromUBO(vec2 uv)
+{
+	return material.texture_ao_count > 0 ?
+		texture(material.texture_ao, uv).r
+		: material.ambientOcclusion;
+}
+
+void getPBRPropertiesFromUBO(vec2 uv, inout vec3 albedo, inout float metallic, inout float roughness, inout float ambientOcclusion)
+{
+    albedo = material.texture_albedo_count > 0 ? 
+            texture(material.texture_albedo, uv).rgb * material.albedo
+            :material.albedo;
+
+    ambientOcclusion = material.texture_ao_count > 0 ? 
+                    texture(material.texture_ao, uv).r 
+                    : material.ambientOcclusion;
+
+	if (material.texture_metallicroughness_count > 0)
+	{
+        vec2 values = texture(material.texture_metallicroughness, uv).gb;
+        metallic = values.x;
+        roughness = values.y;
+	}
+    else if (material.texture_metallic_count > 0 && material.texture_roughness_count > 0 
+            && uint64_t(material.texture_metallic) == uint64_t(material.texture_roughness))
+    {
+        vec2 values = texture(material.texture_metallic, uv).gb;
+        metallic = values.x;
+        roughness = values.y;
+    }
+	else 
+	{
+        metallic = material.texture_metallic_count > 0 ?
+                texture(material.texture_metallic, uv).b
+                : material.metallic;
+
+        roughness = material.texture_roughness_count > 0 ? 
+                texture(material.texture_roughness, uv).g
+                : material.roughness;
+	}
+}

@@ -1,0 +1,77 @@
+#version 450 core
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+layout(local_size_x = 16, local_size_y = 16) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+
+uniform ivec2 screenSize;
+
+uniform sampler2D gNormal;
+uniform sampler2D depthMap;
+
+uniform sampler2D rawTexture;
+
+uniform int kernelSize; 
+uniform float sigma;
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    float z_ndc = depth * 2.0 - 1.0;
+    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+}
+
+void main() 
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    vec2 pixelCenter = pixelCoord + 0.5;
+    vec2 uv = pixelCenter / screenSize;
+
+    float centerDepth = texture(depthMap, uv).r;
+    if (centerDepth >= 0.99999)
+        return;
+
+    vec3 centerNormal = texture(gNormal, uv).rgb;
+    float centerLinearDepth = DepthBufferConvertToViewDepth(centerDepth);
+    
+    vec3 total = vec3(0.0);
+    float totalWeight = 0.0;
+
+    // 开始高斯采样循环
+    for (int x = -kernelSize; x <= kernelSize; x++) {
+        for (int y = -kernelSize; y <= kernelSize; y++) {
+            vec2 sampleUV = uv + vec2(x, y) / screenSize;
+
+            if (sampleUV.x > 1.f || sampleUV.y > 1.f || sampleUV.x < 0.f || sampleUV.y < 0.f) continue;
+            
+            // ---- 关键防护措施（双边滤波权重） ----
+            vec3 sampleNormal = texture(gNormal, sampleUV).rgb;
+            float sampleDepth = texture(depthMap, sampleUV).r;
+            if (sampleDepth >= 0.99999) continue;
+
+            float sampleLinearDepth = DepthBufferConvertToViewDepth(sampleDepth);
+            
+            // 法线权重：法线方向差太多，忽略
+            float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), 20.0);
+            // 深度权重：深度差太远，忽略
+            float depthWeight = exp(-abs(centerLinearDepth - sampleLinearDepth) * 25.0);
+            
+            // 防护判断：如果权重很小，说明是不同物体，直接跳过本次采样
+            if (normalWeight < 0.1 || depthWeight < 0.1) continue;
+            
+            // 高斯距离权重
+            float gaussianWeight = exp(-(x*x + y*y) / (2.0 * sigma * sigma));
+            
+            // 提取第一步计算出的原始反射颜色
+            vec3 sampleColor = texture(rawTexture, sampleUV).rgb;
+            total += sampleColor * gaussianWeight * normalWeight * depthWeight;
+            totalWeight += gaussianWeight * normalWeight * depthWeight;
+        }
+    }
+
+    imageStore(outputImage, pixelCoord, vec4(total / totalWeight, 1.0));
+}

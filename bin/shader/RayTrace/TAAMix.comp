@@ -1,0 +1,81 @@
+#version 450 core
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_ARB_bindless_texture : require
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba16f) uniform image2D currentFrame;   // 当前帧（带抖动）
+layout(binding = 1, rgba16f) uniform image2D historyFrame;   // 历史帧（上一帧累积结果）
+layout(binding = 2, rgba16f) uniform image2D outputFrame;    // 输出（新历史帧）
+
+uniform ivec2 screenSize;
+uniform bool isFirstIteration;
+uniform float blendFactor;  // 0.05 ~ 0.1，新帧占比
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= screenSize.x || coord.y >= screenSize.y) {
+        return;
+    }
+    
+    if(isFirstIteration)
+    {
+        imageStore(outputFrame, coord, imageLoad(currentFrame, coord));
+        return;
+    }
+
+    // 1. 采样当前帧和历史帧
+    vec4 current = imageLoad(currentFrame, coord);
+    vec4 history = imageLoad(historyFrame, coord);
+    
+    // ==============================================
+    // 2. 鬼影抑制（Variance Clipping）- 核心步骤
+    // ==============================================
+    // 取当前帧周围 3x3 区域，计算均值和方差
+    vec3 mean = vec3(0.0);
+    vec3 variance = vec3(0.0);
+    int count = 0;
+    
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            ivec2 sampleCoord = coord + ivec2(x, y);
+            // 边界钳制
+            sampleCoord = clamp(sampleCoord, ivec2(0), screenSize - 1);
+            vec3 sampleColor = imageLoad(currentFrame, sampleCoord).rgb;
+            mean += sampleColor;
+            count++;
+        }
+    }
+    mean /= float(count);
+    
+    // 计算方差
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            ivec2 sampleCoord = coord + ivec2(x, y);
+            sampleCoord = clamp(sampleCoord, ivec2(0), screenSize - 1);
+            vec3 sampleColor = imageLoad(currentFrame, sampleCoord).rgb;
+            vec3 diff = sampleColor - mean;
+            variance += diff * diff;
+        }
+    }
+    variance /= float(count);
+    
+    // 计算标准差（开方）
+    vec3 stddev = sqrt(variance + 0.0001); // 防止除零
+    
+    // 把历史帧裁剪到 [mean - stddev, mean + stddev] 范围内
+    vec3 minVal = mean - stddev * 1.0;  // 1.0 是裁剪强度系数
+    vec3 maxVal = mean + stddev * 1.0;
+    vec3 clippedHistory = clamp(history.rgb, minVal, maxVal);
+    
+    // ==============================================
+    // 3. 混合当前帧和历史帧（裁剪后的）
+    // ==============================================
+    vec3 finalColor = mix(clippedHistory, current.rgb, blendFactor);
+    
+    // ==============================================
+    // 4. 输出
+    // ==============================================
+    imageStore(outputFrame, coord, vec4(finalColor, 1.0));
+}
