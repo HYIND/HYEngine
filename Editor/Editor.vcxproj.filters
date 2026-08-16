@@ -1,0 +1,233 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="source\include\stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imconfig.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imgui.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imgui_internal.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_rectpack.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_textedit.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_truetype.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_opengl3.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_opengl3_loader.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\WorldManager.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Game\source\include\Factory\CharacterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Game\source\include\Factory\LightFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Game\source\include\Factory\ParticleEmitterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ImguiLayout.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\GraphEditor.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImCurveEdit.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImGradient.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImGuizmo.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImLightRig.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImSequencer.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImVectorEditor.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImZoomSlider.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PropertiesHelper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Reflect.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetDataBase.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\ProjectManager.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\IconManager.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetLoader.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetAnalysisHelper.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetObject.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetMeta.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Project\AssetDescription.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\AssetImportPopup.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{903795f7-1fa0-48e1-a6d9-95251f94c835}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{62d5c8f1-8ec0-434b-9f88-2e6bf35cc0a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{6b924a41-7b84-4f3e-8d4d-57b9b7055268}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imgui">
+      <UniqueIdentifier>{3194fbc9-6a26-4e55-b9e8-16124d6eb543}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imgui\backend">
+      <UniqueIdentifier>{6b7b6e00-b2e8-40d1-b438-566cbc760d10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Factory">
+      <UniqueIdentifier>{9a2dcbf5-a87a-4264-b3b7-dcd622b6b8b6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Factory">
+      <UniqueIdentifier>{7beb8b16-3015-490a-b1ff-6f1ef1624063}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imguizmo">
+      <UniqueIdentifier>{bbcc269d-2021-4071-83cf-c46bdbb7989e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Project">
+      <UniqueIdentifier>{47d2de23-2c33-47a0-b25a-754895ca5bae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Project">
+      <UniqueIdentifier>{c3f66781-1b72-47a9-a9f0-38636ab24f5d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Imgui\imgui.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_demo.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_draw.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_tables.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_widgets.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp">
+      <Filter>Imgui\backend</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\backend\imgui_impl_opengl3.cpp">
+      <Filter>Imgui\backend</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\WorldManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Game\source\src\ParticleEmitterFactory.cpp">
+      <Filter>源文件\Factory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Game\source\src\LightFactory.cpp">
+      <Filter>源文件\Factory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Game\source\src\CharacterFactory.cpp">
+      <Filter>源文件\Factory</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ImguiLayout.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\GraphEditor.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImCurveEdit.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImGradient.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImGuizmo.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImSequencer.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImVectorEditor.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PropertiesHelper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetDataBase.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\ProjectManager.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\IconManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetLoader.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetAnalysisHelper.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetObject.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetDescription.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\AssetImportPopup.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\PropertiesHelper.inl">
+      <Filter>头文件</Filter>
+    </None>
+  </ItemGroup>
+</Project>

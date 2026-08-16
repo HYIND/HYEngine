@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{38529A56-2207-43CE-95BB-C1BD6204CD2C}</ProjectGuid>
+    <RootNamespace>Common</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+    <TargetName>$(ProjectName)_d</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_LIB;NDEBUG;NOMINMAX;_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_LIB;NOMINMAX;_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <Optimization>Disabled</Optimization>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\Audio\Components\AudioSource.h" />
+    <ClInclude Include="source\include\Audio\Systems\AudioSystem.h" />
+    <ClInclude Include="source\include\GameRuntime.h" />
+    <ClInclude Include="source\include\GameRuntimeComponents.h" />
+    <ClInclude Include="source\include\GameRuntimeSystems.h" />
+    <ClInclude Include="source\include\GameRuntimeTags.h" />
+    <ClInclude Include="source\include\GeneralManager\AudioDeviceManager.h" />
+    <ClInclude Include="source\include\GeneralManager\FocusManager.h" />
+    <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h" />
+    <ClInclude Include="source\include\GeneralManager\MouseManager.h" />
+    <ClInclude Include="source\include\GeneralManager\RenderManager.h" />
+    <ClInclude Include="source\include\Helper\AudioTool.h" />
+    <ClInclude Include="source\include\Helper\DynamicFpsController.h" />
+    <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h" />
+    <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h" />
+    <ClInclude Include="source\include\RenderEngine\D2DTools.h" />
+    <ClInclude Include="source\include\RenderEngine\D2DWrapper.h" />
+    <ClInclude Include="source\include\RenderEngine\Renderer.h" />
+    <ClInclude Include="source\include\RenderEngine\RenderFrameManager.h" />
+    <ClInclude Include="source\include\Render\Components\GIFAnimator.h" />
+    <ClInclude Include="source\include\Render\Components\LaserBeamEmitter.h" />
+    <ClInclude Include="source\include\Render\Components\ParticleEmitter.h" />
+    <ClInclude Include="source\include\Render\Components\RenderBase.h" />
+    <ClInclude Include="source\include\Render\Components\RenderModel.h" />
+    <ClInclude Include="source\include\Render\Components\SkeletonAnimator.h" />
+    <ClInclude Include="source\include\Render\Components\SkyBox.h" />
+    <ClInclude Include="source\include\Render\Components\Sprite.h" />
+    <ClInclude Include="source\include\Render\Systems\AnimationSystem.h" />
+    <ClInclude Include="source\include\Render\Systems\LaserBeamSystem.h" />
+    <ClInclude Include="source\include\Render\Systems\ParticleSystem.h" />
+    <ClInclude Include="source\include\Render\Systems\RenderSystem.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\Audio\AudioSystem.cpp" />
+    <ClCompile Include="source\src\GameRuntime.cpp" />
+    <ClCompile Include="source\src\GeneralManager\AudioDeviceManager.cpp" />
+    <ClCompile Include="source\src\GeneralManager\FocusManager.cpp" />
+    <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp" />
+    <ClCompile Include="source\src\GeneralManager\MouseManager.cpp" />
+    <ClCompile Include="source\src\GeneralManager\RenderManager.cpp" />
+    <ClCompile Include="source\src\Helper\AudioTool.cpp" />
+    <ClCompile Include="source\src\Helper\DynamicFpsController.cpp" />
+    <ClCompile Include="source\src\Input\LocalInputSystem.cpp" />
+    <ClCompile Include="source\src\RenderEngine\D2DTools.cpp" />
+    <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp" />
+    <ClCompile Include="source\src\RenderEngine\Renderer.cpp" />
+    <ClCompile Include="source\src\RenderEngine\RenderFrameManager.cpp" />
+    <ClCompile Include="source\src\Render\AnimationSystem.cpp" />
+    <ClCompile Include="source\src\Render\LaserBeamSystem.cpp" />
+    <ClCompile Include="source\src\Render\ParticleSystem.cpp" />
+    <ClCompile Include="source\src\Render\RenderSystem.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

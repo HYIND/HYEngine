@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{2a17d1d6-e861-4725-bdba-a44d50c452c9}</ProjectGuid>
+    <RootNamespace>OpenGLRenderEngine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+    <TargetName>$(ProjectName)_d</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;NOMINMAX;WIN32_LEAN_AND_MEAN</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)Common\source\include</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;NOMINMAX;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)Common\source\include</AdditionalIncludeDirectories>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\OpenGLRenderEngine.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animation.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animator.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animdata.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\AssimpGlmHelpers.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\AtlasMap.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Bone.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Effect.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\LaserBeam.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Light.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Material.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Mesh.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Model.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Particle.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Shader.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\SSBO.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Texture2D.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\TextureCube.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\BVHBuilder.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\FBOHelper.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GPUTimer.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GroupMapper.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\IndirectDrawManager.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\MemorySegmentBuffer.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\OpenGLRenderContext.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderHelp.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderItem.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderState.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\SegmentBufferBase.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\SegmentBufferManager.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderConfig.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderContextManager.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderer.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\DependencySolver.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\PassNode.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraph.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraphContext.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraphResourceManager.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\TexturePool.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderOption.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\AutoExposurePass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\BloomPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\CombinPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\DepthFogPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\EffectPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\FirstPersonPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\GeometryPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\GlobalPostProcessPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\HZBPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightDrawPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightingPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightShadowDepthPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\PreCalculatePass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTracePass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RenderPassBase.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SkyBoxPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSAOPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSGIPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSRPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\TransparentPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\SharedTexture.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\Animation.cpp" />
+    <ClCompile Include="source\src\Animator.cpp" />
+    <ClCompile Include="source\src\AssimpGlmHelpers.cpp" />
+    <ClCompile Include="source\src\AtlasMap.cpp" />
+    <ClCompile Include="source\src\AutoExposurePass.cpp" />
+    <ClCompile Include="source\src\BloomPass.cpp" />
+    <ClCompile Include="source\src\Bone.cpp" />
+    <ClCompile Include="source\src\BVHBuilder.cpp" />
+    <ClCompile Include="source\src\CombinPass.cpp" />
+    <ClCompile Include="source\src\DependencySolver.cpp" />
+    <ClCompile Include="source\src\DepthFogPass.cpp" />
+    <ClCompile Include="source\src\DynamicPacker.cpp" />
+    <ClCompile Include="source\src\EffectPass.cpp" />
+    <ClCompile Include="source\src\FBOHelper.cpp" />
+    <ClCompile Include="source\src\FirstPersonPass.cpp" />
+    <ClCompile Include="source\src\GeometryPass.cpp" />
+    <ClCompile Include="source\src\GlobalPostProcessPass.cpp" />
+    <ClCompile Include="source\src\GPUTimer.cpp" />
+    <ClCompile Include="source\src\GroupMapper.cpp" />
+    <ClCompile Include="source\src\HZBPass.cpp" />
+    <ClCompile Include="source\src\IndirectDrawManager.cpp" />
+    <ClCompile Include="source\src\Light.cpp" />
+    <ClCompile Include="source\src\LightDrawPass.cpp" />
+    <ClCompile Include="source\src\LightingPass.cpp" />
+    <ClCompile Include="source\src\LightShadowDepthPass.cpp" />
+    <ClCompile Include="source\src\Material.cpp" />
+    <ClCompile Include="source\src\MemorySegmentBuffer.cpp" />
+    <ClCompile Include="source\src\Mesh.cpp" />
+    <ClCompile Include="source\src\Model.cpp" />
+    <ClCompile Include="source\src\OpenGLRenderEngine.cpp" />
+    <ClCompile Include="source\src\OpenGLRenderer.cpp" />
+    <ClCompile Include="source\src\PassNode.cpp" />
+    <ClCompile Include="source\src\PreCalculatePass.cpp" />
+    <ClCompile Include="source\src\RayTracePass.cpp" />
+    <ClCompile Include="source\src\OpenGLRenderContextManager.cpp" />
+    <ClCompile Include="source\src\RenderGraph.cpp" />
+    <ClCompile Include="source\src\RenderGraphResourceManager.cpp" />
+    <ClCompile Include="source\src\RenderHelp.cpp" />
+    <ClCompile Include="source\src\RenderState.cpp" />
+    <ClCompile Include="source\src\Shader.cpp" />
+    <ClCompile Include="source\src\SharedTexture.cpp" />
+    <ClCompile Include="source\src\SkyBoxPass.cpp" />
+    <ClCompile Include="source\src\SSAOPass.cpp" />
+    <ClCompile Include="source\src\SSBO.cpp" />
+    <ClCompile Include="source\src\SSGIPass.cpp" />
+    <ClCompile Include="source\src\SSRPass.cpp" />
+    <ClCompile Include="source\src\Texture2D.cpp" />
+    <ClCompile Include="source\src\TextureCube.cpp" />
+    <ClCompile Include="source\src\TexturePool.cpp" />
+    <ClCompile Include="source\src\TransparentPass.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\OpenGLRenderEngine\General\SegmentBufferManager.inl" />
+    <None Include="source\include\OpenGLRenderEngine\RenderGraph\PassNode.inl" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

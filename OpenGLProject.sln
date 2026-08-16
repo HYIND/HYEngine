@@ -1,0 +1,73 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Game", "Game\Game.vcxproj", "{E7B54356-D875-4BD5-BDBC-3CF5D2CAEF80}"
+	ProjectSection(ProjectDependencies) = postProject
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C} = {38529A56-2207-43CE-95BB-C1BD6204CD2C}
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B} = {3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenGLRenderEngine", "OpenGLRenderEngine\OpenGLRenderEngine.vcxproj", "{2A17D1D6-E861-4725-BDBA-A44D50C452C9}"
+	ProjectSection(ProjectDependencies) = postProject
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3} = {87189D68-2D62-486C-B62D-C26D2C4A7FC3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Common", "Common\Common.vcxproj", "{87189D68-2D62-486C-B62D-C26D2C4A7FC3}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GameRuntime", "GameRuntime\GameRuntime.vcxproj", "{38529A56-2207-43CE-95BB-C1BD6204CD2C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{2A17D1D6-E861-4725-BDBA-A44D50C452C9} = {2A17D1D6-E861-4725-BDBA-A44D50C452C9}
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3} = {87189D68-2D62-486C-B62D-C26D2C4A7FC3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GamePlay", "GamePlay\GamePlay.vcxproj", "{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3} = {87189D68-2D62-486C-B62D-C26D2C4A7FC3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Editor", "Editor\Editor.vcxproj", "{CEA93B22-112A-4B0E-83B5-63793C12906C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C} = {38529A56-2207-43CE-95BB-C1BD6204CD2C}
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B} = {3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E7B54356-D875-4BD5-BDBC-3CF5D2CAEF80}.Debug|x64.ActiveCfg = Debug|x64
+		{E7B54356-D875-4BD5-BDBC-3CF5D2CAEF80}.Debug|x64.Build.0 = Debug|x64
+		{E7B54356-D875-4BD5-BDBC-3CF5D2CAEF80}.Release|x64.ActiveCfg = Release|x64
+		{E7B54356-D875-4BD5-BDBC-3CF5D2CAEF80}.Release|x64.Build.0 = Release|x64
+		{2A17D1D6-E861-4725-BDBA-A44D50C452C9}.Debug|x64.ActiveCfg = Debug|x64
+		{2A17D1D6-E861-4725-BDBA-A44D50C452C9}.Debug|x64.Build.0 = Debug|x64
+		{2A17D1D6-E861-4725-BDBA-A44D50C452C9}.Release|x64.ActiveCfg = Release|x64
+		{2A17D1D6-E861-4725-BDBA-A44D50C452C9}.Release|x64.Build.0 = Release|x64
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3}.Debug|x64.ActiveCfg = Debug|x64
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3}.Debug|x64.Build.0 = Debug|x64
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3}.Release|x64.ActiveCfg = Release|x64
+		{87189D68-2D62-486C-B62D-C26D2C4A7FC3}.Release|x64.Build.0 = Release|x64
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C}.Debug|x64.ActiveCfg = Debug|x64
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C}.Debug|x64.Build.0 = Debug|x64
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C}.Release|x64.ActiveCfg = Release|x64
+		{38529A56-2207-43CE-95BB-C1BD6204CD2C}.Release|x64.Build.0 = Release|x64
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}.Debug|x64.ActiveCfg = Debug|x64
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}.Debug|x64.Build.0 = Debug|x64
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}.Release|x64.ActiveCfg = Release|x64
+		{3FD3DBD1-412C-4EDB-A7FD-4A2ECDF15C9B}.Release|x64.Build.0 = Release|x64
+		{CEA93B22-112A-4B0E-83B5-63793C12906C}.Debug|x64.ActiveCfg = Debug|x64
+		{CEA93B22-112A-4B0E-83B5-63793C12906C}.Debug|x64.Build.0 = Debug|x64
+		{CEA93B22-112A-4B0E-83B5-63793C12906C}.Release|x64.ActiveCfg = Release|x64
+		{CEA93B22-112A-4B0E-83B5-63793C12906C}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4CDEB3CA-620E-497F-9530-6DB3718FBC10}
+	EndGlobalSection
+EndGlobal

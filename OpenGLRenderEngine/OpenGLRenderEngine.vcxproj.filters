@@ -1,0 +1,377 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\OpenGLRenderEngine">
+      <UniqueIdentifier>{e7dac402-fa5c-48ed-82b0-b847e8b9ce02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\OpenGLRenderEngine\Base">
+      <UniqueIdentifier>{78ed9eba-3f62-455b-8ef1-acdb8ac10295}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\OpenGLRenderEngine\General">
+      <UniqueIdentifier>{30ccecdb-2e59-43d3-a837-e5fddf95ee3d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\OpenGLRenderEngine\RenderGraph">
+      <UniqueIdentifier>{63a2f0aa-4f56-4712-a9aa-b1db2bae2dfa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\OpenGLRenderEngine\RenderPass">
+      <UniqueIdentifier>{8241342f-31a6-463b-9ab1-559f8756dd0b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderConfig.h">
+      <Filter>头文件\OpenGLRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderer.h">
+      <Filter>头文件\OpenGLRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\OpenGLRenderContextManager.h">
+      <Filter>头文件\OpenGLRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\SharedTexture.h">
+      <Filter>头文件\OpenGLRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderOption.h">
+      <Filter>头文件\OpenGLRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\AssimpGlmHelpers.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\AtlasMap.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Bone.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Effect.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\LaserBeam.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Light.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Material.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Mesh.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Model.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Particle.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Shader.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\SSBO.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Texture2D.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animation.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animator.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\Animdata.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GPUTimer.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GroupMapper.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\IndirectDrawManager.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\MemorySegmentBuffer.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\OpenGLRenderContext.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderHelp.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderItem.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderState.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\SegmentBufferBase.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\SegmentBufferManager.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\BVHBuilder.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\FBOHelper.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraph.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraphContext.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\RenderGraphResourceManager.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\TexturePool.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\DependencySolver.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderGraph\PassNode.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\DepthFogPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\EffectPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\FirstPersonPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\GeometryPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\GlobalPostProcessPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\HZBPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightDrawPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightingPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightShadowDepthPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\PreCalculatePass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTracePass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RenderPassBase.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SkyBoxPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSAOPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSGIPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSRPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\TransparentPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\AutoExposurePass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\BloomPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\CombinPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\Base\TextureCube.h">
+      <Filter>头文件\OpenGLRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\OpenGLRenderContextManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderGraph.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderGraphResourceManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderHelp.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Shader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SkyBoxPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SSAOPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SSBO.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SSGIPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SSRPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Texture2D.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\TexturePool.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\TransparentPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Animation.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Animator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\AssimpGlmHelpers.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\AtlasMap.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\AutoExposurePass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\BloomPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Bone.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\BVHBuilder.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\CombinPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\DependencySolver.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\DepthFogPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\DynamicPacker.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\EffectPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\FirstPersonPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeometryPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GlobalPostProcessPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GPUTimer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GroupMapper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\HZBPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\IndirectDrawManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LightDrawPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LightingPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LightShadowDepthPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Material.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\MemorySegmentBuffer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Mesh.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Model.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\OpenGLRenderer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PassNode.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PreCalculatePass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RayTracePass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SharedTexture.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Light.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\FBOHelper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\TextureCube.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\OpenGLRenderEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\OpenGLRenderEngine\General\SegmentBufferManager.inl">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </None>
+    <None Include="source\include\OpenGLRenderEngine\RenderGraph\PassNode.inl">
+      <Filter>头文件\OpenGLRenderEngine\RenderGraph</Filter>
+    </None>
+  </ItemGroup>
+</Project>

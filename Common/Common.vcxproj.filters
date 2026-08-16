@@ -1,0 +1,218 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\Helper">
+      <UniqueIdentifier>{c6df2688-4f75-4ad5-b8c0-6191197de162}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Helper">
+      <UniqueIdentifier>{42489ff6-cf1c-443a-94db-e12a118b8155}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\CommonData">
+      <UniqueIdentifier>{78040ce8-3ba7-4307-8c51-013210bcf896}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\CommonData">
+      <UniqueIdentifier>{7de3507b-64a2-4310-ad08-a73c803abbe3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ECSCore">
+      <UniqueIdentifier>{b339690e-ad66-4f02-a432-ff84e6f6a46f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Components">
+      <UniqueIdentifier>{43c1c0d8-39de-4321-a907-d0031337ca30}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Systems">
+      <UniqueIdentifier>{544f9e54-aadf-4598-86dc-8790bf916a89}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\ECSCore">
+      <UniqueIdentifier>{8859b1d2-a64e-4139-a35d-80882aa2a27a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Systems">
+      <UniqueIdentifier>{59bc7b1f-2f3b-442f-9418-f378bf3aecd6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\Common.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonData\LightData.h">
+      <Filter>头文件\CommonData</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonComponent.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonSystems.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonData\Camera.h">
+      <Filter>头文件\CommonData</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonTags.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonData\VariableMaterialData.h">
+      <Filter>头文件\CommonData</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonEventDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\CommonData\ModelProxyData.h">
+      <Filter>头文件\CommonData</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Systems\DestroySystem.h">
+      <Filter>头文件\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Systems\LifeTimeSystem.h">
+      <Filter>头文件\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Systems\PhysicsSystem.h">
+      <Filter>头文件\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\CameraComponent.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Controller.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\LifeTime.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Movement.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Physics.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Renderable.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Transform.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\Transform2D.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\VariableMaterial.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\ComponentArray.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\ComponentManager.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\ComponentTypes.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\Entity.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\EntityManager.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\EventSystem.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\IComponent.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\System.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\SystemManager.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\SystemTypes.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\Types.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\View.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ECSCore\World.h">
+      <Filter>头文件\ECSCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\ModelProxy.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Components\RenderLight.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\DynamicPacker.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\FileIO.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\Tools.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\TripleBuffer.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\Helper\DynamicPacker.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Helper\FileIO.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Helper\Tools.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Common.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\CommonData\Camera.cpp">
+      <Filter>源文件\CommonData</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ECSCore\Entity.cpp">
+      <Filter>源文件\ECSCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ECSCore\EntityManager.cpp">
+      <Filter>源文件\ECSCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ECSCore\System.cpp">
+      <Filter>源文件\ECSCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ECSCore\SystemManager.cpp">
+      <Filter>源文件\ECSCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ECSCore\World.cpp">
+      <Filter>源文件\ECSCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Systems\DestroySystem.cpp">
+      <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Systems\LifeTimeSystem.cpp">
+      <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Systems\PhysicsSystem.cpp">
+      <Filter>源文件\Systems</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\ECSCore\Entity.inl">
+      <Filter>头文件\ECSCore</Filter>
+    </None>
+    <None Include="source\include\ECSCore\SystemManager.inl">
+      <Filter>头文件\ECSCore</Filter>
+    </None>
+    <None Include="source\include\ECSCore\World.inl">
+      <Filter>头文件\ECSCore</Filter>
+    </None>
+  </ItemGroup>
+</Project>

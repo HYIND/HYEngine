@@ -1,0 +1,230 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="source\src\DynamicFpsController.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GameWorldManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderProcess.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ResourceManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Scene_inner.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Scene_outer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UserInfoManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ConnectManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\JsonProtocolClient.cpp">
+      <Filter>源文件\public</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\ServiceDiscoveryClient.cpp">
+      <Filter>源文件\public</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\ServiceRegistryData.cpp">
+      <Filter>源文件\public</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RequestManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\MsgManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LobbyManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\BusyLoaderDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\BGMManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\CharacterFactory.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ParticleEmitterFactory.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LightFactory.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\RenderProcess.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Scene.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Tank_War.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\Log.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\GameWorldManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\ResourceManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\ConnectManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\UserInfoManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ServiceDiscoveryClient.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ServiceRegistryData.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\command.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\EndPointConfig.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\RequestManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ApplicationLayerCommunication\JsonProtocolClient.h">
+      <Filter>头文件\public\ApplicationLayerCommunication</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\MsgManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\LobbyDataDef.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\LobbyManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\DynamicFpsController.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\GameDataDef.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>资源文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\BusyLoaderDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\BGMManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\Log.h">
+      <Filter>头文件\public</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Factory\CharacterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Factory\LightFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Game.ico">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\Fail.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\Win.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\Text_BK.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\Return.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\OP_KB.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="Resource\Pause.png">
+      <Filter>资源文件</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resource\Cursor.cur">
+      <Filter>资源文件</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{903795f7-1fa0-48e1-a6d9-95251f94c835}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{62d5c8f1-8ec0-434b-9f88-2e6bf35cc0a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{6b924a41-7b84-4f3e-8d4d-57b9b7055268}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Helper">
+      <UniqueIdentifier>{ab76f02b-1fea-41d2-b589-db9cbb0a90b2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Manager">
+      <UniqueIdentifier>{b7ac37c2-c829-4302-9db9-ea166d49fd3b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\public">
+      <UniqueIdentifier>{3510ed07-e724-455f-bdec-47c94f74e84f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\public\ApplicationLayerCommunication">
+      <UniqueIdentifier>{3558872e-a79e-41d1-84b2-f905e8e848f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\public">
+      <UniqueIdentifier>{f4696f62-1d92-4931-ac64-5fa4b8d01405}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Factory">
+      <UniqueIdentifier>{62fd375d-f7f3-4c88-a57b-c882acd7ba23}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <Media Include="Resource\Default_Attacked.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+    <Media Include="Resource\Default_Shoot.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+    <Media Include="Resource\Game_BGM.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+    <Media Include="Resource\Heal.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+    <Media Include="Resource\Menu_BGM.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+    <Media Include="Resource\Fire.wav">
+      <Filter>资源文件</Filter>
+    </Media>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Game.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>

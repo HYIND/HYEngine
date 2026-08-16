@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{87189d68-2d62-486c-b62d-c26d2c4a7fc3}</ProjectGuid>
+    <RootNamespace>Common</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+    <TargetName>$(ProjectName)_d</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_LIB;NDEBUG;NOMINMAX;_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Lib>
+      <AdditionalLibraryDirectories>$(SolutionDir)libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_LIB;NOMINMAX;_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Lib>
+      <AdditionalLibraryDirectories>$(SolutionDir)libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\Common.h" />
+    <ClInclude Include="source\include\CommonComponent.h" />
+    <ClInclude Include="source\include\CommonData\Camera.h" />
+    <ClInclude Include="source\include\CommonData\LightData.h" />
+    <ClInclude Include="source\include\CommonData\ModelProxyData.h" />
+    <ClInclude Include="source\include\CommonData\VariableMaterialData.h" />
+    <ClInclude Include="source\include\CommonEventDef.h" />
+    <ClInclude Include="source\include\CommonSystems.h" />
+    <ClInclude Include="source\include\CommonTags.h" />
+    <ClInclude Include="source\include\Components\CameraComponent.h" />
+    <ClInclude Include="source\include\Components\Controller.h" />
+    <ClInclude Include="source\include\Components\LifeTime.h" />
+    <ClInclude Include="source\include\Components\ModelProxy.h" />
+    <ClInclude Include="source\include\Components\Movement.h" />
+    <ClInclude Include="source\include\Components\Physics.h" />
+    <ClInclude Include="source\include\Components\Renderable.h" />
+    <ClInclude Include="source\include\Components\RenderLight.h" />
+    <ClInclude Include="source\include\Components\Transform.h" />
+    <ClInclude Include="source\include\Components\Transform2D.h" />
+    <ClInclude Include="source\include\Components\VariableMaterial.h" />
+    <ClInclude Include="source\include\ECSCore\ComponentArray.h" />
+    <ClInclude Include="source\include\ECSCore\ComponentManager.h" />
+    <ClInclude Include="source\include\ECSCore\ComponentTypes.h" />
+    <ClInclude Include="source\include\ECSCore\Entity.h" />
+    <ClInclude Include="source\include\ECSCore\EntityManager.h" />
+    <ClInclude Include="source\include\ECSCore\EventSystem.h" />
+    <ClInclude Include="source\include\ECSCore\IComponent.h" />
+    <ClInclude Include="source\include\ECSCore\System.h" />
+    <ClInclude Include="source\include\ECSCore\SystemManager.h" />
+    <ClInclude Include="source\include\ECSCore\SystemTypes.h" />
+    <ClInclude Include="source\include\ECSCore\Types.h" />
+    <ClInclude Include="source\include\ECSCore\View.h" />
+    <ClInclude Include="source\include\ECSCore\World.h" />
+    <ClInclude Include="source\include\Helper\DynamicPacker.h" />
+    <ClInclude Include="source\include\Helper\FileIO.h" />
+    <ClInclude Include="source\include\Helper\Tools.h" />
+    <ClInclude Include="source\include\Helper\TripleBuffer.h" />
+    <ClInclude Include="source\include\Systems\DestroySystem.h" />
+    <ClInclude Include="source\include\Systems\LifeTimeSystem.h" />
+    <ClInclude Include="source\include\Systems\PhysicsSystem.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\Common.cpp" />
+    <ClCompile Include="source\src\CommonData\Camera.cpp" />
+    <ClCompile Include="source\src\ECSCore\Entity.cpp" />
+    <ClCompile Include="source\src\ECSCore\EntityManager.cpp" />
+    <ClCompile Include="source\src\ECSCore\System.cpp" />
+    <ClCompile Include="source\src\ECSCore\SystemManager.cpp" />
+    <ClCompile Include="source\src\ECSCore\World.cpp" />
+    <ClCompile Include="source\src\Helper\DynamicPacker.cpp" />
+    <ClCompile Include="source\src\Helper\FileIO.cpp" />
+    <ClCompile Include="source\src\Helper\Tools.cpp" />
+    <ClCompile Include="source\src\Systems\DestroySystem.cpp" />
+    <ClCompile Include="source\src\Systems\LifeTimeSystem.cpp" />
+    <ClCompile Include="source\src\Systems\PhysicsSystem.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\ECSCore\Entity.inl" />
+    <None Include="source\include\ECSCore\SystemManager.inl" />
+    <None Include="source\include\ECSCore\World.inl" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
