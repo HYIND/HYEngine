@@ -1,0 +1,76 @@
+
+struct DirLight {
+	vec3 direction;
+	vec3 color;
+
+	float luxIntensity;
+
+	int cascadeFirst;
+	int cascadeCount;
+};
+
+struct DirLightCascade
+{
+	mat4 lightSpaceMatrix;
+
+	int atlasX;
+	int atlasY;
+	int atlasWidth;
+	int atlasHeight;
+	float cascadePlaneDistance;
+};
+
+struct PointLight {
+	vec3 position;
+	vec3 color;
+
+	vec2 atlasStart[6];
+	vec2 atlasSize[6];
+	
+	float cdIntensity;
+	float radius;
+};
+
+struct SpotLight {
+    vec3 position;
+	vec3 color;
+	vec3 direction;	
+
+	float cdIntensity;
+
+    float cutOff;	
+    float outerCutOff;
+
+	float radius;
+
+	int atlasX;
+	int atlasY;
+	int atlasWidth;
+	int atlasHeight;
+
+	mat4 lightSpaceMatrix;
+};
+
+layout(std430, binding = 4) buffer DirLightMetaData
+{
+    int dirLightCount;
+    DirLight info[];
+} dirLightMetaData;
+
+layout(std430, binding = 5) buffer DirLightCascadeData
+{
+    int dirLightCascadeCount;
+    DirLightCascade info[];
+} dirLightCascadeData;
+
+layout(std430, binding = 6) buffer SpotLightMetaData
+{
+    int spotLightCount;
+    SpotLight info[];
+} spotLightMetaData;
+
+layout(std430, binding = 7) buffer PointLightMetaData
+{
+    int pointLightCount;
+    PointLight info[];
+} pointLightMetaData;

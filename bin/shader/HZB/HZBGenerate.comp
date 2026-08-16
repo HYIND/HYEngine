@@ -1,0 +1,41 @@
+#version 430 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
+
+layout(binding = 0, r32f) uniform image2D inputDepth;   // 上一层深度
+layout(binding = 1, r32f) uniform image2D outputDepth;  // 当前层深度
+
+void main() 
+{
+    ivec2 inputSize = imageSize(inputDepth);
+    ivec2 outPutSize = imageSize(outputDepth);
+    
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= outPutSize.x || pixelCoord.y >= outPutSize.y) {
+        return;
+    }
+
+    ivec2 inCoord = pixelCoord * 2;  // 对应上一层的位置
+    
+    // 取2x2区域的最大值
+    int samplerCountX = ((pixelCoord.x == outPutSize.x - 1) && (inputSize.x % 2 != 0)) ? 3 : 2;
+    int samplerCountY = ((pixelCoord.y == outPutSize.y - 1) && (inputSize.y % 2 != 0)) ? 3 : 2;
+
+    float maxDepth = 0.0;
+    for (int y = 0; y < samplerCountY; y++) {
+        for (int x = 0; x < samplerCountX; x++) {
+            float d = imageLoad(inputDepth, inCoord + ivec2(x, y)).r;
+            maxDepth = max(maxDepth, d);
+        }
+    }
+    imageStore(outputDepth, pixelCoord, vec4(maxDepth));
+}

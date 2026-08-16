@@ -1,0 +1,277 @@
+
+#include "shader/dataDef/animationssboDef.comp"
+
+#ifndef MAX_BONE_INFLUENCE
+#define MAX_BONE_INFLUENCE 8
+#endif
+
+struct CalucateResult
+{
+    vec4 pos;
+    vec3 normal;
+    vec3 tangent;
+    vec3 bitangent;
+};
+
+vec4 CalculateIfHasAnimationData(vec4 pos);
+CalucateResult CalculateIfHasAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent);
+vec4 CalculatePrevIfHasAnimationData(vec4 pos);
+CalucateResult CalculatePrevIfHasAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent);
+
+int GetBone(int index)
+{
+    int index1 = index / 4;
+    int index2 = index % 4;
+    return aBoneIds[index1][index2];
+}
+
+float GetWeight(int index)
+{
+    int index1 = index / 4;
+    int index2 = index % 4;
+    return aWeights[index1][index2];
+}
+
+CalucateResult CalculateAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent)
+{
+    bool isResultInfluenced = false;
+    CalucateResult result;
+
+    int ani_count = animationMeta.animationcount;
+    for(int i = 0 ;i < ani_count; i++)
+    {
+        bool isInfluenced = false;
+
+        if(animationMeta.info[i].count <= 0)
+            continue;
+      
+        CalucateResult tempResult;
+        tempResult.pos = vec4(0.f);
+        tempResult.normal = vec3(0.f);
+        tempResult.tangent = vec3(0.f);
+        tempResult.bitangent = vec3(0.f);
+
+	    for(int j = 0 ; j < MAX_BONE_INFLUENCE ; j++)
+        {
+            int bondId = GetBone(j);
+            float weight = GetWeight(j);
+
+            if(bondId < 0 || bondId >= animationMeta.info[i].count) 
+                continue;
+    
+            int matIndex = bondId + animationMeta.info[i].offset;
+            tempResult.pos += animationMat.finalBonesMatrices[matIndex] * pos * weight;
+
+            mat3 normalTrans = mat3(transpose(inverse(animationMat.finalBonesMatrices[matIndex])));
+            tempResult.normal += normalize(normalTrans * normalize(normal)) * weight;
+            tempResult.tangent += normalize(normalTrans * normalize(tangent)) * weight;
+            tempResult.bitangent += normalize(normalTrans * normalize(bitangent)) * weight;
+
+            isInfluenced = true;
+        }
+
+        if(isInfluenced)
+        {
+            result.pos = tempResult.pos;
+            result.normal = tempResult.normal;
+            result.tangent = tempResult.tangent;
+            result.bitangent = tempResult.bitangent;
+            isResultInfluenced = true;
+        }
+    }
+
+    if(!isResultInfluenced)
+    {
+        CalucateResult r;
+        r.pos = pos;
+        r.normal = normal;
+        r.tangent = tangent;
+        r.bitangent = bitangent;
+        return r;
+    }
+
+    return result;
+}
+
+vec4 CalculateAnimationData(vec4 pos)
+{
+    bool isResultInfluenced = false;
+    vec4 result;
+
+    int ani_count = animationMeta.animationcount;
+    for(int i = 0 ;i < ani_count; i++)
+    {
+        bool isInfluenced = false;
+
+        if(animationMeta.info[i].count <= 0)
+            continue;
+
+        vec4 tempResult = vec4(0.f);
+	    for(int j = 0 ; j < MAX_BONE_INFLUENCE ; j++)
+        {
+            int bondId = GetBone(j);
+            float weight = GetWeight(j);
+
+            if(bondId < 0 || bondId >= animationMeta.info[i].count) 
+                continue;
+    
+            int matIndex = bondId + animationMeta.info[i].offset;
+            tempResult += animationMat.finalBonesMatrices[matIndex] * pos * weight;
+
+            isInfluenced = true;
+        }
+
+        if(isInfluenced)
+        {
+            result = tempResult;
+            isResultInfluenced = true;
+        }
+    }
+
+    if(!isResultInfluenced)
+        return pos;
+
+    return result;
+}
+
+CalucateResult CalculatePrevAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent)
+{
+    bool isResultInfluenced = false;
+    CalucateResult result;
+
+    int ani_count = prevAnimationMeta.animationcount;
+    for(int i = 0 ;i < ani_count; i++)
+    {
+        bool isInfluenced = false;
+
+        if(prevAnimationMeta.info[i].count <= 0)
+            continue;
+      
+        CalucateResult tempResult;
+        tempResult.pos = vec4(0.f);
+        tempResult.normal = vec3(0.f);
+        tempResult.tangent = vec3(0.f);
+        tempResult.bitangent = vec3(0.f);
+
+	    for(int j = 0 ; j < MAX_BONE_INFLUENCE ; j++)
+        {
+            int bondId = GetBone(j);
+            float weight = GetWeight(j);
+
+            if(bondId < 0 || bondId >= prevAnimationMeta.info[i].count) 
+                continue;
+    
+            int matIndex = bondId + prevAnimationMeta.info[i].offset;
+            tempResult.pos += prevAnimationMat.finalBonesMatrices[matIndex] * pos * weight;
+
+            mat3 normalTrans = mat3(transpose(inverse(prevAnimationMat.finalBonesMatrices[matIndex])));
+            tempResult.normal += normalize(normalTrans * normalize(normal)) * weight;
+            tempResult.tangent += normalize(normalTrans * normalize(tangent)) * weight;
+            tempResult.bitangent += normalize(normalTrans * normalize(bitangent)) * weight;
+
+            isInfluenced = true;
+        }
+
+        if(isInfluenced)
+        {
+            result.pos = tempResult.pos;
+            result.normal = tempResult.normal;
+            result.tangent = tempResult.tangent;
+            result.bitangent = tempResult.bitangent;
+            isResultInfluenced = true;
+        }
+    }
+
+    if(!isResultInfluenced)
+    {
+        CalucateResult r;
+        r.pos = pos;
+        r.normal = normal;
+        r.tangent = tangent;
+        r.bitangent = bitangent;
+        return r;
+    }
+
+    return result;
+}
+
+vec4 CalculatePrevAnimationData(vec4 pos)
+{
+    bool isResultInfluenced = false;
+    vec4 result;
+
+    int ani_count = animationMeta.animationcount;
+    for(int i = 0 ;i < ani_count; i++)
+    {
+        bool isInfluenced = false;
+
+        if(prevAnimationMeta.info[i].count <= 0)
+            continue;
+
+        vec4 tempResult = vec4(0.f);
+	    for(int j = 0 ; j < MAX_BONE_INFLUENCE ; j++)
+        {
+            int bondId = GetBone(j);
+            float weight = GetWeight(j);
+
+            if(bondId < 0 || bondId >= prevAnimationMeta.info[i].count) 
+                continue;
+    
+            int matIndex = bondId + prevAnimationMeta.info[i].offset;
+            tempResult += prevAnimationMat.finalBonesMatrices[matIndex] * pos * weight;
+
+            isInfluenced = true;
+        }
+
+        if(isInfluenced)
+        {
+            result = tempResult;
+            isResultInfluenced = true;
+        }
+    }
+
+    if(!isResultInfluenced)
+        return pos;
+
+    return result;
+}
+
+vec4 CalculateIfHasAnimationData(vec4 pos)
+{
+    if(animationMeta.animationcount > 0)
+        return CalculateAnimationData(pos);
+    return pos;
+}
+
+CalucateResult CalculateIfHasAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent)
+{
+    if(animationMeta.animationcount > 0)
+        return CalculateAnimationData(pos, normal, tangent, bitangent);
+
+    CalucateResult r;
+    r.pos = pos;
+    r.normal = normal;
+    r.tangent = tangent;
+    r.bitangent = bitangent;
+    return r;
+}
+
+vec4 CalculatePrevIfHasAnimationData(vec4 pos)
+{
+    if(prevAnimationMeta.animationcount > 0)
+        return CalculatePrevAnimationData(pos);
+    return pos;
+}
+
+CalucateResult CalculatePrevIfHasAnimationData(vec4 pos, vec3 normal, vec3 tangent, vec3 bitangent)
+{
+    if(prevAnimationMeta.animationcount > 0)
+        return CalculatePrevAnimationData(pos, normal, tangent, bitangent);
+
+    CalucateResult r;
+    r.pos = pos;
+    r.normal = normal;
+    r.tangent = tangent;
+    r.bitangent = bitangent;
+    return r;
+}

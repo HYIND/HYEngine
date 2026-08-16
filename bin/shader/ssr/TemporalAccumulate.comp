@@ -1,0 +1,71 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+
+
+uniform ivec2 screenSize;
+
+uniform sampler2D rawTexture;
+uniform sampler2D historyColorTexture;
+
+uniform sampler2D motionMap;
+
+void main() 
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    vec2 screenTexelSize = 1.0 / vec2(screenSize);
+    vec2 pixelCenter = pixelCoord + 0.5;
+    vec2 currentUV = pixelCenter / screenSize;
+
+    // imageStore(outputImage, pixelCoord, texture(rawTexture, currentUV));
+    // return;
+
+    vec2 motionVector = clamp(texture(motionMap, currentUV).rg, -1, 1);
+
+    vec2 historyUV = currentUV - motionVector;
+
+    // 边界检查（如果上一帧没这个像素，直接返回当前帧）
+    if (historyUV.x <= 0.0 || historyUV.x >= 1.0 || historyUV.y <= 0.0 || historyUV.y >= 1.0) {
+        imageStore(outputImage, pixelCoord, texture(rawTexture, currentUV));
+        return;
+    }
+
+    vec3 currentColor = texture(rawTexture, currentUV).rgb;
+    vec3 historyColor = texture(historyColorTexture, historyUV).rgb;
+
+    // AABB 钳制（消除拖影）
+    vec3 minColor = currentColor;
+    vec3 maxColor = currentColor;
+
+    // 取周围 5x5 的最小最大值
+    for (int i = -2; i <= 2; i++) {
+        for (int j = -2; j <= 2; j++) {
+            vec3 neighbor = texture(rawTexture, currentUV + vec2(i, j) * screenTexelSize).rgb;
+            minColor = min(minColor, neighbor);
+            maxColor = max(maxColor, neighbor);
+        }
+    }
+    historyColor  = clamp(historyColor, minColor, maxColor);
+
+    // 计算动态混合权重
+    float blendFactor = 0.88;
+    float motion = distance(currentUV, historyUV);
+    blendFactor = mix(blendFactor, 0.25, smoothstep(0.0, max(0.02,min(screenTexelSize.y * 3, screenTexelSize.x * 3)), motion));
+        
+    vec3 finalColor = mix(currentColor, historyColor, blendFactor);
+
+    imageStore(outputImage, pixelCoord, vec4(finalColor, 1.0));
+}

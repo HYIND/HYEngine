@@ -1,0 +1,73 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
+
+layout(binding = 0, rgba16f) uniform image2D hdrTexture;
+layout(binding = 1, std430) buffer HistogramBuffer {
+    uint bins[256];
+};
+
+uniform ivec2 screenSize;
+
+#ifndef MIN_EV
+#define MIN_EV -6
+#endif
+
+#ifndef MAX_EV
+#define MAX_EV 12
+#endif
+
+// 固定参数：覆盖 -10 EV ~ 20 EV（从 0.001 到 1,000,000 亮度）
+const float MIN_EXP_EV = MIN_EV;
+const float MAX_EXP_EV = MAX_EV;
+const float EV_RANGE = MAX_EXP_EV - MIN_EXP_EV;
+
+const float sigma = 0.25;
+
+float GetWeightNormalized(vec2 pos)
+{
+    vec2 uv = pos / screenSize;
+    vec2 center = vec2(0.5, 0.5);
+    float dist = length(uv - center);
+    float weight = exp(-(dist * dist) / (2.0 * sigma * sigma));
+
+    float weightAtEdge = exp(-(0.5 * 0.5) / (2.0 * sigma * sigma));
+    float weightNormalized = weight / weightAtEdge;
+    weightNormalized = max(weightNormalized, 1.f);
+
+    return weightNormalized;
+}
+
+uint GetBinIndex(vec3 color)
+{
+    float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));     // 计算亮度（人眼感知加权）
+    luminance = max(luminance, 0.0001);                                 // 防止 log(0) 或负数
+    float ev = log2(luminance);                                         // 对数映射到 EV 空间
+    float normalized = (ev - MIN_EXP_EV) / EV_RANGE;                    // 映射到 0~1 范围
+    normalized = clamp(normalized, 0.0, 1.0);                           // 钳制到 0~1（防止溢出）
+    uint binIndex = uint(normalized * 255.0);                           // 计算桶索引（0~255）
+    return binIndex;
+}
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    vec2 pixelCenter = vec2(pos) + 0.5;
+    if (pos.x >= int(screenSize.x) || pos.y >= int(screenSize.y))
+        return;
+    
+    float weightNormalized = GetWeightNormalized(pixelCenter); 
+
+    vec3 color = imageLoad(hdrTexture, pos).rgb;  
+    uint binIndex = GetBinIndex(color);
+
+    uint weightInt = uint(weightNormalized + 0.5f);
+    // weightInt = 1;
+    atomicAdd(bins[binIndex], weightInt);
+}

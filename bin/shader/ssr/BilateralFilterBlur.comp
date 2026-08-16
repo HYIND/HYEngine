@@ -1,0 +1,101 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+
+uniform ivec2 screenSize;
+
+uniform sampler2D gNormal;
+uniform sampler2D depthMap;
+
+uniform sampler2D rawTexture;
+
+uniform int kernelSize; 
+uniform float sigma;
+
+uniform float blurRadius;
+uniform float blurDepthWeight;
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    float z_ndc = depth * 2.0 - 1.0;
+    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+}
+
+void GetDepthNormal(vec2 uv, inout float depth, inout float lineraDepth, inout vec3 normal)
+{    
+    depth = texture(depthMap, uv).r;
+    normal = normalize(texture(gNormal, uv).rgb);
+    lineraDepth = DepthBufferConvertToViewDepth(depth);
+}
+
+void main() 
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+        return;
+
+    vec2 screenTexelSize = 1.0 / vec2(screenSize);
+    vec2 pixelCenter = pixelCoord + 0.5;
+    vec2 uvCenter = pixelCenter / screenSize;
+
+    // imageStore(outputImage, pixelCoord, texture(rawTexture, uvCenter));
+    // return;
+
+    vec3 centerNormal;
+    float centerDepth, centerLinearDepth;
+    GetDepthNormal(uvCenter, centerDepth, centerLinearDepth, centerNormal);
+    if (centerDepth >= 0.99999)
+        return;
+    
+    vec4 total = vec4(0.0);
+    float totalWeight = 0.0;
+
+    // 高斯采样
+    for (int x = -kernelSize; x <= kernelSize; x++) 
+    {
+        for (int y = -kernelSize; y <= kernelSize; y++) 
+        {
+            vec2 offset = vec2(x, y) * screenTexelSize * blurRadius * 2;            // 叠加模糊步长
+            offset += (fract(sin(uvCenter * 100) * 0.5 - 0.25) * screenTexelSize);  // 亚像素抖动
+
+            vec2 sampleUV = uvCenter + offset;
+
+            if (sampleUV.x > 1.f || sampleUV.y > 1.f || sampleUV.x < 0.f || sampleUV.y < 0.f) continue;
+            
+            vec3 sampleNormal;
+            float sampleDepth, sampleLinearDepth;
+            GetDepthNormal(sampleUV, sampleDepth, sampleLinearDepth, sampleNormal);
+            if (sampleDepth >= 0.99999) continue;
+
+            float depthDiff = abs(centerLinearDepth - sampleLinearDepth);
+            float depthWeight = exp(-blurDepthWeight * depthDiff * depthDiff);
+
+            float normalDot = clamp(dot(centerNormal, sampleNormal), 0, 1);
+            float normalWeight = normalDot * normalDot;
+            
+            float gaussWeight = exp(-(x * x + y * y) / (2.0 * sigma * sigma));
+            
+            float weight = gaussWeight * depthWeight * normalWeight;
+            vec4 sampleColor = texture(rawTexture, sampleUV);
+
+            total += sampleColor * weight;
+            totalWeight += weight;
+        }
+    }
+
+    vec4 result = (totalWeight > 1e-5) ? total / totalWeight : texture(rawTexture, uvCenter);
+
+    imageStore(outputImage, pixelCoord, result);
+}

@@ -1,0 +1,58 @@
+#version 450 core
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_ARB_bindless_texture : require
+
+layout(local_size_x = 16, local_size_y = 16) in; 
+
+layout(binding = 0, rgba16f) uniform image2D srcImage;
+layout(binding = 1, rgba16f) uniform image2D destImage;
+
+uniform ivec2 srcScreenSize;
+uniform ivec2 destScreenSize;
+
+void main(){    
+    ivec2 destCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (destCoord.x >= destScreenSize.x || destCoord.y >= destScreenSize.y) {
+        return;
+    }
+
+    // if(srcScreenSize.x == destScreenSize.x && srcScreenSize.y == destScreenSize.y)
+    // {
+    //     imageStore(destImage, destCoord, imageLoad(srcImage, destCoord));
+    //     return;
+    // }
+
+    vec2 srcCoord = vec2(destCoord) / vec2(destScreenSize) * vec2(srcScreenSize);
+    vec2 srcCoordCentered = srcCoord - 0.5;
+    
+    // 4. 获取周围四个像素的整数坐标
+    ivec2 topLeft = ivec2(floor(srcCoordCentered));
+    ivec2 bottomRight = topLeft + ivec2(1, 1);
+    
+    // 5. 计算插值权重（小数部分）
+    vec2 frac = fract(srcCoordCentered);
+    
+    // 6. 边界钳制，防止越界访问
+    ivec2 srcSize = srcScreenSize;
+    ivec2 clampMin = ivec2(0, 0);
+    ivec2 clampMax = srcSize - ivec2(1, 1);
+    
+    ivec2 coord00 = clamp(topLeft, clampMin, clampMax);
+    ivec2 coord10 = clamp(ivec2(bottomRight.x, topLeft.y), clampMin, clampMax);
+    ivec2 coord01 = clamp(ivec2(topLeft.x, bottomRight.y), clampMin, clampMax);
+    ivec2 coord11 = clamp(bottomRight, clampMin, clampMax);
+    
+    // 7. 采样四个像素的颜色
+    vec4 c00 = imageLoad(srcImage, coord00);
+    vec4 c10 = imageLoad(srcImage, coord10);
+    vec4 c01 = imageLoad(srcImage, coord01);
+    vec4 c11 = imageLoad(srcImage, coord11);
+    
+    // 8. 双线性插值：先水平插值，再垂直插值
+    vec4 top = mix(c00, c10, frac.x);    // 上边两个插值
+    vec4 bottom = mix(c01, c11, frac.x); // 下边两个插值
+    vec4 finalColor = mix(top, bottom, frac.y); // 垂直插值
+    
+    // 9. 写入高分辨率目标纹理
+    imageStore(destImage, destCoord, finalColor);
+}

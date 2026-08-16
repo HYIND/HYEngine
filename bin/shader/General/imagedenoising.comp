@@ -1,0 +1,41 @@
+#version 450 core
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_ARB_bindless_texture : require
+
+layout(local_size_x = 16, local_size_y = 16) in; 
+
+layout(binding = 0, rgba16f) uniform image2D noisyImage;
+layout(binding = 1, rgba16f) uniform image2D denoisedImage;
+
+uniform ivec2 screenSize;
+
+void main(){
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y) {
+        return;
+    }
+
+    // 采样周围 3x3 像素，按颜色相似度加权平均
+    vec3 center = imageLoad(noisyImage, pixelCoord).rgb;
+    vec3 sum = center;
+    float weight = 1.0;
+    
+    for (int dx = -2; dx <= 2; dx++) {
+        for (int dy = -2; dy <= 2; dy++) {
+            if (dx == 0 && dy == 0) continue;
+            ivec2 neighborCoord = pixelCoord + ivec2(dx, dy);
+            vec3 neighbor = imageLoad(noisyImage, neighborCoord).rgb;
+            
+            // 颜色相似度权重
+            float diff = length(neighbor - center);
+            float w = exp(-diff * 10.0); // 颜色越相似权重越高
+            
+            sum += neighbor * w;
+            weight += w;
+        }
+    }
+    
+    imageStore(denoisedImage, pixelCoord, vec4(sum / weight, 1.0));  
+}
