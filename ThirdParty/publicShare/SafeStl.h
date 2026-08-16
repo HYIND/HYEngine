@@ -98,7 +98,7 @@ public:
 		return iter != _map.end();
 	}
 
-	bool Find(const K &key, V &value)
+	bool Find(const K &key, V &value) const
 	{
 		LockGuard guard(_lock);
 
@@ -269,7 +269,7 @@ public:
 		return iter != _map.end();
 	}
 
-	bool Find(const K &key, V &value)
+	bool Find(const K &key, V &value) const
 	{
 		LockGuard guard(_lock);
 
