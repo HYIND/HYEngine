@@ -14,7 +14,7 @@ public:
 		const std::string& ssaoBlurVertexShaderPath, const std::string& ssaoBlurFragmentShaderPath
 	);
 	virtual ~SSAOPass();
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
 private:
 	void BindToFbo(std::shared_ptr<Texture2D>& ssaoColorBuffer, std::shared_ptr<Texture2D>& ssaoBlurColorBuffer);

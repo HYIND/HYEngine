@@ -7,12 +7,12 @@ DepthFogPass::DepthFogPass(const std::string& vertexShaderPath, const std::strin
 {
 }
 
-bool DepthFogPass::ShouldExecute(RenderState& state) const
+bool DepthFogPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return state.option.flags.depthFogOn;
 }
 
-void DepthFogPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void DepthFogPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	auto sceneColorBuffer = ctx.GetExternal(0);
 	auto sceneDepthBuffer = ctx.GetExternal(1);

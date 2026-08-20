@@ -76,54 +76,22 @@ HZBPass::~HZBPass() {
 		glDeleteFramebuffers(1, &_Fbo);
 }
 
-void HZBPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
-{
-	auto depthMap = ctx.GetTemp(0);
-	auto HZBMap = ctx.GetOutput(0);
-
-	DrawDepthMap(depthMap, state);
-	DrawHZB(depthMap, HZBMap, state);
-
-	if (auto aabb_ssbo = _occlusionCullShader.TryGetSSBO("MeshAABB"), result_ssbo = _occlusionCullShader.TryGetSSBO("OcclusionResults");
-		state.option.flags.calculateOcclusionCulling && aabb_ssbo && result_ssbo)
-	{
-
-		if (uint64_t size = _frustumObjectMeshaabbs.size() * sizeof(AABB); aabb_ssbo->GetSize() < size)
-			aabb_ssbo->SetSize(size * 1.2);
-		if (uint64_t size = _frustumOcclusionCullResult.size() * sizeof(int); result_ssbo->GetSize() < size)
-			result_ssbo->SetSize(size * 1.2);
-		aabb_ssbo->WriteData(_frustumObjectMeshaabbs.data(), _frustumObjectMeshaabbs.size() * sizeof(AABB));
-
-		GetOcclusionCulling(HZBMap, state);
-	}
-	else
-	{
-		auto& items = state.objects.sceneRenderData.opaqueMesh;
-		auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
-		auto& oneSideIndex = renderIndex.oneSideIndex;
-		auto& twoSideIndex = renderIndex.twoSideIndex;
-
-		for (size_t i = 0; i < _frustumObjectIndex.size(); i++)
-		{
-			auto meshIndex = _frustumObjectIndex[i];
-			if (items[meshIndex].meshinfo.material->GetTwoSided())
-				twoSideIndex.push_back(meshIndex);
-			else
-				oneSideIndex.push_back(meshIndex);
-		}
-	}
-}
-
-void HZBPass::FrameBegin(RenderState& state)
+void HZBPass::EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	Frustum& frustum = state.camera.frustum;
 	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
 
-	_frustumObjectMeshaabbs;
+	std::vector<bool> frustumCullResult;
+	std::vector<uint32_t> frustumObjectIndex;
+	std::vector<AABB> frustumObjectMeshaabbs;
+	std::vector<glm::mat4> frustumObjectTransforms;
+	std::vector<int> frustumOcclusionCullResult;
+
+
 	if (!opaqueMeshes.empty())
 	{
-		_frustumCullResult.resize(opaqueMeshes.size(), false);
-		_frustumObjectMeshaabbs.resize(opaqueMeshes.size());
+		frustumCullResult.resize(opaqueMeshes.size(), false);
+		frustumObjectMeshaabbs.resize(opaqueMeshes.size());
 
 		std::for_each(std::execution::par, opaqueMeshes.begin(), opaqueMeshes.end(),
 			[&](OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem& item)
@@ -133,34 +101,94 @@ void HZBPass::FrameBegin(RenderState& state)
 				AABB aabbworld = item.meshinfo.mesh->GetAABB();
 				aabbworld.MakeTransform(item.transform);
 
-				_frustumObjectMeshaabbs[meshIndex] = aabbworld;
-				_frustumCullResult[meshIndex] = !frustum.IsAABBOnFrustum(aabbworld);
+				frustumObjectMeshaabbs[meshIndex] = aabbworld;
+				frustumCullResult[meshIndex] = !frustum.IsAABBOnFrustum(aabbworld);
 			});
 	}
 
-
+	frustumObjectIndex.reserve(opaqueMeshes.size());
+	frustumObjectTransforms.reserve(opaqueMeshes.size());
 	size_t writePos = 0;
 	for (int i = 0; i < opaqueMeshes.size(); i++)
 	{
-		if (_frustumCullResult[i]) continue;
+		if (frustumCullResult[i]) continue;
 
 		if (writePos != i)
-			_frustumObjectMeshaabbs[writePos] = _frustumObjectMeshaabbs[i];
+			frustumObjectMeshaabbs[writePos] = frustumObjectMeshaabbs[i];
 
-		_frustumObjectIndex.push_back(i);
-		_frustumObjectTransforms.push_back(opaqueMeshes[i].transform);
+		frustumObjectIndex.push_back(i);
+		frustumObjectTransforms.push_back(opaqueMeshes[i].transform);
 		writePos++;
 	}
 
-	_frustumOcclusionCullResult.resize(writePos, 0);
-	_frustumObjectMeshaabbs.resize(writePos);
+	frustumOcclusionCullResult.resize(writePos, 0);
+	frustumObjectMeshaabbs.resize(writePos);
 
+	registry.Store("frustumCullResult", std::move(frustumCullResult));
+	registry.Store("frustumObjectIndex", std::move(frustumObjectIndex));
+	registry.Store("frustumObjectMeshaabbs", std::move(frustumObjectMeshaabbs));
+	registry.Store("frustumObjectTransforms", std::move(frustumObjectTransforms));
+	registry.Store("frustumOcclusionCullResult", std::move(frustumOcclusionCullResult));
+
+}
+
+void HZBPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+{
+	auto depthMap = ctx.GetTemp(0);
+	auto HZBMap = ctx.GetOutput(0);
+
+	auto& frustumCullResult = registry.Load<std::vector<bool>>("frustumCullResult");
+	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+	auto& frustumObjectMeshaabbs = registry.Load<std::vector<AABB>>("frustumObjectMeshaabbs");
+	auto& frustumObjectTransforms = registry.Load<std::vector<glm::mat4>>("frustumObjectTransforms");
+	auto& frustumOcclusionCullResult = registry.Load<std::vector<int>>("frustumOcclusionCullResult");
+
+	DrawDepthMap(registry, depthMap, state);
+	DrawHZB(registry, depthMap, HZBMap, state);
+
+	if (auto aabb_ssbo = _occlusionCullShader.TryGetSSBO("MeshAABB"), result_ssbo = _occlusionCullShader.TryGetSSBO("OcclusionResults");
+		state.option.flags.calculateOcclusionCulling && aabb_ssbo && result_ssbo)
+	{
+
+		if (uint64_t size = frustumObjectMeshaabbs.size() * sizeof(AABB); aabb_ssbo->GetSize() < size)
+			aabb_ssbo->SetSize(size * 1.2);
+		if (uint64_t size = frustumOcclusionCullResult.size() * sizeof(int); result_ssbo->GetSize() < size)
+			result_ssbo->SetSize(size * 1.2);
+		aabb_ssbo->WriteData(frustumObjectMeshaabbs.data(), frustumObjectMeshaabbs.size() * sizeof(AABB));
+
+		GetOcclusionCulling(registry, HZBMap, state);
+	}
+	else
+	{
+		auto& items = state.objects.sceneRenderData.opaqueMesh;
+		auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
+		auto& oneSideIndex = renderIndex.oneSideIndex;
+		auto& twoSideIndex = renderIndex.twoSideIndex;
+
+		for (size_t i = 0; i < frustumObjectIndex.size(); i++)
+		{
+			auto meshIndex = frustumObjectIndex[i];
+			if (items[meshIndex].meshinfo.material->GetTwoSided())
+				twoSideIndex.push_back(meshIndex);
+			else
+				oneSideIndex.push_back(meshIndex);
+		}
+	}
+}
+
+void HZBPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	Frustum& frustum = state.camera.frustum;
+	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
+
+	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+	 
 	auto indirectManager = IndirectDrawManager::Instance();
-	_commands.resize(_frustumObjectIndex.size());
-	std::for_each(std::execution::par, _frustumObjectIndex.begin(), _frustumObjectIndex.end(),
+	_commands.resize(frustumObjectIndex.size());
+	std::for_each(std::execution::par, frustumObjectIndex.begin(), frustumObjectIndex.end(),
 		[&](uint32_t& meshIndex)-> void
 		{
-			size_t inedx = &meshIndex - _frustumObjectIndex.data();
+			size_t inedx = &meshIndex - frustumObjectIndex.data();
 			IndirectDrawCommand& command = _commands[inedx];
 
 			auto& item = opaqueMeshes[meshIndex];
@@ -180,14 +208,14 @@ void HZBPass::FrameBegin(RenderState& state)
 		});
 }
 
-void HZBPass::FrameEnd(RenderState& state)
+void HZBPass::FrameEnd(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	_frustumCullResult.clear();
-	_frustumObjectIndex.clear();
-	_frustumOcclusionCullResult.clear();
-	_frustumObjectMeshaabbs.clear();
+	//_frustumCullResult.clear();
+	//_frustumObjectIndex.clear();
+	//_frustumOcclusionCullResult.clear();
+	//_frustumObjectMeshaabbs.clear();
+	//_frustumObjectTransforms.clear();
 	_commands.clear();
-	_frustumObjectTransforms.clear();
 }
 
 uint32_t HZBPass::GetMaxLevel()
@@ -195,7 +223,7 @@ uint32_t HZBPass::GetMaxLevel()
 	return _maxLevel;
 }
 
-void HZBPass::DrawDepthMap(std::shared_ptr<Texture2D>& depthMap, RenderState& state)
+void HZBPass::DrawDepthMap(OpenGLRenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state)
 {
 	if (_Fbo == 0)
 	{
@@ -215,10 +243,13 @@ void HZBPass::DrawDepthMap(std::shared_ptr<Texture2D>& depthMap, RenderState& st
 
 	_depthShader.Use();
 
+	auto& frustumObjectTransforms = registry.Load<std::vector<glm::mat4>>("frustumObjectTransforms");
+	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+
 	auto transform_ssbo = _depthShader.TryGetSSBO("Transforms");
 	if (transform_ssbo)
 	{
-		transform_ssbo->WriteData(_frustumObjectTransforms.data(), _frustumObjectTransforms.size() * sizeof(glm::mat4));
+		transform_ssbo->WriteData(frustumObjectTransforms.data(), frustumObjectTransforms.size() * sizeof(glm::mat4));
 
 		glBindVertexArray(state.indirectCommands.indirectVAO);
 		glBindBuffer(GL_DRAW_INDIRECT_BUFFER, state.indirectCommands.indirectCommandBuffer);
@@ -239,9 +270,9 @@ void HZBPass::DrawDepthMap(std::shared_ptr<Texture2D>& depthMap, RenderState& st
 		glm::mat4 cur_Model = glm::mat4(1.0f);
 		shader.setMat4("model", cur_Model);
 
-		for (size_t i = 0; i < _frustumObjectIndex.size(); i++)
+		for (size_t i = 0; i < frustumObjectIndex.size(); i++)
 		{
-			int index = _frustumObjectIndex[i];
+			int index = frustumObjectIndex[i];
 			auto& mesh = opaqueMeshes[index];
 
 			if (cur_Model != mesh.transform)
@@ -254,7 +285,7 @@ void HZBPass::DrawDepthMap(std::shared_ptr<Texture2D>& depthMap, RenderState& st
 	}
 }
 
-void HZBPass::DrawHZB(std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
+void HZBPass::DrawHZB(OpenGLRenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
 {
 	Texture2D::CopyTexture(depthMap, HZBMap);
 
@@ -281,24 +312,27 @@ void HZBPass::DrawHZB(std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Text
 		//DrawTexture(HZBMap, std::format("temp/HZBMap{}.png", level), level);
 }
 
-void HZBPass::GetOcclusionCulling(std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
+void HZBPass::GetOcclusionCulling(OpenGLRenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
 {
-	_occlusionCullShader.Use();
+
+	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+	auto& frustumOcclusionCullResult = registry.Load<std::vector<int>>("frustumOcclusionCullResult");
 
 	_occlusionCullShader.Use();
-	_occlusionCullShader.setInt("count", _frustumObjectIndex.size());
+
+	_occlusionCullShader.setInt("count", frustumObjectIndex.size());
 	_occlusionCullShader.setIVec2("depthMapSize", HZBMap->GetSize());
 	_occlusionCullShader.setInt("maxLevel", HZBMap->GetMaxLevel());
 	_occlusionCullShader.setMat4("viewProj", state.camera.projection * state.camera.view);
 	_occlusionCullShader.setTexture(HZBMap, "hzbDepthMap", 0);
 
-	glDispatchCompute((_frustumObjectIndex.size() + occ_work_size_x - 1) / occ_work_size_x, 1, 1);
+	glDispatchCompute((frustumObjectIndex.size() + occ_work_size_x - 1) / occ_work_size_x, 1, 1);
 	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
 	if (auto result_ssbo = _occlusionCullShader.TryGetSSBO("OcclusionResults"))
 	{
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, result_ssbo->GetID());
-		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, _frustumOcclusionCullResult.size() * sizeof(int), _frustumOcclusionCullResult.data());
+		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, frustumOcclusionCullResult.size() * sizeof(int), frustumOcclusionCullResult.data());
 	}
 
 	auto& items = state.objects.sceneRenderData.opaqueMesh;
@@ -306,11 +340,11 @@ void HZBPass::GetOcclusionCulling(std::shared_ptr<Texture2D>& HZBMap, RenderStat
 	auto& oneSideIndex = renderIndex.oneSideIndex;
 	auto& twoSideIndex = renderIndex.twoSideIndex;
 
-	for (size_t i = 0; i < _frustumObjectIndex.size(); i++)
+	for (size_t i = 0; i < frustumObjectIndex.size(); i++)
 	{
-		if (_frustumOcclusionCullResult[i] > 0) continue;
+		if (frustumOcclusionCullResult[i] > 0) continue;
 
-		auto meshIndex = _frustumObjectIndex[i];
+		auto meshIndex = frustumObjectIndex[i];
 		if (items[meshIndex].meshinfo.material->GetTwoSided())
 			twoSideIndex.push_back(meshIndex);
 		else

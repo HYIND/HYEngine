@@ -40,7 +40,33 @@ void GeometryPass::BindTexToFbo(std::shared_ptr<Texture2D>& gPosition, std::shar
 
 }
 
-void GeometryPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void GeometryPass::EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	auto& models = state.objects.sceneRenderData.opaqueSkinnedModel;
+	auto& sorts = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;
+	sorts.resize(models.size());
+	for (int i = 0; i < models.size(); i++)
+	{
+		auto& item = models[i];
+		auto& sort = sorts[i];
+
+		sort.resize(item.models.size());
+		std::iota(sort.begin(), sort.end(), 0);
+
+		if (item.models.size() > 1)
+		{
+			std::sort(std::execution::par_unseq, sort.begin(), sort.end(),
+				[&](int index1, int index2)-> bool
+				{
+					if (item.models[index1].material != item.models[index2].material)
+						return item.models[index1].material < item.models[index2].material;
+				}
+			);
+		}
+	}
+}
+
+void GeometryPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	if (_fbo == 0)
 		glGenFramebuffers(1, &_fbo);
@@ -68,36 +94,11 @@ void GeometryPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderStat
 
 }
 
-void GeometryPass::FrameBegin(RenderState& state)
+void GeometryPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-
-	{
-		auto& models = state.objects.sceneRenderData.opaqueSkinnedModel;
-		auto& sorts = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;
-		sorts.resize(models.size());
-		for (int i = 0; i < models.size(); i++)
-		{
-			auto& item = models[i];
-			auto& sort = sorts[i];
-
-			sort.resize(item.models.size());
-			std::iota(sort.begin(), sort.end(), 0);
-
-			if (item.models.size() > 1)
-			{
-				std::sort(std::execution::par_unseq, sort.begin(), sort.end(),
-					[&](int index1, int index2)-> bool
-					{
-						if (item.models[index1].material != item.models[index2].material)
-							return item.models[index1].material < item.models[index2].material;
-					}
-				);
-			}
-		}
-	}
 }
 
-void GeometryPass::FrameEnd(RenderState& state)
+void GeometryPass::FrameEnd(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 }
 

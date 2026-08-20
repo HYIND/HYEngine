@@ -26,8 +26,9 @@ namespace OpenGLRenderGraph
 		PassNode* AddPass(const std::string& name);		// 添加Pass
 		PassNode* AddFence(const std::string& name);	// 添加栅栏
 
-		void Compile();						// 编译（分析依赖和生命周期）
-		void Execute(RenderState& state);	// 执行
+		void Compile();							// 编译（分析依赖和生命周期）
+		void EarlyExecute(RenderState& state);	// 早期提前执行，该函数应提前于Execute执行
+		void Execute(RenderState& state);		// 执行
 
 		void Clear();// 清空
 
@@ -52,9 +53,14 @@ namespace OpenGLRenderGraph
 
 		GLuint _renderTargetFBO = 0;
 
+		ThreadPool _earlyParallelPool;
 		ThreadPool _frameParallelPool;
 
 		int64_t _lastCleanupTimeAccumulator;
 		int64_t _CleanupThresold = 10;
+
+		std::atomic<uint32_t> _earlyFrameIndex{ 0 };
+		std::atomic<uint32_t> _executeFrameIndex{ 0 };
+		uint32_t _maxFramesInFlight = 1;  // 最大超前帧数
 	};
 }

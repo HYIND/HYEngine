@@ -53,7 +53,7 @@ SSAOPass::~SSAOPass()
 		glDeleteFramebuffers(1, &ssaoBlurFBO);
 }
 
-void SSAOPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void SSAOPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	int width = state.framebuffer.width;
 	int height = state.framebuffer.height;

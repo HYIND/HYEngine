@@ -1,5 +1,6 @@
 #include "OpenGLRenderEngine/RenderGraph/RenderGraph.h"
 #include "Helper/Tools.h"
+//#include "OpenGLRenderEngine/General/GPUTimer.h"
 
 using namespace OpenGLRenderGraph;
 
@@ -7,6 +8,7 @@ RenderGraph::RenderGraph(const std::string& name)
 	:_name(name)
 {
 	_frameParallelPool.start();
+	_earlyParallelPool.start();
 
 	// 为线程池初始化共享上下文
 	RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
@@ -15,6 +17,13 @@ RenderGraph::RenderGraph(const std::string& name)
 		for (int i = 0; i < _frameParallelPool.workersize(); i++)
 		{
 			Handles.push_back(std::move(_frameParallelPool.submit([&]()->void {
+				auto guard = THREADCONTEXT->GetBindGuard();
+				})
+			));
+		}
+		for (int i = 0; i < _earlyParallelPool.workersize(); i++)
+		{
+			Handles.push_back(std::move(_earlyParallelPool.submit([&]()->void {
 				auto guard = THREADCONTEXT->GetBindGuard();
 				})
 			));
@@ -101,7 +110,39 @@ void RenderGraph::Compile() {
 	_compiledVersion++;
 }
 
-#include "OpenGLRenderEngine/General/GPUTimer.h"
+void OpenGLRenderGraph::RenderGraph::EarlyExecute(RenderState& state)
+{
+	if (_needsCompile)
+		Compile();
+
+	int executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
+	int earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
+
+	while (earlyIdx - executeIdx > _maxFramesInFlight)
+	{
+		std::this_thread::yield();
+		executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
+		earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
+	}
+
+	int frameIndex = _earlyFrameIndex.fetch_add(1);
+
+	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EarlyHandles;
+	for (auto& pass : _sortedPasses)
+	{
+		EarlyHandles.push_back(std::move(_earlyParallelPool.submit(
+			[pass = pass, &state, &frameIndex]()->void
+			{
+				pass->EarlyExecute(frameIndex, state);
+			})
+		));
+	}
+
+	for (auto& handle : EarlyHandles)
+		handle->get();
+
+	//std::cout << std::format("Early done {}\n", frameIndex);
+}
 
 // 执行
 void RenderGraph::Execute(RenderState& state)
@@ -114,9 +155,10 @@ void RenderGraph::Execute(RenderState& state)
 		_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
 	}
 
-	if (_needsCompile) {
+	if (_needsCompile)
 		Compile();
-	}
+
+	int frameIndex = _executeFrameIndex.load();
 
 	struct BatchData
 	{
@@ -130,11 +172,11 @@ void RenderGraph::Execute(RenderState& state)
 	{
 		pass->SetDone(false);
 		BeginHandles.push_back(std::move(_frameParallelPool.submit(
-			[pass = pass, &state]()->void
+			[pass = pass, &state, &frameIndex]()->void
 			{
 				//auto guard = THREADCONTEXT->GetBindGuard();
 				//GPUTimer timer;
-				pass->FrameBegin(state);
+				pass->FrameBegin(frameIndex, state);
 				//std::cout << std::format("Excute FrameBegin {} ,cost {}ms\n", pass->GetName(), timer.End());
 			})
 		));
@@ -171,7 +213,7 @@ void RenderGraph::Execute(RenderState& state)
 					//std::cout << std::format("ExcutePass {}\n", pass->GetName());
 					//GPUTimer timer;
 
-					if (pass->ShouldExecute(state))
+					if (pass->ShouldExecute(frameIndex, state))
 					{
 						PassContext ctx;
 						ctx.renderTargetFBO = _renderTargetFBO;
@@ -202,7 +244,7 @@ void RenderGraph::Execute(RenderState& state)
 								ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
 						}
 
-						pass->Execute(ctx, state);
+						pass->Execute(frameIndex, ctx, state);
 					}
 
 					//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), timer.End());
@@ -287,10 +329,12 @@ void RenderGraph::Execute(RenderState& state)
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EndHandles;
 	for (auto& pass : _sortedPasses)
-		EndHandles.push_back(std::move(_frameParallelPool.submit([pass = pass, &state]()->void {pass->FrameEnd(state); })));
+		EndHandles.push_back(std::move(_frameParallelPool.submit([pass = pass, &state, &frameIndex]()->void {pass->FrameEnd(frameIndex, state); })));
 	for (auto& handle : EndHandles)
 		handle->get();
 
+	//std::cout << std::format("Execute done {}\n", frameIndex);
+	_executeFrameIndex.fetch_add(1);
 }
 
 // 清空

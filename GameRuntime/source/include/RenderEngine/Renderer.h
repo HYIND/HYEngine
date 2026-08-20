@@ -3,6 +3,7 @@
 #include "RenderEngine/D2DTools.h"
 #include "RenderEngine/RenderFrameManager.h"
 #include "Helper/TripleBuffer.h"
+#include "Helper/DoubleBuffer.h"
 
 #include "OpenGLRenderEngine/OpenGLRenderer.h"
 #include "OpenGLRenderEngine/General/RenderState.h"
@@ -19,6 +20,12 @@ namespace Render
 {
 	class Renderer
 	{
+		struct EarlyProcessData
+		{
+			std::shared_ptr<OpenGLRenderer> render;
+			RenderState state;
+			std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
+		};
 
 	public:
 		using RenderTripleBufferPtr = std::shared_ptr<TripleBuffer<std::shared_ptr<RenderFrameData>>>;
@@ -30,9 +37,10 @@ namespace Render
 		void SetRenderTarget(ID2D1DeviceContext* rt);
 		void SetBuffers(RenderTripleBufferPtr buffers);
 
-		void renderFrame(float delatTime);
-		void renderD2DFrame(float delatTime, std::shared_ptr<RenderFrameData>& framedata);
-		void renderOpenGLFrame(float delatTime, std::shared_ptr<RenderFrameData>& framedata);
+		void EarlyProcessLoop();
+		void renderFrame();
+		void renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts);
+		void renderOpenGLFrame(std::shared_ptr<OpenGLRenderer>& render, RenderState& state);
 
 		void InitOpenGLRender(int scr_width, int scr_height);
 
@@ -82,5 +90,9 @@ namespace Render
 		bool _optionChange;
 
 		bool _isOpenGLInit;
+
+		bool _earlyThreadStop;
+		std::shared_ptr<std::thread> _earlyProcessThread;
+		DoubleBuffer<EarlyProcessData> _earlyDataBuffers;
 	};
 }

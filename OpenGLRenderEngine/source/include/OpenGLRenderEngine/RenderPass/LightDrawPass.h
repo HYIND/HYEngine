@@ -13,8 +13,8 @@ class LightDrawPass :public RenderPassBase
 public:
 	LightDrawPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
 	virtual ~LightDrawPass() = default;
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
-	virtual bool ShouldExecute(RenderState& state) const;
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual bool ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
 	Shader _shader;

@@ -28,10 +28,12 @@ public:
 		std::shared_ptr<Texture2D>& tempDepthStencilMap
 	);
 
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual void EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);;
 
-	virtual void FrameBegin(RenderState& state);
-	virtual void FrameEnd(RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+
+	virtual void FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void FrameEnd(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
 	void SetupIndirecDrawMaterial(RenderState& state);

@@ -17,16 +17,16 @@ SSRPass::SSRPass(
 	_blurShader.CompileFromFile(blurComputerShaderPath);
 }
 
-bool SSRPass::ShouldExecute(RenderState& state) const
+bool SSRPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!state.option.flags.ssrOn || state.option.ssrTraceParams.maxBounceLimit <= 0)
 		return false;
 	return true;
 }
 
-void SSRPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void SSRPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
-	if (!ShouldExecute(state))
+	if (!ShouldExecute(registry, state))
 		return;
 
 	FrameRenderData data;

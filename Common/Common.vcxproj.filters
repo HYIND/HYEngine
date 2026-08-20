@@ -162,6 +162,9 @@
     <ClInclude Include="source\include\Helper\TripleBuffer.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Helper\DoubleBuffer.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp">

@@ -13,10 +13,13 @@ class TransparentPass :public RenderPassBase
 public:
 	TransparentPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
 	virtual ~TransparentPass() = default;
-	virtual bool ShouldExecute(RenderState& state) const;
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
-	virtual void FrameBegin(RenderState& state);
+	virtual void EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);;
+
+	virtual bool ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+
+	virtual void FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
 	void SetupIndirecDrawMaterial(RenderState& state);

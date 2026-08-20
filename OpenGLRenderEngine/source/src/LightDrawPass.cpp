@@ -6,7 +6,7 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 {
 }
 
-void LightDrawPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void LightDrawPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
 
@@ -63,6 +63,6 @@ void LightDrawPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderSta
 	}
 }
 
-bool LightDrawPass::ShouldExecute(RenderState& state) const { 
+bool LightDrawPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state) { 
 	return state.option.flags.lightDrawOn; 
 }

@@ -132,7 +132,7 @@ void Render_Thread(
 			pRenderTarget->EndDraw();
 
 			if (isrunningworld && render)
-				render->renderFrame(fpscontroller->getTimeDiffMS());
+				render->renderFrame();
 
 			auto scene = _Scene::CurScene;
 			if (scene)

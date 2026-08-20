@@ -131,6 +131,7 @@
     <ClInclude Include="source\include\ECSCore\Types.h" />
     <ClInclude Include="source\include\ECSCore\View.h" />
     <ClInclude Include="source\include\ECSCore\World.h" />
+    <ClInclude Include="source\include\Helper\DoubleBuffer.h" />
     <ClInclude Include="source\include\Helper\DynamicPacker.h" />
     <ClInclude Include="source\include\Helper\FileIO.h" />
     <ClInclude Include="source\include\Helper\Tools.h" />

@@ -16,12 +16,12 @@ AutoExposurePass::AutoExposurePass(const std::string& histogramComputerShaderPat
 	_histogramShader.CompileFromFile(histogramComputerShaderPath);
 }
 
-bool AutoExposurePass::ShouldExecute(RenderState& state) const
+bool AutoExposurePass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return state.option.flags.autoExposureOn && state.framebuffer.width > 0 && state.framebuffer.height > 0;
 }
 
-void AutoExposurePass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void AutoExposurePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 
 	auto sceneColorBuffer = ctx.GetExternal(0);

@@ -28,7 +28,7 @@ SSGIPass::SSGIPass(
 	_temporalDenoisingShader.CompileFromFile(temporalDenoisingComputerShaderPath);
 }
 
-bool SSGIPass::ShouldExecute(RenderState& state) const
+bool SSGIPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	SetEnable(state.option.flags.ssgiOn);
 	if (!_enable || state.option.ssgiTraceParams.maxBounceLimit < 0)
@@ -36,9 +36,9 @@ bool SSGIPass::ShouldExecute(RenderState& state) const
 	return true;
 }
 
-void SSGIPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void SSGIPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
-	if (!ShouldExecute(state))
+	if (!ShouldExecute(registry, state))
 		return;
 
 

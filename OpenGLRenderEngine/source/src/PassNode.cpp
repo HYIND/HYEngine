@@ -60,22 +60,30 @@ PassNode& PassNode::SetRenderPass(std::unique_ptr<RenderPassBase>&& pass)
 	return *this;
 }
 
-void PassNode::Execute(const PassContext& ctx, RenderState& state)
+void PassNode::EarlyExecute(int frameIndex, RenderState& state)
 {
 	if (!_render || !_enable) return;
-	_render->Execute(ctx, state);
+	_render->EarlyExecute(_registrys[frameIndex % 2], state);
 }
 
-void PassNode::FrameBegin(RenderState& state)
+void PassNode::Execute(int frameIndex, const PassContext& ctx, RenderState& state)
 {
-	if (!_render) return;
-	_render->FrameBegin(state);
+	if (!_render || !_enable) return;
+	_render->Execute(_registrys[frameIndex % 2], ctx, state);
 }
 
-void PassNode::FrameEnd(RenderState& state)
+void PassNode::FrameBegin(int frameIndex, RenderState& state)
 {
 	if (!_render) return;
-	_render->FrameEnd(state);
+	_render->FrameBegin(_registrys[frameIndex % 2], state);
+}
+
+void PassNode::FrameEnd(int frameIndex, RenderState& state)
+{
+	if (!_render) return;
+	auto registry = _registrys[frameIndex % 2];
+	_render->FrameEnd(registry, state);
+	registry.Clear();
 }
 
 bool OpenGLRenderGraph::PassNode::IsDone()
@@ -114,7 +122,9 @@ int PassNode::GetBatch() const { return _batch; }
 
 bool PassNode::GetEnable() const { return _enable; }
 
-bool PassNode::ShouldExecute(RenderState& state) const { return _enable && _render && _render->ShouldExecute(state); }
+bool PassNode::ShouldExecute(int frameIndex, RenderState& state) {
+	return _enable && _render && _render->ShouldExecute(_registrys[frameIndex % 2], state);
+}
 
 void PassNode::SetIndex(int index) { _index = index; }
 

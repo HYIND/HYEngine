@@ -24,10 +24,10 @@ public:
 	);
 	~RayTracePass();
 
-	virtual bool ShouldExecute(RenderState& state) const;
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual bool ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
-	virtual void FrameBegin(RenderState& state);
+	virtual void FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
 	struct FrameRenderData

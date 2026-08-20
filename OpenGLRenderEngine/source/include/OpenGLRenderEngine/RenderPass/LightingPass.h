@@ -15,8 +15,8 @@ class LightingPass :public RenderPassBase
 public:
 	LightingPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
 	~LightingPass();
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
-	virtual void FrameBegin(RenderState& state);;
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual void FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);;
 
 private:
 	Shader _shader;

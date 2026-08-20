@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #define GLEW_STATIC    
 #include "GL\glew.h"
@@ -16,13 +16,18 @@ public:
 	PreCalculatePass();
 	~PreCalculatePass();
 
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual void EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);;
 
-	virtual void FrameBegin(RenderState& state);;
-	virtual void FrameEnd(RenderState& state);;
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& stat);
+
+	virtual void FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void FrameEnd(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
-	std::vector<glm::mat4> _staticMesh_Transforms;
+	void SetupIndirectDrawData(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+
+private:
+	//std::vector<glm::mat4> _staticMesh_Transforms;
 	std::shared_ptr<SSBO> _ssbo_StaticMesh_Transforms;
 	GLuint _VAO;
 	GLuint _indirectCommandBuffer;
