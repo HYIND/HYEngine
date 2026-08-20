@@ -37,7 +37,7 @@ glm::vec2 MapPosToRenderPos(const glm::vec2& mapPos)
 }
 
 Renderer::Renderer(ID2D1DeviceContext* rt, RenderTripleBufferPtr buffers)
-	:_redBrush(nullptr), _usebitmap1(false), _optionChange(false), _isOpenGLInit(false)
+	:_redBrush(nullptr), _usebitmap1(false), _optionChange(false), _isOpenGLInit(false), _earlyThreadStop(true)
 {
 	SetRenderTarget(rt);
 	SetBuffers(buffers);
@@ -69,32 +69,84 @@ void Renderer::SetBuffers(RenderTripleBufferPtr buffers)
 	_buffers = buffers;
 }
 
-void Renderer::renderFrame(float delatTime)
+void Render::Renderer::EarlyProcessLoop()
+{
+	while (!_earlyThreadStop)
+	{
+		if (!_buffers)
+		{
+			std::this_thread::yield();
+			continue;
+		}
+		auto render = _openglRenderer;
+		if (!render)
+		{
+			std::this_thread::yield();
+			continue;
+		}
+
+		auto& data = _earlyDataBuffers.acquireWriteBuffer();
+		auto& framedata = _buffers->acquireReadBuffer();
+
+		data.render = render;
+		data.state = RenderStateBuilder()
+			.SetCamera(framedata->projection, framedata->view,
+				framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
+				framedata->nearPlane, framedata->farPlane, framedata->fov)
+			.Build();
+
+		AnalysisRenderFrameData(framedata, data.state);
+		if (_optionChange)
+		{
+			render->SetOption(_option);
+			_optionChange = false;
+		}
+
+		data.D2D_Contexts = std::move(framedata->D2D_Contexts);
+
+		render->EarlyProcess(data.state);
+
+		_earlyDataBuffers.submitWriteBuffer();
+	}
+}
+
+void Renderer::renderFrame()
 {
 	if (!_buffers)
 		return;
+	if (_earlyThreadStop || !_earlyProcessThread)
+	{
+		_earlyThreadStop = false;
+		_earlyProcessThread = std::make_shared<std::thread>(&Renderer::EarlyProcessLoop, this);
+	}
 
-	auto framedata = _buffers->acquireReadBuffer();
+	auto render = _openglRenderer;
+	if (!render)
+		return;
+
+	auto& data = _earlyDataBuffers.acquireReadBuffer();
 
 	if (_isOpenGLInit)
 	{
 		RENDERCONTEXMANAGER->WithMainOpenGLShared([&]()-> void
 			{
 				auto gurad = THREADCONTEXT->GetBindGuard();
-				renderOpenGLFrame(delatTime, framedata);
+				renderOpenGLFrame(data.render, data.state);
 			}
 		);
 	}
 
-	renderD2DFrame(delatTime, framedata);
+	renderD2DFrame(data.D2D_Contexts);
+
+	_earlyDataBuffers.ReleaseReadBuffer();
 }
 
-void Render::Renderer::renderD2DFrame(float delatTime, std::shared_ptr<RenderFrameData>& framedata)
+void Render::Renderer::renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts)
 {
-	if (!framedata)
+	if (D2DContexts.empty())
 		return;
 
-	auto& contexts = framedata->D2D_Contexts;
+	auto& contexts = D2DContexts;
 
 	std::sort(contexts.begin(), contexts.end(),
 		[](const std::shared_ptr<D2DRenderContext::RenderContext>& a, const std::shared_ptr<D2DRenderContext::RenderContext>& b)
@@ -137,73 +189,57 @@ void Render::Renderer::renderD2DFrame(float delatTime, std::shared_ptr<RenderFra
 	_renderTarget->EndDraw();
 }
 
-void Render::Renderer::renderOpenGLFrame(float delatTime, std::shared_ptr<RenderFrameData>& framedata)
+void Render::Renderer::renderOpenGLFrame(std::shared_ptr<OpenGLRenderer>& render, RenderState& state)
 {
-	if (!framedata)
+	if (!render)
 		return;
 
-	RenderState state = RenderStateBuilder()
-		.SetCamera(framedata->projection, framedata->view,
-			framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
-			framedata->nearPlane, framedata->farPlane, framedata->fov)
-		.Build();
-
-	AnalysisRenderFrameData(framedata, state);
-
-	if (auto r = _openglRenderer)
+	if (g_sharedTexture.InteropDevice)
 	{
-		if (_optionChange)
+		auto res = wglDXLockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
+		render->Draw(state);
+		res = wglDXUnlockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
+
+		ID3D11Texture2D* pBackBuffer = nullptr;
+		auto hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+		if (SUCCEEDED(hr))
 		{
-			r->SetOption(_option);
-			_optionChange = false;
+			g_pD3DContext->CopyResource(pBackBuffer, g_sharedTexture.d3dTexture);	// 将共享纹理复制到后台缓冲区
+			pBackBuffer->Release();
 		}
+	}
+	else
+	{
+		render->Draw(state);
 
-		if (g_sharedTexture.InteropDevice)
+		_renderTarget->BeginDraw();
+		if (_usebitmap1)
 		{
-			auto res = wglDXLockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
-			r->Draw(state);
-			res = wglDXUnlockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
-
-			ID3D11Texture2D* pBackBuffer = nullptr;
-			auto hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-			if (SUCCEEDED(hr))
+			ConvertGLTextureToD2DBitmap1();
+			auto bitmap = _openGLBitmap1;
+			if (bitmap)
 			{
-				g_pD3DContext->CopyResource(pBackBuffer, g_sharedTexture.d3dTexture);	// 将共享纹理复制到后台缓冲区
-				pBackBuffer->Release();
+				RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+				_renderTarget->DrawBitmap(bitmap,
+					D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
+					1.f);
 			}
 		}
 		else
 		{
-			r->Draw(state);
-
-			_renderTarget->BeginDraw();
-			if (_usebitmap1)
+			ConvertGLTextureToD2DBitmap();
+			auto bitmap = _openGLBitmap;
+			if (bitmap)
 			{
-				ConvertGLTextureToD2DBitmap1();
-				auto bitmap = _openGLBitmap1;
-				if (bitmap)
-				{
-					RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
-					_renderTarget->DrawBitmap(bitmap,
-						D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
-						1.f);
-				}
+				RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+				_renderTarget->DrawBitmap(bitmap,
+					D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
+					1.f);
 			}
-			else
-			{
-				ConvertGLTextureToD2DBitmap();
-				auto bitmap = _openGLBitmap;
-				if (bitmap)
-				{
-					RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
-					_renderTarget->DrawBitmap(bitmap,
-						D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
-						1.f);
-				}
-			}
-			_renderTarget->EndDraw();
 		}
+		_renderTarget->EndDraw();
 	}
+
 }
 
 void Render::Renderer::InitOpenGLRender(int scr_width, int scr_height)

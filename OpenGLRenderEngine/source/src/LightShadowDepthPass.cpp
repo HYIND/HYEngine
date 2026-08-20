@@ -157,12 +157,12 @@ LightShadowDepthPass::~LightShadowDepthPass()
 		glDeleteFramebuffers(1, &_Fbo);
 }
 
-bool LightShadowDepthPass::ShouldExecute(RenderState& state) const
+bool LightShadowDepthPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return _shouldUpdateTexture;
 }
 
-void LightShadowDepthPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void LightShadowDepthPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	auto shadowAtlas = ctx.GetPersitent(0);
 	if (!shadowAtlas)
@@ -218,7 +218,7 @@ void LightShadowDepthPass::Execute(const OpenGLRenderGraph::PassContext& ctx, Re
 	);
 }
 
-void LightShadowDepthPass::FrameBegin(RenderState& state)
+void LightShadowDepthPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	CalculateShadowAtlas(state);
 
@@ -231,7 +231,7 @@ void LightShadowDepthPass::FrameBegin(RenderState& state)
 	//}
 }
 
-void LightShadowDepthPass::FrameEnd(RenderState& state)
+void LightShadowDepthPass::FrameEnd(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!_shouldUpdateTexture)
 		return;

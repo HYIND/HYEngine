@@ -355,16 +355,19 @@ void WorldManager::RenderFrame()
 	if (!framedata)
 		return;
 
-	RenderState state = RenderStateBuilder()
-		.SetCamera(framedata->projection, framedata->view,
-			framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
-			framedata->nearPlane, framedata->farPlane, framedata->fov)
-		.Build();
-
-	AnalysisRenderFrameData(framedata, state);
-
 	if (auto r = _openglRenderer)
+	{
+		RenderState state = RenderStateBuilder()
+			.SetCamera(framedata->projection, framedata->view,
+				framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
+				framedata->nearPlane, framedata->farPlane, framedata->fov)
+			.Build();
+
+		AnalysisRenderFrameData(framedata, state);
+
+		r->EarlyProcess(state);
 		r->Draw(state);
+	}
 }
 
 void WorldManager::AnalysisRenderFrameData(std::shared_ptr<Render::RenderFrameData>& framedata, RenderState& state)
@@ -813,6 +816,36 @@ Entity WorldManager::CreateModelEntity(std::shared_ptr<Model> model)
 		}).get();
 
 	return entity;
+}
+
+bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
+{
+	auto world = _world;
+	if (!_world || !_world->isRunning())
+		return false;
+
+	bool isSuccess = false;
+	world->SubmitCommand([&isSuccess, &newEntity, entity = oriEntity, world = world]() -> void {
+		if (!entity || !world)
+		{
+			isSuccess = false;
+			return;
+		}
+
+		newEntity = world->DuplicateEntity(entity);
+		if (newEntity.hasComponent<NameTag>())
+		{
+			auto& tag = newEntity.getComponent<NameTag>();
+			tag.name += "_copy";
+		}
+		if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
+			renderModel->model = renderModel->model->Clone(true, true, true);
+
+		isSuccess = true;
+		}
+	).get();
+
+	return isSuccess && newEntity;
 }
 
 std::shared_ptr<OpenGLRenderer> WorldManager::GetOpenGLRener()

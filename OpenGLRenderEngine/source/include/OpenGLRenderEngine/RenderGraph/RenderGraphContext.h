@@ -1,10 +1,15 @@
-#pragma once
+﻿#pragma once
 
 #include <GL\glew.h>
 #include <stdint.h>
 #include <iostream>
 #include <vector>
 #include <variant>
+#include <string>
+#include <unordered_map>
+#include <any>
+#include <type_traits>
+#include <stdexcept>
 #include "../Base/Texture2D.h"
 
 namespace OpenGLRenderGraph
@@ -82,6 +87,62 @@ namespace OpenGLRenderGraph
 		bool operator==(const ExternalResource& other) const { return name == other.name && type == other.type; }
 		bool operator!=(const ExternalResource& other) const { return name != other.name || type != other.type; }
 	};
+
+
+	class FrameDataRegistry
+	{
+	public:
+		template<typename T>
+		void Store(const std::string& name, T&& value) {
+			data[name] = std::forward<T>(value);
+		}
+
+		template<typename T>
+		void Store(const std::string& name, const T& value) {
+			data[name] = value;
+		}
+
+		template<typename T>
+		T Load(const std::string& name) const {
+			auto it = data.find(name);
+			if (it == data.end()) {
+				throw std::runtime_error("Frame data not found: " + name);
+			}
+			return std::any_cast<T>(it->second);
+		}
+
+		template<typename T>
+		T& Load(const std::string& name) {
+			auto it = data.find(name);
+			if (it == data.end()) {
+				throw std::runtime_error("Frame data not found: " + name);
+			}
+			return std::any_cast<T&>(it->second);
+		}
+
+		template<typename T>
+		T* TryLoad(const std::string& name) {
+			auto it = data.find(name);
+			if (it == data.end()) {
+				return nullptr;
+			}
+			return std::any_cast<T>(&it->second);
+		}
+
+		// 检查是否存在
+		bool Has(const std::string& name) const {
+			return data.find(name) != data.end();
+		}
+
+		void Clear() {
+			data.clear();
+		}
+
+	private:
+		// 每帧一个注册表，存任意类型
+		std::unordered_map<std::string, std::any> data;
+	};
+
 }
 
 namespace std {

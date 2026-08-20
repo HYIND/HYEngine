@@ -16,8 +16,8 @@ public:
 		const std::string& blurComputerShaderPath
 	);
 
-	virtual bool ShouldExecute(RenderState& state) const;
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual bool ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
 private:
 

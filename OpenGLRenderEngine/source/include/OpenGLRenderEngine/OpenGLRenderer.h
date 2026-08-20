@@ -55,13 +55,15 @@ public:
 
 	void Resize(uint32_t width, uint32_t height);
 
+	void EarlyProcess(RenderState& state);
+
 private:
 	void InitRenderGraph();
 	void InitSceneRenderGraph();
 	void InitFirstPersonRenderGraph();
 
-	void UpdateRenderState(RenderState& state);
-	void UpdateIndirectDrawData(RenderState& state);
+	void SetupRenderState(RenderState& state);
+	void SetupIndirectDrawData(RenderState& state);
 
 	void FinishRendering(RenderState& state);
 

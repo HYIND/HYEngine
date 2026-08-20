@@ -118,6 +118,11 @@ public:
 	{
 		_cv.wait(lock);
 	}
+	template <Lockable T, class BoolFunc>
+	void Wait(T& lock, BoolFunc func)
+	{
+		_cv.wait(lock, func);
+	}
 	template<Lockable T>
 	bool WaitFor(T& lock, const std::chrono::milliseconds ms)
 	{

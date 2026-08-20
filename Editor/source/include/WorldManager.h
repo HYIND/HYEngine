@@ -55,6 +55,7 @@ public:
 
 public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);
+	bool DuplicateEntity(Entity oriEntity, Entity& newEntity);
 
 private:
 	void WorldLoop();

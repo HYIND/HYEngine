@@ -8,7 +8,7 @@ LightingPass::LightingPass(const std::string& vertexShaderPath, const std::strin
 
 LightingPass::~LightingPass() {}
 
-void LightingPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void LightingPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	auto gPosition = ctx.GetInput(0);
 	auto gNormal = ctx.GetInput(1);
@@ -41,6 +41,6 @@ void LightingPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderStat
 	RenderHelp::renderScreenQuad();
 }
 
-void LightingPass::FrameBegin(RenderState& state)
+void LightingPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 }

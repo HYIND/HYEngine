@@ -3,7 +3,7 @@
 #include <vector>
 #include "Coroutine.h"
 
-template<typename DataType>
+template<typename DataType, typename Lockable = CoroCriticalSectionLock>
 class TripleBuffer
 {
 	template<typename T, typename = void>
@@ -56,7 +56,6 @@ public:
 		LockGuard guard(_mutex);
 		std::swap(_writeIndex, _readyIndex);
 		_dataReady = true;
-		_datasSubmitted++;
 		clearData(_datas[_writeIndex]);
 	}
 
@@ -72,7 +71,6 @@ public:
 		clearData(_datas[_readIndex]);
 		std::swap(_readyIndex, _readIndex);
 		_dataReady = false;
-		_datasUsed++;
 
 		return _datas[_readIndex];
 	}
@@ -89,23 +87,6 @@ public:
 		}
 	}
 
-	// ==================== 统计信息 ====================
-	struct Status {
-		uint64_t submitted;		// 已提交的数据
-		uint64_t Used;			// 已使用的数据
-		int currentReadIndex;   // 当前读取索引
-		int currentWriteIndex;  // 当前写入索引
-	};
-	Status getStatus() const
-	{
-		return Status{
-			.submitted = _datasSubmitted.load(),
-			.Used = _datasUsed.load(),
-			.currentReadIndex = _readIndex,
-			.currentWriteIndex = _writeIndex
-		};
-	}
-
 private:
 	// 三个缓冲区
 	std::vector<DataType> _datas;
@@ -115,11 +96,6 @@ private:
 	int _readIndex = 2;     // 可读
 
 	// 同步
-	CoroCriticalSectionLock _mutex;
+	mutable Lockable _mutex;
 	std::atomic<bool> _dataReady = false;
-
-	// 统计
-	std::atomic<uint64_t> _datasSubmitted{ 0 };
-	std::atomic<uint64_t> _datasUsed{ 0 };
-
 };

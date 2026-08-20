@@ -12,8 +12,8 @@ class AutoExposurePass :public RenderPassBase
 public:
 	AutoExposurePass(const std::string& histogramComputerShaderPath);
 	virtual ~AutoExposurePass() = default;
-	virtual bool ShouldExecute(RenderState& state) const;
-	virtual void Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
+	virtual bool ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state);
 
 private:
 	Shader _histogramShader;

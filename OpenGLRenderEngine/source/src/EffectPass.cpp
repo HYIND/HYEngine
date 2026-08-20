@@ -8,12 +8,12 @@ EffectPass::EffectPass(const std::string& vertexShaderPath, const std::string& f
 {
 }
 
-bool EffectPass::ShouldExecute(RenderState& state) const
+bool EffectPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return !state.objects.sceneRenderData.effectItems.empty();
 }
 
-void EffectPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void EffectPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);

@@ -49,6 +49,6 @@ struct RenderOption
 		bool depthFogOn = true;
 		bool rayTraceOn = false;
 		bool autoExposureOn = false;
-		bool calculateOcclusionCulling = false;
+		bool calculateOcclusionCulling = true;
 	} flags;
 };

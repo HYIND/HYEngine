@@ -4,11 +4,11 @@
 #include "ResourcePool.h"
 #include "RenderGraphResourceManager.h"
 #include "../RenderPass/RenderPassBase.h"
+
 #include <unordered_set>
 
 namespace OpenGLRenderGraph
 {
-
 
 	class PassNode
 	{
@@ -70,11 +70,13 @@ namespace OpenGLRenderGraph
 		const std::unordered_set<PassNode*>& GetAfters() const;
 		const std::unordered_set<PassNode*>& GetBefores() const;
 
-		bool ShouldExecute(RenderState& state) const;
-		void Execute(const PassContext& ctx, RenderState& state);
+		void EarlyExecute(int frameIndex, RenderState& state);
 
-		void FrameBegin(RenderState& state);
-		void FrameEnd(RenderState& state);
+		bool ShouldExecute(int frameIndex, RenderState& state);
+		void Execute(int frameIndex, const PassContext& ctx, RenderState& state);
+
+		void FrameBegin(int frameIndex, RenderState& state);
+		void FrameEnd(int frameIndex, RenderState& state);
 
 	public:
 		bool IsDone();
@@ -103,6 +105,8 @@ namespace OpenGLRenderGraph
 		bool _enable;
 
 		bool _isDone;
+
+		std::array<FrameDataRegistry, 2> _registrys;
 	};
 
 }

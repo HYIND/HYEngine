@@ -827,22 +827,7 @@ void ImguiLayout::DrawSceneObjectList(WorldManager* worldManager)
 				}
 				if (ImGui::MenuItem("Duplicate"))
 				{
-					Entity newEntity;
-					worldManager->GetWorld()->SubmitCommand([&newEntity, entity = item.entity, world = worldManager->GetWorld()]() -> void {
-						if (!entity || !world)
-							return;
-						newEntity = world->DuplicateEntity(entity);
-						if (newEntity.hasComponent<NameTag>())
-						{
-							auto& tag = newEntity.getComponent<NameTag>();
-							tag.name += "_copy";
-						}
-						if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
-							renderModel->model = renderModel->model->Clone(true, true, true);
-						}
-					).get();
-
-					if (newEntity)
+					if (Entity newEntity; worldManager->DuplicateEntity(item.entity, newEntity) && newEntity)
 						selectedEntity = newEntity;
 				}
 
@@ -1087,22 +1072,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 			}
 			if (ImGui::MenuItem("Duplicate"))
 			{
-				Entity newEntity;
-				worldManager->GetWorld()->SubmitCommand([&newEntity, entity = selectedEntity, world = worldManager->GetWorld()]() -> void {
-					if (!entity || !world)
-						return;
-					newEntity = world->DuplicateEntity(entity);
-					if (newEntity.hasComponent<NameTag>())
-					{
-						auto& tag = newEntity.getComponent<NameTag>();
-						tag.name += "_copy";
-					}
-					if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
-						renderModel->model = renderModel->model->Clone(true, true, true);
-					}
-				).get();
-
-				if (newEntity)
+				if (Entity newEntity; worldManager->DuplicateEntity(selectedEntity, newEntity) && newEntity)
 					selectedEntity = newEntity;
 			}
 

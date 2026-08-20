@@ -99,12 +99,11 @@ void OpenGLRenderer::Init(uint32_t width, uint32_t height, SharedTexture* shared
 
 void OpenGLRenderer::Draw(RenderState& state)
 {
-	UpdateRenderState(state);
-
-	UpdateIndirectDrawData(state);
+	SetupRenderState(state);
+	//SetupIndirectDrawData(state);
 
 	_sceneRenderGraph->Execute(state);
-	_firstPersonRenderGraph->Execute(state);
+	//_firstPersonRenderGraph->Execute(state);
 
 	//RenderFirstPersonLayer(state);
 
@@ -464,7 +463,16 @@ void OpenGLRenderer::InitFirstPersonRenderGraph()
 
 }
 
-void OpenGLRenderer::UpdateRenderState(RenderState& state)
+void OpenGLRenderer::EarlyProcess(RenderState& state)
+{
+	state.renderRecord.frameIndex = _record.frameIndex++;
+	state.option = _option;
+
+	_sceneRenderGraph->EarlyExecute(state);
+	//_firstPersonRenderGraph->EarlyExecute(state);
+}
+
+void OpenGLRenderer::SetupRenderState(RenderState& state)
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, _renderTarget.sceneFbo);
 	glViewport(0, 0, scr_width, scr_height);
@@ -497,19 +505,17 @@ void OpenGLRenderer::UpdateRenderState(RenderState& state)
 
 	state.renderRecord.prevEV100 = _record.prevEV100;
 	state.renderRecord.prevRenderMicroTimeStamp = _record.prevRenderMicroTimeStamp;
-	state.renderRecord.frameIndex = _record.frameIndex++;
 	state.renderRecord.currentRenderMicroTimeStamp = Tool::GetTimestampMircoseconds();
 
-	state.option = _option;
 }
 
-void OpenGLRenderer::UpdateIndirectDrawData(RenderState& state)
+void OpenGLRenderer::SetupIndirectDrawData(RenderState& state)
 {
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
 	{
-		auto items = state.objects.sceneRenderData.opaqueMesh;
+		auto& items = state.objects.sceneRenderData.opaqueMesh;
 		for (auto& item : items)
 		{
 			auto& mesh = item.meshinfo.mesh;
@@ -522,7 +528,7 @@ void OpenGLRenderer::UpdateIndirectDrawData(RenderState& state)
 	}
 
 	{
-		auto items = state.objects.sceneRenderData.transparentMesh;
+		auto& items = state.objects.sceneRenderData.transparentMesh;
 		for (auto& item : items)
 		{
 			auto& mesh = item.meshinfo.mesh;
@@ -535,7 +541,7 @@ void OpenGLRenderer::UpdateIndirectDrawData(RenderState& state)
 	}
 
 	{
-		auto items = state.objects.sceneRenderData.opaqueSkinnedModel;
+		auto& items = state.objects.sceneRenderData.opaqueSkinnedModel;
 		for (auto& item : items)
 		{
 			for (auto& info : item.models)
@@ -551,7 +557,7 @@ void OpenGLRenderer::UpdateIndirectDrawData(RenderState& state)
 	}
 
 	{
-		auto items = state.objects.sceneRenderData.transparentSkinnedMesh;
+		auto& items = state.objects.sceneRenderData.transparentSkinnedMesh;
 		for (auto& item : items)
 		{
 			auto& mesh = item.meshinfo.mesh;

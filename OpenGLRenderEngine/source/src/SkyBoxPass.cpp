@@ -69,12 +69,12 @@ SkyBoxPass::~SkyBoxPass()
 		glDeleteBuffers(1, &_skyboxVBO);
 }
 
-bool SkyBoxPass::ShouldExecute(RenderState& state) const
+bool SkyBoxPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return state.option.flags.skyboxOn && state.skybox.cube;
 }
 
-void SkyBoxPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void SkyBoxPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	auto skyboxCubeMap = state.skybox.cube;
 	if (!skyboxCubeMap)

@@ -113,16 +113,16 @@ RayTracePass::~RayTracePass()
 	}
 }
 
-bool RayTracePass::ShouldExecute(RenderState& state) const
+bool RayTracePass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!state.option.flags.rayTraceOn)
 		return false;
 	return state.option.rayTraceParams.maxBounceLimit > 0 || !state.option.rayTraceParams.useGbuffer;
 }
 
-void RayTracePass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void RayTracePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
-	if (!ShouldExecute(state))
+	if (!ShouldExecute(registry, state))
 		return;
 
 	if (_useGBuffer != state.option.rayTraceParams.useGbuffer)
@@ -171,9 +171,9 @@ void RayTracePass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderStat
 	//	});
 }
 
-void RayTracePass::FrameBegin(RenderState& state)
+void RayTracePass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (!ShouldExecute(state))
+	if (!ShouldExecute(registry, state))
 		return;
 
 	auto guard = THREADCONTEXT->GetBindGuard();

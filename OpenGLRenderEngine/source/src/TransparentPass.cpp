@@ -9,44 +9,7 @@ TransparentPass::TransparentPass(const std::string& vertexShaderPath, const std:
 {
 }
 
-bool TransparentPass::ShouldExecute(RenderState& state) const
-{
-	bool empty = state.objects.sceneRenderData.transparentMesh.empty() && state.objects.sceneRenderData.transparentSkinnedMesh.empty();
-	return state.option.flags.drawTransparent && !empty;
-}
-
-void TransparentPass::Execute(const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
-{
-	auto atlasShadowMap = ctx.GetInput(0);
-	if (!atlasShadowMap)
-		return;
-
-	if (state.objects.sceneRenderData.transparentMesh.empty() && state.objects.sceneRenderData.transparentSkinnedMesh.empty())
-		return;
-
-	SetupIndirecDrawMaterial(state);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
-	glViewport(0, 0, state.framebuffer.width, state.framebuffer.height);
-
-	_shader.Use();
-
-	_shader.setTexture(atlasShadowMap, "atlasShadowMap", 9);
-
-	RenderHelp::SetupLightingData(_shader,
-		state.lights.dirLightInfos,
-		state.lights.pointLightInfos,
-		state.lights.spotLightInfos,
-		state.lights.shadowAtlas
-	);
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	RenderHelp::renderSceneTransparent(state, _shader, state.objects.sceneRenderData.transparentMesh, state.objects.sceneRenderData.transparentSkinnedMesh);
-	glDisable(GL_BLEND);
-}
-
-void TransparentPass::FrameBegin(RenderState& state)
+void TransparentPass::EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto GetDistanceToCamera = [&](std::shared_ptr<Mesh>& mesh, const glm::mat4& transform)-> float {
 		auto aabb = mesh->GetAABB();
@@ -79,7 +42,47 @@ void TransparentPass::FrameBegin(RenderState& state)
 			}
 		);
 	}
+}
 
+bool TransparentPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	bool empty = state.objects.sceneRenderData.transparentMesh.empty() && state.objects.sceneRenderData.transparentSkinnedMesh.empty();
+	return state.option.flags.drawTransparent && !empty;
+}
+
+void TransparentPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+{
+	auto atlasShadowMap = ctx.GetInput(0);
+	if (!atlasShadowMap)
+		return;
+
+	if (state.objects.sceneRenderData.transparentMesh.empty() && state.objects.sceneRenderData.transparentSkinnedMesh.empty())
+		return;
+
+	SetupIndirecDrawMaterial(state);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
+	glViewport(0, 0, state.framebuffer.width, state.framebuffer.height);
+
+	_shader.Use();
+
+	_shader.setTexture(atlasShadowMap, "atlasShadowMap", 9);
+
+	RenderHelp::SetupLightingData(_shader,
+		state.lights.dirLightInfos,
+		state.lights.pointLightInfos,
+		state.lights.spotLightInfos,
+		state.lights.shadowAtlas
+	);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	RenderHelp::renderSceneTransparent(state, _shader, state.objects.sceneRenderData.transparentMesh, state.objects.sceneRenderData.transparentSkinnedMesh);
+	glDisable(GL_BLEND);
+}
+
+void TransparentPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
 }
 
 void TransparentPass::SetupIndirecDrawMaterial(RenderState& state)
