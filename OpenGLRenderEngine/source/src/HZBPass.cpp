@@ -331,8 +331,7 @@ void HZBPass::GetOcclusionCulling(OpenGLRenderGraph::FrameDataRegistry& registry
 
 	if (auto result_ssbo = _occlusionCullShader.TryGetSSBO("OcclusionResults"))
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, result_ssbo->GetID());
-		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, frustumOcclusionCullResult.size() * sizeof(int), frustumOcclusionCullResult.data());
+		glGetNamedBufferSubData(result_ssbo->GetID(), 0, frustumOcclusionCullResult.size() * sizeof(int), frustumOcclusionCullResult.data());
 	}
 
 	auto& items = state.objects.sceneRenderData.opaqueMesh;

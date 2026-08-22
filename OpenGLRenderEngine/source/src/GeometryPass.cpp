@@ -22,18 +22,27 @@ GeometryPass::~GeometryPass()
 		glDeleteFramebuffers(1, &_fbo);
 }
 
-void GeometryPass::BindTexToFbo(std::shared_ptr<Texture2D>& gPosition, std::shared_ptr<Texture2D>& gNormal, std::shared_ptr<Texture2D>& gAlbedoOpacity, std::shared_ptr<Texture2D>& gMetallicRoughnessMap, std::shared_ptr<Texture2D>& gMotionVectorMap, std::shared_ptr<Texture2D>& tempDepthStencilMap)
+void GeometryPass::BindTexToFbo(
+	std::shared_ptr<Texture2D>& gPosition,
+	std::shared_ptr<Texture2D>& gNormal,
+	std::shared_ptr<Texture2D>& gAlbedoOpacity,
+	std::shared_ptr<Texture2D>& gMetallicRoughnessMap,
+	std::shared_ptr<Texture2D>& gMotionVectorMap,
+	std::shared_ptr<Texture2D>& gDepthStencilMap,
+	std::shared_ptr<Texture2D>& gEmission
+)
 {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition->GetID(), 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal->GetID(), 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoOpacity->GetID(), 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gMetallicRoughnessMap->GetID(), 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, gMotionVectorMap->GetID(), 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT5, GL_TEXTURE_2D, gEmission->GetID(), 0);
 
-	GLenum attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4 };
-	glDrawBuffers(5, attachments);
+	GLenum attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4 ,GL_COLOR_ATTACHMENT5 };
+	glDrawBuffers(6, attachments);
 
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, tempDepthStencilMap->GetID(), 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, gDepthStencilMap->GetID(), 0);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "initGeometryPassData Framebuffer not complete!" << std::endl;
@@ -76,12 +85,13 @@ void GeometryPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const
 	auto gAlbedoOpacity = ctx.GetOutput(2);
 	auto gMetallicRoughnessMap = ctx.GetOutput(3);
 	auto gMotionVectorMap = ctx.GetOutput(4);
-	auto tempDepthStencilMap = ctx.GetOutput(5);
+	auto gDepthStencilMap = ctx.GetOutput(5);
+	auto gEmission = ctx.GetOutput(6);
 
 	SetupIndirecDrawMaterial(state);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
-	BindTexToFbo(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, tempDepthStencilMap);
+	BindTexToFbo(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gDepthStencilMap, gEmission);
 
 	glViewport(0, 0, state.framebuffer.width, state.framebuffer.height);
 
@@ -246,7 +256,7 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderState& state)
 	if (!oneSideCommands.empty())
 	{
 		glEnable(GL_CULL_FACE);
-		glBufferData(GL_DRAW_INDIRECT_BUFFER, oneSideCommands.size() * sizeof(IndirectDrawCommand), oneSideCommands.data(), GL_DYNAMIC_DRAW);
+		glNamedBufferData(state.indirectCommands.indirectCommandBuffer, oneSideCommands.size() * sizeof(IndirectDrawCommand), oneSideCommands.data(), GL_DYNAMIC_DRAW);
 		glMultiDrawElementsIndirect(
 			GL_TRIANGLES,            // 图元类型
 			GL_UNSIGNED_INT,         // 索引类型
@@ -259,7 +269,7 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderState& state)
 	{
 
 		glDisable(GL_CULL_FACE);
-		glBufferData(GL_DRAW_INDIRECT_BUFFER, twoSideCommands.size() * sizeof(IndirectDrawCommand), twoSideCommands.data(), GL_DYNAMIC_DRAW);
+		glNamedBufferData(state.indirectCommands.indirectCommandBuffer, twoSideCommands.size() * sizeof(IndirectDrawCommand), twoSideCommands.data(), GL_DYNAMIC_DRAW);
 		glMultiDrawElementsIndirect(
 			GL_TRIANGLES,            // 图元类型
 			GL_UNSIGNED_INT,         // 索引类型

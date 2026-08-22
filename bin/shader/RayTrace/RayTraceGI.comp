@@ -1,12 +1,10 @@
 #version 450 core
 
-#extension GL_ARB_gpu_shader_int64 : enable
-#extension GL_ARB_bindless_texture : require
-
-layout(local_size_x = 16, local_size_y = 16) in; 
-
+#include "shader/dataDef/materialDataDef.comp"
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Helper/ligtingHelper.comp"
+
+layout(local_size_x = 16, local_size_y = 16) in; 
 
 #ifndef Max_Recursive_Depth
 #define Max_Recursive_Depth 20
@@ -21,21 +19,22 @@ uniform float tMin;
 uniform float tMax;
 uniform int maxBounce;       // 最大反射次数
 
-uniform int frameIndex;
-uniform bool jitter;
+uniform int sampleRayCount;
+uniform float GIIntensity;
+uniform float AOIntensity;
+uniform float DistanceFactor;
 
 uniform ivec2 screenSize;
 
-#ifdef useGbuffer
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoOpacity;
 uniform sampler2D gMetallicRoughness;
-uniform sampler2D colorMap;
 uniform sampler2D depthMap;
-#endif
-
 uniform sampler2D atlasShadowMap;
+uniform sampler2D SSAOMap;
+
+uniform int frameIndex;
 
 struct Vertex {
     vec3 position;  
@@ -60,43 +59,6 @@ struct Triangle_Extension {
     Vertex_Extension v0;
     Vertex_Extension v1;
     Vertex_Extension v2;
-};
-
-struct MaterialData
-{
-	vec3 albedo;
-	float metallic;
-	float roughness;
-	float ambientOcclusion;
-
-	float opacity;
-
-	float IOR;
-
-	int alphamode;
-	float maskthreshold;
-
-	int twosided;
-
-	int	texture_albedo_count;
-	int	texture_metallic_count;
-	int	texture_roughness_count;
-	int	texture_normal_count;
-	int	texture_ao_count;
-	int	texture_emissive_count;
-	int	texture_metallicroughness_count;
-	int	texture_height_count;
-	int texture_opacity_count;
-
-	sampler2D texture_albedo;
-	sampler2D texture_metallic;
-	sampler2D texture_roughness;
-	sampler2D texture_ao;
-	sampler2D texture_normal;
-	sampler2D texture_emissive;
-	sampler2D texture_metallicroughness;
-	sampler2D texture_height;
-    sampler2D texture_opacity;
 };
 
 struct MeshData
@@ -169,7 +131,107 @@ struct HitInfo {
     MaterialData materialdata;
 };
 
-const float DefaultLossFactor = 0.1;   //光线损耗
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}   
+
+vec3 fresnelSchlickColorCalculate(vec3 color, vec3 normal, vec3 fragPosToView, vec3 albedo, float metallic, float roughness, float ambientOcclusion)
+{
+    vec3 F0 = mix(vec3(0.02), albedo, metallic);
+
+    vec3 N = normal;
+    vec3 V = normalize(fragPosToView);
+
+    float NdotV = max(dot(N, V), 0.0);
+    vec3 F_env = fresnelSchlickRoughness(NdotV, F0, roughness);  // 粗糙度修正菲涅尔
+    vec3 kS_env = F_env;
+    vec3 kD = 1.0 - kS_env;
+    kD *= (1.0 - metallic);
+
+    vec3 result = kD * color * albedo;
+
+    result *= GIIntensity;
+    result = mix(result, result * ambientOcclusion, AOIntensity);
+
+    return result;
+}
+
+// 计算 Halton 序列
+float halton(uint index, int base) 
+{
+    float result = 0.0;
+    float f = 1.0;
+    uint i = index;
+    while (i > 0) 
+    {
+        f /= float(base);
+        result += f * float(i % base);
+        i /= base;
+    }
+    return result;
+}
+
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float pcg_float(uint seed) {
+    return float(pcg_hash(seed)) / 4294967296.0;
+}
+
+vec2 pcg_float2(uint seed) {
+    uint h1 = pcg_hash(seed);
+    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
+    return vec2(float(h1), float(h2)) / 4294967296.0;
+}
+
+// vec2 getRandom(int sampleIndex) 
+// {
+//     uint seed = uint(gl_GlobalInvocationID.x) * 197u 
+//             + uint(gl_GlobalInvocationID.y) * 927u 
+//             + uint(sampleIndex) * 269u 
+//             + uint(frameIndex) * 777u;
+//     return vec2(halton(seed, 2), halton(seed, 3));
+// }
+
+vec2 getRandom(int sampleIndex) 
+{
+    uint seed = uint(gl_GlobalInvocationID.x) * 197u 
+            + uint(gl_GlobalInvocationID.y) * 927u 
+            + uint(sampleIndex) * 269u 
+            + uint(frameIndex) * 777u;
+    return pcg_float2(seed);
+}
+
+// 生成随机方向（法线半球）
+vec3 sampleHemisphere(vec3 normal, vec2 random)
+{
+    float r1 = random.x;
+    float r2 = random.y;
+    
+    // 余弦加权采样
+    float cosTheta = sqrt(r1);
+    float theta = acos(cosTheta);
+    float phi = 2.0 * PI * r2;
+    
+    vec3 dir = vec3(
+        sin(theta) * cos(phi),
+        sin(theta) * sin(phi),
+        cos(theta)
+    );
+    
+    // 将局部坐标转到世界空间（以法线为Z轴）
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+
+    return samplerDir;
+}
 
 float calculateOpacity(MaterialData material, vec2 uv)
 {
@@ -221,6 +283,13 @@ void getPBRProperties(MaterialData material, vec2 uv, inout vec3 albedo, inout f
                 texture(material.texture_roughness, uv).g
                 : material.roughness;
 	}
+}
+
+vec3 calculateEmission(MaterialData material, vec2 uv)
+{
+    return material.texture_emissive_count > 0 ? 
+            texture(material.texture_emissive, uv).rgb * material.emissionColor
+            :material.emissionColor * material.emissionStrength;
 }
 
 //根据光线入射方向和表面的关系计算反射光线的比例
@@ -431,13 +500,25 @@ bool traceScene(Ray ray, inout HitInfo hit)
     return isHit;
 }
 
-bool traceRay(Ray ray, int maxBounce, inout vec3 lightingColors[Max_Bounce_limit + 1], inout vec3 fresnelFacts[Max_Bounce_limit + 1], inout int hitCount) 
+bool traceRayWithHemisphereSample(vec3 position, vec3 normal, int maxBounce, inout vec3 indirectColors[Max_Bounce_limit + 1], inout int hitCount, int sampleId) 
 {
     bool isHit = false;
-    vec3 throughput = vec3(1.0f);
+    float throughput = 1.0f;
 
     for (int depth = 0; depth <= maxBounce; depth++) 
     {
+        // 生成随机半球方向，进行追踪
+        vec2 random = getRandom(sampleId * (maxBounce + 1) + depth);
+        vec3 samplerDir = sampleHemisphere(normal, random);
+
+        int index = hitCount;
+
+        Ray ray;
+        ray.origin = position + normal * 0.001;
+        ray.direction = samplerDir;
+        ray.tMin = tMin;
+        ray.tMax = tMax;
+
         HitInfo hit;
         hit.t = ray.tMax;
         if(!traceScene(ray, hit))
@@ -446,55 +527,72 @@ bool traceRay(Ray ray, int maxBounce, inout vec3 lightingColors[Max_Bounce_limit
         hitCount++;
         isHit = true;
 
-        // 计算该点光照颜色
+        //计算该点光照颜色
         vec3 albedo;
         float metallic, roughness, ambientOcclusion;
 	    getPBRProperties(hit.materialdata, hit.texCoords, albedo, metallic, roughness, ambientOcclusion);
 
-        vec3 normal = hit.materialdata.texture_normal_count > 0 ?
+        normal = hit.materialdata.texture_normal_count > 0 ?
             normalize(mat3(hit.tangent, hit.bitangent, hit.normal) * normalize(texture(hit.materialdata.texture_normal, hit.texCoords).rgb * 2.0 - 1.0))
             : hit.normal;
 
-        vec3 position = hit.position;
+        position = hit.position;
 
-        float OneMinusRoughness = 1.0 - roughness;
-        float OneMinusRoughness2 = OneMinusRoughness * OneMinusRoughness;
-       	vec3 F0 = mix(vec3(0.02), albedo, metallic);
-
-
-        lightingColors[hitCount - 1] = CalcLighting(
+        vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
+        vec3 lightingColor = CalcLighting(
             camera.view, ray.origin, camera.farPlane,
             atlasShadowMap, 
             position, normal, 
             albedo, metallic, 
             roughness, ambientOcclusion
             );
-        fresnelFacts[hitCount - 1] = calculateRelfectFact(ray.direction, normal, F0) * OneMinusRoughness2;
 
-        throughput *= fresnelFacts[hitCount - 1];
-        if (length(throughput) < 0.02) break;
+        lightingColor = fresnelSchlickColorCalculate(lightingColor, normal, normalize(ray.origin - position), albedo, metallic, roughness, ambientOcclusion);
+        vec3 color = lightingColor + emission;
 
-        // 计算反射方向，继续追踪
-        ray.origin = position + normal * 0.001;
-        ray.direction = reflect(ray.direction , normal);
-        ray.tMin = tMin;
-        ray.tMax = tMax;
+        float dist = distance(ray.origin, position);
+        float attenuation = 1.0 / (1.0 + dist * DistanceFactor);
+
+        indirectColors[index] = color * attenuation;
+        // indirectColors[index] = vec3(1,1,0);
+
+        throughput *= attenuation;
+        if (throughput < 0.02) 
+            break;
+
     }
 
     return isHit;
 }
 
-float halton(int index, int base) {
-    float result = 0.0;
-    float f = 1.0;
-    for (int i = index; i > 0; i /= base) {
-        f /= float(base);
-        result += f * float(i % base);
+vec3 tracePath(vec3 position, vec3 normal, int sampleCount, int bounce) 
+{
+    vec3 totalIndirect = vec3(0.0);
+
+    for (int i = 0; i < sampleCount; i++) 
+    {
+        int hitCount = 0;
+        vec3 indirectColors[Max_Bounce_limit + 1];
+
+        if(traceRayWithHemisphereSample(position, normal, bounce, indirectColors, hitCount, i))
+        {
+            vec3 result = vec3(0.f);
+            for (int i = hitCount - 1; i >= 0; i--)       
+                result += indirectColors[i];
+
+            totalIndirect += result;
+        }
+        
+        // 能量贡献递减时提前退出
+        if (i > 4 && length(totalIndirect) < 0.001)  // 连续5个样本都没命中
+        {
+            break;
+        }
     }
-    return result;
+
+    return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
 }
 
-#ifdef useGbuffer
 void calculateFirstBounceRayData(inout HitInfo info, inout Ray ray, vec2 uv)
 {
     vec3 normal = normalize(texture(gNormal, uv).rgb);
@@ -539,94 +637,25 @@ void ProcessWithGBuffer()
     vec2 values = texture(gMetallicRoughness, uv).rg;
     float metallic = values.r;
     float roughness = values.g;
-    vec3 F0 = mix(vec3(0.02), albedo, metallic); 
+    float ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
 
     int bounce = clamp(maxBounce, 0 , Max_Bounce_limit);
-    if(length(F0) < 0.02 || bounce <= 0)
+    if(ambientOcclusion < 0.02 || bounce <= 0)
         return;
 
     Ray ray;
     HitInfo firstInfo;
     calculateFirstBounceRayData(firstInfo, ray, uv);
 
-    bounce--;
+    int sampleCount = max(1, sampleRayCount);
+    vec3 color = tracePath(ray.origin, firstInfo.normal, sampleCount, bounce);
 
-    int hitCount = 0;
-    vec3 lightingColors[Max_Bounce_limit + 1];
-    vec3 fresnelFacts[Max_Bounce_limit + 1];
+    vec3 result = fresnelSchlickColorCalculate(color, firstInfo.normal, normalize(camera.position - ray.origin), albedo, metallic, roughness, ambientOcclusion);
 
-    if(traceRay(ray, bounce, lightingColors, fresnelFacts, hitCount))
-    {
-        vec3 result = lightingColors[hitCount - 1];
-        for (int i = hitCount - 2; i >= 0; i--)       
-            result = lightingColors[i] + result * fresnelFacts[i] * (1.0f - DefaultLossFactor);
-
-        float OneMinusRoughness = 1.0 - roughness;
-        float OneMinusRoughness2 = OneMinusRoughness * OneMinusRoughness;
-        vec3 firstFresnelFact = calculateRelfectFact(-ray.direction, firstInfo.normal, F0) * OneMinusRoughness2;
-        result = result * firstFresnelFact * (1.0f - DefaultLossFactor);
-
-        imageStore(outputImage, pixelCoord, vec4(result, 1.0));
-    }
+    imageStore(outputImage, pixelCoord, vec4(result, 1.0));
 }
-#else 
-void ProcessPureRayTrace()
-{
-
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    vec2 pixelCenter = pixelCoord + 0.5;
-    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y || maxBounce < 0) {
-        return;
-    }
-
-    vec2 uv = pixelCenter / screenSize;
-    int bounce = clamp(maxBounce, 0 , Max_Bounce_limit);
-
-    if(jitter)
-    {
-        // 生成 [-0.5, 0.5] 范围的抖动值（单位：像素）
-        // int index = frameIndex % 16;
-        // float jitterX = (halton(index, 2) - 0.5);
-        // float jitterY = (halton(index, 3) - 0.5);
-        
-        vec2 jitteredPixel = pixelCenter + vec2((halton(frameIndex % 16, 2) - 0.5), (halton(frameIndex % 16, 3) - 0.5));
-        uv = jitteredPixel / screenSize;
-    }
-
-    Ray ray;
-
-    // 计算当前像素的光线方向
-    vec2 ndc = uv * 2.0 - 1.0;
-    float aspect = float(screenSize.x) / float(screenSize.y);
-    ndc.x *= aspect;
-    float tanHalfFov = tan(radians(camera.fov) * 0.5);
-    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
-    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
-
-    ray.origin = camera.position;
-    ray.direction = worldRayDir;
-    ray.tMin = tMin;
-    ray.tMax = tMax;
-
-    int hitCount = 0;
-    vec3 lightingColors[Max_Bounce_limit + 1];
-    vec3 fresnelFacts[Max_Bounce_limit + 1];
-
-    if(traceRay(ray, bounce, lightingColors, fresnelFacts, hitCount))
-    {
-        vec3 result = lightingColors[hitCount - 1];
-        for (int i = hitCount - 2; i >= 0; i--)       
-            result = lightingColors[i] + result * fresnelFacts[i] * (1.0f - DefaultLossFactor);
-        imageStore(outputImage, pixelCoord, vec4(result, 1.0));
-    }
-}
-#endif
 
 void main()
 {
-#ifdef useGbuffer
-        ProcessWithGBuffer();
-#else 
-        ProcessPureRayTrace();
-#endif
+    ProcessWithGBuffer();
 }

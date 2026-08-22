@@ -1,65 +1,7 @@
-#include "OpenGLRenderEngine/RenderPass/RayTracePass.h"
-#include "OpenGLRenderEngine/General/RenderHelp.h"
-#include "OpenGLRenderEngine/General/BVHBuilder.h"
-#include "OpenGLRenderEngine/OpenGLRenderConfig.h"
+#include "OpenGLRenderEngine/RenderPass/RayTraceReflectPass.h"
 
 #define work_size_x 16
 #define work_size_y 16
-
-struct alignas(16) comp_Vertex {
-	alignas(16) glm::vec3 position;
-};
-
-struct alignas(16) comp_Triangle {
-	comp_Vertex v0;
-	comp_Vertex v1;
-	comp_Vertex v2;
-};
-
-struct alignas(16) comp_Vertex_Extension {
-	alignas(16) glm::vec3 normal;
-	alignas(16) glm::vec2 texCoords;
-
-	alignas(16) glm::vec3 Tangent;
-	alignas(16) glm::vec3 Bitangent;
-	alignas(16) int m_BoneIDs[OpenGLRenderConfig::Mesh_Max_Bone_Influence] = { -1 };
-	alignas(16) float m_Weights[OpenGLRenderConfig::Mesh_Max_Bone_Influence] = { 1.0f };
-};
-
-struct alignas(16) comp_Triangle_Extension {
-	comp_Vertex_Extension v0;
-	comp_Vertex_Extension v1;
-	comp_Vertex_Extension v2;
-};
-
-struct comp_MaterialData : public MaterialData
-{
-};
-
-struct alignas(16) comp_MeshData
-{
-	alignas(16) glm::mat4 model;
-	alignas(16) glm::mat4 invModel;
-
-	glm::vec4 normalMatRow1;
-	glm::vec4 normalMatRow2;
-	glm::vec4 normalMatRow3;
-
-	int triangleFirst;  //triangles中的首个Triangle位置
-	int triangleCount;  //Triangle数量
-
-	int bvhNodeFirst;   //meshBVHNodeBuffer.nodes中的首个bvhnode位置
-	int bvhNodeCount;   //bvhnode数量
-
-	//int bvhIndicesFirst;   //meshBVHIndicesBuffer.indices中的首个indices位置
-	//int bvhIndicesCount;   //indices数量
-};
-
-struct alignas(16) comp_MeshMatData
-{
-	comp_MeshData mesh;
-	comp_MaterialData material;
-};
 
 static void WaitFence(GLsync& fence)
 {
@@ -71,17 +13,13 @@ static void WaitFence(GLsync& fence)
 	}
 }
 
-RayTracePass::RayTracePass(
+RayTraceReflectPass::RayTraceReflectPass(
 	const std::string& rayTraceComputerShaderPath,
-	const std::string& TAAComputerShaderPath,
 	const std::string& denoisedComputerShaderPath,
 	const std::string& scaleComputerShaderPath
 )
 	:
 	useDenoised(true),
-	useTAA(false),
-	first_TAAIteration(true),
-	curTAAOutPutIndex(0),
 	_traiangleBufferManager(1000 * 1024),
 	_traiangleExtBufferManager(3000 * 1024),
 	_meshBVHNodeBufferManager(1000 * 1024),
@@ -99,12 +37,11 @@ RayTracePass::RayTracePass(
 	_rayTraceShader_useGbuffer.CompileFromFile(rayTraceComputerShaderPath);
 	_rayTraceShader_pureRayTrace.CompileFromFile(rayTraceComputerShaderPath);
 
-	_TAAShader.CompileFromFile(TAAComputerShaderPath);
 	_denoisedShader.CompileFromFile(denoisedComputerShaderPath);
 	_scaleShader.CompileFromFile(scaleComputerShaderPath);
 }
 
-RayTracePass::~RayTracePass()
+RayTraceReflectPass::~RayTraceReflectPass()
 {
 	if (_setupfence != nullptr)
 	{
@@ -113,25 +50,25 @@ RayTracePass::~RayTracePass()
 	}
 }
 
-bool RayTracePass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+bool RayTraceReflectPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (!state.option.flags.rayTraceOn)
+	if (!state.option.flags.rayTraceReflectOn)
 		return false;
-	return state.option.rayTraceParams.maxBounceLimit > 0 || !state.option.rayTraceParams.useGbuffer;
+	return state.option.rayTraceReflectParams.maxBounceLimit > 0 || !state.option.rayTraceReflectParams.useGbuffer;
 }
 
-void RayTracePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void RayTraceReflectPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
 
-	if (_useGBuffer != state.option.rayTraceParams.useGbuffer)
+	if (_useGBuffer != state.option.rayTraceReflectParams.useGbuffer)
 	{
-		_useGBuffer = state.option.rayTraceParams.useGbuffer;
+		_useGBuffer = state.option.rayTraceReflectParams.useGbuffer;
 		_forceFlushBuffer = true;
 	}
 
-	bool needDraw = state.option.rayTraceParams.maxBounceLimit > 0 || !_useGBuffer;
+	bool needDraw = state.option.rayTraceReflectParams.maxBounceLimit > 0 || !_useGBuffer;
 	if (!needDraw)
 		return;
 
@@ -144,20 +81,16 @@ void RayTracePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const
 	data.gMetallicRoughness = ctx.GetInput(3);
 	data.atlasShadowMap = ctx.GetInput(4);
 
-	data.sceneColorBuffer = ctx.GetExternal(0);
-	data.sceneDepthBuffer = ctx.GetExternal(1);
+	data.sceneDepthBuffer = ctx.GetExternal(0);
 
 	data.originTexture = ctx.GetTemp(0);
 	data.denoisedTexture = ctx.GetTemp(1);
 
-	data.TAA_Texture[0] = ctx.GetPersitent(0);
-	data.TAA_Texture[1] = ctx.GetPersitent(1);
+	data.historyColorTexture = ctx.GetPersitent(0);
 
 	data.outPutTexture = ctx.GetOutput(0);
 
 	if (needDraw && !DrawRayTrace(data, state)) return;
-
-	if (needDraw && useTAA && !DrawTAA(data, state)) return;
 
 	if (needDraw && useDenoised && !DrawDenoised(data, state)) return;
 
@@ -165,28 +98,28 @@ void RayTracePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const
 
 	//RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
 	//	THREADCONTEXT->UnBind();
-	//	auto task1 = CoroTask::Run([&]()-> void {DrawTexture(data.outPutTexture, "temp/test_RayTracePass.png"); });
+	//	auto task1 = CoroTask::Run([&]()-> void {DrawTexture(data.outPutTexture, "temp/test_RayTraceReflectPass.png"); });
 	//	task1.sync_wait();
 	//	THREADCONTEXT->Bind();
 	//	});
 }
 
-void RayTracePass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+void RayTraceReflectPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
 
 	auto guard = THREADCONTEXT->GetBindGuard();
 
-	SetEnableTAA(state.option.rayTraceParams.useTAA);
-	SetEnableDenoised(state.option.rayTraceParams.useDenoised);
+	SetEnableDenoised(state.option.rayTraceReflectParams.useDenoised);
 
-	auto& rayTraceShader = state.option.rayTraceParams.useGbuffer ? _rayTraceShader_useGbuffer : _rayTraceShader_pureRayTrace;
+	auto& rayTraceShader = state.option.rayTraceReflectParams.useGbuffer ? _rayTraceShader_useGbuffer : _rayTraceShader_pureRayTrace;
 	rayTraceShader.Use();
 	SetupMeshBuffer(rayTraceShader, state);
 
 	_setupfence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 	glFlush();
+	rayTraceShader.Close();
 }
 
 struct Ray {
@@ -214,7 +147,7 @@ bool intersectAABB(Ray ray, glm::vec3 min, glm::vec3 max) {
 	return tNear <= tFar && tFar > ray.tMin && tNear < ray.tMax;
 }
 
-bool RayTracePass::SetupMeshBuffer(Shader& shader, RenderState& state)
+bool RayTraceReflectPass::SetupMeshBuffer(Shader& shader, RenderState& state)
 {
 	static auto copyVertex = [](comp_Vertex& comp_v, comp_Vertex_Extension& comp_v_ext, const Vertex& v)-> void {
 		memcpy(&comp_v, &v, sizeof(comp_Vertex));
@@ -443,7 +376,7 @@ bool RayTracePass::SetupMeshBuffer(Shader& shader, RenderState& state)
 	return true;
 }
 
-bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 {
 	auto& target = data.originTexture;
 
@@ -453,7 +386,7 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	glClearTexImage(target->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
 
-	auto& rayTraceShader = state.option.rayTraceParams.useGbuffer ? _rayTraceShader_useGbuffer : _rayTraceShader_pureRayTrace;
+	auto& rayTraceShader = state.option.rayTraceReflectParams.useGbuffer ? _rayTraceShader_useGbuffer : _rayTraceShader_pureRayTrace;
 
 	rayTraceShader.Use();
 
@@ -471,25 +404,21 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 	rayTraceShader.setIVec2("screenSize", data.drawSize);
 
 	//光追参数
-	rayTraceShader.setFloat("tMin", state.option.rayTraceParams.tMin);
-	rayTraceShader.setFloat("tMax", state.option.rayTraceParams.tMax);
-	rayTraceShader.setInt("maxBounce", std::min(state.option.rayTraceParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit));
+	rayTraceShader.setFloat("tMin", state.option.rayTraceReflectParams.tMin);
+	rayTraceShader.setFloat("tMax", state.option.rayTraceReflectParams.tMax);
+	rayTraceShader.setInt("maxBounce", std::min(state.option.rayTraceReflectParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit));
 	//rayTraceShader.setInt("maxBounce", std::min(0, OpenGLRenderConfig::RayTrace_Max_Bounce_limit));
 
-	rayTraceShader.setBool("jitter", useTAA);
-	rayTraceShader.setInt("ncameIndex", state.renderRecord.frameIndex % 100000);
-
-	if (state.option.rayTraceParams.useGbuffer)
+	if (state.option.rayTraceReflectParams.useGbuffer)
 	{
 		rayTraceShader.setTexture(data.gPosition, "gPosition", 5);
 		rayTraceShader.setTexture(data.gNormal, "gNormal", 6);
 		rayTraceShader.setTexture(data.gAlbedoOpacity, "gAlbedoOpacity", 7);
 		rayTraceShader.setTexture(data.gMetallicRoughness, "gMetallicRoughness", 8);
-		rayTraceShader.setTexture(data.sceneColorBuffer, "colorMap", 9);
-		rayTraceShader.setTexture(data.sceneDepthBuffer, "depthMap", 10);
+		rayTraceShader.setTexture(data.sceneDepthBuffer, "depthMap", 9);
 	}
 
-	rayTraceShader.setTexture(data.atlasShadowMap, "atlasShadowMap", 11);
+	rayTraceShader.setTexture(data.atlasShadowMap, "atlasShadowMap", 10);
 
 	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
@@ -500,62 +429,10 @@ bool RayTracePass::DrawRayTrace(FrameRenderData& data, RenderState& state)
 	return true;
 }
 
-bool RayTracePass::DrawTAA(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawDenoised(FrameRenderData& data, RenderState& state)
 {
-	auto& TAA_Texture = data.TAA_Texture;
-	auto& inputTexture = data.originTexture;
-
-	if (!inputTexture || inputTexture->IsEmpty())
-		return false;
-
-	_TAAShader.Use();
-
-	_TAAShader.setIVec2("screenSize", data.drawSize);
-	_TAAShader.setBool("isFirstIteration", first_TAAIteration);
-	_TAAShader.setFloat("blendFactor", 0.3);
-
-	int historyFrameIndex = curTAAOutPutIndex;
-	int nextFrameIndex = curTAAOutPutIndex == 0 ? 1 : 0;
-
-	if (first_TAAIteration)
-	{
-		glBindImageTexture(0, inputTexture->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(1, TAA_Texture[historyFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(2, TAA_Texture[nextFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-		glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-		glBindImageTexture(0, inputTexture->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(1, TAA_Texture[nextFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(2, TAA_Texture[historyFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-		glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-
-		first_TAAIteration = false;
-	}
-	else
-	{
-		glBindImageTexture(0, inputTexture->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(1, TAA_Texture[historyFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-		glBindImageTexture(2, TAA_Texture[nextFrameIndex]->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-		glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	}
-
-	curTAAOutPutIndex = nextFrameIndex;
-	data.TAA_LastTexture = TAA_Texture[nextFrameIndex];
-
-	return true;
-}
-
-bool RayTracePass::DrawDenoised(FrameRenderData& data, RenderState& state)
-{
-	std::shared_ptr<Texture2D> srcTex;
+	std::shared_ptr<Texture2D> srcTex = data.originTexture;
 	std::shared_ptr<Texture2D>& targetTex = data.denoisedTexture;
-	if (useTAA && data.TAA_LastTexture && !data.TAA_LastTexture->IsEmpty())
-		srcTex = data.TAA_LastTexture;
-	else
-		srcTex = data.originTexture;
 
 	if (!srcTex || srcTex->IsEmpty())
 		return false;
@@ -577,37 +454,21 @@ bool RayTracePass::DrawDenoised(FrameRenderData& data, RenderState& state)
 	return true;
 }
 
-bool RayTracePass::DrawScale(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawScale(FrameRenderData& data, RenderState& state)
 {
 	std::shared_ptr<Texture2D> srcTex;
 	std::shared_ptr<Texture2D>& targetTex = data.outPutTexture;
 
-	int srcWidth;
-	int srcHeight;
-
-	bool useSceneColorBuffer = state.option.rayTraceParams.maxBounceLimit <= 0 && state.option.rayTraceParams.useGbuffer;
-	if (!useSceneColorBuffer)
-	{
-		if (useDenoised && data.denoisedTexture && !data.denoisedTexture->IsEmpty())
-			srcTex = data.denoisedTexture;
-		else if (useTAA && data.TAA_LastTexture && !data.TAA_LastTexture->IsEmpty())
-			srcTex = data.TAA_LastTexture;
-		else
-			srcTex = data.originTexture;
-
-		if (!srcTex || srcTex->IsEmpty())
-			return false;
-
-		srcWidth = srcTex->GetWidth();
-		srcHeight = srcTex->GetHeight();
-	}
+	if (useDenoised && data.denoisedTexture && !data.denoisedTexture->IsEmpty())
+		srcTex = data.denoisedTexture;
 	else
-	{
-		srcTex = data.sceneColorBuffer;
-		srcWidth = data.scrSize.x;
-		srcHeight = data.scrSize.y;
-	}
+		srcTex = data.originTexture;
 
+	if (!srcTex || srcTex->IsEmpty())
+		return false;
+
+	int srcWidth = srcTex->GetWidth();
+	int srcHeight = srcTex->GetHeight();
 
 	if (!targetTex || targetTex->IsEmpty())
 		return false;
@@ -638,16 +499,7 @@ bool RayTracePass::DrawScale(FrameRenderData& data, RenderState& state)
 	return true;
 }
 
-void RayTracePass::SetEnableTAA(bool enable)
-{
-	if (useTAA == enable)
-		return;
-
-	useTAA = enable;
-	if (useTAA) first_TAAIteration = true;
-}
-
-void RayTracePass::SetEnableDenoised(bool enable)
+void RayTraceReflectPass::SetEnableDenoised(bool enable)
 {
 	if (useDenoised == enable)
 		return;

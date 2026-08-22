@@ -16,6 +16,7 @@ void LightingPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const
 	auto gMetallicRoughness = ctx.GetInput(3);
 	auto atlasShadowMap = ctx.GetInput(4);
 	auto ssao = ctx.GetInput(5);
+	auto gEmission = ctx.GetInput(6);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
 
@@ -29,6 +30,7 @@ void LightingPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const
 	_shader.setTexture(gMetallicRoughness, "gMetallicRoughness", 8);
 	_shader.setTexture(atlasShadowMap, "atlasShadowMap", 9);
 	_shader.setTexture(ssao, "ssao", 10);
+	_shader.setTexture(gEmission, "gEmission", 11);
 
 	RenderHelp::SetupLightingData(
 		_shader,

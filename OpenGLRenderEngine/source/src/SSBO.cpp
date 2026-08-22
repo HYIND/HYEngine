@@ -10,9 +10,11 @@ SSBO::SSBO(uint64_t size)
 
 SSBO::~SSBO()
 {
-	auto guard = THREADCONTEXT->GetBindGuard();
 	if (_ssboId > 0)
+	{
+		auto guard = THREADCONTEXT->GetBindGuard();
 		glDeleteBuffers(1, &_ssboId);
+	}
 }
 
 void SSBO::SetSize(uint64_t newsize)
@@ -24,31 +26,19 @@ void SSBO::SetSize(uint64_t newsize)
 
 		if (_size > 0)
 		{
-			//std::vector<unsigned char> oldData(_size);
-			//glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, _size, oldData.data());
-			//glBufferData(GL_SHADER_STORAGE_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
-			//glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, oldData.size(), oldData.data());
-
 			GLuint tempBuffer;
-			glGenBuffers(1, &tempBuffer);
+			glCreateBuffers(1, &tempBuffer);
 
-			glBindBuffer(GL_COPY_READ_BUFFER, _ssboId);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
+			glNamedBufferStorage(tempBuffer, _size, nullptr, 0);
+			glCopyNamedBufferSubData(_ssboId, tempBuffer, 0, 0, _size);
 
-			glBufferData(GL_COPY_WRITE_BUFFER, _size, nullptr, GL_STATIC_DRAW);
-
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
-
-			glBufferData(GL_SHADER_STORAGE_BUFFER, newsize, nullptr, GL_DYNAMIC_DRAW);
-
-			glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, _ssboId);
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
+			glNamedBufferData(_ssboId, newsize, nullptr, GL_DYNAMIC_DRAW);
+			glCopyNamedBufferSubData(tempBuffer, _ssboId, 0, 0, _size);
 
 			glDeleteBuffers(1, &tempBuffer);
 		}
 		else
-			glBufferData(GL_SHADER_STORAGE_BUFFER, newsize, nullptr, GL_DYNAMIC_DRAW);
+			glNamedBufferData(_ssboId, newsize, nullptr, GL_DYNAMIC_DRAW);
 		_size = newsize;
 	}
 }
@@ -62,7 +52,7 @@ void SSBO::WriteData(const void* data, uint64_t size, uint64_t offset)
 	if (size + offset > _size)
 		SetSize(size + offset);
 
-	glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size, data);
+	glNamedBufferSubData(_ssboId, offset, size, data);
 }
 
 void SSBO::CopyData(uint64_t destFirst, uint64_t srcFirst, uint64_t length)
@@ -77,18 +67,14 @@ void SSBO::CopyData(uint64_t destFirst, uint64_t srcFirst, uint64_t length)
 
 	// 创建临时缓冲
 	GLuint tempBuffer;
-	glGenBuffers(1, &tempBuffer);
+	glCreateBuffers(1, &tempBuffer);
 
-	// 从原VBO拷贝到临时缓冲
-	glBindBuffer(GL_COPY_READ_BUFFER, _ssboId);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
-	glBufferData(GL_COPY_WRITE_BUFFER, length, nullptr, GL_STATIC_DRAW);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, srcFirst, 0, length);
+	// 从原SSBO拷贝到临时缓冲
+	glNamedBufferStorage(tempBuffer, length, nullptr, 0);
+	glCopyNamedBufferSubData(_ssboId, tempBuffer, srcFirst, 0, length);
 
-	// 从临时缓冲拷回原VBO的目标位置
-	glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, _ssboId);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, destFirst, length);
+	// 从临时缓冲拷回原SSBO的目标位置
+	glCopyNamedBufferSubData(tempBuffer, _ssboId, 0, destFirst, length);
 
 	// 清理
 	glDeleteBuffers(1, &tempBuffer);
@@ -98,8 +84,7 @@ void SSBO::CopyData(uint64_t destFirst, uint64_t srcFirst, uint64_t length)
 void SSBO::Need()
 {
 	if (_ssboId == 0)
-		glGenBuffers(1, &_ssboId);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, _ssboId);
+		glCreateBuffers(1, &_ssboId);
 }
 
 GLuint SSBO::GetID() { return _ssboId; }

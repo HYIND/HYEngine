@@ -108,7 +108,7 @@ class ThreadResidentProxy
 {
 public:
 	~ThreadResidentProxy() {
-		ClearDirtyThreadResidentTexture();
+		//ClearDirtyThreadResidentTexture();
 	}
 public:
 	GLuint64 GetThreadBindlessData(const Texture2D* tex, uint32_t version) {

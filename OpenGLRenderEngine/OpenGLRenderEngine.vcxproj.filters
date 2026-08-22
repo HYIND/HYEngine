@@ -102,7 +102,7 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\General\IndirectDrawManager.h">
       <Filter>头文件\OpenGLRenderEngine\General</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\OpenGLRenderEngine\General\MemorySegmentBuffer.h">
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GeneralSegmentBuffer.h">
       <Filter>头文件\OpenGLRenderEngine\General</Filter>
     </ClInclude>
     <ClInclude Include="source\include\OpenGLRenderEngine\General\OpenGLRenderContext.h">
@@ -177,7 +177,7 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\PreCalculatePass.h">
       <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTracePass.h">
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceReflectPass.h">
       <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RenderPassBase.h">
@@ -212,6 +212,15 @@
     </ClInclude>
     <ClInclude Include="source\include\OpenGLRenderEngine.h">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceGIPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RayTraceGeneralData.h">
+      <Filter>头文件\OpenGLRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceGeneralPass.h">
+      <Filter>头文件\OpenGLRenderEngine\RenderPass</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -329,7 +338,7 @@
     <ClCompile Include="source\src\Material.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\MemorySegmentBuffer.cpp">
+    <ClCompile Include="source\src\GeneralSegmentBuffer.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Mesh.cpp">
@@ -347,7 +356,7 @@
     <ClCompile Include="source\src\PreCalculatePass.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\RayTracePass.cpp">
+    <ClCompile Include="source\src\RayTraceReflectPass.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\SharedTexture.cpp">
@@ -363,6 +372,12 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\OpenGLRenderEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RayTraceGIPass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Game\source\src\RayTraceGeneralPass.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

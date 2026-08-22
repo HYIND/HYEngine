@@ -1,5 +1,7 @@
 #version 430 core
 
+#include "shader/dataDef/materialuboDef.comp"
+
 in vec3 FragPos;
 in vec3 FragNormal;
 in vec2 FragTextureCoords;
@@ -11,8 +13,8 @@ layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec4 gAlbedoOpacity;
 layout (location = 3) out vec4 gMetallicRoughness;
 layout (location = 4) out vec2 gMotionVector;
+layout (location = 5) out vec3 gEmission;
 
-#include "shader/dataDef/materialuboDef.comp"
 
 void main()
 {
@@ -29,6 +31,8 @@ void main()
 	
 	float opacity = calculateOpacityFromUBO(FragTextureCoords);
 
+	vec3 emission = calculateEmissionFromUBO(FragTextureCoords);
+
 	if (opacity < 0.01)
 		discard;
 
@@ -36,4 +40,5 @@ void main()
 	gAlbedoOpacity = vec4(albedo, opacity);
 	gMetallicRoughness = vec4(metallic, roughness, ambientOcclusion, material.IOR);
 	gMotionVector = MotionVector;
+	gEmission = emission;
 }

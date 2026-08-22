@@ -1,3 +1,5 @@
+#pragma once
+
 #include "OpenGLRenderEngine/Base/Shader.h"
 #include "OpenGLRenderEngine/Base/AtlasMap.h"
 #include "OpenGLRenderEngine/General/OpenGLRenderContext.h"

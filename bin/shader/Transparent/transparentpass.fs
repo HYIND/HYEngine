@@ -1,15 +1,15 @@
 #version 430 core
 
+#include "shader/dataDef/materialuboDef.comp"
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Helper/ligtingHelper.comp"
+
 out vec4 FragColor;
 
 in vec3 FragPos;
 in vec3 FragNormal;
 in vec2 FragTextureCoords;
 in mat3 TBN;
-
-#include "shader/dataDef/camerauboDef.comp"
-#include "shader/dataDef/materialuboDef.comp"
-#include "shader/Helper/ligtingHelper.comp"
 
 uniform sampler2D atlasShadowMap;
 

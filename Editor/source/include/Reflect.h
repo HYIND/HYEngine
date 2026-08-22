@@ -168,6 +168,8 @@ namespace rfl {
 			src.SetOpacity(ref.opacity);
 			src.SetAlpahMode(ref.alphamode);
 			src.SetTwoSide(ref.twosided);
+			src.SetEmissionColor(ref.emissionColor);
+			src.SetEmissionStrength(ref.emissionStrength);
 		}
 	};
 

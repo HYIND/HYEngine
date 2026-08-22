@@ -25,7 +25,8 @@ public:
 		std::shared_ptr<Texture2D>& gAlbedoOpacity,
 		std::shared_ptr<Texture2D>& gMetallicRoughnessMap,
 		std::shared_ptr<Texture2D>& gMotionVectorMap,
-		std::shared_ptr<Texture2D>& tempDepthStencilMap
+		std::shared_ptr<Texture2D>& tempDepthStencilMap,
+		std::shared_ptr<Texture2D>& gEmission
 	);
 
 	virtual void EarlyExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state);;

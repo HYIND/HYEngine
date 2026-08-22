@@ -16,6 +16,7 @@ static void RegisterAllComponents()
 	PropertiesHelper::RegisterComponent<RenderLight>("Light");
 	PropertiesHelper::RegisterComponent<VariableMaterial>("Material");
 	PropertiesHelper::RegisterComponent<CameraComponent>("Camera");
+	PropertiesHelper::RegisterComponent<TagFreeCamera>("FreeCameraProp");
 }
 
 std::once_flag init_flag;

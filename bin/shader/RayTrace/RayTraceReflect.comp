@@ -1,0 +1,590 @@
+#version 450 core
+
+#include "shader/dataDef/materialDataDef.comp"
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Helper/ligtingHelper.comp"
+
+layout(local_size_x = 16, local_size_y = 16) in; 
+
+
+#ifndef Max_Recursive_Depth
+#define Max_Recursive_Depth 20
+#endif
+
+#ifndef Max_Bounce_limit
+#define Max_Bounce_limit 8
+#endif
+
+//光追参数
+uniform float tMin;
+uniform float tMax;
+uniform int maxBounce;       // 最大反射次数
+
+uniform int frameIndex;
+
+uniform ivec2 screenSize;
+
+#ifdef useGbuffer
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gAlbedoOpacity;
+uniform sampler2D gMetallicRoughness;
+uniform sampler2D depthMap;
+#endif
+
+uniform sampler2D atlasShadowMap;
+
+struct Vertex {
+    vec3 position;  
+};
+struct Vertex_Extension
+{
+    vec3 normal;    
+    vec2 texCoords;
+    vec3 Tangent;
+    vec3 Bitangent;
+    int padding;
+    int m_BoneIDs[8];
+    int m_Weights[8];
+};
+
+struct Triangle {
+    Vertex v0;
+    Vertex v1;
+    Vertex v2;
+};
+struct Triangle_Extension {
+    Vertex_Extension v0;
+    Vertex_Extension v1;
+    Vertex_Extension v2;
+};
+
+struct MeshData
+{
+    mat4 model;
+    mat4 invModel;
+    mat3 invTransModel;
+    
+    int triangleFirst;  //triangles中的首个Triangle位置
+    int triangleCount;  //Triangle数量
+
+    int bvhNodeFirst;   //meshBVHNodeBuffer.nodes中的首个bvhnode位置
+    int bvhNodeCount;   //bvhnode数量
+};
+
+struct MeshMatData
+{
+    MeshData mesh;
+    MaterialData mat;
+};
+
+struct BVHNode {
+    vec3 min;
+    vec3 max;
+    int padding;
+    int leftChild;      // 左子节点索引，-1表示叶子
+    int rightChild;     // 右子节点索引，-1表示叶子
+    int idFirst; 
+    int idCount; 
+};
+
+layout(std430, binding = 8) buffer TriangleBuffer {
+    Triangle triangles[];
+} triangleBuffer;
+
+layout(std430, binding = 9) buffer TriangleExtBuffer {
+    Triangle_Extension triangleExts[];
+} triangleExtBuffer;
+
+layout(std430, binding = 10) buffer MeshMatDataBuffer {
+    MeshMatData meshmatdata[];
+} meshmatDataBuffer;
+
+layout(std430, binding = 11) buffer WorldBVHNodeBuffer {
+    int nodeCount;
+    BVHNode nodes[];
+} worldBVHNodeBuffer;
+
+layout(std430, binding = 12) buffer MeshBVHNodeBuffer {
+    BVHNode nodes[];
+} meshBVHNodeBuffer;
+
+
+layout(binding = 0, rgba16f) uniform image2D outputImage;
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float tMin;
+    float tMax;
+};
+
+struct HitInfo {
+    vec3 position;
+    vec3 tangent;
+    vec3 bitangent;
+    vec3 normal;
+    vec2 texCoords;
+    float t;
+    MaterialData materialdata;
+};
+
+const float DefaultLossFactor = 0.2;   //光线损耗
+
+float calculateOpacity(MaterialData material, vec2 uv)
+{
+	if (material.alphamode == 0)
+		return material.opacity;
+
+	float opacity = material.opacity;
+	if (material.texture_opacity_count > 0)
+		opacity *= texture(material.texture_opacity, uv).r;
+	else 
+		opacity *= texture(material.texture_albedo, uv).a;
+
+	if (material.alphamode == 1)	//Mask
+		opacity = opacity > material.maskthreshold ? 1.0f : 0.f;
+
+	return opacity;
+}
+
+void getPBRProperties(MaterialData material, vec2 uv, inout vec3 albedo, inout float metallic, inout float roughness, inout float ambientOcclusion)
+{
+    albedo = material.texture_albedo_count > 0 ? 
+            texture(material.texture_albedo, uv).rgb * material.albedo
+            :material.albedo;
+
+    ambientOcclusion = material.texture_ao_count > 0 ? 
+                    texture(material.texture_ao, uv).r 
+                    : material.ambientOcclusion;
+
+	if (material.texture_metallicroughness_count > 0)
+	{
+        vec2 values = texture(material.texture_metallicroughness, uv).gb;
+        metallic = values.x;
+        roughness = values.y;
+	}
+    else if (material.texture_metallic_count > 0 && material.texture_roughness_count > 0 
+            && uint64_t(material.texture_metallic) == uint64_t(material.texture_roughness))
+    {
+        vec2 values = texture(material.texture_metallic, uv).gb;
+        metallic = values.x;
+        roughness = values.y;
+    }
+	else 
+	{
+        metallic = material.texture_metallic_count > 0 ?
+                texture(material.texture_metallic, uv).b
+                : material.metallic;
+
+        roughness = material.texture_roughness_count > 0 ? 
+                texture(material.texture_roughness, uv).g
+                : material.roughness;
+	}
+}
+
+vec3 calculateEmission(MaterialData material, vec2 uv)
+{
+    return material.texture_emissive_count > 0 ? 
+            texture(material.texture_emissive, uv).rgb * material.emissionColor
+            :material.emissionColor * material.emissionStrength;
+}
+
+//根据光线入射方向和表面的关系计算反射光线的比例
+vec3 calculateRelfectFact(vec3 rayDir, vec3 normal, vec3 f0)
+{
+    float cosTheta = max(dot(-rayDir, normal), 0.0);
+    float x = clamp(1 - cosTheta, 0, 1);
+    float x2 = x * x;
+    float x5 = x2 * x2 *x;
+    return f0 + (1.0f - f0) * x5;	//反射光强度
+}
+
+bool intersectTriangle(Ray ray, Triangle tri, inout float outT, inout vec3 position , inout float outU, inout float outV) 
+{
+    
+    const float EPSILON = 0.0000001;
+    
+    vec3 edge1 = tri.v1.position - tri.v0.position;
+    vec3 edge2 = tri.v2.position - tri.v0.position;
+    vec3 h = cross(ray.direction, edge2);
+    float a = dot(edge1, h);
+    
+    if (abs(a) < EPSILON) return false;
+    
+    float f = 1.0 / a;
+    vec3 s = ray.origin - tri.v0.position;
+    float u = f * dot(s, h);
+    
+    if (u < 0.0 || u > 1.0) return false;
+    
+    vec3 q = cross(s, edge1);
+    float v = f * dot(ray.direction, q);
+    
+    if (v < 0.0 || u + v > 1.0) return false;
+    
+    float t = f * dot(edge2, q);
+    
+    if (t <= 0) return false;
+
+    if (t > ray.tMin && t < ray.tMax) {
+        position = ray.origin + ray.direction * t;
+        outT = t;
+        outU = u;
+        outV = v;
+        return true;
+    }
+    
+    return false;
+}
+
+bool intersectAABB(Ray ray , vec3 invDir, vec3 aabbmin, vec3 aabbmax) 
+{
+    vec3 t1 = (aabbmin - ray.origin) * invDir;
+    vec3 t2 = (aabbmax - ray.origin) * invDir;
+    
+    vec3 tMin = min(t1, t2);
+    vec3 tMax = max(t1, t2);
+    
+    float tNear = max(max(tMin.x, tMin.y), tMin.z);
+    float tFar = min(min(tMax.x, tMax.y), tMax.z);
+    
+    return tNear <= tFar && tFar >= ray.tMin && tNear <= ray.tMax;
+}
+
+bool findHitPointOnMeshData(int index, inout Ray worldRay, inout HitInfo hit)
+{
+    bool isHit = false;
+
+    // MeshMatData meshmatdata = meshmatDataBuffer.meshmatdata[index];
+    MeshData meshdata = meshmatDataBuffer.meshmatdata[index].mesh;
+    MaterialData materialdata = meshmatDataBuffer.meshmatdata[index].mat;
+
+    Ray localRay;
+
+    vec3 localDir = mat3(meshdata.invModel) * worldRay.direction;
+    float dirLen = length(localDir);
+
+    localRay.origin = vec3(meshdata.invModel * vec4(worldRay.origin, 1.0));
+    localRay.direction = normalize(localDir);
+    localRay.tMin = worldRay.tMin * dirLen;
+    localRay.tMax = worldRay.tMax * dirLen;
+
+    vec3 invDir = 1.0 / localRay.direction;
+
+    // 栈模拟递归
+    int stack[Max_Recursive_Depth + 1];
+    int top = 0;
+
+    BVHNode node;
+    stack[top++] = meshdata.bvhNodeCount - 1;  // 根节点索引
+
+    float t, u, v;
+    vec3 localposition;
+    Triangle tri;
+    Triangle_Extension tri_ext;
+
+    while (top > 0) {
+        int nodeIdx = meshdata.bvhNodeFirst + stack[--top];
+        node = meshBVHNodeBuffer.nodes[nodeIdx];
+        
+        // 测试 AABB
+        if (!intersectAABB(localRay, invDir, node.min, node.max)) continue;
+
+        // 判断是否为叶子节点
+        if (node.leftChild == -1 && node.rightChild == -1) 
+        {
+            for (int idx = node.idFirst; idx < node.idFirst + node.idCount; idx++) 
+            {
+                // int triIdx = meshBVHIndicesBuffer.indices[meshdata.bvhIndicesFirst + m];       
+                tri = triangleBuffer.triangles[meshdata.triangleFirst + idx];
+                if (intersectTriangle(localRay, tri, t , localposition, u, v)) 
+                {
+                    t /= dirLen;
+                    if (t < hit.t) 
+                    {
+                        tri_ext = triangleExtBuffer.triangleExts[meshdata.triangleFirst + idx];
+
+                        vec2 texCoords = (1.0 - u - v) * tri_ext.v0.texCoords + u * tri_ext.v1.texCoords + v * tri_ext.v2.texCoords;
+                        float opacity = calculateOpacity(materialdata, texCoords);
+                        if (opacity < 0.01) continue;
+
+                        vec3 localNormal = normalize((1.0 - u - v) * tri_ext.v0.normal + u * tri_ext.v1.normal + v * tri_ext.v2.normal);
+                        vec3 localTangent = normalize((1.0 - u - v) * tri_ext.v0.Tangent + u * tri_ext.v1.Tangent + v * tri_ext.v2.Tangent);
+                        vec3 localBitangent = normalize((1.0 - u - v) * tri_ext.v0.Bitangent + u * tri_ext.v1.Bitangent + v * tri_ext.v2.Bitangent);
+
+                        if(dot(localRay.direction, localNormal) > 0)
+                        {
+                            if (materialdata.twosided == 1)
+                            {
+                                localNormal = -localNormal;
+                                localTangent = -localTangent;
+                                localBitangent = -localBitangent;
+                            }
+                            else 
+                                continue;
+                        }
+ 
+                        vec3 T = normalize(meshdata.invTransModel * localTangent  );
+                        vec3 B = normalize(meshdata.invTransModel * localBitangent);
+                        vec3 N = normalize(meshdata.invTransModel * localNormal   );
+
+                        worldRay.tMax = t;
+                        hit.t = t;
+                        hit.position = vec3(meshdata.model * vec4(localposition, 1.0f));
+                        hit.tangent = T;
+                        hit.bitangent = B;
+                        hit.normal = N;
+                        hit.texCoords = texCoords;
+                        hit.materialdata = meshmatDataBuffer.meshmatdata[index].mat;
+                    }
+
+                    localRay.tMax = t;
+                    isHit = true;
+                }
+            }
+        } 
+        else{
+           if (top >= (Max_Recursive_Depth - 1)) break;
+
+            // 内部节点：压入子节点（先压右，后压左）
+            stack[top++] = node.rightChild;
+            stack[top++] = node.leftChild;
+        }
+    }
+
+    return isHit;
+}
+
+bool traceScene(Ray ray, inout HitInfo hit) 
+{
+    bool isHit = false;
+
+    vec3 invDir = 1.0 / ray.direction;
+
+    // 栈模拟递归
+    int stack[Max_Recursive_Depth + 1];
+    int top = 0;
+
+    BVHNode node;
+    stack[top++] = worldBVHNodeBuffer.nodeCount - 1;  // 根节点索引
+
+    while (top > 0) {
+        int nodeIdx = stack[--top];
+        node = worldBVHNodeBuffer.nodes[nodeIdx];
+        
+        // 测试 AABB
+        if (!intersectAABB(ray, invDir, node.min, node.max)) continue;
+
+        // 判断是否为叶子节点
+        if (node.leftChild == -1 && node.rightChild == -1) 
+        {
+            // 叶子节点：遍历该节点下的所有 mesh
+            for (int idx = node.idFirst; idx < (node.idFirst + node.idCount); idx++) 
+            {
+                if(findHitPointOnMeshData(idx, ray, hit))
+                    isHit = true;             
+            }
+        } 
+        else{
+            if (top >= (Max_Recursive_Depth - 1)) break;
+                
+            // 内部节点：压入子节点（先压右，后压左）
+            stack[top++] = node.rightChild;
+            stack[top++] = node.leftChild;
+        }
+    }
+
+    return isHit;
+}
+
+bool traceRay(Ray ray, int maxBounce, inout vec3 lightingColors[Max_Bounce_limit + 1], inout vec3 fresnelFacts[Max_Bounce_limit + 1], inout int hitCount) 
+{
+    bool isHit = false;
+    vec3 throughput = vec3(1.0f);
+
+    for (int depth = 0; depth <= maxBounce; depth++) 
+    {
+        HitInfo hit;
+        hit.t = ray.tMax;
+        if(!traceScene(ray, hit))
+            break;
+
+        hitCount++;
+        isHit = true;
+
+        // 计算该点光照颜色
+        vec3 albedo;
+        float metallic, roughness, ambientOcclusion;
+	    getPBRProperties(hit.materialdata, hit.texCoords, albedo, metallic, roughness, ambientOcclusion);
+
+        vec3 normal = hit.materialdata.texture_normal_count > 0 ?
+            normalize(mat3(hit.tangent, hit.bitangent, hit.normal) * normalize(texture(hit.materialdata.texture_normal, hit.texCoords).rgb * 2.0 - 1.0))
+            : hit.normal;
+
+        vec3 position = hit.position;
+
+        float OneMinusRoughness = 1.0 - roughness;
+        float OneMinusRoughness2 = OneMinusRoughness * OneMinusRoughness;
+       	vec3 F0 = mix(vec3(0.02), albedo, metallic);
+
+        vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
+        vec3 lightingColor = CalcLighting(
+            camera.view, ray.origin, camera.farPlane,
+            atlasShadowMap, 
+            position, normal, 
+            albedo, metallic, 
+            roughness, ambientOcclusion
+            );
+
+        lightingColors[hitCount - 1] = lightingColor + emission;
+        fresnelFacts[hitCount - 1] = calculateRelfectFact(ray.direction, normal, F0) * OneMinusRoughness2;
+
+        throughput *= fresnelFacts[hitCount - 1];
+        if (length(throughput) < 0.02) break;
+
+        // 计算反射方向，继续追踪
+        ray.origin = position + normal * 0.001;
+        ray.direction = reflect(ray.direction , normal);
+        ray.tMin = tMin;
+        ray.tMax = tMax;
+    }
+
+    return isHit;
+}
+
+float halton(int index, int base) {
+    float result = 0.0;
+    float f = 1.0;
+    for (int i = index; i > 0; i /= base) {
+        f /= float(base);
+        result += f * float(i % base);
+    }
+    return result;
+}
+
+#ifdef useGbuffer
+void calculateFirstBounceRayData(inout HitInfo info, inout Ray ray, vec2 uv)
+{
+    vec3 normal = normalize(texture(gNormal, uv).rgb);
+
+	vec3 fragPos = texture(gPosition, uv).rgb;
+    
+    vec2 ndc = uv * 2.0 - 1.0;
+    float aspect = float(screenSize.x) / float(screenSize.y);
+    ndc.x *= aspect;
+    float tanHalfFov = tan(radians(camera.fov) * 0.5);
+    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
+    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
+    vec3 reflectDir = normalize(reflect(worldRayDir, normal));
+
+    info.position = fragPos;
+    info.normal = normal;
+
+    ray.origin = fragPos + normal * 0.002;
+    ray.direction = reflectDir;
+    ray.tMin = tMin;
+    ray.tMax = tMax;
+}
+
+void ProcessWithGBuffer()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    vec2 pixelCenter = pixelCoord + 0.5;
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y || maxBounce < 0) {
+        return;
+    }
+
+    vec2 uv = pixelCenter / screenSize;
+
+    // imageStore(outputImage, pixelCoord, vec4(meshmatDataBuffer.meshmatdata[1].mat.albedo, 1.0));
+    // return;
+
+    float depth = texture(depthMap, uv).r;
+    if(depth >= 0.99999)
+        return;
+
+    vec3 albedo = texture(gAlbedoOpacity, uv).rgb;   
+    vec2 values = texture(gMetallicRoughness, uv).rg;
+    float metallic = values.r;
+    float roughness = values.g;
+    vec3 F0 = mix(vec3(0.02), albedo, metallic); 
+
+    int bounce = clamp(maxBounce, 0 , Max_Bounce_limit);
+    if(length(F0) < 0.02 || bounce <= 0)
+        return;
+
+    Ray ray;
+    HitInfo firstInfo;
+    calculateFirstBounceRayData(firstInfo, ray, uv);
+
+    bounce--;
+
+    int hitCount = 0;
+    vec3 lightingColors[Max_Bounce_limit + 1];
+    vec3 fresnelFacts[Max_Bounce_limit + 1];
+
+    if(traceRay(ray, bounce, lightingColors, fresnelFacts, hitCount))
+    {
+        vec3 result = lightingColors[hitCount - 1];
+        for (int i = hitCount - 2; i >= 0; i--)       
+            result = lightingColors[i] + result * fresnelFacts[i] * (1.0f - DefaultLossFactor);
+
+        float OneMinusRoughness = 1.0 - roughness;
+        float OneMinusRoughness2 = OneMinusRoughness * OneMinusRoughness;
+        vec3 firstFresnelFact = calculateRelfectFact(-ray.direction, firstInfo.normal, F0) * OneMinusRoughness2;
+        result = result * firstFresnelFact * (1.0f - DefaultLossFactor);
+
+        imageStore(outputImage, pixelCoord, vec4(result, 1.0));
+    }
+}
+#else 
+void ProcessPureRayTrace()
+{
+
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    vec2 pixelCenter = pixelCoord + 0.5;
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y || maxBounce < 0) {
+        return;
+    }
+
+    vec2 uv = pixelCenter / screenSize;
+    int bounce = clamp(maxBounce, 0 , Max_Bounce_limit);
+
+    Ray ray;
+
+    // 计算当前像素的光线方向
+    vec2 ndc = uv * 2.0 - 1.0;
+    float aspect = float(screenSize.x) / float(screenSize.y);
+    ndc.x *= aspect;
+    float tanHalfFov = tan(radians(camera.fov) * 0.5);
+    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
+    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
+
+    ray.origin = camera.position;
+    ray.direction = worldRayDir;
+    ray.tMin = tMin;
+    ray.tMax = tMax;
+
+    int hitCount = 0;
+    vec3 lightingColors[Max_Bounce_limit + 1];
+    vec3 fresnelFacts[Max_Bounce_limit + 1];
+
+    if(traceRay(ray, bounce, lightingColors, fresnelFacts, hitCount))
+    {
+        vec3 result = lightingColors[hitCount - 1];
+        for (int i = hitCount - 2; i >= 0; i--)       
+            result = lightingColors[i] + result * fresnelFacts[i] * (1.0f - DefaultLossFactor);
+        imageStore(outputImage, pixelCoord, vec4(result, 1.0));
+    }
+}
+#endif
+
+void main()
+{
+#ifdef useGbuffer
+        ProcessWithGBuffer();
+#else 
+        ProcessPureRayTrace();
+#endif
+}

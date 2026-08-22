@@ -41,14 +41,13 @@ void AutoExposurePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, c
 	glDispatchCompute((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, histogramBuffer->GetID());
 	//void* mappedPtr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bins.size() * sizeof(unsigned int), GL_MAP_READ_BIT);
 	//if (!mappedPtr)
 	//	return;
 	//memcpy(bins.data(), mappedPtr, bins.size() * sizeof(unsigned int));
 	//glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
-	glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bins.size() * sizeof(unsigned int), bins.data());
+	glGetNamedBufferSubData(histogramBuffer->GetID(), 0, bins.size() * sizeof(unsigned int), bins.data());
 
 	static std::once_flag onceFlag;
 	static float lumenTable[256];

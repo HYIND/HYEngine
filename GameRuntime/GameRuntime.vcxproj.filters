@@ -19,9 +19,6 @@
     <Filter Include="源文件\Render">
       <UniqueIdentifier>{5797d37e-616b-4eaa-a85d-9a2a33f31c52}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\Input">
-      <UniqueIdentifier>{57eb6547-3453-4380-b27e-8d84d1897b6c}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\Audio">
       <UniqueIdentifier>{2b2ee2d0-300e-4d7c-9324-1e22f3cf34fd}</UniqueIdentifier>
     </Filter>
@@ -66,6 +63,9 @@
     </Filter>
     <Filter Include="源文件\RenderEngine">
       <UniqueIdentifier>{830c7f1b-2534-4126-8d32-da06e8a4f4ca}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Input">
+      <UniqueIdentifier>{57eb6547-3453-4380-b27e-8d84d1897b6c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

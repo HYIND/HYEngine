@@ -56,4 +56,20 @@ struct VariableMaterial : public IComponent
 		data.twosided = twosided;
 		flags.twosidedChange = true;
 	}
+
+	void SetEmissionColor(const glm::vec3& emissionColor)
+	{
+		if (data.emissionColor == emissionColor)
+			return;
+		data.emissionColor = emissionColor;
+		flags.emissionColorChange = true;
+	}
+
+	void SetEmissionStrength(float value)
+	{
+		if (data.emissionStrength == value)
+			return;
+		data.emissionStrength = value;
+		flags.emissionStrengthChange = true;
+	}
 };

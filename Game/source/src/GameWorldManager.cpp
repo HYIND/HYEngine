@@ -30,9 +30,9 @@ void HandleKeyboardShortcuts()
 
 	RenderOption option = RenderManager::Instance()->GetOption();
 
-	static bool s_rayTraceEnable = option.flags.rayTraceOn;
+	static bool s_rayTraceReflectEnable = option.flags.rayTraceReflectOn;
+	static bool s_rayTraceGIEnable = option.flags.rayTraceGIOn;
 	static bool s_ssrOn = option.flags.ssrOn;
-	static bool s_useGbuffer = option.rayTraceParams.useGbuffer;
 	static bool s_ssgiOn = option.flags.ssgiOn;
 
 	bool change = false;
@@ -59,20 +59,8 @@ void HandleKeyboardShortcuts()
 		auto now = Tool::GetTimestampMilliseconds();
 		if ((now - lasttime) > 500)
 		{
-			s_rayTraceEnable = !s_rayTraceEnable;
-			std::cout << std::format("RayTrace {}\n", s_rayTraceEnable ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
-			lasttime = now;
-			change = true;
-		}
-	}
-	if ((GetAsyncKeyState(GetCharVK('L')) & 0x8000))
-	{
-		static int64_t lasttime = 0;
-		auto now = Tool::GetTimestampMilliseconds();
-		if ((now - lasttime) > 500)
-		{
-			s_useGbuffer = !s_useGbuffer;
-			std::cout << std::format("RayTrace useGbuffer {}\n", s_useGbuffer ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+			s_rayTraceReflectEnable = !s_rayTraceReflectEnable;
+			std::cout << std::format("RayTraceReflect {}\n", s_rayTraceReflectEnable ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
 			lasttime = now;
 			change = true;
 		}
@@ -89,15 +77,27 @@ void HandleKeyboardShortcuts()
 			change = true;
 		}
 	}
+	if ((GetAsyncKeyState(GetCharVK('J')) & 0x8000))
+	{
+		static int64_t lasttime = 0;
+		auto now = Tool::GetTimestampMilliseconds();
+		if ((now - lasttime) > 500)
+		{
+			s_rayTraceGIEnable = !s_rayTraceGIEnable;
+			std::cout << std::format("RayTraceGI {}\n", s_rayTraceGIEnable ? "ONNNNNNNNNNNNNNNN" : "OFFFFFFFFFFFFFFF");
+			lasttime = now;
+			change = true;
+		}
+	}
 
 	if (change)
 	{
-		if (s_rayTraceEnable)
+		if (s_rayTraceReflectEnable)
 			s_ssrOn = false;
 
-		option.flags.rayTraceOn = s_rayTraceEnable;
+		option.flags.rayTraceReflectOn = s_rayTraceReflectEnable;
 		option.flags.ssrOn = s_ssrOn;
-		option.rayTraceParams.useGbuffer = s_useGbuffer;
+		option.flags.rayTraceGIOn = s_rayTraceGIEnable;
 		option.flags.ssgiOn = s_ssgiOn;
 		RenderManager::Instance()->SetOption(option);
 	}
@@ -507,13 +507,13 @@ void CreateTestGameScene(World& world)
 			camerafollow.offset = glm::vec3(0, 2.8, 0);
 			world.SetMainCamera(cameraEntity);
 
-			if (freeEntity.hasComponent<TagCurrentControl>() && cameraEntity.hasComponent<TagMainCamera>())
-			{
-				auto light = LightFactory::CreateSpotLight(world, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1), 100.f, 17.5, 30);
-				light.addComponent<TagLightShowLight>();
-				auto& follow = light.addComponent<LightFollow>();
-				follow.target = cameraEntity;
-			}
+			//if (freeEntity.hasComponent<TagCurrentControl>() && cameraEntity.hasComponent<TagMainCamera>())
+			//{
+			//	auto light = LightFactory::CreateSpotLight(world, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1), 100.f, 17.5, 30);
+			//	light.addComponent<TagLightShowLight>();
+			//	auto& follow = light.addComponent<LightFollow>();
+			//	follow.target = cameraEntity;
+			//}
 		}
 	}
 

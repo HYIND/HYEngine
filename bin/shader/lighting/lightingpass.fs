@@ -14,7 +14,7 @@ uniform sampler2D gAlbedoOpacity;
 uniform sampler2D gMetallicRoughness;
 uniform sampler2D ssao;
 uniform sampler2D atlasShadowMap;
-
+uniform sampler2D gEmission;
 
 void main()
 {
@@ -28,10 +28,13 @@ void main()
 	float metallic = metallicRoughness.r;
 	float roughness = metallicRoughness.g;
 	float ambientOcclusion = clamp(min(texture(ssao, FragTexCoords).r, metallicRoughness.b), 0.f, 1.f);
+	vec3 emission = texture(gEmission, FragTexCoords).rgb;
 
-	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal, albedo, metallic, roughness, ambientOcclusion);
+	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal,
+									albedo, metallic, roughness, ambientOcclusion);
 
-	FragColor = vec4(lightColor, 1.0f);
+	FragColor = vec4(lightColor + emission, 1.0f);
+	// FragColor = vec4(1,0,0, 1.0f);
 
 	float brightness = dot(FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)

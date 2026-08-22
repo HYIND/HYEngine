@@ -118,6 +118,23 @@ void Material::SetTwoSided(bool value)
 	SetChange();
 }
 
+
+void Material::SetEmissionColor(const glm::vec3& emissionColor)
+{
+	if (_properties.emissionColor == emissionColor)
+		return;
+	_properties.emissionColor = emissionColor;
+	SetChange();
+}
+
+void Material::SetEmissionStrength(float value)
+{
+	if (_properties.emissionStrength == value)
+		return;
+	_properties.emissionStrength = value;
+	SetChange();
+}
+
 // 获取属性
 MaterialProperties Material::GetProperties() const
 {
@@ -169,6 +186,16 @@ bool Material::GetTwoSided() const
 	return _properties.twosided;
 }
 
+glm::vec3 Material::GetEmissionColor() const
+{
+	return _properties.emissionColor;
+}
+
+float Material::GetEmissionStrength() const
+{
+	return _properties.emissionStrength;
+}
+
 uint32_t Material::GetVersion() const
 {
 	return _version.load();
@@ -199,6 +226,8 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 	comp_data.metallic = prop.metallic;
 	comp_data.roughness = prop.roughness;
 	comp_data.ambientOcclusion = prop.ambientOcclusion;
+	comp_data.emissionColor = prop.emissionColor;
+	comp_data.emissionStrength = prop.emissionStrength;
 	comp_data.opacity = prop.opacity;
 	comp_data.IOR = prop.IOR;
 	comp_data.alphamode = prop.alphamode;
@@ -210,8 +239,8 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 	{
 		if (!tex) continue;
 
-		static auto writeTex = [](std::shared_ptr<Texture2D>& tex, GLuint64& socket, bool useFlag, int& count)-> void {
-			if (!useFlag || count > 0) return;
+		static auto writeTex = [](std::shared_ptr<Texture2D>& tex, GLuint64& socket, int& count)-> void {
+			if (count > 0) return;
 			socket = tex->GetBindlessID();
 			count++;
 			};
@@ -219,28 +248,28 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 		switch (type)
 		{
 		case TextureType::Albedo:
-			writeTex(tex, comp_data.texture_albedo, prop.useAlbedoTexture, comp_data.texture_albedo_count);
+			writeTex(tex, comp_data.texture_albedo, comp_data.texture_albedo_count);
 			break;
 		case TextureType::Metallic:
-			writeTex(tex, comp_data.texture_metallic, prop.useMetallicTexture, comp_data.texture_metallic_count);
+			writeTex(tex, comp_data.texture_metallic, comp_data.texture_metallic_count);
 			break;
 		case TextureType::Roughness:
-			writeTex(tex, comp_data.texture_roughness, prop.useRoughnessTexture, comp_data.texture_roughness_count);
+			writeTex(tex, comp_data.texture_roughness, comp_data.texture_roughness_count);
 			break;
 		case TextureType::Normal:
-			writeTex(tex, comp_data.texture_normal, prop.useNormalTexture, comp_data.texture_normal_count);
+			writeTex(tex, comp_data.texture_normal, comp_data.texture_normal_count);
 			break;
 		case TextureType::AO:
-			writeTex(tex, comp_data.texture_ao, prop.useAOTexture, comp_data.texture_ao_count);
+			writeTex(tex, comp_data.texture_ao, comp_data.texture_ao_count);
 			break;
 		case TextureType::MetallicRoughness:
-			writeTex(tex, comp_data.texture_metallicroughness, prop.useMetallicRoughnessTexture, comp_data.texture_metallicroughness_count);
+			writeTex(tex, comp_data.texture_metallicroughness, comp_data.texture_metallicroughness_count);
 			break;
 		case TextureType::Height:
-			writeTex(tex, comp_data.texture_height, prop.useHeightTexture, comp_data.texture_height_count);
+			writeTex(tex, comp_data.texture_height, comp_data.texture_height_count);
 			break;
 		case TextureType::Opacity:
-			writeTex(tex, comp_data.texture_opacity, prop.useOpacityTexture, comp_data.texture_opacity_count);
+			writeTex(tex, comp_data.texture_opacity, comp_data.texture_opacity_count);
 		default:
 			break;
 		}
@@ -257,14 +286,14 @@ std::shared_ptr<Material> Material::Clone() const
 }
 
 void Material::SetNeedUpdateIndirectDraw(bool value) {
-	needUpdateIndirectDraw = value; 
+	needUpdateIndirectDraw = value;
 }
 
-bool Material::GetNeedUpdateIndirectDraw() const{
+bool Material::GetNeedUpdateIndirectDraw() const {
 	return needUpdateIndirectDraw;
 }
 
-void Material::SetChange() { 
+void Material::SetChange() {
 	_version++;
 	needUpdateIndirectDraw = true;
 }

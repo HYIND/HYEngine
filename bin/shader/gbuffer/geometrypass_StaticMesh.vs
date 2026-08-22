@@ -1,5 +1,7 @@
 #version 460 core
 
+#include "shader/dataDef/camerauboDef.comp"
+
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoords;
@@ -14,8 +16,6 @@ out vec2 FragTextureCoords;
 out mat3 TBN;
 out vec2 MotionVector;
 flat out int materialIndex;
-
-#include "shader/dataDef/camerauboDef.comp"
 
 struct RenderData
 {
