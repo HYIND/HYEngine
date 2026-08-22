@@ -1,7 +1,6 @@
 #version 460 core
 
-#extension GL_ARB_gpu_shader_int64 : enable
-#extension GL_ARB_bindless_texture : require
+#include "shader/dataDef/materialDataDef.comp"
 
 in vec3 FragPos;
 in vec3 FragNormal;
@@ -15,44 +14,7 @@ layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec4 gAlbedoOpacity;
 layout (location = 3) out vec4 gMetallicRoughness;
 layout (location = 4) out vec2 gMotionVector;
-
-
-struct MaterialData
-{
-	vec3 albedo;
-	float metallic;
-	float roughness;
-	float ambientOcclusion;
-
-	float opacity;
-
-	float IOR;
-
-	int alphamode;
-	float maskthreshold;
-
-	int twosided;
-
-	int	texture_albedo_count;
-	int	texture_metallic_count;
-	int	texture_roughness_count;
-	int	texture_normal_count;
-	int	texture_ao_count;
-	int	texture_emissive_count;
-	int	texture_metallicroughness_count;
-	int	texture_height_count;
-	int texture_opacity_count;
-
-	sampler2D texture_albedo;
-	sampler2D texture_metallic;
-	sampler2D texture_roughness;
-	sampler2D texture_ao;
-	sampler2D texture_normal;
-	sampler2D texture_emissive;
-	sampler2D texture_metallicroughness;
-	sampler2D texture_height;
-    sampler2D texture_opacity;
-};
+layout (location = 5) out vec3 gEmission;
 
 layout(std430, binding = 3) buffer MaterialDatas {
     MaterialData materialdata[];
@@ -117,6 +79,13 @@ void getPBRProperties(MaterialData material, vec2 uv, inout vec3 albedo, inout f
 	}
 }
 
+vec3 calculateEmission(MaterialData material, vec2 uv)
+{
+   	return material.texture_emissive_count > 0 ? 
+            texture(material.texture_emissive, uv).rgb * material.emissionColor
+            :material.emissionColor * material.emissionStrength;
+}
+
 void main()
 {
 	gPosition = FragPos;
@@ -134,6 +103,8 @@ void main()
 	
 	float opacity = calculateOpacity(material, FragTextureCoords);
 
+	vec3 emission = calculateEmission(material, FragTextureCoords);
+
 	if (opacity < 0.01)
 		discard;
 
@@ -141,4 +112,5 @@ void main()
 	gAlbedoOpacity = vec4(albedo, opacity);
 	gMetallicRoughness = vec4(metallic, roughness, ambientOcclusion, material.IOR);
 	gMotionVector = MotionVector;
+	gEmission = emission;
 }

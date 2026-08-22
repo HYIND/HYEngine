@@ -36,7 +36,7 @@ public:
 
 	std::shared_ptr<Mesh> Clone();
 
-	std::shared_ptr<BVHData>& GetBVHData();
+	std::shared_ptr<const BVHData> GetBVHData();
 	AABB GetAABB();
 
 	const std::vector<Vertex>& GetVertices() const;

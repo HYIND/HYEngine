@@ -2,224 +2,6 @@
 
 #include "OpenGLRenderEngine/General/IndirectDrawManager.h"
 
-VBOSegmentBuffer::VBOSegmentBuffer()
-	:_VBO(0), _size(0)
-{
-}
-
-VBOSegmentBuffer::~VBOSegmentBuffer()
-{
-	if (_VBO > 0)
-		glDeleteBuffers(1, &_VBO);
-}
-
-void VBOSegmentBuffer::ReSize(uint64_t length)
-{
-	Need();
-
-	auto& newsize = length;
-	if (newsize > _size)
-	{
-		if (_size > 0)
-		{
-			GLuint tempBuffer;
-			glGenBuffers(1, &tempBuffer);
-
-			glBindBuffer(GL_COPY_READ_BUFFER, _VBO);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
-
-			glBufferData(GL_COPY_WRITE_BUFFER, _size, nullptr, GL_STATIC_DRAW);
-
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
-
-			glBufferData(GL_ARRAY_BUFFER, newsize, nullptr, GL_DYNAMIC_DRAW);
-
-			glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, _VBO);
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
-
-			glDeleteBuffers(1, &tempBuffer);
-		}
-		else
-			glBufferData(GL_ARRAY_BUFFER, newsize, nullptr, GL_STATIC_DRAW);
-
-		_size = newsize;
-		//std::cout << std::format("VBOSegmentBuffer Resize {}MB\n", newsize / (1024 * 1024));
-	}
-}
-
-void VBOSegmentBuffer::WriteData(const void* mem, uint64_t first, uint64_t length)
-{
-	Need();
-
-	uint64_t needSize = length + first;
-	if (needSize > _size)
-		ReSize(needSize * 1.5);
-
-	glBufferSubData(GL_ARRAY_BUFFER, first, length, mem);
-}
-
-void VBOSegmentBuffer::Memcpy(uint64_t destFirst, uint64_t srcFirst, uint64_t length)
-{
-	if (length == 0 || destFirst == srcFirst)
-		return;
-
-	if (destFirst + length > _size || srcFirst + length > _size)
-		return;
-
-	Need();
-
-	// 创建临时缓冲
-	GLuint tempBuffer;
-	glGenBuffers(1, &tempBuffer);
-
-	// 从原VBO拷贝到临时缓冲
-	glBindBuffer(GL_COPY_READ_BUFFER, _VBO);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
-	glBufferData(GL_COPY_WRITE_BUFFER, length, nullptr, GL_STATIC_DRAW);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, srcFirst, 0, length);
-
-	// 从临时缓冲拷回原VBO的目标位置
-	glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, _VBO);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, destFirst, length);
-
-	// 清理
-	glDeleteBuffers(1, &tempBuffer);
-}
-
-GLuint VBOSegmentBuffer::GetVBO() const
-{
-	return _VBO;
-}
-
-void VBOSegmentBuffer::Need()
-{
-	if (_VBO == 0)
-		glGenBuffers(1, &_VBO);
-	glBindBuffer(GL_ARRAY_BUFFER, _VBO);
-}
-
-EBOSegmentBuffer::EBOSegmentBuffer()
-	:_EBO(0), _size(0)
-{
-}
-
-EBOSegmentBuffer::~EBOSegmentBuffer()
-{
-	if (_EBO > 0)
-		glDeleteBuffers(1, &_EBO);
-}
-
-void EBOSegmentBuffer::ReSize(uint64_t length)
-{
-	Need();
-
-	auto& newsize = length;
-	if (newsize > _size)
-	{
-		if (_size > 0)
-		{
-			GLuint tempBuffer;
-			glGenBuffers(1, &tempBuffer);
-
-			glBindBuffer(GL_COPY_READ_BUFFER, _EBO);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
-
-			glBufferData(GL_COPY_WRITE_BUFFER, _size, nullptr, GL_STATIC_DRAW);
-
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
-
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, newsize, nullptr, GL_DYNAMIC_DRAW);
-
-			glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, _EBO);
-			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, _size);
-
-			glDeleteBuffers(1, &tempBuffer);
-		}
-		else
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, newsize, nullptr, GL_STATIC_DRAW);
-
-		_size = newsize;
-		//std::cout << std::format("EBOSegmentBuffer Resize {}MB\n", newsize / (1024 * 1024));
-	}
-}
-
-void EBOSegmentBuffer::WriteData(const void* mem, uint64_t first, uint64_t length)
-{
-	Need();
-
-	uint64_t needSize = length + first;
-	if (needSize > _size)
-		ReSize(needSize * 1.5);
-
-	glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, first, length, mem);
-}
-
-void EBOSegmentBuffer::Memcpy(uint64_t destFirst, uint64_t srcFirst, uint64_t length)
-{
-	if (length == 0 || destFirst == srcFirst)
-		return;
-
-	if (destFirst + length > _size || srcFirst + length > _size)
-		return;
-
-	Need();
-
-	// 创建临时缓冲
-	GLuint tempBuffer;
-	glGenBuffers(1, &tempBuffer);
-
-	// 从原VBO拷贝到临时缓冲
-	glBindBuffer(GL_COPY_READ_BUFFER, _EBO);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, tempBuffer);
-	glBufferData(GL_COPY_WRITE_BUFFER, length, nullptr, GL_STATIC_DRAW);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, srcFirst, 0, length);
-
-	// 从临时缓冲拷回原VBO的目标位置
-	glBindBuffer(GL_COPY_READ_BUFFER, tempBuffer);
-	glBindBuffer(GL_COPY_WRITE_BUFFER, _EBO);
-	glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, destFirst, length);
-
-	// 清理
-	glDeleteBuffers(1, &tempBuffer);
-}
-
-GLuint EBOSegmentBuffer::GetEBO() const
-{
-	return _EBO;
-}
-
-void EBOSegmentBuffer::Need()
-{
-	if (_EBO == 0)
-		glGenBuffers(1, &_EBO);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _EBO);
-}
-
-SSBOSegmentBuffer::SSBOSegmentBuffer() {
-	_ssbo = std::make_shared<SSBO>();
-}
-
-SSBOSegmentBuffer::~SSBOSegmentBuffer() {}
-
-void SSBOSegmentBuffer::ReSize(uint64_t length) {
-	_ssbo->SetSize(length);
-}
-
-void SSBOSegmentBuffer::WriteData(const void* mem, uint64_t first, uint64_t length) {
-	_ssbo->WriteData(mem, length, first);
-}
-
-void SSBOSegmentBuffer::Memcpy(uint64_t destFirst, uint64_t srcFirst, uint64_t length) {
-	_ssbo->CopyData(destFirst, srcFirst, length);
-}
-
-std::shared_ptr<SSBO> SSBOSegmentBuffer::GetSSBO() const {
-	return _ssbo;
-}
-
 std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 {
 	static std::shared_ptr<IndirectDrawManager> instance = std::shared_ptr<IndirectDrawManager>(new IndirectDrawManager());
@@ -249,7 +31,6 @@ void IndirectDrawManager::setupMesh(Mesh& mesh)
 			_EBOManager.SetSegment(uuid, (void*)version, indices.data(), indices.size() * sizeof(unsigned int));
 		}
 	}
-
 }
 
 void IndirectDrawManager::deleteMesh(Mesh& mesh)
@@ -274,11 +55,11 @@ bool IndirectDrawManager::GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta
 }
 
 GLuint IndirectDrawManager::GetVBO() {
-	return _VBOManager.GetBuffer()->GetVBO();
+	return _VBOManager.GetBuffer()->GetID();
 }
 
 GLuint IndirectDrawManager::GetEBO() {
-	return _EBOManager.GetBuffer()->GetEBO();
+	return _EBOManager.GetBuffer()->GetID();
 }
 
 void IndirectDrawManager::setupMaterial(Material& material)

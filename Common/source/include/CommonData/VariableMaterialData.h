@@ -20,6 +20,9 @@ struct VariableMaterialData
 	float opacity = 1.0f;
 	AlphaMode alphamode = AlphaMode::Opaque;	// 透明纹理使用模式
 
+	glm::vec3 emissionColor = glm::vec3(1.f);
+	float emissionStrength = 0.0f;
+
 	bool twosided = false;		//绘制双面
 };
 
@@ -31,9 +34,11 @@ struct VariableMaterialChangeFlag
 	bool opacityChange = false;
 	bool alphamodeChange = false;
 	bool twosidedChange = false;
+	bool emissionColorChange = false;
+	bool emissionStrengthChange = false;
 
 	bool AnyChange() {
-		return albedoChange || metallicChange || roughnessChange || opacityChange || alphamodeChange || twosidedChange;
+		return albedoChange || metallicChange || roughnessChange || opacityChange || alphamodeChange || twosidedChange || emissionColorChange || emissionStrengthChange;
 	}
 	void Reset() {
 		albedoChange = false;
@@ -42,5 +47,7 @@ struct VariableMaterialChangeFlag
 		opacityChange = false;
 		alphamodeChange = false;
 		twosidedChange = false;
+		emissionColorChange = false;
+		emissionStrengthChange = false;
 	}
 };

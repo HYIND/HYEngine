@@ -12,7 +12,9 @@
 #include "OpenGLRenderEngine/RenderPass/SkyBoxPass.h"
 #include "OpenGLRenderEngine/RenderPass/SSAOPass.h"
 #include "OpenGLRenderEngine/RenderPass/EffectPass.h"
-#include "OpenGLRenderEngine/RenderPass/RayTracePass.h"
+#include "OpenGLRenderEngine/RenderPass/RayTraceGeneralPass.h"
+#include "OpenGLRenderEngine/RenderPass/RayTraceReflectPass.h"
+#include "OpenGLRenderEngine/RenderPass/RayTraceGIPass.h"
 #include "OpenGLRenderEngine/RenderPass/DepthFogPass.h"
 #include "OpenGLRenderEngine/RenderPass/TransparentPass.h"
 #include "OpenGLRenderEngine/RenderPass/AutoExposurePass.h"
@@ -249,10 +251,12 @@ void OpenGLRenderer::InitSceneRenderGraph()
 	auto gNormal = resbuilder.CreateTexture(width, height, GL_RGB16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "gNormal");
 	auto gAlbedoOpacity = resbuilder.CreateTexture(width, height, GL_RGBA, GL_NEAREST, GL_CLAMP_TO_EDGE, "gAlbedoOpacity");
 	auto gMetallicRoughnessMap = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "gMetallicRoughnessMap");
+	auto gEmission = resbuilder.CreateTexture(width, height, GL_RGB, GL_NEAREST, GL_CLAMP_TO_EDGE, "gEmission");
 	auto gMotionVectorMap = resbuilder.CreateTexture(width, height, GL_RG16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "gMotionVectorMap");
 	auto gDepthStencilMap = resbuilder.CreateTexture(_renderTarget.sceneDepthBuffer, "geometryPass_TempDepthStencilMap");
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, GL_RED, GL_NEAREST, GL_CLAMP_TO_EDGE, "ssaoOutPutBuffer");
-	auto rayTrace_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "rayTrace_Output");
+	auto rayTraceReflect_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "rayTraceReflect_Output");
+	auto rayTraceGI_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "rayTraceGI_Output");
 	auto ssr_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, GL_RGBA16F, GL_NEAREST, GL_CLAMP_TO_EDGE, "ssgi_Output");
 	auto atlasShadowMap = resbuilder.CreateTexture(1024, 1024, GL_DEPTH_COMPONENT, GL_LINEAR, GL_CLAMP_TO_EDGE, "atlasShadowMap");
@@ -266,7 +270,9 @@ void OpenGLRenderer::InitSceneRenderGraph()
 	auto lightingPass = _sceneRenderGraph->AddPass("lightingPass");
 	auto copyDepthPass = _sceneRenderGraph->AddPass("copyDepthPass");
 	auto skyBoxPass = _sceneRenderGraph->AddPass("skyBoxPass");
-	auto rayTracePass = _sceneRenderGraph->AddPass("rayTracePass");
+	auto rayTraceGeneralPass = _sceneRenderGraph->AddPass("rayTraceGeneralPass");
+	auto rayTraceReflectPass = _sceneRenderGraph->AddPass("rayTraceReflectPass");
+	auto rayTraceGIPass = _sceneRenderGraph->AddPass("rayTraceGIPass");
 	auto ssrPass = _sceneRenderGraph->AddPass("ssrPass");
 	auto ssgiPass = _sceneRenderGraph->AddPass("ssgiPass");
 	auto combinIndirectLightingPass = _sceneRenderGraph->AddPass("combinIndirectLightingPass");
@@ -286,8 +292,6 @@ void OpenGLRenderer::InitSceneRenderGraph()
 
 	// 曝光计算
 	auto autoExposurePass = _sceneRenderGraph->AddPass("autoExposurePass");
-
-	auto postCalculatePass = _sceneRenderGraph->AddPass("postCalculatePass");
 
 	preCalculatePass->SetRenderPass(std::make_unique<PreCalculatePass>());
 
@@ -310,16 +314,16 @@ void OpenGLRenderer::InitSceneRenderGraph()
 		"shader/lighting/pointlightshadow.vs", "shader/lighting/pointlightshadow.gs", "shader/lighting/pointlightshadow.fs"))
 		.Persistent(atlasShadowMap)
 		.After(preCalculatePass)
-		.Before(lightingPass, postCalculatePass);
+		.Before(lightingPass);
 
 	geometryPass->SetRenderPass(std::make_unique<GeometryPass>(
 		"shader/gbuffer/geometrypass_StaticMesh.vs",
 		"shader/gbuffer/geometrypass_StaticMesh.fs",
 		"shader/gbuffer/geometrypass_SkinnedMesh.vs",
 		"shader/gbuffer/geometrypass_SkinnedMesh.fs"))
-		.Output(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gDepthStencilMap)
+		.Output(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gDepthStencilMap, gEmission)
 		.After(hzbPass, preCalculatePass)
-		.Before(lightingPass, postCalculatePass);
+		.Before(lightingPass);
 
 	ssaoPass->SetRenderPass(std::make_unique<SSAOPass>("shader/ssao/ssao.vs", "shader/ssao/ssao.fs", "shader/ssao/ssao.vs", "shader/ssao/ssaoblur.fs"));
 	ssaoPass->Input(gPosition, gNormal)
@@ -329,7 +333,7 @@ void OpenGLRenderer::InitSceneRenderGraph()
 		.Before(lightingPass);
 
 	lightingPass->SetRenderPass(std::make_unique<LightingPass>("shader/lighting/lightingpass.vs", "shader/lighting/lightingpass.fs"))
-		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut)
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gEmission)
 		.After(lightingShadowDepthPass, ssaoPass)
 		.Before(opaqueFrence);
 
@@ -348,15 +352,31 @@ void OpenGLRenderer::InitSceneRenderGraph()
 		.After(copyDepthPass)
 		.Before(opaqueFrence);
 
-	rayTracePass->SetRenderPass(std::make_unique<RayTracePass>("shader/RayTrace/rayTrace.comp", "shader/RayTrace/TAAMix.comp", "shader/General/imagedenoising.comp", "shader/General/imagescale.comp"))
+	auto generalPass = std::make_unique<RayTraceGeneralPass>();
+	auto reflectPass = std::make_unique<RayTraceReflectPass>("shader/RayTrace/RayTraceReflect.comp", "shader/General/imagedenoising.comp", "shader/General/imagescale.comp");
+	auto giPass = std::make_unique<RayTraceGIPass>("shader/RayTrace/RayTraceGI.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+	giPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+	reflectPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+
+	rayTraceGeneralPass->SetRenderPass(std::move(generalPass));
+
+	rayTraceReflectPass->SetRenderPass(std::move(reflectPass))
 		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap)
-		.Temp(resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TempOrigin")
-			, resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TempDenoised"))
-		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
-		.Output(rayTrace_Output)
-		.Persistent(resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TAAPingPongTexture[0]")
-			, resbuilder.CreateTexture(rayTrace_Output, "rayTrace_TAAPingPongTexture[1]"))
-		.After(copyDepthPass, skyBoxPass, lightingPass)
+		.Temp(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_TempOrigin")
+			, resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_TempDenoised"))
+		.External(Ext_RenderTargetDepthBuffer)
+		.Output(rayTraceReflect_Output)
+		.Persistent(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceRefelct_historyColorTexture"))
+		.After(copyDepthPass, rayTraceGeneralPass)
+		.Before(opaqueFrence);
+
+	rayTraceGIPass->SetRenderPass(std::move(giPass))
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
+		.Temp(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"))
+		.External(Ext_RenderTargetDepthBuffer)
+		.Output(rayTraceGI_Output)
+		.Persistent(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"))
+		.After(copyDepthPass, rayTraceGeneralPass)
 		.Before(opaqueFrence);
 
 	ssrPass->SetRenderPass(std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/BilateralFilterBlur.comp"))
@@ -402,8 +422,13 @@ void OpenGLRenderer::InitSceneRenderGraph()
 				return;
 
 			all_tex.push_back(tempColorBuffer);
-			//for (int i = 0; i < all_tex.size(); i++)
-				//DrawTexture(all_tex[i], std::format("temp/all_tex{}.png", i));
+
+			static bool draw = false;
+			if (draw)
+			{
+				for (int i = 0; i < all_tex.size(); i++)
+					DrawTexture(all_tex[i], std::format("temp/all_tex{}.png", i));
+			}
 
 			glBindFramebuffer(GL_FRAMEBUFFER, ctx.renderTargetFBO);
 			glDepthMask(GL_FALSE);
@@ -421,10 +446,10 @@ void OpenGLRenderer::InitSceneRenderGraph()
 			RenderHelp::renderScreenQuad();
 			glDepthMask(GL_TRUE);
 		}))
-		.InputOption(rayTrace_Output, ssr_Output, ssgi_Output)
+		.InputOption(rayTraceReflect_Output, rayTraceGI_Output, ssr_Output, ssgi_Output)
 		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetColorBuffer)
 		.Temp(resbuilder.CreateTexture(_renderTarget.sceneColorBuffer, "combinIndirectLightingPass_temp1"))
-		.After(rayTracePass, ssrPass, ssgiPass)
+		.After(rayTraceReflectPass, ssrPass, ssgiPass)
 		.Before(opaqueFrence);
 
 	lightDrawPass->SetRenderPass(std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs"))

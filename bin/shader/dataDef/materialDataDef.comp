@@ -1,0 +1,42 @@
+
+#extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_ARB_bindless_texture : require
+
+struct MaterialData
+{
+	vec3 albedo;
+	float metallic;
+
+	float roughness;
+	float ambientOcclusion;
+	float opacity;
+	float IOR;
+
+	vec3 emissionColor;
+	float emissionStrength;
+
+	int alphamode;
+	float maskthreshold;
+
+	int twosided;
+
+	int	texture_albedo_count;
+	int	texture_metallic_count;
+	int	texture_roughness_count;
+	int	texture_normal_count;
+	int	texture_ao_count;
+	int	texture_emissive_count;
+	int	texture_metallicroughness_count;
+	int	texture_height_count;
+	int texture_opacity_count;
+
+	sampler2D texture_albedo;
+	sampler2D texture_metallic;
+	sampler2D texture_roughness;
+	sampler2D texture_ao;
+	sampler2D texture_normal;
+	sampler2D texture_emissive;
+	sampler2D texture_metallicroughness;
+	sampler2D texture_height;
+    sampler2D texture_opacity;
+};

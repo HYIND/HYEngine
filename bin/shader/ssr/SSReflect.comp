@@ -6,17 +6,14 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 #include "shader/dataDef/camerauboDef.comp"
 
-#ifndef MAX_STEPS
-#define MAX_STEPS 500
-#endif
-
 #ifndef Max_Bounce_limit 
-#define Max_Bounce_limit  4
+#define Max_Bounce_limit  3
 #endif
 
 uniform float tMin;
 uniform float tMax;
 uniform int maxBounce;       // 最大反射次数
+uniform int RayMarchingMaxStep;
 
 uniform ivec2 screenSize;
 
@@ -105,7 +102,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
 	float pixelLength = length(screenEnd -  screenStart);
 	int steps = int(pixelLength) + 1;
 
-	steps = min(steps / 4 + 1, MAX_STEPS);
+	steps = min(steps / 4 + 1, RayMarchingMaxStep);
 
 	vec2 screenStep = (screenEnd -  screenStart) / steps;
 	float zStart = -startViewPos.z;

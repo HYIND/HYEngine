@@ -198,7 +198,7 @@ std::shared_ptr<Mesh> Mesh::Clone()
 	return other;
 }
 
-std::shared_ptr<BVHData>& Mesh::GetBVHData()
+std::shared_ptr<const BVHData> Mesh::GetBVHData()
 {
 	if (needUpdateBVH || !bvhdata)
 	{

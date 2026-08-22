@@ -240,6 +240,22 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 						material->SetTwoSided(variableMaterial.data.twosided);
 					}
 				}
+				if (variableMaterial.flags.emissionColorChange)
+				{
+					for (auto& info : renderModel.model->getMeshInfos())
+					{
+						auto& material = info.material;
+						material->SetEmissionColor(variableMaterial.data.emissionColor);
+					}
+				}
+				if (variableMaterial.flags.emissionStrengthChange)
+				{
+					for (auto& info : renderModel.model->getMeshInfos())
+					{
+						auto& material = info.material;
+						material->SetEmissionStrength(variableMaterial.data.emissionStrength);
+					}
+				}
 
 				variableMaterial.flags.Reset();
 			}

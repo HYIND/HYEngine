@@ -175,8 +175,9 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\General\GPUTimer.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\GroupMapper.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\IndirectDrawManager.h" />
-    <ClInclude Include="source\include\OpenGLRenderEngine\General\MemorySegmentBuffer.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\OpenGLRenderContext.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\General\RayTraceGeneralData.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderHelp.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderItem.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\General\RenderState.h" />
@@ -205,7 +206,9 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightingPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\LightShadowDepthPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\PreCalculatePass.h" />
-    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTracePass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceGeneralPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceGIPass.h" />
+    <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RayTraceReflectPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\RenderPassBase.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SkyBoxPass.h" />
     <ClInclude Include="source\include\OpenGLRenderEngine\RenderPass\SSAOPass.h" />
@@ -215,6 +218,7 @@
     <ClInclude Include="source\include\OpenGLRenderEngine\SharedTexture.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Game\source\src\RayTraceGeneralPass.cpp" />
     <ClCompile Include="source\src\Animation.cpp" />
     <ClCompile Include="source\src\Animator.cpp" />
     <ClCompile Include="source\src\AssimpGlmHelpers.cpp" />
@@ -241,14 +245,15 @@
     <ClCompile Include="source\src\LightingPass.cpp" />
     <ClCompile Include="source\src\LightShadowDepthPass.cpp" />
     <ClCompile Include="source\src\Material.cpp" />
-    <ClCompile Include="source\src\MemorySegmentBuffer.cpp" />
+    <ClCompile Include="source\src\GeneralSegmentBuffer.cpp" />
     <ClCompile Include="source\src\Mesh.cpp" />
     <ClCompile Include="source\src\Model.cpp" />
     <ClCompile Include="source\src\OpenGLRenderEngine.cpp" />
     <ClCompile Include="source\src\OpenGLRenderer.cpp" />
     <ClCompile Include="source\src\PassNode.cpp" />
     <ClCompile Include="source\src\PreCalculatePass.cpp" />
-    <ClCompile Include="source\src\RayTracePass.cpp" />
+    <ClCompile Include="source\src\RayTraceGIPass.cpp" />
+    <ClCompile Include="source\src\RayTraceReflectPass.cpp" />
     <ClCompile Include="source\src\OpenGLRenderContextManager.cpp" />
     <ClCompile Include="source\src\RenderGraph.cpp" />
     <ClCompile Include="source\src\RenderGraphResourceManager.cpp" />

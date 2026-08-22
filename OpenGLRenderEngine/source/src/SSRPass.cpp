@@ -11,8 +11,7 @@ SSRPass::SSRPass(
 	const std::string& blurComputerShaderPath
 )
 {
-	_ssrShader.AddDefineMacro("MAX_STEPS", std::to_string(OpenGLRenderConfig::SSR_Max_Step));
-	_ssrShader.AddDefineMacro("Max_Bounce_limit", std::to_string(OpenGLRenderConfig::SSR_Max_Bounce_limit));
+	_ssrShader.AddDefineMacro("Max_Bounce_limit", OpenGLRenderConfig::SSTrace_Max_Bounce_limit);
 	_ssrShader.CompileFromFile(ssrComputerShaderPath);
 	_blurShader.CompileFromFile(blurComputerShaderPath);
 }
@@ -71,9 +70,10 @@ bool SSRPass::DrawSSR(FrameRenderData& data, RenderState& state)
 	_ssrShader.setIVec2("screenSize", data.drawSize);
 
 	//光追参数
-	_ssrShader.setFloat("tMin", state.option.ssrTraceParams.tMin);
-	_ssrShader.setFloat("tMax", state.option.ssrTraceParams.tMax);
-	_ssrShader.setInt("maxBounce", std::min(state.option.ssrTraceParams.maxBounceLimit, OpenGLRenderConfig::SSR_Max_Bounce_limit));
+	_ssrShader.setFloat("tMin", std::max(0.f, state.option.ssrTraceParams.tMin));
+	_ssrShader.setFloat("tMax", std::max(0.f, state.option.ssrTraceParams.tMax));
+	_ssrShader.setInt("maxBounce", std::max(0, std::min(state.option.ssrTraceParams.maxBounceLimit, OpenGLRenderConfig::SSTrace_Max_Bounce_limit)));
+	_ssrShader.setInt("RayMarchingMaxStep", std::max(2, state.option.ssrTraceParams.RayMarchingMaxStep));
 
 	_ssrShader.setTexture(data.gPosition, "gPosition", 5);
 	_ssrShader.setTexture(data.gNormal, "gNormal", 6);
@@ -114,10 +114,10 @@ bool SSRPass::DrawBlur(FrameRenderData& data, RenderState& state)
 	_blurShader.setTexture(data.gNormal, "gNormal", 6);
 	_blurShader.setTexture(data.depthMap, "depthMap", 10);
 
-	_blurShader.setFloat("blurRadius", OpenGLRenderConfig::SSR_BlurRadius);
-	_blurShader.setFloat("blurDepthWeight", OpenGLRenderConfig::SSR_BlurDepthWeight);
-	_blurShader.setInt("kernelSize", OpenGLRenderConfig::SSR_BlurKernelSize);
-	_blurShader.setFloat("sigma", OpenGLRenderConfig::SSR_BlurGaussSigma);
+	_blurShader.setFloat("blurRadius", state.option.ssrTraceParams.BlurRadius);
+	_blurShader.setFloat("blurDepthWeight", state.option.ssrTraceParams.BlurDepthWeight);
+	_blurShader.setInt("kernelSize", state.option.ssrTraceParams.BlurKernelSize);
+	_blurShader.setFloat("sigma", state.option.ssrTraceParams.BlurGaussSigma);
 
 	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 	glDispatchCompute((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);

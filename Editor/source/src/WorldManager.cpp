@@ -74,6 +74,8 @@ void AddVariableMaterial(Entity& entity)
 	variableMaterial.data.opacity = material->GetOpacity();
 	variableMaterial.data.alphamode = (VariableMaterialData::AlphaMode)material->GetAlphaMode();
 	variableMaterial.data.twosided = material->GetTwoSided();
+	variableMaterial.data.emissionColor = material->GetEmissionColor();
+	variableMaterial.data.emissionStrength = material->GetEmissionStrength();
 }
 
 void SetNameTag(Entity entity, const std::string& name)
@@ -155,6 +157,64 @@ void LoadInitScene(World& world)
 	}
 
 	{
+		Entity cube = world.createEntity();
+		auto& trans = cube.addComponent<Transform>();
+		trans.position = { 0,3,0 };
+
+		auto& physics = cube.addComponent<Physics>();
+		physics.bodyType = Physics::BodyType::Dynamic;
+		physics.isSensor = false;
+		physics.isBullet = true;
+		physics.friction = 0.1;
+		physics.restitution = 0.8;
+		physics.mass = 5.f;
+		physics.collisionShape.AddBoxShape();
+
+		auto& rendermodel = cube.addComponent<RenderModel>();
+		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f);
+
+		AddPickProxy(cube);
+		AddVariableMaterial(cube);
+		SetNameTag(cube, "cube_1");
+	}
+
+	{
+		float radius = 3.0;
+
+		Entity sphere = world.createEntity();
+		auto& trans = sphere.addComponent<Transform>();
+		trans.position = { 3,3,0 };
+		trans.scale = glm::vec3(radius / 0.5f);
+
+		auto& physics = sphere.addComponent<Physics>();
+		physics.bodyType = Physics::BodyType::Dynamic;
+		physics.isSensor = false;
+		physics.isBullet = true;
+		physics.friction = 0.1;
+		physics.restitution = 0.8;
+		physics.mass = 5.f;
+		physics.collisionShape.AddSphereShape(0.5f);
+
+		auto model = GetSphereModel(0.5, 72, 36);
+
+		auto& rendermodel = sphere.addComponent<RenderModel>();
+		rendermodel.model = model;
+
+		if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
+		{
+			auto& material = model->getMeshInfos()[0].material;
+			material->SetMetallic(0.5);
+			material->SetRoughness(0.3f);
+			material->SetAlbedo(glm::vec3(1.0f));
+		}
+
+		AddPickProxy(sphere);
+		AddVariableMaterial(sphere);
+		SetNameTag(sphere, "sphere_1");
+	}
+
+
+	{
 		float floorSize = 50.f;
 		auto model = GetFloorModel();
 		model->MakeScale(glm::vec3(floorSize));
@@ -195,80 +255,6 @@ void LoadInitScene(World& world)
 		AddVariableMaterial(floor);
 		SetNameTag(floor, "floor");
 	}
-
-	{
-		float radius = 1.0;
-
-		Entity sphere = world.createEntity();
-		auto& trans = sphere.addComponent<Transform>();
-		trans.position = { 0,3,0 };
-		trans.scale = glm::vec3(radius / 0.5f);
-
-		auto& physics = sphere.addComponent<Physics>();
-		physics.bodyType = Physics::BodyType::Kinematic;
-		physics.isSensor = false;
-		physics.isBullet = true;
-		physics.friction = 0.1;
-		physics.restitution = 0.8;
-		physics.mass = 5.f;
-		physics.collisionShape.AddSphereShape(0.5f);
-
-		auto model = GetSphereModel(0.5, 72, 36);
-
-		auto& rendermodel = sphere.addComponent<RenderModel>();
-		rendermodel.model = model;
-
-		if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
-		{
-			auto& material = model->getMeshInfos()[0].material;
-			material->SetMetallic(0.5);
-			material->SetRoughness(0.3f);
-			material->SetAlbedo(glm::vec3(1.0f));
-		}
-
-		AddPickProxy(sphere);
-		AddVariableMaterial(sphere);
-		SetNameTag(sphere, "sphere_1");
-	}
-
-	{
-		float radius = 1.0;
-
-		Entity sphere = world.createEntity();
-		auto& trans = sphere.addComponent<Transform>();
-		trans.position = { 3,3,0 };
-		trans.scale = glm::vec3(radius / 0.5f);
-		trans.scale.x *= 3;
-		trans.scale.y *= 3;
-		trans.scale.z *= 3;
-
-		auto& physics = sphere.addComponent<Physics>();
-		physics.bodyType = Physics::BodyType::Dynamic;
-		physics.isSensor = false;
-		physics.isBullet = true;
-		physics.friction = 0.1;
-		physics.restitution = 0.8;
-		physics.mass = 5.f;
-		physics.collisionShape.AddSphereShape(0.5f);
-
-		auto model = GetSphereModel(0.5, 72, 36);
-
-		auto& rendermodel = sphere.addComponent<RenderModel>();
-		rendermodel.model = model;
-
-		if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
-		{
-			auto& material = model->getMeshInfos()[0].material;
-			material->SetMetallic(0.5);
-			material->SetRoughness(0.3f);
-			material->SetAlbedo(glm::vec3(1.0f));
-		}
-
-		AddPickProxy(sphere);
-		AddVariableMaterial(sphere);
-		SetNameTag(sphere, "sphere_2");
-	}
-
 }
 
 WorldManager* WorldManager::Instance() {

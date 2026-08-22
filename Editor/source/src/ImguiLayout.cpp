@@ -1169,16 +1169,17 @@ static bool PropertiesHelper::DrawData(RenderOption& option)
 	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessFlags", option.flags);
 	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessParams", option.postProcessParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("DepthFogParams", option.depthFogParams);
-	anyChange |= PropertiesHelper::DrawWithTitle("SSGITraceParams", option.ssgiTraceParams);
-	anyChange |= PropertiesHelper::DrawWithTitle("SSRTraceParams", option.ssrTraceParams);
-	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceReflectParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("SSReflectParams", option.ssrTraceParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("SSGIParams", option.ssgiTraceParams);
 	return anyChange;
 }
 
 void ImguiLayout::DrawOptions(WorldManager* worldManager)
 {
 	ImGui::Begin("Options");
-	ImGui::Text("视频选项");
+	ImGui::Text("渲染选项");
 	ImGui::Separator();
 
 	auto option = worldManager->GetOption();

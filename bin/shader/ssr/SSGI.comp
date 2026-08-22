@@ -13,19 +13,18 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
 
 #include "shader/dataDef/camerauboDef.comp"
 
-#ifndef MAX_STEPS
-#define MAX_STEPS 32
-#endif
 
 const float PI = 3.14159265359;
 
 uniform float tMin;
 uniform float tMax;
 
-uniform int sampleRayCount;
-uniform float sampleIndirectClampValue;
+uniform int SampleRayCount;
+uniform int RayMarchingMaxStep;
+uniform float SampleIndirectClampValue;
 uniform float GIIntensity;
 uniform float AOIntensity;
+uniform float DistanceFactor;
 
 uniform ivec2 screenSize;
 
@@ -108,7 +107,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
 	vec2 screenStart = startTexPos * screenSize;
 	vec2 screenEnd = endTexPos * screenSize;
 	float pixelLength = length(screenEnd -  screenStart);
-	int steps = min(int(pixelLength) + 1, MAX_STEPS);
+	int steps = min(int(pixelLength) + 1, RayMarchingMaxStep);
 
 	vec2 screenStep = (screenEnd -  screenStart) / steps;
 	float zStart = -startViewPos.z;
@@ -310,7 +309,7 @@ int RayTraceOnSceenHBZ(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空�
         vec2 level_screenStart = startTexPos * level_screenSize;
         vec2 level_screenEnd = endTexPos * level_screenSize;
         float pixelLength = length(level_screenEnd -  level_screenStart);
-        steps = min(int(pixelLength) + 1 , MAX_STEPS);
+        steps = min(int(pixelLength) + 1 , RayMarchingMaxStep);
         vec2 level_screenStep = (level_screenEnd -  level_screenStart) / steps;
 
         bool outofBroad = false;
@@ -539,23 +538,23 @@ bool traceRay(Ray ray, inout vec3 indirectColor)
     //     return false;
 
     vec3 fragPos = texture(gPosition, uv).rgb;
-    float dist = distance(ray.origin,fragPos);
-    float attenuation = 1.0 / (1.0 + dist * 0.25);
+    float dist = distance(ray.origin, fragPos);
+    float attenuation = 1.0 / (1.0 + dist * DistanceFactor);
 
     vec3 lightingColor = texture(colorMap, uv).rgb;
     vec3 albedo = texture(gAlbedoOpacity, uv).rgb;
     vec3 lightEnergy = lightingColor / (albedo + 1e-4) * attenuation;
-    indirectColor = albedo * min(lightEnergy, sampleIndirectClampValue);        //钳制入射光强
+    indirectColor = albedo * min(lightEnergy, SampleIndirectClampValue);        //钳制入射光强
 
     return true;
 }
 
 // 计算 Halton 序列
-float halton(int index, int base) 
+float halton(uint index, int base) 
 {
     float result = 0.0;
     float f = 1.0;
-    int i = index;
+    uint i = index;
     while (i > 0) 
     {
         f /= float(base);
@@ -566,40 +565,27 @@ float halton(int index, int base)
 }
 
 // 生成一对 Halton 样本（用于余弦加权半球）
-vec2 getHaltonSample(int sampleIndex, int frameIndex) 
+vec2 getRandom(int sampleIndex) 
 {
-    int idx = sampleIndex * 213 + frameIndex * 29;
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    int offset = pixelCoord.x * 79 + pixelCoord.y * 97;  // 单个偏移值
-    int baseIdx = idx + offset;
+    uint seed = uint(gl_GlobalInvocationID.x) * 197u 
+            + uint(gl_GlobalInvocationID.y) * 927u 
+            + uint(sampleIndex) * 269u 
+            + uint(frameIndex) * 777u;
 
-    vec2 haltonRandom = vec2(halton(baseIdx, 2), halton(baseIdx, 3));
+    vec2 haltonRandom = vec2(halton(seed, 2), halton(seed, 3));
     return haltonRandom;
 }
 
-float RandomNoise(vec2 seed)
-{
-    vec2 p = fract(seed * vec2(0.1031, 0.1030));
-    p += dot(p, p.yx + 19.19);
-    float static_hash = fract((p.x + p.y) * p.y);
-
-    // Using static hash for consistent noise without temporal accumulation
-    return fract(static_hash);
-}
-
 // 生成随机方向（法线半球）
-vec3 sampleHemisphere(vec3 normal, vec2 random, inout float weight)
+vec3 sampleHemisphere(vec3 normal, vec2 random)
 {
     float r1 = random.x;
     float r2 = random.y;
-    
-    vec2 seed = vec2(gl_GlobalInvocationID.xy);
-    float randomRotation = RandomNoise(seed);
-    
+        
     // 余弦加权采样
     float cosTheta = sqrt(r1);
     float theta = acos(cosTheta);
-    float phi = 2.0 * PI * r2 + randomRotation;
+    float phi = 2.0 * PI * r2;
     
     vec3 dir = vec3(
         sin(theta) * cos(phi),
@@ -613,7 +599,6 @@ vec3 sampleHemisphere(vec3 normal, vec2 random, inout float weight)
     vec3 bitangent = cross(normal, tangent);
 
     vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
-    weight = cosTheta;
 
     return samplerDir;
 }
@@ -621,13 +606,11 @@ vec3 sampleHemisphere(vec3 normal, vec2 random, inout float weight)
 vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, int sampleCount) 
 {
     vec3 totalIndirect = vec3(0.0);
-    float totalWeight = 0.f;
 
     for (int i = 0; i < sampleCount; i++) 
     {
-        vec2 random = getHaltonSample(i, frameIndex);
-        float weight;
-        vec3 samplerDir = sampleHemisphere(normal, random, weight);
+        vec2 random = getRandom(i *23);
+        vec3 samplerDir = sampleHemisphere(normal, random);
 
         Ray ray;
         ray.origin = fragPos + samplerDir * 0.002;
@@ -638,17 +621,7 @@ vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, int sampleCount)
         vec3 indirectColor;
 
         if(traceRay(ray, indirectColor))
-            totalIndirect += indirectColor * weight;
-
-        totalWeight += weight;
-
-        // if (totalWeight > 2.0)  // 权重和超过2，说明已经有很多样本命中
-        // {
-        //     // 检查结果是否稳定
-        //     vec3 currentAvg = totalIndirect / totalWeight;
-        //     if (length(currentAvg) > 0.5)  // 已经比较亮了
-        //         break;
-        // }
+            totalIndirect += indirectColor;
         
         // 能量贡献递减时提前退出
         if (i > 4 && length(totalIndirect) < 0.001)  // 连续5个样本都没命中
@@ -658,7 +631,7 @@ vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, int sampleCount)
         }
     }
 
-    return totalWeight > 0.f ?  totalIndirect / totalWeight : vec3(0.f);
+    return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
 }
 
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
@@ -692,7 +665,7 @@ void main()
     vec3 fragPos = texture(gPosition, uv).rgb;
     vec3 normal = normalize(texture(gNormal, uv).rgb);
 
-    int sampleCount = max(1, sampleRayCount);
+    int sampleCount = max(1, SampleRayCount);
     vec3 color = traceRayWithHemisphereSample(fragPos, normal, sampleCount);
 
     vec3 N = normal;
@@ -703,7 +676,6 @@ void main()
     vec3 kS_env = F_env;
     vec3 kD = 1.0 - kS_env;
     kD *= (1.0 - metallic);
-
 
     vec3 result = kD * color * albedo;
 

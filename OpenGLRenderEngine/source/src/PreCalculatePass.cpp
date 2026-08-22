@@ -205,19 +205,20 @@ void PreCalculatePass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, c
 	if (_VAO == 0)
 		glGenVertexArrays(1, &_VAO);
 	if (_indirectCommandBuffer == 0)
-		glGenBuffers(1, &_indirectCommandBuffer);
+		glCreateBuffers(1, &_indirectCommandBuffer);
 	if (!_ssbo_StaticMesh_Transforms)
 		_ssbo_StaticMesh_Transforms = std::make_shared<SSBO>();
 
 	if (state.indirectCommands.indirectVAO == 0)
+	{
+		GLuint VBO = IndirectDrawManager::Instance()->GetVBO();
+		GLuint EBO = IndirectDrawManager::Instance()->GetEBO();
+		if (VBO != 0 && EBO != 0)
+			BindVAO(_VAO, VBO, EBO);
 		state.indirectCommands.indirectVAO = _VAO;
+	}
 	if (state.indirectCommands.indirectCommandBuffer == 0)
 		state.indirectCommands.indirectCommandBuffer = _indirectCommandBuffer;
-
-	GLuint VBO = IndirectDrawManager::Instance()->GetVBO();
-	GLuint EBO = IndirectDrawManager::Instance()->GetEBO();
-	if (VBO != 0 && EBO != 0)
-		BindVAO(state.indirectCommands.indirectVAO, VBO, EBO);
 
 	auto& staticMesh_Transforms = registry.Load<std::vector<glm::mat4>>("staticMesh_Transforms");
 	if (!state.indirectCommands.ssbo_StaticMesh_Transforms)

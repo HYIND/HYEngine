@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Helper/Buffer.h"
+#include <cstdint>
 
 class SegmentBufferBase
 {

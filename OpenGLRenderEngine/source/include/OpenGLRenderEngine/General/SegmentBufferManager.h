@@ -26,7 +26,7 @@ class SegmentBufferManager
 {
 
 public:
-	SegmentBufferManager(uint64_t initsize = 1024);
+	SegmentBufferManager(uint64_t initsize = 102400);
 	SegmentBufferManager(std::unique_ptr<BufferImpl>&& buffer);
 
 	bool AddSegment(const SegmentID& id, void* userData, const void* mem, size_t length, SegmentData& data);	// 检查id，重复时添加失败

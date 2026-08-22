@@ -71,7 +71,8 @@ vec3 CalcLighting(
     mat4 view, vec3 cameraPos, float cameraFarPlane,
 	sampler2D atlasMap,
     vec3 fragPos, vec3 normal, 
-    vec3 albedo, float metallic, float roughness, float ambientOcclusion
+    vec3 albedo, float metallic,
+	float roughness, float ambientOcclusion
 )
 {
 	vec3 viewDir = normalize(fragPos - cameraPos);		
@@ -312,8 +313,8 @@ vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos,
 	
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }
@@ -344,8 +345,8 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
 
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }
@@ -394,8 +395,8 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 
 	vec3 result = (1.0 - shadow) * lightingColor * intensity;              
 	
-	vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * albedo * ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }

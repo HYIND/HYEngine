@@ -16,7 +16,7 @@ SSGIPass::SSGIPass(
 {
 	_ssgiShader.AddDefineMacro("work_size_x", work_size_x);
 	_ssgiShader.AddDefineMacro("work_size_y", work_size_y);
-	_ssgiShader.AddDefineMacro("MAX_STEPS", OpenGLRenderConfig::SSGI_Max_Step);
+	_ssgiShader.AddDefineMacro("Max_Bounce_limit", OpenGLRenderConfig::SSTrace_Max_Bounce_limit);
 	_ssgiShader.CompileFromFile(ssgiComputerShaderPath);
 
 	_spatialDenoisingShader.AddDefineMacro("work_size_x", work_size_x);
@@ -40,7 +40,6 @@ void SSGIPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const Ope
 {
 	if (!ShouldExecute(registry, state))
 		return;
-
 
 	FrameRenderData data;
 	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
@@ -107,12 +106,14 @@ bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
 
 	_ssgiShader.setIVec2("screenSize", data.drawSize);
 
-	_ssgiShader.setFloat("tMin", state.option.ssgiTraceParams.tMin);
-	_ssgiShader.setFloat("tMax", state.option.ssgiTraceParams.tMax);
-	_ssgiShader.setInt("sampleRayCount", OpenGLRenderConfig::SSGI_NUM_SAMPLES);
-	_ssgiShader.setFloat("sampleIndirectClampValue", OpenGLRenderConfig::SSGI_Sample_Indirect_Clamp_Value);
-	_ssgiShader.setFloat("GIIntensity", OpenGLRenderConfig::SSGI_GIIntensity);
-	_ssgiShader.setFloat("AOIntensity", OpenGLRenderConfig::SSGI_AOIntensity);
+	_ssgiShader.setFloat("tMin", std::max(0.f, state.option.ssgiTraceParams.tMin));
+	_ssgiShader.setFloat("tMax", std::max(0.f, state.option.ssgiTraceParams.tMax));
+	_ssgiShader.setInt("SampleRayCount", state.option.ssgiTraceParams.NumSamples);
+	_ssgiShader.setInt("RayMarchingMaxStep", std::max(2, state.option.ssgiTraceParams.RayMarchingMaxStep));
+	_ssgiShader.setFloat("SampleIndirectClampValue", std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value));
+	_ssgiShader.setFloat("GIIntensity", std::max(0.f, state.option.ssgiTraceParams.GIIntensity));
+	_ssgiShader.setFloat("AOIntensity", std::max(0.f, state.option.ssgiTraceParams.AOIntensity));
+	_ssgiShader.setFloat("DistanceFactor", std::max(0.0001f, state.option.ssgiTraceParams.DistanceFactor));
 
 
 	_ssgiShader.setTexture(data.gPosition, "gPosition", 5);
@@ -158,10 +159,10 @@ bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
 	_spatialDenoisingShader.setTexture(data.gNormal, "gNormal", 6);
 	_spatialDenoisingShader.setTexture(data.depthMap, "depthMap", 10);
 
-	_spatialDenoisingShader.setFloat("blurRadius", OpenGLRenderConfig::SSGI_BlurRadius);
-	_spatialDenoisingShader.setFloat("blurDepthWeight", OpenGLRenderConfig::SSGI_BlurDepthWeight);
-	_spatialDenoisingShader.setInt("kernelSize", OpenGLRenderConfig::SSGI_BlurKernelSize);
-	_spatialDenoisingShader.setFloat("sigma", OpenGLRenderConfig::SSGI_BlurGaussSigma);
+	_spatialDenoisingShader.setFloat("blurRadius", state.option.ssgiTraceParams.BlurRadius);
+	_spatialDenoisingShader.setFloat("blurDepthWeight", state.option.ssgiTraceParams.BlurDepthWeight);
+	_spatialDenoisingShader.setInt("kernelSize", state.option.ssgiTraceParams.BlurKernelSize);
+	_spatialDenoisingShader.setFloat("sigma", state.option.ssgiTraceParams.BlurGaussSigma);
 
 	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);

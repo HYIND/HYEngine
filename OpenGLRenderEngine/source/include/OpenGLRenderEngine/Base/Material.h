@@ -36,27 +36,19 @@ struct MaterialProperties
 	float roughness = 0.6f;					// 粗糙度 (0-1)
 	float ambientOcclusion = 1.0f;			// 环境光遮蔽
 
+
 	// 透明属性
 	float opacity = 1.0f;
-
 	// 折射属性
 	float IOR = 1.f;			// 折射率，决定折射角度，详情查IOR折射率表
+
+	glm::vec3 emissionColor = glm::vec3(1.f);
+	float emissionStrength = 0.0f;
 
 	AlphaMode alphamode = AlphaMode::Opaque;	// 透明纹理使用模式
 	float maskthreshold = 0.5f;					// Mask模式下的阈值
 
 	bool twosided = false;		//绘制双面
-
-	// 是否使用纹理
-	bool useAlbedoTexture = true;
-	bool useMetallicTexture = true;
-	bool useRoughnessTexture = true;
-	bool useNormalTexture = true;
-	bool useAOTexture = true;
-	bool useEmissiveTexture = true;
-	bool useMetallicRoughnessTexture = true;
-	bool useHeightTexture = true;
-	bool useOpacityTexture = true;
 };
 
 // GPU结构体
@@ -68,8 +60,10 @@ struct alignas(16) MaterialData
 	float ambientOcclusion = 1.0f;
 
 	float opacity = 1.0f;
-
 	float IOR = 1.f;
+
+	glm::vec3 emissionColor = glm::vec3(1.f);
+	float emissionStrength = 0.0f;
 
 	AlphaMode alphamode = AlphaMode::Opaque;
 	float maskthreshold = 0.5f;
@@ -120,6 +114,8 @@ public:
 	void SetAlpahMode(AlphaMode mode);
 	void SetMaskThreshold(float value);
 	void SetTwoSided(bool value);
+	void SetEmissionColor(const glm::vec3& color);
+	void SetEmissionStrength(float value);
 
 	// 获取属性
 	MaterialProperties GetProperties() const;
@@ -132,6 +128,9 @@ public:
 	AlphaMode GetAlphaMode() const;
 	float GetMaskThreshold() const;
 	bool GetTwoSided() const;
+	glm::vec3 GetEmissionColor() const;
+	float GetEmissionStrength() const;
+
 	uint32_t GetVersion() const;
 	const std::string& GetUUID() const;
 

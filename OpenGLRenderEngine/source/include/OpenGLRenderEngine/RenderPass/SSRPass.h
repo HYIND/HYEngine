@@ -40,7 +40,6 @@ private:
 
 	bool DrawSSR(FrameRenderData& data, RenderState& state);
 	bool DrawBlur(FrameRenderData& data, RenderState& state);
-	//bool DrawOverlay(RenderState& state);
 
 private:
 	Shader _ssrShader;
