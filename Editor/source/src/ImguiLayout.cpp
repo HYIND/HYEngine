@@ -1168,11 +1168,12 @@ static bool PropertiesHelper::DrawData(RenderOption& option)
 	bool anyChange = false;
 	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessFlags", option.flags);
 	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessParams", option.postProcessParams);
-	anyChange |= PropertiesHelper::DrawWithTitle("DepthFogParams", option.depthFogParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("rayTraceGeneralParams", option.rayTraceGeneralParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceReflectParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSReflectParams", option.ssrTraceParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSGIParams", option.ssgiTraceParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("DepthFogParams", option.depthFogParams);
 	return anyChange;
 }
 

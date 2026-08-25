@@ -45,8 +45,22 @@ RenderContext::~RenderContext()
 		// 线程的opengl上下文释放时机似乎先于thread_local变量析构，本线程直接wglDeleteContext会非法访问
 		// 转移到专用线程进行析构
 		delete_context_pool.submit([hglrc = this->hglrc, hdc = this->hdc]()->void {
-			if (hglrc) wglDeleteContext(hglrc);
-			if (hdc) ReleaseDC(RENDERCONTEXMANAGER->GetHwnd(), hdc);
+			try
+			{
+
+				if (hglrc)
+				{
+					BOOL res = wglDeleteContext(hglrc);
+				}
+				if (hdc)
+				{
+					int res = ReleaseDC(RENDERCONTEXMANAGER->GetHwnd(), hdc);
+				}
+			}
+			catch (const std::exception&)
+			{
+
+			}
 			});
 	}
 }
@@ -62,7 +76,7 @@ HDC RenderContext::GetHDC()
 
 HGLRC RenderContext::GetHGLRC()
 {
-	if (!g_Enable) 
+	if (!g_Enable)
 		return NULL;
 
 	NeedHGLRC();
@@ -81,7 +95,7 @@ void RenderContext::Bind()
 
 void RenderContext::UnBind()
 {
-	if (!g_Enable) 
+	if (!g_Enable)
 		return;
 
 	wglMakeCurrent(NULL, NULL);
@@ -95,7 +109,7 @@ bool RenderContext::IsBind()
 
 void RenderContext::Release()
 {
-	if (!g_Enable) 
+	if (!g_Enable)
 		return;
 
 	if (hglrc)
@@ -123,7 +137,7 @@ void RenderContext::SetMain(bool value)
 
 void RenderContext::NeedHDC()
 {
-	if (!g_Enable) 
+	if (!g_Enable)
 		return;
 
 	if (!hdc)
@@ -163,7 +177,7 @@ void RenderContext::NeedHDC()
 
 void RenderContext::NeedHGLRC()
 {
-	if (!g_Enable) 
+	if (!g_Enable)
 		return;
 
 	NeedHDC();

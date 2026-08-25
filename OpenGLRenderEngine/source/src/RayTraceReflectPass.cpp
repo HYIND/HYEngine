@@ -49,6 +49,7 @@ void RayTraceReflectPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry
 	data.gAlbedoOpacity = ctx.GetInput(2);
 	data.gMetallicRoughness = ctx.GetInput(3);
 	data.atlasShadowMap = ctx.GetInput(4);
+	data.ssaoMap = ctx.GetInput(5);
 
 	data.sceneDepthBuffer = ctx.GetExternal(0);
 
@@ -75,7 +76,6 @@ void RayTraceReflectPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry
 
 void RayTraceReflectPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	SetEnableDenoised(state.option.rayTraceReflectParams.useDenoised);
 	if (!ShouldExecute(registry, state))
 		return;
 }
@@ -112,16 +112,20 @@ bool RayTraceReflectPass::DrawRayTrace(FrameRenderData& data, RenderState& state
 	//光追参数
 	rayTraceShader.setFloat("tMin", std::max(0.f, state.option.rayTraceReflectParams.tMin));
 	rayTraceShader.setFloat("tMax", std::max(0.f, state.option.rayTraceReflectParams.tMax));
-	rayTraceShader.setInt("maxBounce", std::max(1, std::min(state.option.rayTraceReflectParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit)));
+	rayTraceShader.setUInt("maxBounce", std::max((uint32_t)1, std::min(state.option.rayTraceReflectParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit)));
 
+	rayTraceShader.setUInt("sampleRayCount", std::max((uint32_t)1, state.option.rayTraceReflectParams.NumSamples));
+
+	rayTraceShader.setInt("frameIndex", state.renderRecord.frameIndex % 100000);
 
 	rayTraceShader.setTexture(data.gPosition, "gPosition", 5);
 	rayTraceShader.setTexture(data.gNormal, "gNormal", 6);
 	rayTraceShader.setTexture(data.gAlbedoOpacity, "gAlbedoOpacity", 7);
 	rayTraceShader.setTexture(data.gMetallicRoughness, "gMetallicRoughness", 8);
 	rayTraceShader.setTexture(data.sceneDepthBuffer, "depthMap", 9);
-
 	rayTraceShader.setTexture(data.atlasShadowMap, "atlasShadowMap", 10);
+	rayTraceShader.setTexture(data.ssaoMap, "SSAOMap", 11);
+
 
 	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 
@@ -161,7 +165,7 @@ bool RayTraceReflectPass::DrawScale(FrameRenderData& data, RenderState& state)
 	std::shared_ptr<Texture2D> srcTex;
 	std::shared_ptr<Texture2D>& targetTex = data.outPutTexture;
 
-	if (useDenoised && data.denoisedTexture && !data.denoisedTexture->IsEmpty())
+	if (data.denoisedTexture && !data.denoisedTexture->IsEmpty())
 		srcTex = data.denoisedTexture;
 	else
 		srcTex = data.originTexture;
@@ -199,14 +203,6 @@ bool RayTraceReflectPass::DrawScale(FrameRenderData& data, RenderState& state)
 	}
 
 	return true;
-}
-
-void RayTraceReflectPass::SetEnableDenoised(bool enable)
-{
-	if (useDenoised == enable)
-		return;
-
-	useDenoised = enable;
 }
 
 bool RayTraceReflectPass::BindGeneralData(Shader& shader)

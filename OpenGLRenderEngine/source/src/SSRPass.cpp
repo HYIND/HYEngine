@@ -72,8 +72,8 @@ bool SSRPass::DrawSSR(FrameRenderData& data, RenderState& state)
 	//光追参数
 	_ssrShader.setFloat("tMin", std::max(0.f, state.option.ssrTraceParams.tMin));
 	_ssrShader.setFloat("tMax", std::max(0.f, state.option.ssrTraceParams.tMax));
-	_ssrShader.setInt("maxBounce", std::max(0, std::min(state.option.ssrTraceParams.maxBounceLimit, OpenGLRenderConfig::SSTrace_Max_Bounce_limit)));
-	_ssrShader.setInt("RayMarchingMaxStep", std::max(2, state.option.ssrTraceParams.RayMarchingMaxStep));
+	_ssrShader.setUInt("maxBounce", std::max((uint32_t)1, std::min(state.option.ssrTraceParams.maxBounceLimit, OpenGLRenderConfig::SSTrace_Max_Bounce_limit)));
+	_ssrShader.setUInt("RayMarchingMaxStep", std::max((uint32_t)2, state.option.ssrTraceParams.RayMarchingMaxStep));
 
 	_ssrShader.setTexture(data.gPosition, "gPosition", 5);
 	_ssrShader.setTexture(data.gNormal, "gNormal", 6);

@@ -1,4 +1,4 @@
-#include "OpenGLRenderEngine/General/GeneralSegmentBuffer.h"
+ï»¿#include "OpenGLRenderEngine/General/GeneralSegmentBuffer.h"
 #include "OpenGLRenderEngine/General/OpenGLRenderContext.h"
 
 MemorySegmentBuffer::MemorySegmentBuffer() {}
@@ -101,18 +101,18 @@ void GPUBufferSegmentBuffer::Memcpy(uint64_t destFirst, uint64_t srcFirst, uint6
 
 	Need();
 
-	// ´´½¨ÁÙÊ±»º³å
+	// åˆ›å»ºä¸´æ—¶ç¼“å†²
 	GLuint tempBuffer;
 	glCreateBuffers(1, &tempBuffer);
 
-	// ´ÓÔ­SSBO¿½±´µ½ÁÙÊ±»º³å
+	// ä»åŸSSBOæ‹·è´åˆ°ä¸´æ—¶ç¼“å†²
 	glNamedBufferStorage(tempBuffer, length, nullptr, 0);
 	glCopyNamedBufferSubData(_buffer, tempBuffer, srcFirst, 0, length);
 
-	// ´ÓÁÙÊ±»º³å¿½»ØÔ­SSBOµÄÄ¿±êÎ»ÖÃ
+	// ä»ä¸´æ—¶ç¼“å†²æ‹·å›åŸSSBOçš„ç›®æ ‡ä½ç½®
 	glCopyNamedBufferSubData(tempBuffer, _buffer, 0, destFirst, length);
 
-	// ÇåÀí
+	// æ¸…ç†
 	glDeleteBuffers(1, &tempBuffer);
 }
 

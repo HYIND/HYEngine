@@ -18,6 +18,24 @@ namespace MapBoundary
 
 namespace Render
 {
+	class OpenGLRenderFrameDataAnalysisHelp
+	{
+
+	public:
+		static void AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state);
+
+	private:
+		static void processSceneModel(
+			RenderState& state,
+			OpenGLRenderObjectData::SceneRenderData& renderData,
+			const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
+		);
+		static void processFirstPersonModel(
+			RenderState& state,
+			OpenGLRenderObjectData::FirstPersonRenderData& renderData,
+			const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data);
+	};
+
 	class Renderer
 	{
 		struct EarlyProcessData
@@ -52,19 +70,6 @@ namespace Render
 		void processSprite(std::shared_ptr<D2DRenderContext::SpriteRenderData> data);
 		void processGIFAnimation(std::shared_ptr<D2DRenderContext::GIFAnimationRenderData> data);
 		void processDebugLines(std::shared_ptr<D2DRenderContext::DebugLineRenderData> data);
-
-	private:
-		void AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state);
-
-		void processSceneModel(
-			RenderState& state,
-			OpenGLRenderObjectData::SceneRenderData& renderData,
-			const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
-		);
-		void processFirstPersonModel(
-			RenderState& state,
-			OpenGLRenderObjectData::FirstPersonRenderData& renderData,
-			const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data);
 
 		void ConvertGLTextureToD2DBitmap();
 		void ConvertGLTextureToD2DBitmap1();

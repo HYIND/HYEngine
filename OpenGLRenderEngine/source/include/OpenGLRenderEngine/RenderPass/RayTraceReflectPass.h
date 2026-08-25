@@ -31,6 +31,7 @@ private:
 		std::shared_ptr<Texture2D> gMetallicRoughness;
 		std::shared_ptr<Texture2D> sceneDepthBuffer;
 		std::shared_ptr<Texture2D> atlasShadowMap;
+		std::shared_ptr<Texture2D> ssaoMap;
 
 		std::shared_ptr<Texture2D> historyColorTexture;
 
@@ -42,8 +43,6 @@ private:
 	bool DrawRayTrace(FrameRenderData& data, RenderState& state);
 	bool DrawDenoised(FrameRenderData& data, RenderState& state);
 	bool DrawScale(FrameRenderData& data, RenderState& state);
-
-	void SetEnableDenoised(bool enable);
 
 	bool BindGeneralData(Shader& shader);
 

@@ -23,18 +23,24 @@ void main()
 		discard;
 
 	vec3 fragPos = texture(gPosition, FragTexCoords).rgb;
-    vec3 albedo = texture(gAlbedoOpacity, FragTexCoords).rgb;
 	vec4 metallicRoughness = texture(gMetallicRoughness, FragTexCoords);
-	float metallic = metallicRoughness.r;
-	float roughness = metallicRoughness.g;
-	float ambientOcclusion = clamp(min(texture(ssao, FragTexCoords).r, metallicRoughness.b), 0.f, 1.f);
+
+	PBRProperties prop;
+    prop.albedo = texture(gAlbedoOpacity, FragTexCoords).rgb;
+	prop.metallic = metallicRoughness.r;
+	prop.roughness = metallicRoughness.g;
+	prop.ambientOcclusion = clamp(min(texture(ssao, FragTexCoords).r, metallicRoughness.b), 0.f, 1.f);
+
 	vec3 emission = texture(gEmission, FragTexCoords).rgb;
-
-	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal,
-									albedo, metallic, roughness, ambientOcclusion);
-
-	FragColor = vec4(lightColor + emission, 1.0f);
-	// FragColor = vec4(1,0,0, 1.0f);
+	if (emission.x > 0 || emission.y > 0 || emission.z > 0)
+	{
+		FragColor = vec4(emission, 1.0f);
+	}
+	else 
+	{
+		vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal, prop);
+		FragColor = vec4(lightColor, 1.0f);
+	}
 
 	float brightness = dot(FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)

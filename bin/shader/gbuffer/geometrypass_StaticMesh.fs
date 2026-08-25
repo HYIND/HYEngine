@@ -35,7 +35,7 @@ float calculateOpacity(MaterialData material, vec2 uv)
 	float opacity = material.opacity;
 	if (material.texture_opacity_count > 0)
 		opacity *= texture(material.texture_opacity, uv).r;
-	else 
+	else if (material.texture_albedo_count > 0)
 		opacity *= texture(material.texture_albedo, uv).a;
 
 	if (material.alphamode == 1)	//Mask

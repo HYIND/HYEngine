@@ -58,7 +58,7 @@ private:
 	Shader _temporalDenoisingShader;
 	Shader _scaleShader;
 
-	mutable bool _firstDrawTemporal;
+	mutable bool _firstDrawTemporal; 
 	mutable bool _enable;
 
 	std::shared_ptr<RayTraceGeneralBuffer> _buffers;

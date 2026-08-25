@@ -68,7 +68,7 @@ public:
 
 		float avgCost = float(timeMicroAccumulator) / float(fpsAccumulator) / 1000.f;
 		float Fps = 1000.f / avgCost;
-		std::cout << std::format("Fps = {} ms, avg frame cost {} ms\n", Fps, avgCost);
+		std::cout << std::format("Fps = {} , avg frame cost {} ms\n", Fps, avgCost);
 
 		fpsAccumulator = 0;
 		timeMicroAccumulator = 0;
