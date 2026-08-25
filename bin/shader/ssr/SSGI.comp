@@ -19,8 +19,8 @@ const float PI = 3.14159265359;
 uniform float tMin;
 uniform float tMax;
 
-uniform int SampleRayCount;
-uniform int RayMarchingMaxStep;
+uniform uint SampleRayCount;
+uniform uint RayMarchingMaxStep;
 uniform float SampleIndirectClampValue;
 uniform float GIIntensity;
 uniform float AOIntensity;
@@ -107,7 +107,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
 	vec2 screenStart = startTexPos * screenSize;
 	vec2 screenEnd = endTexPos * screenSize;
 	float pixelLength = length(screenEnd -  screenStart);
-	int steps = min(int(pixelLength) + 1, RayMarchingMaxStep);
+	uint steps = min(int(pixelLength) + 1, RayMarchingMaxStep);
 
 	vec2 screenStep = (screenEnd -  screenStart) / steps;
 	float zStart = -startViewPos.z;
@@ -127,7 +127,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
 #endif
 
 
-	for(int i = 1;i <= steps; i++)
+	for(uint i = 1;i <= steps; i++)
 	{
 		float t = float(i) / float(steps); //步进比例
 
@@ -299,7 +299,7 @@ int RayTraceOnSceenHBZ(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空�
     int startLevel = int(floor(log2(pixelLength)));
     startLevel = clamp(startLevel, 0, min(5, maxLevel - 1));
 
-    int steps = 1;
+    uint steps = 1;
 
     for (int level = startLevel; level >= 0; level--) 
     {
@@ -309,12 +309,12 @@ int RayTraceOnSceenHBZ(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空�
         vec2 level_screenStart = startTexPos * level_screenSize;
         vec2 level_screenEnd = endTexPos * level_screenSize;
         float pixelLength = length(level_screenEnd -  level_screenStart);
-        steps = min(int(pixelLength) + 1 , RayMarchingMaxStep);
+        steps = min(uint(pixelLength) + 1 , RayMarchingMaxStep);
         vec2 level_screenStep = (level_screenEnd -  level_screenStart) / steps;
 
         bool outofBroad = false;
 
-        for(int i = 1;i <= steps; i++)
+        for(uint i = 1;i <= steps; i++)
         {
 		    float t = float(i) / float(steps); //步进比例
 
@@ -565,7 +565,7 @@ float halton(uint index, int base)
 }
 
 // 生成一对 Halton 样本（用于余弦加权半球）
-vec2 getRandom(int sampleIndex) 
+vec2 getRandom(uint sampleIndex) 
 {
     uint seed = uint(gl_GlobalInvocationID.x) * 197u 
             + uint(gl_GlobalInvocationID.y) * 927u 
@@ -603,11 +603,11 @@ vec3 sampleHemisphere(vec3 normal, vec2 random)
     return samplerDir;
 }
 
-vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, int sampleCount) 
+vec3 traceRayWithHemisphereSample(vec3 fragPos, vec3 normal, uint sampleCount) 
 {
     vec3 totalIndirect = vec3(0.0);
 
-    for (int i = 0; i < sampleCount; i++) 
+    for (uint i = 0; i < sampleCount; i++) 
     {
         vec2 random = getRandom(i *23);
         vec3 samplerDir = sampleHemisphere(normal, random);
@@ -665,8 +665,7 @@ void main()
     vec3 fragPos = texture(gPosition, uv).rgb;
     vec3 normal = normalize(texture(gNormal, uv).rgb);
 
-    int sampleCount = max(1, SampleRayCount);
-    vec3 color = traceRayWithHemisphereSample(fragPos, normal, sampleCount);
+    vec3 color = traceRayWithHemisphereSample(fragPos, normal, SampleRayCount);
 
     vec3 N = normal;
     vec3 V = normalize(camera.position - fragPos);

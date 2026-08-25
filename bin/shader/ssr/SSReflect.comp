@@ -12,8 +12,8 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 uniform float tMin;
 uniform float tMax;
-uniform int maxBounce;       // 最大反射次数
-uniform int RayMarchingMaxStep;
+uniform uint maxBounce;       // 最大反射次数
+uniform uint RayMarchingMaxStep;
 
 uniform ivec2 screenSize;
 
@@ -100,7 +100,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
 	vec2 screenStart = startTexPos.xy * screenSize;
 	vec2 screenEnd = endTexPos.xy * screenSize;
 	float pixelLength = length(screenEnd -  screenStart);
-	int steps = int(pixelLength) + 1;
+	uint steps = uint(pixelLength) + 1;
 
 	steps = min(steps / 4 + 1, RayMarchingMaxStep);
 
@@ -124,7 +124,7 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, inout vec2 uv)	//从世界空间�
     float samplerDepth;
     float storedViewDepth;
 
-	for(int i = 1;i <= steps; i++)
+	for(uint i = 1;i <= steps; i++)
 	{
 		float t = float(i) / float(steps); //步进比例
 
@@ -251,7 +251,7 @@ vec3 calculateRelfectFact(vec3 rayDir, vec3 normal, vec3 f0)
     return f0 + (1.0f - f0) * x5;	//反射光强度
 }
 
-bool traceRay(Ray ray, int maxBounce, inout vec3 lightingColors[Max_Bounce_limit + 1], inout vec3 fresnelFacts[Max_Bounce_limit + 1], inout int hitCount) 
+bool traceRay(Ray ray, uint maxBounce, inout vec3 lightingColors[Max_Bounce_limit + 1], inout vec3 fresnelFacts[Max_Bounce_limit + 1], inout int hitCount) 
 {
     bool isHit = false;
     vec3 throughput = vec3(1.0f);
@@ -259,7 +259,7 @@ bool traceRay(Ray ray, int maxBounce, inout vec3 lightingColors[Max_Bounce_limit
 	vec2 screenSize = textureSize(colorMap, 0);
     vec2 uv;
 
-    for (int depth = 0; depth <= maxBounce; depth++) 
+    for (uint depth = 0; depth <= maxBounce; depth++) 
     {
         int result = RayTraceOnSceen(ray, screenSize, uv);
         if(result == 0 || result == 2)
@@ -320,8 +320,7 @@ void main()
     getPBRProperties(uv, albedo, metallic, roughness);
     vec3 F0 = mix(vec3(0.02), albedo, metallic);    
 
-    int bounce = clamp(maxBounce, 0 , Max_Bounce_limit);
-    if(length(F0) < 0.02 || bounce <= 0)
+    if(length(F0) < 0.02)
         return;
 
     vec3 normal = normalize(texture(gNormal, uv).rgb);
@@ -343,13 +342,12 @@ void main()
 
     if(ray.tMin < 0 || ray.tMax < 0)
         return;
-    bounce = bounce - 1;
 
     int hitCount = 0;
     vec3 lightingColors[Max_Bounce_limit + 1];
     vec3 fresnelFacts[Max_Bounce_limit + 1];
 
-    if(traceRay(ray, bounce, lightingColors, fresnelFacts, hitCount))
+    if(traceRay(ray, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), lightingColors, fresnelFacts, hitCount))
     {
         vec3 result = lightingColors[hitCount - 1];
         for (int i = hitCount - 2; i >= 0; i--)       

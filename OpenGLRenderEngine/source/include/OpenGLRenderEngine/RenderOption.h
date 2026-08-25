@@ -12,21 +12,25 @@ struct RenderOption
 	struct RayTraceReflectParams {
 		float tMin = 0.01;
 		float tMax = 300.f;
-		int maxBounceLimit = 2;
-		bool useDenoised = false;
+		uint32_t maxBounceLimit = 2;
+
+		uint32_t NumSamples = 1;
+
+		uint32_t BlurKernelSize = 0;
+		float BlurGaussSigma = 1.8;
+		float BlurRadius = 1;
+		float BlurDepthWeight = 10.0;
 	} rayTraceReflectParams;
 
 	struct RayTraceGIParams {
 		float tMin = 0.01;
 		float tMax = 300.f;
-		int maxBounceLimit = 2;
+		uint32_t maxBounceLimit = 2;
 
-		int NumSamples = 1;
+		uint32_t NumSamples = 1;
 		float GIIntensity = 1.0;
-		float AOIntensity = 0.6;
-		float DistanceFactor = 0.05;
 
-		int BlurKernelSize = 3;
+		uint32_t BlurKernelSize = 0;
 		float BlurGaussSigma = 1.8;
 		float BlurRadius = 1;
 		float BlurDepthWeight = 10.0;
@@ -35,11 +39,11 @@ struct RenderOption
 	struct SSRTraceParams {
 		float tMin = 0.01;
 		float tMax = 300.f;
-		int maxBounceLimit = 1;
+		uint32_t maxBounceLimit = 1;
 
-		int RayMarchingMaxStep = 256;
+		uint32_t RayMarchingMaxStep = 256;
 
-		int BlurKernelSize = 3;
+		uint32_t BlurKernelSize = 3;
 		float BlurGaussSigma = 0.6;
 		float BlurRadius = 0.5;
 		float BlurDepthWeight = 10.0;
@@ -49,16 +53,16 @@ struct RenderOption
 	struct SSGITraceParams {
 		float tMin = 0.01;
 		float tMax = 100.f;
-		int maxBounceLimit = 1;
+		uint32_t maxBounceLimit = 1;
 
-		int RayMarchingMaxStep = 25;
-		int NumSamples = 6;
+		uint32_t RayMarchingMaxStep = 25;
+		uint32_t NumSamples = 6;
 		float Sample_Indirect_Clamp_Value = 5.0;
 		float GIIntensity = 8;
 		float AOIntensity = 0.6;
 		float DistanceFactor = 0.05;
 
-		int BlurKernelSize = 3;
+		uint32_t BlurKernelSize = 3;
 		float BlurGaussSigma = 1.8;
 		float BlurRadius = 1;
 		float BlurDepthWeight = 10.0;

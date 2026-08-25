@@ -108,8 +108,8 @@ bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
 
 	_ssgiShader.setFloat("tMin", std::max(0.f, state.option.ssgiTraceParams.tMin));
 	_ssgiShader.setFloat("tMax", std::max(0.f, state.option.ssgiTraceParams.tMax));
-	_ssgiShader.setInt("SampleRayCount", state.option.ssgiTraceParams.NumSamples);
-	_ssgiShader.setInt("RayMarchingMaxStep", std::max(2, state.option.ssgiTraceParams.RayMarchingMaxStep));
+	_ssgiShader.setUInt("SampleRayCount", state.option.ssgiTraceParams.NumSamples);
+	_ssgiShader.setUInt("RayMarchingMaxStep", std::max((uint32_t)2, state.option.ssgiTraceParams.RayMarchingMaxStep));
 	_ssgiShader.setFloat("SampleIndirectClampValue", std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value));
 	_ssgiShader.setFloat("GIIntensity", std::max(0.f, state.option.ssgiTraceParams.GIIntensity));
 	_ssgiShader.setFloat("AOIntensity", std::max(0.f, state.option.ssgiTraceParams.AOIntensity));

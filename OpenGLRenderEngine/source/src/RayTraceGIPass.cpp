@@ -130,12 +130,10 @@ bool RayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
 	//光追参数
 	rayTraceShader.setFloat("tMin", std::max(0.f, state.option.rayTraceGIParams.tMin));
 	rayTraceShader.setFloat("tMax", std::max(0.f, state.option.rayTraceGIParams.tMax));
-	rayTraceShader.setInt("maxBounce", std::max(1, std::min(state.option.rayTraceGIParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit)));
+	rayTraceShader.setUInt("maxBounce", std::max((uint32_t)1, std::min(state.option.rayTraceGIParams.maxBounceLimit, OpenGLRenderConfig::RayTrace_Max_Bounce_limit)));
 
-	rayTraceShader.setInt("sampleRayCount", std::max(1, state.option.rayTraceGIParams.NumSamples));
+	rayTraceShader.setUInt("sampleRayCount", std::max((uint32_t)1, state.option.rayTraceGIParams.NumSamples));
 	rayTraceShader.setFloat("GIIntensity", std::max(0.01f, state.option.rayTraceGIParams.GIIntensity));
-	rayTraceShader.setFloat("AOIntensity", std::max(0.01f, state.option.rayTraceGIParams.AOIntensity));
-	rayTraceShader.setFloat("DistanceFactor", std::max(0.0001f, state.option.rayTraceGIParams.DistanceFactor));
 
 	rayTraceShader.setInt("frameIndex", state.renderRecord.frameIndex % 100000);
 
@@ -144,10 +142,9 @@ bool RayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
 	rayTraceShader.setTexture(data.gAlbedoOpacity, "gAlbedoOpacity", 7);
 	rayTraceShader.setTexture(data.gMetallicRoughness, "gMetallicRoughness", 8);
 	rayTraceShader.setTexture(data.sceneDepthBuffer, "depthMap", 9);
-
 	rayTraceShader.setTexture(data.atlasShadowMap, "atlasShadowMap", 10);
+	rayTraceShader.setTexture(data.ssaoMap, "SSAOMap", 11);
 
-	if (data.ssaoMap) rayTraceShader.setTexture(data.ssaoMap, "SSAOMap", 11);
 
 	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 

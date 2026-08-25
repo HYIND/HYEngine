@@ -19,19 +19,15 @@ void main()
 	vec3 normal = calculateNormalFromUBO(FragNormal, TBN, FragTextureCoords);
 	float opacity = material.opacity;
 
-	vec3 albedo;
-	float metallic;
-	float roughness;
-	float ambientOcclusion;
-
-	getPBRPropertiesFromUBO(FragTextureCoords, albedo, metallic, roughness, ambientOcclusion);
+	PBRProperties prop;
+	getPBRPropertiesFromUBO(FragTextureCoords, prop.albedo, prop.metallic, prop.roughness, prop.ambientOcclusion);
 
 	if(opacity < 0.005)
 		discard;
 
-	vec3 lightingColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, FragPos, normal, albedo, metallic, roughness, ambientOcclusion);
-	vec3 scatteringColor = albedo;
+	vec3 lightingColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, FragPos, normal, prop);
 
+	vec3 scatteringColor = prop.albedo;
 	float lightingFact = 0.9;
 	float scatteringFact = 0.1;
 

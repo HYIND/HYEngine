@@ -59,16 +59,6 @@ public:
 
 private:
 	void WorldLoop();
-	void AnalysisRenderFrameData(std::shared_ptr<Render::RenderFrameData>& framedata, RenderState& state);
-	void processSceneModel(
-		RenderState& state,
-		OpenGLRenderObjectData::SceneRenderData& renderData,
-		const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
-	);
-	void processFirstPersonModel(
-		RenderState& state,
-		OpenGLRenderObjectData::FirstPersonRenderData& renderData,
-		const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data);
 
 private:
 	std::shared_ptr<World> _world;

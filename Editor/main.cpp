@@ -172,7 +172,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	if (window == nullptr)
 		return 1;
 	glfwMakeContextCurrent(window);
-	glfwSwapInterval(1); // Enable vsync
+	glfwSwapInterval(0); // Disable vsync
+	//glfwSwapInterval(1); // Enable vsync
 
 	glfwSetDropCallback(window, glfw_filedrop_callback);
 

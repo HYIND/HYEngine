@@ -69,7 +69,7 @@ void Material::SetRoughness(float roughness)
 {
 	if (_properties.roughness == roughness)
 		return;
-	_properties.roughness = std::clamp(roughness, 0.f, 1.f);
+	_properties.roughness = std::clamp(roughness, 0.001f, 1.f);
 	SetChange();
 }
 void Material::SetAmbientOcclusion(float ambientOcclusion)

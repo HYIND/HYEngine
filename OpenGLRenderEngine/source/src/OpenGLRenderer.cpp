@@ -361,7 +361,7 @@ void OpenGLRenderer::InitSceneRenderGraph()
 	rayTraceGeneralPass->SetRenderPass(std::move(generalPass));
 
 	rayTraceReflectPass->SetRenderPass(std::move(reflectPass))
-		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap)
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut)
 		.Temp(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_TempOrigin")
 			, resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_TempDenoised"))
 		.External(Ext_RenderTargetDepthBuffer)

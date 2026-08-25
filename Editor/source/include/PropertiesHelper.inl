@@ -100,7 +100,7 @@ template<>
 inline bool PropertiesHelper::DrawField<VariableMaterialData::AlphaMode>(const std::string& name, VariableMaterialData::AlphaMode* value)
 {
 	int currentItem = static_cast<int>(*value);
-	const char* items[] = { "Opaque", "Blend", "Mask" };
+	const char* items[] = { "Opaque", "Mask", "Blend" };
 	if (ImGui::Combo(name.c_str(), &currentItem, items, IM_ARRAYSIZE(items))) {
 		*value = static_cast<VariableMaterialData::AlphaMode>(currentItem);
 		return true;
