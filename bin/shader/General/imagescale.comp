@@ -1,14 +1,23 @@
 #version 450 core
-#extension GL_ARB_gpu_shader_int64 : enable
-#extension GL_ARB_bindless_texture : require
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
 
 layout(local_size_x = 16, local_size_y = 16) in; 
 
-layout(binding = 0, rgba16f) uniform image2D srcImage;
-layout(binding = 1, rgba16f) uniform image2D destImage;
+layout (binding = 0) uniform Params
+{
+    ivec2 srcScreenSize;
+    ivec2 destScreenSize;
+};
 
-uniform ivec2 srcScreenSize;
-uniform ivec2 destScreenSize;
+layout (binding = 1, rgba16f) uniform image2D destImage;
+layout (binding = 2, rgba16f) uniform image2D srcImage;
+
 
 void main(){    
     ivec2 destCoord = ivec2(gl_GlobalInvocationID.xy);

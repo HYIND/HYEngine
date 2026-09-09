@@ -1,7 +1,7 @@
 #pragma once
 
-#include "OpenGLRenderEngine/Base/Animator.h"
-#include "OpenGLRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/Base/Animator.h"
+#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
 #include "ECSCore/IComponent.h"
 #include "ECSCore/Entity.h"
 

@@ -1,7 +1,7 @@
-#version 430 core
+#version 450 core
 
 #ifndef work_size_x
-#define work_size_x 16
+#define work_size_x 64
 #endif
 
 #ifndef work_size_y
@@ -10,32 +10,35 @@
 
 layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
 
+#include "shader/dataDef/camerauboDef.comp"
+
 struct AABB
 {
     vec3 minPos;
     vec3 maxPos;
 };
 
-layout(std430, binding = 0) buffer MeshAABB{
+layout(set = 0, binding = 2) buffer MeshAABB{
     AABB aabbdata[];
 };
-layout(std430, binding = 1) buffer OcclusionResults {
+layout(set = 0, binding = 3) buffer OcclusionResults {
     int visibility[];  // 1 = 被遮挡, 0 = 可见
 };
 
-uniform int count = 0;
+layout(set = 0, binding = 4) uniform OccData {
+    mat4 viewProj;
+    ivec2 depthMapSize;
+    int count;
+    int maxLevel;
+};
 
-uniform sampler2D hzbDepthMap;
-uniform ivec2 depthMapSize;
-uniform int maxLevel;
+layout(set = 0, binding = 5) uniform sampler2D hzbDepthMap;
 
-uniform mat4 viewProj;
 
-#include "shader/dataDef/camerauboDef.comp"
 float DepthBufferConvertToViewDepth(float depth)
 {
-    float z_ndc = depth * 2.0 - 1.0;
-    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+    // Vulkan 深度值直接用于逆投影变换
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
 // vec2 ProjectToScreen(vec3 worldPos) 

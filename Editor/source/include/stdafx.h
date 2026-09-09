@@ -8,7 +8,8 @@
 #ifdef _DEBUG
 #pragma comment(lib, "GamePlay_d.lib")
 #pragma comment(lib, "GameRuntime_d.lib")
-#pragma comment(lib, "OpenGLRenderEngine_d.lib")
+#pragma comment(lib, "shaderc_combinedd.lib")
+#pragma comment(lib, "VulkanRenderEngine_d.lib")
 #pragma comment(lib, "Common_d.lib")
 #pragma comment(lib, "net_d.lib")
 #pragma comment(lib, "public_d.lib")
@@ -40,7 +41,8 @@
 #else
 #pragma comment(lib, "GamePlay.lib")
 #pragma comment(lib, "GameRuntime.lib")
-#pragma comment(lib, "OpenGLRenderEngine.lib")
+#pragma comment(lib, "shaderc_combined.lib")
+#pragma comment(lib, "VulkanRenderEngine.lib")
 #pragma comment(lib, "Common.lib")
 #pragma comment(lib, "net.lib")
 #pragma comment(lib, "public.lib")
@@ -71,24 +73,21 @@
 #pragma comment(lib, "LinearMath.lib")
 #endif
 
-
-#pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glew32s.lib")
 #pragma comment(lib, "glfw3.lib")
 
-#define GLEW_STATIC
-#include "GL\glew.h"
+#include "vkstdafx.h"
 
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
-#define GLFW_EXPOSE_NATIVE_WIN32
-#define GLFW_EXPOSE_NATIVE_WGL
-#include "GLFW/glfw3native.h"
 
 // ImGui
 #define IMGUI_DEFINE_MATH_OPERATORS 
+#define IMGUI_IMPL_VULKAN_USE_VOLK
+#define IMGUI_IMPL_VULKAN_VOLK_FILENAME <volk/volk.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
+#include "imgui_impl_vulkan.h"
 #include "imgui_internal.h"
 
 // ImGuizmo

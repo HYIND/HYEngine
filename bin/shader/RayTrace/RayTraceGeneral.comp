@@ -1,4 +1,8 @@
 
+#ifndef Max_Recursive_Depth
+#define Max_Recursive_Depth 20
+#endif
+
 struct Vertex {
     vec3 position;  
 };
@@ -53,24 +57,24 @@ struct BVHNode {
     int idCount; 
 };
 
-layout(std430, binding = 8) buffer TriangleBuffer {
+layout(binding = 0) buffer TriangleBuffer {
     Triangle triangles[];
 } triangleBuffer;
 
-layout(std430, binding = 9) buffer TriangleExtBuffer {
+layout(binding = 1) buffer TriangleExtBuffer {
     Triangle_Extension triangleExts[];
 } triangleExtBuffer;
 
-layout(std430, binding = 10) buffer MeshMatDataBuffer {
+layout(binding = 2) buffer MeshMatDataBuffer {
     MeshMatData meshmatdata[];
 } meshmatDataBuffer;
 
-layout(std430, binding = 11) buffer WorldBVHNodeBuffer {
+layout(binding = 3) buffer WorldBVHNodeBuffer {
     int nodeCount;
     BVHNode nodes[];
 } worldBVHNodeBuffer;
 
-layout(std430, binding = 12) buffer MeshBVHNodeBuffer {
+layout(binding = 4) buffer MeshBVHNodeBuffer {
     BVHNode nodes[];
 } meshBVHNodeBuffer;
 
@@ -212,63 +216,10 @@ vec3 ImportanceSampleGGX(float roughness, vec3 normal, vec3 viewDir, vec2 random
     return L;
 }
 
-float calculateOpacity(MaterialData material, vec2 uv)
-{
-	if (material.alphamode == 0)
-		return material.opacity;
-
-	float opacity = material.opacity;
-	if (material.texture_opacity_count > 0)
-		opacity *= texture(material.texture_opacity, uv).r;
-	else 
-		opacity *= texture(material.texture_albedo, uv).a;
-
-	if (material.alphamode == 1)	//Mask
-		opacity = opacity > material.maskthreshold ? 1.0f : 0.f;
-
-	return opacity;
-}
 
 void getPBRProperties(MaterialData material, vec2 uv, inout PBRProperties prop)
 {
-    prop.albedo = material.texture_albedo_count > 0 ? 
-            texture(material.texture_albedo, uv).rgb * material.albedo
-            :material.albedo;
-
-    prop.ambientOcclusion = material.texture_ao_count > 0 ? 
-                    texture(material.texture_ao, uv).r 
-                    : material.ambientOcclusion;
-
-	if (material.texture_metallicroughness_count > 0)
-	{
-        vec2 values = texture(material.texture_metallicroughness, uv).gb;
-        prop.metallic = values.x;
-        prop.roughness = values.y;
-	}
-    else if (material.texture_metallic_count > 0 && material.texture_roughness_count > 0 
-            && uint64_t(material.texture_metallic) == uint64_t(material.texture_roughness))
-    {
-        vec2 values = texture(material.texture_metallic, uv).gb;
-        prop.metallic = values.x;
-        prop.roughness = values.y;
-    }
-	else 
-	{
-        prop.metallic = material.texture_metallic_count > 0 ?
-                texture(material.texture_metallic, uv).b
-                : material.metallic;
-
-        prop.roughness = material.texture_roughness_count > 0 ? 
-                texture(material.texture_roughness, uv).g
-                : material.roughness;
-	}
-}
-
-vec3 calculateEmission(MaterialData material, vec2 uv)
-{
-    return material.texture_emissive_count > 0 ? 
-            texture(material.texture_emissive, uv).rgb * material.emissionColor
-            :material.emissionColor * material.emissionStrength;
+    getPBRProperties(material, uv, prop.albedo, prop.metallic, prop.roughness, prop.ambientOcclusion);
 }
 
 vec3 CalcContribute_UniformSample(vec3 light, vec3 lightPos, vec3 fragPos, vec3 fragNormal)

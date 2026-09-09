@@ -61,17 +61,17 @@ RayTraceGeneralPass::~RayTraceGeneralPass()
 	}
 }
 
-bool RayTraceGeneralPass::ShouldExecute(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+bool RayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
 }
 
-void RayTraceGeneralPass::Execute(OpenGLRenderGraph::FrameDataRegistry& registry, const OpenGLRenderGraph::PassContext& ctx, RenderState& state)
+void RayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
 {
 	WaitFence(_setupfence);
 }
 
-void RayTraceGeneralPass::FrameBegin(OpenGLRenderGraph::FrameDataRegistry& registry, RenderState& state)
+void RayTraceGeneralPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 
 	if (!ShouldExecute(registry, state))

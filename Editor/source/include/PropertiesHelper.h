@@ -1,11 +1,11 @@
 ﻿#pragma once
 
+#include "stdafx.h"
+
 #include <unordered_map>
 #include <functional>
 #include <vector>
 #include <string>
-#include "imgui.h"
-#include "glm/gtc/type_ptr.hpp"
 
 #include "Reflect.h"
 

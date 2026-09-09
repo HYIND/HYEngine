@@ -1,6 +1,6 @@
 ﻿#include "Project/AssetAnalysisHelper.h"
 
-#include "OpenGLRenderEngine/OpenGLRenderConfig.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
@@ -14,24 +14,24 @@
 #define STB_IMAGE_STATIC
 #include <stb\stb_image.h>
 
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
-#include "OpenGLRenderEngine/Base/AssimpGlmHelpers.h"
+#include "VulkanRenderEngine/VKContext.h"
+#include "VulkanRenderEngine/Base/AssimpGlmHelpers.h"
 
 #include <filesystem>
 #include <map>
 
 namespace fs = std::filesystem;
 
-static std::map<TextureType, TextureConfig> TextureConfigMap =
+static std::map<TextureType, Texture2DConfig> Texture2DConfigMap =
 {
 	// ========== 颜色类贴图（必须三线性，开启AF） ==========
 	{
 		TextureType::Albedo,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			true
 		}
@@ -39,10 +39,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Emissive,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			true
 		}
@@ -51,10 +51,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Normal,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			false
 		}
@@ -62,10 +62,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Roughness,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			false
 		}
@@ -73,10 +73,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Metallic,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			false
 		}
@@ -84,10 +84,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::MetallicRoughness,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			true,
 			false
 		}
@@ -95,10 +95,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::AO,
 		{
-			GL_LINEAR_MIPMAP_LINEAR,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			false,
 			false
 		}
@@ -107,10 +107,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Height,
 		{
-			GL_NEAREST_MIPMAP_NEAREST,
-			GL_LINEAR,
-			GL_REPEAT,
-			GL_REPEAT,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
 			false,
 			false
 		}
@@ -118,10 +118,10 @@ static std::map<TextureType, TextureConfig> TextureConfigMap =
 	{
 		TextureType::Opacity,
 		{
-			GL_NEAREST_MIPMAP_NEAREST,
-			GL_NEAREST,
-			GL_CLAMP_TO_EDGE,
-			GL_CLAMP_TO_EDGE,
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eClampToEdge,
+			vk::SamplerAddressMode::eClampToEdge,
 			false,
 			false
 		}
@@ -135,7 +135,7 @@ inline std::string GetExt(const std::string& path)
 
 inline void SetVertexBoneDataToDefault(Vertex& vertex)
 {
-	for (int i = 0; i < OpenGLRenderConfig::Mesh_Max_Bone_Influence; i++)
+	for (int i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; i++)
 	{
 		vertex.m_BoneIDs[i] = -1;
 		vertex.m_Weights[i] = 0.0f;
@@ -144,10 +144,10 @@ inline void SetVertexBoneDataToDefault(Vertex& vertex)
 
 inline void SetVertexBoneData(Vertex& vertex, int boneID, float weight)
 {
-	if (vertex.m_BoneIDs[OpenGLRenderConfig::Mesh_Max_Bone_Influence - 1] >= 0)
+	if (vertex.m_BoneIDs[GlobalConfig::Mesh_Max_Bone_Influence - 1] >= 0)
 		return;
 
-	for (int i = 0; i < OpenGLRenderConfig::Mesh_Max_Bone_Influence; ++i)
+	for (int i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
 	{
 		if (vertex.m_BoneIDs[i] < 0)
 		{
@@ -215,7 +215,7 @@ private:
 	void processNode(aiNode* node, const aiScene* scene, AnalysisParams& params);
 	void processMesh(aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
 	void ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
-	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config);
+	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> findMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config);
 
 public:
 	const aiScene* _scene = nullptr;
@@ -399,7 +399,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		aiMaterial* ai_material = scene->mMaterials[mesh->mMaterialIndex];
 
 		auto loadTexture = [&](aiTextureType ai_type, TextureType type) -> bool {
-			auto metas = findMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
+			auto metas = findMaterialTextures(ai_material, ai_type, Texture2DConfigMap[type]);
 			if (metas.empty())
 				return false;
 
@@ -513,7 +513,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 	}
 }
 
-std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
+std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config)
 {
 	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> metas;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)

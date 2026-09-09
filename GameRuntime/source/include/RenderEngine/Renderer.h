@@ -5,8 +5,9 @@
 #include "Helper/TripleBuffer.h"
 #include "Helper/DoubleBuffer.h"
 
-#include "OpenGLRenderEngine/OpenGLRenderer.h"
-#include "OpenGLRenderEngine/General/RenderState.h"
+#include "VulkanRenderEngine/VulkanRenderer.h"
+#include "VulkanRenderEngine/General/RenderState.h"
+#include "VulkanRenderEngine/SharedTexture.h"
 
 namespace MapBoundary
 {
@@ -40,7 +41,7 @@ namespace Render
 	{
 		struct EarlyProcessData
 		{
-			std::shared_ptr<OpenGLRenderer> render;
+			std::shared_ptr<VulkanRenderer> render;
 			RenderState state;
 			std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
 		};
@@ -58,21 +59,18 @@ namespace Render
 		void EarlyProcessLoop();
 		void renderFrame();
 		void renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts);
-		void renderOpenGLFrame(std::shared_ptr<OpenGLRenderer>& render, RenderState& state);
+		void renderOpenGLFrame(std::shared_ptr<VulkanRenderer>& render, RenderState& state);
 
-		void InitOpenGLRender(int scr_width, int scr_height);
+		void InitVulkanRender(uint32_t scr_width, uint32_t scr_height);
 
 		int GetOpenGLWidth();
 		int GetOpenGLHeight();
-		std::shared_ptr<OpenGLRenderer> GetOpenGLRender();
+		std::shared_ptr<VulkanRenderer> GetOpenGLRender();
 
 	private:
 		void processSprite(std::shared_ptr<D2DRenderContext::SpriteRenderData> data);
 		void processGIFAnimation(std::shared_ptr<D2DRenderContext::GIFAnimationRenderData> data);
 		void processDebugLines(std::shared_ptr<D2DRenderContext::DebugLineRenderData> data);
-
-		void ConvertGLTextureToD2DBitmap();
-		void ConvertGLTextureToD2DBitmap1();
 
 	public:
 		RenderOption GetOption() const;
@@ -85,16 +83,14 @@ namespace Render
 		ID2D1DeviceContext* _renderTarget = nullptr;
 		RenderTripleBufferPtr _buffers;
 		ID2D1SolidColorBrush* _redBrush;
-		std::shared_ptr<OpenGLRenderer> _openglRenderer;
 
-		ID2D1Bitmap* _openGLBitmap = nullptr;
-		ID2D1Bitmap1* _openGLBitmap1 = nullptr;
-		bool _usebitmap1;
+		std::shared_ptr<VulkanRenderer> _vulkanRenderer;
+		std::shared_ptr<SharedTexture> _sharedTexture;
 
 		RenderOption _option;
 		bool _optionChange;
 
-		bool _isOpenGLInit;
+		bool _isVulkanInit;
 
 		bool _earlyThreadStop;
 		std::shared_ptr<std::thread> _earlyProcessThread;

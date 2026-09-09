@@ -23,6 +23,9 @@
 
 #include "GeneralManager/FocusManager.h"
 #include "GeneralManager/RenderManager.h"
+#include "GeneralManager/WindowHandleManager.h"
+
+
 void HandleKeyboardShortcuts()
 {
 	if (!FocusManager::Instance()->ShouldProcessInput())
@@ -425,18 +428,16 @@ void CreateTestDustScene(World& world)
 
 void SetupeTestGameLight(World& world)
 {
-	//{
-	//	Entity entity = world.createEntityWithTag<TagLight>();
-	//	auto light = std::make_shared<DirLight>(glm::vec3(1, -1, 1));
-	//	light->setShadowMapWidth(3000);
-	//	light->setShadowMapHeight(3000);
-	//	light->setCascadeLevel(4);
-	//	light->setIntensity(2.5);
-	//	auto& renderlight = entity.addComponent<RenderLight>(light);
-	//}
+	{
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 2.5f, true, 4, 3000, 3000);
+		auto& renderlight = entity.getComponent<RenderLight>();
+		renderlight.renderCube = true;
+	}
 
 	{
 		Entity entity = LightFactory::CreatePointLight(world, glm::vec3(0, 10, 100), 300.f, Tool::ColorTemperatureToRGB(25000));
+		auto& renderlight = entity.getComponent<RenderLight>();
+		renderlight.renderCube = true;
 	}
 
 	//{
@@ -498,9 +499,9 @@ void CreateTestGameScene(World& world)
 			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 5, 77));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
+			cameracom.camera.SetFOV(80.f);
 			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetFarPlane(300.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
@@ -1037,11 +1038,11 @@ void GameWorldManager::ProcessGameOver(const json& js)
 	{
 		if (UserInfoManager::Instance()->isMyToken(winnerid))
 		{
-			PostMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, WIN, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+			PostMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, WIN, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 		}
 		else
 		{
-			PostMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, FAIL, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+			PostMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, FAIL, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 		}
 	}
 }

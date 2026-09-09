@@ -1,8 +1,8 @@
 #pragma once
 
 #include "AssetMeta.h"
-#include "OpenGLRenderEngine/Base/Texture2D.h"
-#include "OpenGLRenderEngine/Base/Material.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
+#include "VulkanRenderEngine/Base/Material.h"
 #include <string>
 
 class AssetDescription
@@ -34,14 +34,14 @@ public:
 	virtual bool SaveToFile(const std::string& filePath) override;
 
 	AssetPath GetPath() const;
-	TextureConfig GetConfig() const;
+	Texture2DConfig GetConfig() const;
 
 	void SetPath(const AssetPath& assetPath);
-	void SetConfig(const TextureConfig& config);
+	void SetConfig(const Texture2DConfig& config);
 
 private:
 	AssetPath _path;
-	TextureConfig _config;
+	Texture2DConfig _config;
 };
 
 class AduioAssetDescription : public AssetDescription

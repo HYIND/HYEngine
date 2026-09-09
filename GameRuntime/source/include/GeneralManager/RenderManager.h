@@ -6,7 +6,7 @@
 #include "RenderEngine/RenderFrameManager.h"
 #include "Helper/TripleBuffer.h"
 #include <memory>
-#include "OpenGLRenderEngine/RenderOption.h"
+#include "VulkanRenderEngine/RenderOption.h"
 
 class RenderManager
 {

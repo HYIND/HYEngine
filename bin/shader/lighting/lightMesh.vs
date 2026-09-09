@@ -1,11 +1,24 @@
-#version 450 core
-layout(location = 0) in vec3 position;		
+#version 460 core
+
+layout (location = 0) in vec3 position;		
+
+layout (location = 0) flat out uint index;
 
 #include "shader/dataDef/camerauboDef.comp"
 
-uniform mat4 model;
+struct Param
+{
+	mat4 model;
+	vec3 color;
+};
+
+layout (binding = 0) buffer TransformAndColors
+{
+	Param params[];
+};
 
 void main()
 {
-	gl_Position = camera.projection * camera.view * model * vec4(position, 1.0f);
+	index = gl_BaseInstance;
+	gl_Position = camera.projView * params[gl_BaseInstance].model * vec4(position, 1.0f);
 } 

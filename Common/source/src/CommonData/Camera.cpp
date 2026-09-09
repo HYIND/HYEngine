@@ -23,7 +23,14 @@ Camera::Camera(glm::vec3 position, glm::vec3 target, glm::vec3 worldUp)
 
 glm::mat4 Camera::GetPerspectiveProjectionMatrix(float aspect) const
 {
-	return glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
+	auto proj = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
+	proj[1][1] *= -1.0f;
+	return proj;
+}
+
+glm::mat4 Camera::GetPerspectiveProjectionMatrix(uint32_t width, uint32_t height) const
+{
+	return GetPerspectiveProjectionMatrix((float)width / (float)height);
 }
 
 glm::mat4 Camera::GetViewMatrix() const
@@ -126,7 +133,7 @@ void Camera::SetDirection(const glm::vec3& dir)
 		Pitch = 89.0f;
 	if (Pitch < -89.0f)
 		Pitch = -89.0f;
-	
+
 	updateCameraVectors();
 }
 

@@ -4,7 +4,7 @@
 #include "glm/glm.hpp"
 #include "ECSCore/Entity.h"
 #include "ECSCore/World.h"
-#include "OpenGLRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/Model.h"
 
 class CharacterFactory
 {

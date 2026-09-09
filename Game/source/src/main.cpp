@@ -16,6 +16,7 @@
 #include "GeneralManager/AudioDeviceManager.h"
 #include "GeneralManager/FocusManager.h"
 #include "GeneralManager/MouseManager.h"
+#include "GeneralManager/WindowHandleManager.h"
 #include "Input/Systems/LocalInputSystem.h"
 
 #define MAX_LOADSTRING 100
@@ -249,7 +250,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-	RENDERCONTEXMANAGER->SetHinstance(hInstance);
+	WINDOWHANDLEMANAGER->SetHinstance(hInstance);
 	HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_VISIBLE | WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX | WS_CLIPCHILDREN | WS_EX_COMPOSITED | WS_EX_LAYERED,
 		CW_USEDEFAULT, 0, 1600, 900, nullptr, nullptr, hInstance, nullptr);
 	if (!hWnd)
@@ -284,8 +285,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		RECT rect;
 		GetClientRect(hWnd, &rect);
-		RENDERCONTEXMANAGER->SetHwnd(hWnd);
-		RENDERCONTEXMANAGER->SetRECT(rect);
+		WINDOWHANDLEMANAGER->SetHwnd(hWnd);
+		WINDOWHANDLEMANAGER->SetRect(rect);
 
 		if (ShowConsole)
 			CreateDebugConsole();
@@ -382,13 +383,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				// 开始游戏
 			case IDB_LOCALGAME: {
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = CoroTask::Run([]()->bool {
 						WaitForInitOpenGL();
-						RENDERCONTEXMANAGER->GetThreadRenderContext()->Bind();
 						ResFactory->InitOpenGLResource();
-						RENDERCONTEXMANAGER->GetThreadRenderContext()->Release();
 						GameWorldManager::Instance()->InitGameWorld();
 						return true;
 						});
@@ -412,18 +411,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"游戏初始化失败！", TEXT("开始游戏"), MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"游戏初始化失败！", TEXT("开始游戏"), MB_OK);
 					}
 				}
 				break;
 			}
 							  // 联机大厅
 			case IDB_ENTERHALL: {
-				if (!DialogBox(RENDERCONTEXMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_Userid), hWnd, (DLGPROC)GetID_Proc))
+				if (!DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_Userid), hWnd, (DLGPROC)GetID_Proc))
 					break;
 
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = ConnectManager::Instance()->Login();
 
@@ -438,7 +437,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"登录失败，无法连接到服务器或者非合规用户名！", TEXT("联机大厅"), MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"登录失败，无法连接到服务器或者非合规用户名！", TEXT("联机大厅"), MB_OK);
 					}
 				}
 				break;
@@ -506,7 +505,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				KillTimer(hWnd, hall_refreash);
 				SetTimer(hWnd, room_refreash, 1000, NULL);
 				Set_CurScene(STATUS::Room_Status);
-				UpdateWindow(RENDERCONTEXMANAGER->GetHwnd());
+				UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
 				break;
 			}
 			// 刷新
@@ -522,7 +521,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if (auto selectRoom = LOBBYMANAGER->GetSelectRoom())
 				{
 					BusyLoaderDialog dialog;
-					if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+					if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 					{
 						auto task = LOBBYMANAGER->TryJoinRoom(selectRoom);
 
@@ -531,11 +530,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 						auto result = dialog.WaitResultAndClose();
 						if (result == DialogResult::SUCCESSED)
 						{
-							SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+							SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 						}
 						else if (result == DialogResult::FAILED)
 						{
-							MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+							MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 						}
 					}
 				}
@@ -545,7 +544,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_EXITHALL:
 			{
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = []()->Task<bool> {
 						co_await ConnectManager::Instance()->Logout();
@@ -557,7 +556,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					auto result = dialog.WaitResultAndClose();
 					KillTimer(hWnd, hall_refreash);
 					Set_CurScene(STATUS::Main);
-					UpdateWindow(RENDERCONTEXMANAGER->GetHwnd());
+					UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
 				}
 				break;
 			}
@@ -577,7 +576,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_CREATEROOM:
 			{
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = LOBBYMANAGER->TryCreateRoom();
 
@@ -590,11 +589,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 						Set_CurScene(STATUS::Room_Status);
 						KillTimer(hWnd, hall_refreash);
 						SetTimer(hWnd, room_refreash, 1000, NULL);
-						UpdateWindow(RENDERCONTEXMANAGER->GetHwnd());
+						UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 					}
 				}
 				break;
@@ -606,7 +605,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					if (auto selectRoom = LOBBYMANAGER->GetSelectRoom())
 					{
 						BusyLoaderDialog dialog;
-						if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+						if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 						{
 							auto task = LOBBYMANAGER->TryJoinRoom(selectRoom);
 
@@ -615,11 +614,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							auto result = dialog.WaitResultAndClose();
 							if (result == DialogResult::SUCCESSED)
 							{
-								SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+								SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 							}
 							else if (result == DialogResult::FAILED)
 							{
-								MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+								MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 							}
 						}
 					}
@@ -639,7 +638,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					break;
 
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = LOBBYMANAGER->TryStartGame();
 
@@ -651,7 +650,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"存在未准备的玩家！", NULL, MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"存在未准备的玩家！", NULL, MB_OK);
 					}
 				}
 				break;
@@ -659,7 +658,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_READY:
 			{
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = LOBBYMANAGER->TryChangeReadyStatus(true);
 
@@ -674,7 +673,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 					}
 				}
 				break;
@@ -682,7 +681,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_CANCELREADY:
 			{
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = LOBBYMANAGER->TryChangeReadyStatus(false);
 
@@ -697,7 +696,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 					}
 				}
 				break;
@@ -705,7 +704,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case DISBANDINROOM:
 			{
 				KillTimer(hWnd, room_refreash);
-				MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"房主已将房间解散！", NULL, MB_OK);
+				MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"房主已将房间解散！", NULL, MB_OK);
 				Set_CurScene(STATUS::Hall_Status);
 				SetTimer(hWnd, hall_refreash, 4000, NULL);
 				UpdateWindow(hWnd);
@@ -714,7 +713,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_EXITROOM:
 			{
 				BusyLoaderDialog dialog;
-				if (dialog.Create(RENDERCONTEXMANAGER->GetHwnd(), RENDERCONTEXMANAGER->GetHinstance()))
+				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = LOBBYMANAGER->TryLeaveRoom();
 
@@ -730,7 +729,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					}
 					else if (result == DialogResult::FAILED)
 					{
-						MessageBox(RENDERCONTEXMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
+						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
 					}
 				}
 				break;
@@ -768,7 +767,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDB_PAUSE:
 			{
 				GameWorldManager::Instance()->PauseWorld();
-				int i = DialogBox(RENDERCONTEXMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_PAUSE), hWnd, Pause);
+				int i = DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_PAUSE), hWnd, Pause);
 				switch (i) {
 				case 10:	//回到游戏
 					GameWorldManager::Instance()->RunWorld();
@@ -799,7 +798,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 			case IDB_RETURN:
 			{
-				int i = DialogBox(RENDERCONTEXMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_RETURN), hWnd, Return);
+				int i = DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_RETURN), hWnd, Return);
 				switch (i) {
 				case 10:	//回到游戏
 					break;
@@ -920,9 +919,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			auto status = Get_CurScene();
 			if (status == STATUS::LocalGame_Status || status == STATUS::OnlineGame_Status)
 			{
-				RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+				RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
 				POINT center = { main_rect.right / 2, main_rect.bottom / 2 };
-				ClientToScreen(RENDERCONTEXMANAGER->GetHwnd(), &center);
+				ClientToScreen(WINDOWHANDLEMANAGER->GetHwnd(), &center);
 				SetCursorPos(center.x, center.y);
 
 				if (lastMouseX != -1 && lastMouseX != -1)

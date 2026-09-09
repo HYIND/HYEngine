@@ -2,7 +2,7 @@
 
 #include "AssetMeta.h"
 #include "AssetDescription.h"
-#include "OpenGLRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/Model.h"
 #include "GeneralManager/AudioDeviceManager.h"
 
 class AssetLoader;

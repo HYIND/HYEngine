@@ -16,7 +16,7 @@ void RenderSystem::SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Ren
 	_triBuffer = triBuffer;
 }
 
-void RenderSystem::SetOpenGLRender(std::shared_ptr<OpenGLRenderer> render)
+void RenderSystem::SetOpenGLRender(std::shared_ptr<VulkanRenderer> render)
 {
 	_render = render;
 }
@@ -499,7 +499,7 @@ void RenderSystem::processSkybox(std::shared_ptr<Render::RenderFrameData>& frame
 	}
 }
 
-void RenderSystem::SyncGLCamera(std::shared_ptr<OpenGLRenderer>& render, std::shared_ptr<RenderFrameData>& framebuffer, Entity& maincamera)
+void RenderSystem::SyncGLCamera(std::shared_ptr<VulkanRenderer>& render, std::shared_ptr<RenderFrameData>& framebuffer, Entity& maincamera)
 {
 	auto& trans = maincamera.getComponent<Transform>();
 	auto& camCom = maincamera.getComponent<CameraComponent>();

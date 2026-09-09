@@ -8,17 +8,20 @@
 #endif
 
 
-layout(binding = 0, rgba16f) uniform image2D outputImage;
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
-layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+layout (binding = 0) uniform Params
+{
+    ivec2 screenSize;
+    float initBlendFactor;
+    float dynamicBlendFactor;
+};
 
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D rawTexture;
+layout (binding = 3) uniform sampler2D historyColorTexture;
+layout (binding = 4) uniform sampler2D motionMap;
 
-uniform ivec2 screenSize;
-
-uniform sampler2D rawTexture;
-uniform sampler2D historyColorTexture;
-
-uniform sampler2D motionMap;
 
 void main() 
 {
@@ -50,9 +53,9 @@ void main()
     vec3 minColor = currentColor;
     vec3 maxColor = currentColor;
 
-    // 取周围 5x5 的最小最大值
-    for (int i = -2; i <= 2; i++) {
-        for (int j = -2; j <= 2; j++) {
+    // 取周围 11x11 的最小最大值
+    for (int i = -5; i <= 5; i++) {
+        for (int j = -5; j <= 5; j++) {
             vec3 neighbor = texture(rawTexture, currentUV + vec2(i, j) * screenTexelSize).rgb;
             minColor = min(minColor, neighbor);
             maxColor = max(maxColor, neighbor);
@@ -61,9 +64,8 @@ void main()
     historyColor  = clamp(historyColor, minColor, maxColor);
 
     // 计算动态混合权重
-    float blendFactor = 0.88;
     float motion = distance(currentUV, historyUV);
-    blendFactor = mix(blendFactor, 0.25, smoothstep(0.0, max(0.02,min(screenTexelSize.y * 3, screenTexelSize.x * 3)), motion));
+    float blendFactor = mix(initBlendFactor, dynamicBlendFactor, smoothstep(0.0, max(0.02,min(screenTexelSize.y * 3, screenTexelSize.x * 3)), motion));
         
     vec3 finalColor = mix(currentColor, historyColor, blendFactor);
 

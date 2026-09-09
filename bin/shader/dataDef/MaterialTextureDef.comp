@@ -1,0 +1,97 @@
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "shader/dataDef/materialDataDef.comp"
+
+layout(set = 2, binding = 0) buffer Material {
+	MaterialData materials[];
+};
+layout(set = 2, binding = 1) uniform sampler2D materialTextures[];
+
+
+float calculateOpacity(MaterialData material, vec2 uv)
+{	
+	float opacity = material.opacity;
+	if(material.texture_opacity_count > 0)
+		opacity *= texture(materialTextures[material.texture_opacity], uv).r;
+	else if (material.texture_albedo_count > 0)
+		opacity *=texture(materialTextures[material.texture_albedo], uv).a;
+
+	if (material.alphamode == 1)	//Mask
+		opacity = opacity > material.maskthreshold ? 1.0f : 0.f;
+
+	return opacity;
+}
+
+vec3 calculateNormal(MaterialData material, vec3 vertexNormal, mat3 TBN, vec2 uv)
+{
+	return material.texture_normal_count > 0 ?
+		normalize(TBN * normalize(texture(materialTextures[material.texture_normal], uv).rgb * 2.0 - 1.0))
+		: normalize(vertexNormal);
+}
+
+vec3 calculateAlbedo(MaterialData material, vec2 uv)
+{
+	return material.texture_albedo_count > 0 ? 
+        texture(materialTextures[material.texture_albedo], uv).rgb * material.albedo
+        :material.albedo;
+}
+
+float claculateMetallic(MaterialData material, vec2 uv)
+{
+	return material.texture_metallicroughness_count > 0 ?
+	texture(materialTextures[material.texture_metallicroughness], uv).b
+	:  (material.texture_metallic_count > 0 ? 
+		texture(materialTextures[material.texture_metallic], uv).b
+		: material.metallic);
+}
+
+float claculateRoughness(MaterialData material, vec2 uv)
+{
+	return material.texture_metallicroughness_count > 0 ?
+		texture(materialTextures[material.texture_metallicroughness], uv).g
+		:  (material.texture_roughness_count > 0 ? 
+			texture(materialTextures[material.texture_roughness], uv).g
+			: material.roughness);
+}
+
+float claculateAmbientOcclusion(MaterialData material, vec2 uv)
+{
+	return material.texture_ao_count > 0 ?
+		texture(materialTextures[material.texture_ao], uv).r
+		: material.ambientOcclusion;
+}
+
+void getPBRProperties(MaterialData material, vec2 uv, inout vec3 albedo, inout float metallic, inout float roughness, inout float ambientOcclusion)
+{
+    albedo = material.texture_albedo_count > 0 ? 
+            texture(materialTextures[material.texture_albedo], uv).rgb * material.albedo
+            :material.albedo;
+
+    ambientOcclusion = material.texture_ao_count > 0 ? 
+                    texture(materialTextures[material.texture_ao], uv).r 
+                    : material.ambientOcclusion;
+
+	if (material.texture_metallicroughness_count > 0)
+	{
+        vec2 values = texture(materialTextures[material.texture_metallicroughness], uv).gb;
+        metallic = values.x;
+        roughness = values.y;
+	}
+	else 
+	{
+        metallic = material.texture_metallic_count > 0 ?
+                texture(materialTextures[material.texture_metallic], uv).b
+                : material.metallic;
+
+        roughness = material.texture_roughness_count > 0 ? 
+                texture(materialTextures[material.texture_roughness], uv).g
+                : material.roughness;
+	}
+}
+
+vec3 calculateEmission(MaterialData material, vec2 uv)
+{
+    return material.texture_emissive_count > 0 ? 
+            texture(materialTextures[material.texture_emissive], uv).rgb * material.emissionStrength
+            :material.emissionColor * material.emissionStrength;
+}

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "ECSCore/IComponent.h"
-#include "OpenGLRenderEngine/Base/LaserBeam.h"
+#include "VulkanRenderEngine/Base/LaserBeam.h"
 #include "CommonComponent.h"
 
 struct LaserBeamEmitter :public Renderable

@@ -5,24 +5,24 @@ struct MetaInfo
     int count;
 };
 
-layout(std430, binding = 0) buffer AnimationMetaData 
+layout(set = 4, binding = 0) buffer AnimationMetaData 
 {
     int animationcount;
     MetaInfo info[];
 } animationMeta;
 
-layout(std430, binding = 1) buffer AnimationMatData
+layout(set = 4, binding = 1) buffer AnimationMatData
 {
     mat4 finalBonesMatrices[];
 } animationMat;
 
-layout(std430, binding = 2) buffer PrevAnimationMetaData 
+layout(set = 4, binding = 2) buffer PrevAnimationMetaData 
 {
     int animationcount;
     MetaInfo info[];
 } prevAnimationMeta;
 
-layout(std430, binding = 3) buffer PrevAnimationMatData
+layout(set = 4, binding = 3) buffer PrevAnimationMatData
 {
     mat4 finalBonesMatrices[];
 } prevAnimationMat;

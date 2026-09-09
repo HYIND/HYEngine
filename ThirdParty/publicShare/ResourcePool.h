@@ -4,6 +4,13 @@
 #include <vector>
 #include "CriticalSectionLock.h"
 
+#define SAFE_DELETE(x) \
+    if (x)             \
+    {                  \
+        delete x;      \
+        x = nullptr;   \
+    }
+
 template <class DataType, Lockable Mutex = CriticalSectionLock>
 class ResPool
 {

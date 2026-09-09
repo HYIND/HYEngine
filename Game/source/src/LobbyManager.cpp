@@ -6,7 +6,7 @@
 #include "Scene.h"
 #include "command.h"
 #include "ServiceRegistryData.h"
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
+#include "GeneralManager/WindowHandleManager.h"
 
 using namespace LobbySubServiceCommand;
 
@@ -324,7 +324,7 @@ Task<void> LobbyManager::ProcessStartGameRes(const json& js)
 	else
 		co_return;
 
-	SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, START, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+	SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, START, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 }
 
 std::shared_ptr<Room> LobbyManager::GetSelectRoom()

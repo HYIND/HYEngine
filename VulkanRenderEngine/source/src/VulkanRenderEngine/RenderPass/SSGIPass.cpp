@@ -1,0 +1,209 @@
+#include "OpenGLRenderEngine/RenderPass/SSGIPass.h"
+#include "OpenGLRenderEngine/General/RenderHelp.h"
+#include "OpenGLRenderEngine/General/GPUTimer.h"
+#include "glm/gtc/matrix_transform.hpp"
+
+#define work_size_x 16
+#define work_size_y 16
+
+SSGIPass::SSGIPass(
+	const std::string& ssgiComputerShaderPath,
+	const std::string& spatialDenoisingComputerShaderPath,
+	const std::string& temporalDenoisingComputerShaderPath
+)
+	:
+	_enable(false)
+{
+	_ssgiShader.AddDefineMacro("work_size_x", work_size_x);
+	_ssgiShader.AddDefineMacro("work_size_y", work_size_y);
+	_ssgiShader.AddDefineMacro("Max_Bounce_limit", OpenGLRenderConfig::SSTrace_Max_Bounce_limit);
+	_ssgiShader.CompileFromFile(ssgiComputerShaderPath);
+
+	_spatialDenoisingShader.AddDefineMacro("work_size_x", work_size_x);
+	_spatialDenoisingShader.AddDefineMacro("work_size_y", work_size_y);
+	_spatialDenoisingShader.CompileFromFile(spatialDenoisingComputerShaderPath);
+
+	_temporalDenoisingShader.AddDefineMacro("work_size_x", work_size_x);
+	_temporalDenoisingShader.AddDefineMacro("work_size_y", work_size_y);
+	_temporalDenoisingShader.CompileFromFile(temporalDenoisingComputerShaderPath);
+}
+
+bool SSGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	SetEnable(state.option.flags.ssgiOn);
+	if (!_enable || state.option.ssgiTraceParams.maxBounceLimit < 0)
+		return false;
+	return true;
+}
+
+void SSGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+{
+	if (!ShouldExecute(registry, state))
+		return;
+
+	FrameRenderData data;
+	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
+	data.drawSize = data.scrSize;
+	data.originTexture = ctx.GetTemp(0);
+	data.spatialDenoisingTexture = ctx.GetTemp(1);
+
+	data.outPutTexture = ctx.GetOutput(0);
+
+	data.historyColorTexture = ctx.GetPersitent(0);
+
+	data.gPosition = ctx.GetInput(0);
+	data.gNormal = ctx.GetInput(1);
+	data.gAlbedoOpacity = ctx.GetInput(2);
+	data.gMetallicRoughness = ctx.GetInput(3);
+	data.gMotionVector = ctx.GetInput(4);
+	data.ssaoTexture = ctx.GetInput(5);
+	data.hzbDepthMap = ctx.GetInput(6);
+
+	data.colorMap = ctx.GetExternal(0);
+	data.depthMap = ctx.GetExternal(1);
+
+	if (!DrawSSGI(data, state)) return;
+	if (!DrawSpatialDenoising(data, state)) return;
+	if (!DrawTemporalDenoising(data, state)) return;
+
+	if (data.outPutTexture && data.historyColorTexture)
+		Texture2D::CopyTexture(data.outPutTexture, data.historyColorTexture);
+
+	//RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
+	//	THREADCONTEXT->UnBind();
+	//	auto task1 = CoroTask::Run([&]()-> void {DrawTexture(_originTexture, "temp/SSGIPass1_oris.png"); });
+	//	auto task2 = CoroTask::Run([&]()-> void {DrawTexture(_spatialDenoisingTexture, "temp/SSGIPass2_spatialDenoisingr.png"); });
+	//	auto task3 = CoroTask::Run([&]()-> void {DrawTexture(_temporalDenoisingTexture, "temp/SSGIPass3_temporalDenoisingTexture.png"); });
+	//	auto task4 = CoroTask::Run([&]()-> void {DrawTexture(_outPutTexture, "temp/SSGIPass4_output.png"); });
+	//	task1.sync_wait();
+	//	task2.sync_wait();
+	//	task3.sync_wait();
+	//	task4.sync_wait();
+	//	THREADCONTEXT->Bind();
+	//	});
+}
+
+void SSGIPass::SetEnable(bool enable) const
+{
+	if (_enable == enable)
+		return;
+	_enable = enable;
+	if (_enable)
+		_firstDrawTemporal = true;
+}
+
+bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
+{
+	auto& target = data.originTexture;
+
+	if (!target || target->IsEmpty())
+		return false;
+
+	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	glClearTexImage(target->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+
+	_ssgiShader.Use();
+
+	_ssgiShader.setIVec2("screenSize", data.drawSize);
+
+	_ssgiShader.setFloat("tMin", std::max(0.f, state.option.ssgiTraceParams.tMin));
+	_ssgiShader.setFloat("tMax", std::max(0.f, state.option.ssgiTraceParams.tMax));
+	_ssgiShader.setUInt("SampleRayCount", state.option.ssgiTraceParams.NumSamples);
+	_ssgiShader.setUInt("RayMarchingMaxStep", std::max((uint32_t)2, state.option.ssgiTraceParams.RayMarchingMaxStep));
+	_ssgiShader.setFloat("SampleIndirectClampValue", std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value));
+	_ssgiShader.setFloat("GIIntensity", std::max(0.f, state.option.ssgiTraceParams.GIIntensity));
+	_ssgiShader.setFloat("AOIntensity", std::max(0.f, state.option.ssgiTraceParams.AOIntensity));
+	_ssgiShader.setFloat("DistanceFactor", std::max(0.0001f, state.option.ssgiTraceParams.DistanceFactor));
+
+
+	_ssgiShader.setTexture(data.gPosition, "gPosition", 5);
+	_ssgiShader.setTexture(data.gNormal, "gNormal", 6);
+	_ssgiShader.setTexture(data.gAlbedoOpacity, "gAlbedoOpacity", 7);
+	_ssgiShader.setTexture(data.gMetallicRoughness, "gMetallicRoughness", 8);
+	_ssgiShader.setTexture(data.colorMap, "colorMap", 9);
+	_ssgiShader.setTexture(data.depthMap, "depthMap", 10);
+	_ssgiShader.setTexture(data.hzbDepthMap, "hzbDepthMap", 11);
+
+	_ssgiShader.setInt("maxLevel", data.hzbDepthMap->GetMaxLevel());
+
+	if (data.ssaoTexture) _ssgiShader.setTexture(data.ssaoTexture, "SSAOMap", 12);
+
+	_ssgiShader.setInt("frameIndex", state.renderRecord.frameIndex % 100000);
+
+	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+	return true;
+}
+
+bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
+{
+	auto& srcTex = data.originTexture;
+	auto& targetTex = data.spatialDenoisingTexture;
+
+	if (!srcTex || srcTex->IsEmpty())
+		return false;
+
+	if (!targetTex || targetTex->IsEmpty())
+		return false;
+
+	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	glClearTexImage(targetTex->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+
+	_spatialDenoisingShader.Use();
+
+	_spatialDenoisingShader.setIVec2("screenSize", data.drawSize);
+
+	_spatialDenoisingShader.setTexture(srcTex, "rawTexture", 4);
+	_spatialDenoisingShader.setTexture(data.gNormal, "gNormal", 6);
+	_spatialDenoisingShader.setTexture(data.depthMap, "depthMap", 10);
+
+	_spatialDenoisingShader.setFloat("blurRadius", state.option.ssgiTraceParams.BlurRadius);
+	_spatialDenoisingShader.setFloat("blurDepthWeight", state.option.ssgiTraceParams.BlurDepthWeight);
+	_spatialDenoisingShader.setInt("kernelSize", state.option.ssgiTraceParams.BlurKernelSize);
+	_spatialDenoisingShader.setFloat("sigma", state.option.ssgiTraceParams.BlurGaussSigma);
+
+	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+	return true;
+}
+
+bool SSGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
+{
+	auto& srcTex = data.spatialDenoisingTexture;
+	auto& targetTex = data.outPutTexture;
+
+	if (!srcTex || srcTex->IsEmpty())
+		return false;
+
+	if (!targetTex || targetTex->IsEmpty())
+		return false;
+
+	if (_firstDrawTemporal || !data.gMotionVector || !data.historyColorTexture)
+	{
+		Texture2D::CopyTexture(srcTex, targetTex);
+		_firstDrawTemporal = false;
+		return true;
+	}
+
+	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	glClearTexImage(targetTex->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+
+	int width = srcTex->GetWidth();
+	int height = srcTex->GetHeight();
+
+	_temporalDenoisingShader.Use();
+	_temporalDenoisingShader.setIVec2("screenSize", glm::ivec2(width, height));
+	_temporalDenoisingShader.setTexture(srcTex, "rawTexture", 4);
+	_temporalDenoisingShader.setTexture(data.historyColorTexture, "historyColorTexture", 5);
+	_temporalDenoisingShader.setTexture(data.gMotionVector, "motionMap", 6);
+
+	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+	glDispatchCompute((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+	return true;
+}

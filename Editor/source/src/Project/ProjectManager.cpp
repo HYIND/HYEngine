@@ -304,7 +304,7 @@ bool ProjectManager::ImportModelAsset(const std::string& sourcePathStr, const st
 	return true;
 }
 
-bool ProjectManager::ImportTextureAsset(const std::string& sourcePathStr, const std::string& destPathStr, const TextureConfig& config, AssetMeta* out, bool autoSave)
+bool ProjectManager::ImportTextureAsset(const std::string& sourcePathStr, const std::string& destPathStr, const Texture2DConfig& config, AssetMeta* out, bool autoSave)
 {
 	if (!m_isOpen) return false;
 	if (!fs::exists(sourcePathStr)) return false;

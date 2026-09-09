@@ -1,6 +1,6 @@
 #include "IconManager.h"
 #include <filesystem>
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 IconManager* IconManager::Get() {
 	static IconManager* instance = new IconManager();
@@ -13,25 +13,19 @@ void IconManager::Need() const
 {
 	static std::once_flag flag;
 	std::call_once(flag, [&] {
-		auto hdc = wglGetCurrentDC();
-		auto hglrc = wglGetCurrentContext();
-		{
-			auto guard = THREADCONTEXT->GetBindGuard();
-			LoadIcons();
-		}
-		wglMakeCurrent(hdc, hglrc);
+		LoadIcons();
 		});
 }
 
 void IconManager::LoadIcons() const
 {
-	m_icons["folder"] = std::make_shared<Texture2D>("Icons/folder.png", false);
-	m_icons["file"] = std::make_shared<Texture2D>("Icons/file.png", false);
-	m_icons["model"] = std::make_shared<Texture2D>("Icons/mesh.png", false);
-	m_icons["texture"] = std::make_shared<Texture2D>("Icons/texture.png", false);
-	m_icons["material"] = std::make_shared<Texture2D>("Icons/material.png", false);
-	m_icons["scene"] = std::make_shared<Texture2D>("Icons/scene.png", false);
-	m_icons["audio"] = std::make_shared<Texture2D>("Icons/audio.png", false);
+	m_icons["folder"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/folder.png") };
+	m_icons["file"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/file.png") };
+	m_icons["model"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/mesh.png") };
+	m_icons["texture"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/texture.png") };
+	m_icons["material"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/material.png") };
+	m_icons["scene"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/scene.png") };
+	m_icons["audio"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/audio.png") };
 }
 
 ImTextureID IconManager::GetIcon(const std::string& name) const
@@ -39,7 +33,19 @@ ImTextureID IconManager::GetIcon(const std::string& name) const
 	Need();
 
 	auto it = m_icons.find(name);
-	return it != m_icons.end() ? it->second->GetID() : 0;
+	if (it == m_icons.end())
+		return ImTextureID(0);
+
+	auto& icon = it->second;
+	if (icon.descSet == VK_NULL_HANDLE && icon.tex && !icon.tex->IsEmpty())
+	{
+		icon.descSet = ImGui_ImplVulkan_AddTexture(
+			icon.tex->GetImageView(),
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		);
+	}
+
+	return ImTextureID(icon.descSet);
 }
 
 ImTextureID IconManager::GetIconByAssetType(AssetType type) const

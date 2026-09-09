@@ -1,4 +1,4 @@
-#version 450 core
+#version 460 core
 
 #ifndef work_size_x
 #define work_size_x 16
@@ -6,15 +6,6 @@
 #ifndef work_size_y
 #define work_size_y 16
 #endif
-
-layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
-
-layout(binding = 0, rgba16f) uniform image2D hdrTexture;
-layout(binding = 1, std430) buffer HistogramBuffer {
-    uint bins[256];
-};
-
-uniform ivec2 screenSize;
 
 #ifndef MIN_EV
 #define MIN_EV -6
@@ -24,7 +15,14 @@ uniform ivec2 screenSize;
 #define MAX_EV 12
 #endif
 
-// 固定参数：覆盖 -10 EV ~ 20 EV（从 0.001 到 1,000,000 亮度）
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+layout(binding = 0) buffer HistogramBuffer {
+    ivec2 screenSize;
+    uint bins[256];
+};
+layout(binding = 1, rgba16f) uniform image2D colorTexture;
+
 const float MIN_EXP_EV = MIN_EV;
 const float MAX_EXP_EV = MAX_EV;
 const float EV_RANGE = MAX_EXP_EV - MIN_EXP_EV;
@@ -33,7 +31,7 @@ const float sigma = 0.25;
 
 float GetWeightNormalized(vec2 pos)
 {
-    vec2 uv = pos / screenSize;
+    vec2 uv = (pos + vec2(0.5)) / screenSize;
     vec2 center = vec2(0.5, 0.5);
     float dist = length(uv - center);
     float weight = exp(-(dist * dist) / (2.0 * sigma * sigma));
@@ -59,15 +57,14 @@ uint GetBinIndex(vec3 color)
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
     vec2 pixelCenter = vec2(pos) + 0.5;
-    if (pos.x >= int(screenSize.x) || pos.y >= int(screenSize.y))
+    if (pos.x >= screenSize.x || pos.y >= screenSize.y)
         return;
     
     float weightNormalized = GetWeightNormalized(pixelCenter); 
 
-    vec3 color = imageLoad(hdrTexture, pos).rgb;  
+    vec3 color = imageLoad(colorTexture, pos).rgb;  
     uint binIndex = GetBinIndex(color);
 
     uint weightInt = uint(weightNormalized + 0.5f);
-    // weightInt = 1;
     atomicAdd(bins[binIndex], weightInt);
 }

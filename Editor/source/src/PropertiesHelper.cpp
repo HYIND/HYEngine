@@ -1,5 +1,4 @@
-﻿#pragma once
-
+﻿
 #include "PropertiesHelper.h"
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"

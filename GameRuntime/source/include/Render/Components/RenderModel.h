@@ -7,7 +7,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "ECSCore/IComponent.h"
 #include "Components/Renderable.h"
-#include "OpenGLRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
 
 extern class Model;
 

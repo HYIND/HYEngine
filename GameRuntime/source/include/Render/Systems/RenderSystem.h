@@ -17,7 +17,7 @@ class RenderSystem :public System
 public:
 	RenderSystem();
 	void SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer);
-	void SetOpenGLRender(std::shared_ptr<OpenGLRenderer> render);
+	void SetOpenGLRender(std::shared_ptr<VulkanRenderer> render);
 
 public:
 	virtual void postUpdate(float deltaTime) override;
@@ -42,12 +42,12 @@ private:
 	void processSkybox(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
 
 private:
-	void SyncGLCamera(std::shared_ptr<OpenGLRenderer>& render, std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
+	void SyncGLCamera(std::shared_ptr<VulkanRenderer>& render, std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
 
 private:
 	std::vector<Line2> _DebugLines;
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> _triBuffer;
-	std::shared_ptr<OpenGLRenderer> _render;
+	std::shared_ptr<VulkanRenderer> _render;
 	ThreadPool _pool;
 	SpinLock _GL_SpinLock;
 	SpinLock _D2D_SpinLock;

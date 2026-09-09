@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="source\include\stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Editor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imconfig.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imgui.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imgui_internal.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_rectpack.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_textedit.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\imstb_truetype.h">
+      <Filter>Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\GraphEditor.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImCurveEdit.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImGradient.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImGuizmo.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImLightRig.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImSequencer.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImVectorEditor.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imguizmo\ImZoomSlider.h">
+      <Filter>Imguizmo</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{903795f7-1fa0-48e1-a6d9-95251f94c835}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{62d5c8f1-8ec0-434b-9f88-2e6bf35cc0a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{6b924a41-7b84-4f3e-8d4d-57b9b7055268}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imgui">
+      <UniqueIdentifier>{3194fbc9-6a26-4e55-b9e8-16124d6eb543}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imgui\backend">
+      <UniqueIdentifier>{6b7b6e00-b2e8-40d1-b438-566cbc760d10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Imguizmo">
+      <UniqueIdentifier>{bbcc269d-2021-4071-83cf-c46bdbb7989e}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Imgui\imgui.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_demo.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_draw.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_tables.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\imgui_widgets.cpp">
+      <Filter>Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp">
+      <Filter>Imgui\backend</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\GraphEditor.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImCurveEdit.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImGradient.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImGuizmo.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImSequencer.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imguizmo\ImVectorEditor.cpp">
+      <Filter>Imguizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp">
+      <Filter>Imgui\backend</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

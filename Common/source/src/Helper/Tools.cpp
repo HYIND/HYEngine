@@ -19,8 +19,21 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>  // ✅ 已经有了
+#include <windows.h>
 #endif
+
+
+std::string Tool::ToLower(const std::string& str) {
+	std::string result = str;
+	std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+	return result;
+}
+
+std::string Tool::ToUpper(const std::string& str) {
+	std::string result = str;
+	std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+	return result;
+}
 
 std::string Tool::AnsiToUTF8(const std::string& str)
 {

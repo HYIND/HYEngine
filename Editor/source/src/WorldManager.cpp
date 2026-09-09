@@ -8,7 +8,7 @@
 #include "Factory/LightFactory.h"
 #include "Factory/ParticleEmitterFactory.h"
 #include "Factory/CharacterFactory.h"
-#include "OpenGLRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelp.h"
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"
 #include "GameRuntimeComponents.h"
@@ -112,7 +112,7 @@ void LoadInitScene(World& world)
 			"Test/skybox/box2/front.png",
 			"Test/skybox/box2/back.png"
 		};
-		auto skyboxcube = std::make_shared<TextureCube>(faces, true);
+		auto skyboxcube = std::make_shared<TextureCube>(faces);
 		Entity entity = world.createEntityWithTag<TagSkyBox>();
 		entity.addComponent<SkyBox>(skyboxcube);
 
@@ -263,7 +263,6 @@ WorldManager* WorldManager::Instance() {
 }
 
 WorldManager::WorldManager() {
-	_openglRenderer = std::make_shared<OpenGLRenderer>();
 	_triBuffer = std::make_shared<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>>();
 	for (int i = 0; i < 3; i++)
 		_triBuffer->setInitialValue(i, std::make_shared<Render::RenderFrameData>());
@@ -271,11 +270,11 @@ WorldManager::WorldManager() {
 
 WorldManager::~WorldManager() {}
 
-void WorldManager::InitOpenGLRender(uint32_t width, uint32_t height)
+void WorldManager::SetRender(std::shared_ptr<VulkanRenderer> renderer)
 {
-	_openglRenderer->Init(width, height);
-	pendingWidth = _openglRenderer->GetWidth();
-	pendingHeight = _openglRenderer->GetHeight();
+	_renderer = renderer;
+	pendingWidth = _renderer->GetWidth();
+	pendingHeight = _renderer->GetHeight();
 }
 
 void WorldManager::InitWorld()
@@ -314,7 +313,7 @@ void WorldManager::InitWorld()
 	renderSystem.setPriority(-10000);
 
 	renderSystem.SetTriBuffer(_triBuffer);
-	renderSystem.SetOpenGLRender(_openglRenderer);
+	renderSystem.SetOpenGLRender(_renderer);
 
 	LoadInitScene(*world);
 
@@ -341,7 +340,7 @@ void WorldManager::RenderFrame()
 	if (!framedata)
 		return;
 
-	if (auto r = _openglRenderer)
+	if (auto r = _renderer)
 	{
 		RenderState state = RenderStateBuilder()
 			.SetCamera(framedata->projection, framedata->view,
@@ -487,15 +486,15 @@ void WorldManager::ZoomCamera(float delta)
 
 RenderOption WorldManager::GetOption() const
 {
-	return _openglRenderer->GetOption();
+	return _renderer->GetOption();
 }
 
 void WorldManager::SetOption(RenderOption option)
 {
-	_openglRenderer->SetOption(option);
+	_renderer->SetOption(option);
 }
 
-void WorldManager::ResizeOpenGL(uint32_t width, uint32_t height)
+bool WorldManager::ResizeOpenGL(uint32_t width, uint32_t height)
 {
 	if (pendingWidth != width || pendingHeight != height)
 	{
@@ -506,12 +505,15 @@ void WorldManager::ResizeOpenGL(uint32_t width, uint32_t height)
 	}
 	else
 	{
-		if (resizePending && Tool::GetTimestampMilliseconds() - resizeTimeStamp > 200 && _openglRenderer)
+		if (resizePending && Tool::GetTimestampMilliseconds() - resizeTimeStamp > 200 && _renderer)
 		{
-			_openglRenderer->Resize(pendingWidth, pendingHeight);
+			_renderer->Resize(pendingWidth, pendingHeight);
 			resizePending = false;
+			return true;
 		}
 	}
+	
+	return false;
 }
 
 Entity WorldManager::CreateModelEntity(std::shared_ptr<Model> model)
@@ -567,9 +569,9 @@ bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
 	return isSuccess && newEntity;
 }
 
-std::shared_ptr<OpenGLRenderer> WorldManager::GetOpenGLRener()
+std::shared_ptr<VulkanRenderer> WorldManager::GetOpenGLRener()
 {
-	return _openglRenderer;
+	return _renderer;
 }
 
 std::shared_ptr<World> WorldManager::GetWorld()
