@@ -1,12 +1,21 @@
-#version 450 core
+#version 460 core
 
-out vec4 FragColor;
+layout (location = 0) flat in uint index;
 
-uniform vec3 lightColor;
-uniform float Intensity;
+layout (location = 0) out vec4 FragColor;
 
+struct Param
+{
+	mat4 model;
+	vec3 color;
+};
+
+layout (binding = 0) buffer TransformAndColors
+{
+	Param params[];
+};
 
 void main()
 {
-	FragColor = vec4(lightColor, 1.0f);		// ��ɫ��
+	FragColor = vec4(params[index].color, 1.0f);
 }

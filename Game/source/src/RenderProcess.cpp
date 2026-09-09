@@ -2,7 +2,7 @@
 #include <thread>
 #include "Scene.h"
 #include "RenderEngine/D2DTools.h"
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
+#include "GeneralManager/WindowHandleManager.h"
 #include "Manager/ResourceManager.h"
 
 std::thread::id render_thread_id;
@@ -91,25 +91,15 @@ void Render_Thread(
 		buffermanager->setInitialValue(i, std::make_shared<Render::RenderFrameData>());
 	render->SetBuffers(buffermanager);
 
-	auto rect = RENDERCONTEXMANAGER->GetRECT();
-	float width = rect.right - rect.left, height = rect.bottom - rect.top;
+	auto rect = WINDOWHANDLEMANAGER->GetRect();
+	uint32_t width = rect.right - rect.left, height = rect.bottom - rect.top;
 
-	THREADCONTEXT->SetMain(true);
-	RENDERCONTEXMANAGER->SetHGLRC(THREADCONTEXT->GetHGLRC());
+	render->InitVulkanRender(width, height);
 
-	{
-		auto guard = THREADCONTEXT->GetBindGuard();
-		GLenum err = glewInit();
-		if (err != GLEW_OK) {
-			std::cerr << "glewInit fail!\n";
-		}
-		render->InitOpenGLRender(width, height);
-	}
 	InitManager.Init(new Task<void>(CoroTask::Run([]()->void {})));
 
 	CoroTask::Run([]()->void {
 		//InitManager.waitDone();
-		auto guard = THREADCONTEXT->GetBindGuard();
 		ResFactory->InitOpenGLResource();
 		}
 	);
@@ -151,7 +141,6 @@ void Render_Thread(
 			fpsprinter.ClearAndPrint();
 	}
 
-	RENDERCONTEXMANAGER->SetHGLRC(NULL);
 }
 
 bool IsRenderThread()

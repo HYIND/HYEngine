@@ -51,26 +51,26 @@ struct SpotLight {
 	mat4 lightSpaceMatrix;
 };
 
-layout(std430, binding = 4) buffer DirLightMetaData
+layout(set = 3, binding = 0) buffer DirLightMetaData
 {
-    int dirLightCount;
+    uint dirLightCount;
     DirLight info[];
 } dirLightMetaData;
 
-layout(std430, binding = 5) buffer DirLightCascadeData
+layout(set = 3, binding = 1) buffer DirLightCascadeData
 {
-    int dirLightCascadeCount;
+    uint dirLightCascadeCount;
     DirLightCascade info[];
 } dirLightCascadeData;
 
-layout(std430, binding = 6) buffer SpotLightMetaData
+layout(set = 3, binding = 2) buffer PointLightMetaData
 {
-    int spotLightCount;
-    SpotLight info[];
-} spotLightMetaData;
-
-layout(std430, binding = 7) buffer PointLightMetaData
-{
-    int pointLightCount;
+    uint pointLightCount;
     PointLight info[];
 } pointLightMetaData;
+
+layout(set = 3, binding = 3) buffer SpotLightMetaData
+{
+    uint spotLightCount;
+    SpotLight info[];
+} spotLightMetaData;

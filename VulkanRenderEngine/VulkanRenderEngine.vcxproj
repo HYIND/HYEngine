@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{2a17d1d6-e861-4725-bdba-a44d50c452c9}</ProjectGuid>
+    <RootNamespace>VulkanRenderEngine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>VulkanRenderEngine</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+    <TargetName>$(ProjectName)_d</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)libs\</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;NOMINMAX;WIN32_LEAN_AND_MEAN;GLM_FORCE_DEPTH_ZERO_TO_ONE</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>vkstdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)Common\source\include</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;NOMINMAX;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;GLM_FORCE_DEPTH_ZERO_TO_ONE</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>vkstdafx.h</PrecompiledHeaderFile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)Common\source\include</AdditionalIncludeDirectories>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>
+      </SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animation.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animdata.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AtlasMap.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Bone.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\ComputePipeline.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Effect.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\GraphicsPipeline.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\LaserBeam.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Light.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Material.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Model.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Particle.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Pipeline.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2D.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureCube.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\DynamicBlock.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\BVHBuilder.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\OpenGLRenderContext.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderState.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferBase.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferManager.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\GlobalConfig.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Public.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\DependencySolver.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\PassNode.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraph.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphContext.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\TexturePool.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderOption.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AutoExposurePass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\BloomPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CombinPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DepthFogPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EffectPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\FirstPersonPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\GeometryPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\HZBPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightDrawPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightingPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightShadowDepthPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\PreCalculatePass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceGeneralPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceGIPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceReflectPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RenderPassBase.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkyBoxPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSAOPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSGIPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSRPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\TransparentPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\SharedTexture.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKContext.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\CoreGeneral.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanDevice.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanInstance.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanOutput.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSurface.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSwapchain.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\BaseVKImage.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\SharedImage.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKCommandBuffer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKCommandPool.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKFence.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKFrameBuffer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKImageView.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKRenderPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSampler.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSemaphore.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaBuffer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaImage.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\WrapperGeneral.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VulkanRenderer.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="vkstdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animation.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animator.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AssimpGlmHelpers.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AtlasMap.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Bone.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\ComputePipeline.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\GraphicsPipeline.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Light.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Material.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Mesh.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Model.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Pipeline.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\DynamicBlock.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\BVHBuilder.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\DDSLoader.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\GeneralSegmentBuffer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Public.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\DependencySolver.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\PassNode.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraph.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CombinPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DepthFogPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GeometryPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\HZBPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightDrawPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightingPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightShadowDepthPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\PreCalculatePass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceGeneralPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceGIPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceReflectPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyBoxPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\SharedTexture.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKContext.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\CoreGeneral.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanDevice.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanInstance.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSurface.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSwapchain.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\BaseVKImage.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\SharedImage.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKCommandBuffer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKCommandPool.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKFence.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKFrameBuffer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKImageView.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKRenderPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKSampler.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKSemaphore.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaBuffer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaImage.cpp" />
+    <ClCompile Include="header_only_impl.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VulkanRenderer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\VulkanRenderEngine\General\SegmentBufferManager.inl" />
+    <None Include="source\include\VulkanRenderEngine\RenderGraph\PassNode.inl" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

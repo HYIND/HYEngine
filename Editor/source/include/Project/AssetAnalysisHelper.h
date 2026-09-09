@@ -6,15 +6,15 @@
  2、分析器，导入资产时可提供分析结果，产生分析元数据，用以资产数据库构建
  */
 
-#include "OpenGLRenderEngine/Base/Mesh.h"
-#include "OpenGLRenderEngine/Base/Texture2D.h"
-#include "OpenGLRenderEngine/Base/Material.h"
-#include "OpenGLRenderEngine/Base/Animation.h"
+#include "VulkanRenderEngine/Base/Mesh.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
+#include "VulkanRenderEngine/Base/Material.h"
+#include "VulkanRenderEngine/Base/Animation.h"
 
 struct AnalysisTextureAssetMeta
 {
 	std::string filepath;
-	TextureConfig config;
+	Texture2DConfig config;
 };
 
 struct AnalysisMaterialAssetMeta

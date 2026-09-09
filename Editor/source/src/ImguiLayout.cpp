@@ -924,36 +924,32 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 	{
 		ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 
-		{
-			auto hdc = wglGetCurrentDC();
-			auto hglrc = wglGetCurrentContext();
+		static VkDescriptorSet textureID;
 
+		if (worldManager->ResizeOpenGL(viewportSize.x, viewportSize.y))
+		{
+			if (textureID != VK_NULL_HANDLE)
 			{
-				auto guard = THREADCONTEXT->GetBindGuard();
-
-				static bool first = true;
-				if (first)
-				{
-					WorldManager::Instance()->InitOpenGLRender(viewportSize.x, viewportSize.y);
-					first = false;
-				}
-
-				worldManager->ResizeOpenGL(viewportSize.x, viewportSize.y);
-				worldManager->RenderFrame();
+				ImGui_ImplVulkan_RemoveTexture(textureID);
+				textureID = VK_NULL_HANDLE;
 			}
-			wglMakeCurrent(hdc, hglrc);
 		}
+		worldManager->RenderFrame();
 
-		GLuint renderTexture = worldManager->GetOpenGLRener()->GetColorBuffer();
-		if (renderTexture != 0)
+		if (textureID == VK_NULL_HANDLE)
 		{
-			ImGui::Image(
-				(void*)(intptr_t)renderTexture,
-				viewportSize,
-				ImVec2(0, 1),
-				ImVec2(1, 0)
+			textureID = ImGui_ImplVulkan_AddTexture(
+				worldManager->GetOpenGLRener()->GetColorBuffer()->GetImageView(),
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 			);
 		}
+
+		ImGui::Image(
+			(ImTextureID)textureID,
+			viewportSize,
+			ImVec2(0, 0),
+			ImVec2(1, 1)
+		);
 
 		if (ImGui::BeginDragDropTarget())
 		{
@@ -964,14 +960,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 					AssetGUID guid(data);
 					if (auto meta = projectManager->GetDatabase()->GetAssetMetaByGuid(guid))
 					{
-						auto hdc = wglGetCurrentDC();
-						auto hglrc = wglGetCurrentContext();
-
-						{
-							auto guard = THREADCONTEXT->GetBindGuard();
-							HandleAssetDrop(*meta, worldManager, projectManager, viewportPos, viewportSize);
-						}
-						wglMakeCurrent(hdc, hglrc);
+						HandleAssetDrop(*meta, worldManager, projectManager, viewportPos, viewportSize);
 					}
 				}
 			}
@@ -997,13 +986,16 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 			auto* physics = selectedEntity.tryGetComponent<Physics>();
 			if (transform)
 			{
+				glm::mat4 projOG = projection;
+				projOG[1][1] *= -1;
+
 				auto transformMatrix = transform->getMatrix();
 				glm::mat4 deltaMatrix = glm::mat4(1.0f);
 
 				// 显示 Gizmo 并操作
 				ImGuizmo::Manipulate(
 					(float*)glm::value_ptr(view),
-					(float*)glm::value_ptr(projection),
+					(float*)glm::value_ptr(projOG),
 					mCurrentGizmoOperation,
 					mCurrentGizmoMode,
 					(float*)glm::value_ptr(transformMatrix),
@@ -1014,11 +1006,12 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				if (ImGuizmo::IsUsing())
 				{
 					worldManager->GetWorld()->SubmitCommand(
-						[newMatrix = transformMatrix, entity = selectedEntity]()->void {
+						[newMatrix = transformMatrix, entity = selectedEntity]() mutable ->void {
 							auto* transform = entity.tryGetComponent<Transform>();
 							auto* physics = entity.tryGetComponent<Physics>();
 							if (!transform)
 								return;
+
 							transform->setMatrix(newMatrix);
 
 							if (physics)
@@ -1096,12 +1089,15 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 					auto view = triBuffer->acquireReadBuffer()->view;
 					auto projection = triBuffer->acquireReadBuffer()->projection;
 
+					glm::mat4 projOG = projection;
+					projOG[1][1] *= -1;
+
 					// 计算射线
 					glm::vec3 rayOrigin;
 					glm::vec3 rayDirection;
 					ImGuizmo::ComputeMouseRay(
 						(float*)&view,
-						(float*)&projection,
+						(float*)&projOG,
 						mousePos,
 						viewportPos,
 						viewportSize,

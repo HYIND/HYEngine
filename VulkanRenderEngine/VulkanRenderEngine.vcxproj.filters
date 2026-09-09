@@ -1,0 +1,524 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine">
+      <UniqueIdentifier>{e7dac402-fa5c-48ed-82b0-b847e8b9ce02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\Base">
+      <UniqueIdentifier>{78ed9eba-3f62-455b-8ef1-acdb8ac10295}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\General">
+      <UniqueIdentifier>{30ccecdb-2e59-43d3-a837-e5fddf95ee3d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\RenderGraph">
+      <UniqueIdentifier>{63a2f0aa-4f56-4712-a9aa-b1db2bae2dfa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\RenderPass">
+      <UniqueIdentifier>{8241342f-31a6-463b-9ab1-559f8756dd0b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\VKWrapper">
+      <UniqueIdentifier>{ef4d3830-a365-4944-b641-3a4d50360a3f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine">
+      <UniqueIdentifier>{8bc30adc-b231-41ce-8982-b04e6779390d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\VKWrapper">
+      <UniqueIdentifier>{d65338e2-24e0-4b9e-a13c-8800f3dd9920}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\VKCore">
+      <UniqueIdentifier>{6ffcd418-cac4-42b6-bddf-15e54906263c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\VulkanRenderEngine\VKCore">
+      <UniqueIdentifier>{0a5789dd-68ba-4131-a3fb-3cf010b65b3e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\Base">
+      <UniqueIdentifier>{8aa27a57-2363-433a-b696-b9f9a8dba911}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\General">
+      <UniqueIdentifier>{b630b82e-e8e4-4e4e-8658-08c87868f6ae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\RenderGraph">
+      <UniqueIdentifier>{fed68565-bd7a-49e4-b47b-8f36b94a1fa1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\VulkanRenderEngine\RenderPass">
+      <UniqueIdentifier>{7f6628c8-d7c6-4b4c-951d-97f0d4393c71}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="vkstdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanDevice.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanInstance.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanOutput.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSurface.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSwapchain.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKCore\CoreGeneral.h">
+      <Filter>头文件\VulkanRenderEngine\VKCore</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKRenderPass.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\WrapperGeneral.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKFrameBuffer.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaBuffer.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKCommandBuffer.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKCommandPool.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKFence.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSemaphore.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaImage.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animation.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animdata.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AtlasMap.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Bone.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\ComputePipeline.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Effect.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\GraphicsPipeline.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\LaserBeam.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Light.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Material.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Model.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Particle.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Pipeline.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2D.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureCube.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKContext.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VulkanRenderer.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\DependencySolver.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\PassNode.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraph.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphContext.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\TexturePool.h">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\BVHBuilder.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\OpenGLRenderContext.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderState.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferBase.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferManager.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AutoExposurePass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\BloomPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CombinPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DepthFogPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EffectPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\FirstPersonPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\GeometryPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\HZBPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightDrawPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightingPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\LightShadowDepthPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\PreCalculatePass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceGeneralPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceGIPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RayTraceReflectPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RenderPassBase.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkyBoxPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSAOPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSGIPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSRPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\TransparentPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderOption.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\SharedTexture.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\GlobalConfig.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\DynamicBlock.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKImageView.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSampler.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\BaseVKImage.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\SharedImage.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Public.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="header_only_impl.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKRenderPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\CoreGeneral.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanDevice.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanInstance.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSurface.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSwapchain.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKCore</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKFrameBuffer.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaBuffer.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKCommandBuffer.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKCommandPool.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKFence.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKSemaphore.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaImage.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Material.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Mesh.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Model.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\ComputePipeline.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\GraphicsPipeline.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Pipeline.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\BVHBuilder.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AssimpGlmHelpers.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\DynamicBlock.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\GeneralSegmentBuffer.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKImageView.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKSampler.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VulkanRenderer.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKContext.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Light.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AtlasMap.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\DependencySolver.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\PassNode.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraph.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\PreCalculatePass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\HZBPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightShadowDepthPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GeometryPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightingPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CombinPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\BaseVKImage.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\SharedImage.cpp">
+      <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animator.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animation.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Bone.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Public.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\SharedTexture.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyBoxPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceGIPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceGeneralPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightDrawPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceReflectPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DepthFogPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\DDSLoader.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source\include\VulkanRenderEngine\RenderGraph\PassNode.inl">
+      <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
+    </None>
+    <None Include="source\include\VulkanRenderEngine\General\SegmentBufferManager.inl">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </None>
+  </ItemGroup>
+</Project>

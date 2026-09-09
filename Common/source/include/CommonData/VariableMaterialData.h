@@ -20,8 +20,8 @@ struct VariableMaterialData
 	float opacity = 1.0f;
 	AlphaMode alphamode = AlphaMode::Opaque;	// 透明纹理使用模式
 
-	glm::vec3 emissionColor = glm::vec3(1.f);
-	float emissionStrength = 0.0f;
+	glm::vec3 emissionColor = glm::vec3(0.f);
+	float emissionStrength = 1.0f;
 
 	bool twosided = false;		//绘制双面
 };

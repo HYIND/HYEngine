@@ -100,10 +100,7 @@ std::shared_ptr<TextureAsset> AssetLoadHelper::LoadTexture(AssetMeta& meta, std:
 		return asset;
 
 	auto config = desc.GetConfig();
-	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config.gammaCorrection);
-	asset->_texture->SetFiltering(config.minFilter, config.magFilter)
-		.SetWrapping(config.wrapS, config.wrapT)
-		.SetAnisotropy(config.anisotropy);
+	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config);
 
 	return asset;
 }

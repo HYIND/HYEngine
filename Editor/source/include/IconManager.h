@@ -1,9 +1,16 @@
 #pragma once
+
+#include "stdafx.h"
 #include <unordered_map>
 #include <string>
-#include "imgui.h"
-#include "OpenGLRenderEngine/Base/Texture2D.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
 #include "Project/AssetDataBase.h"
+
+struct Icon
+{
+	std::shared_ptr<Texture2D> tex;
+	VkDescriptorSet descSet = VK_NULL_HANDLE;
+};
 
 class IconManager
 {
@@ -21,5 +28,5 @@ private:
 	void LoadIcons()const;
 
 private:
-	mutable std::unordered_map<std::string, std::shared_ptr<Texture2D>> m_icons;
+	mutable std::unordered_map<std::string, Icon> m_icons;
 };

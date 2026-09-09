@@ -9,6 +9,9 @@ namespace fs = std::filesystem;
 
 namespace Tool
 {
+	std::string ToLower(const std::string& str);
+	std::string ToUpper(const std::string& str);
+
 	std::string AnsiToUTF8(const std::string& ansiStr);
 	std::string WStringToUTF8(const std::wstring& wstr);
 	std::wstring UTF8ToWString(const std::string& str);

@@ -1,8 +1,9 @@
+#include "vkstdafx.h"
 #include "RenderEngine/Renderer.h"
 #include "RenderEngine/D2DTools.h"
 #include "Helper/Tools.h"
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
-#include "OpenGLRenderEngine/SharedTexture.h"
+#include "VulkanRenderEngine/VKContext.h"
+#include "GeneralManager/WindowHandleManager.h"
 #include <glm/gtc/matrix_access.hpp>
 #include <memory>
 #include <algorithm>
@@ -10,12 +11,9 @@
 
 using namespace Render;
 
-SharedTexture g_sharedTexture;
-
 glm::vec2 MapPosToRenderPos(const glm::vec2& mapPos)
 {
-	RECT rect = RENDERCONTEXMANAGER->GetRECT();
-
+	RECT rect = WINDOWHANDLEMANAGER->GetRect();
 
 	glm::vec2 renderPos;
 
@@ -305,26 +303,14 @@ void OpenGLRenderFrameDataAnalysisHelp::processFirstPersonModel(
 
 
 Renderer::Renderer(ID2D1DeviceContext* rt, RenderTripleBufferPtr buffers)
-	:_redBrush(nullptr), _usebitmap1(false), _optionChange(false), _isOpenGLInit(false), _earlyThreadStop(true)
+	:_redBrush(nullptr), _optionChange(false), _isVulkanInit(false), _earlyThreadStop(true)
 {
 	SetRenderTarget(rt);
 	SetBuffers(buffers);
-
-	ID2D1DeviceContext* pDeviceContext = nullptr;
-	HRESULT hr = _renderTarget->QueryInterface(IID_PPV_ARGS(&pDeviceContext));
-	if (SUCCEEDED(hr) && pDeviceContext)
-	{
-		pDeviceContext->Release();
-		_usebitmap1 = true;
-	}
 }
 
 Render::Renderer::~Renderer()
 {
-	if (_openGLBitmap)
-		_openGLBitmap->Release();
-	if (_openGLBitmap1)
-		_openGLBitmap1->Release();
 }
 
 void Renderer::SetRenderTarget(ID2D1DeviceContext* rt)
@@ -346,7 +332,7 @@ void Render::Renderer::EarlyProcessLoop()
 			std::this_thread::yield();
 			continue;
 		}
-		auto render = _openglRenderer;
+		auto render = _vulkanRenderer;
 		if (!render)
 		{
 			std::this_thread::yield();
@@ -388,21 +374,14 @@ void Renderer::renderFrame()
 		_earlyProcessThread = std::make_shared<std::thread>(&Renderer::EarlyProcessLoop, this);
 	}
 
-	auto render = _openglRenderer;
+	auto render = _vulkanRenderer;
 	if (!render)
 		return;
 
 	auto& data = _earlyDataBuffers.acquireReadBuffer();
 
-	if (_isOpenGLInit)
-	{
-		RENDERCONTEXMANAGER->WithMainOpenGLShared([&]()-> void
-			{
-				auto gurad = THREADCONTEXT->GetBindGuard();
-				renderOpenGLFrame(data.render, data.state);
-			}
-		);
-	}
+	if (_isVulkanInit)
+		renderOpenGLFrame(data.render, data.state);
 
 	renderD2DFrame(data.D2D_Contexts);
 
@@ -457,82 +436,73 @@ void Render::Renderer::renderD2DFrame(std::vector<std::shared_ptr<D2DRenderConte
 	_renderTarget->EndDraw();
 }
 
-void Render::Renderer::renderOpenGLFrame(std::shared_ptr<OpenGLRenderer>& render, RenderState& state)
+void Render::Renderer::renderOpenGLFrame(std::shared_ptr<VulkanRenderer>& render, RenderState& state)
 {
-	if (!render)
+	if (!render || !_sharedTexture)
 		return;
 
-	if (g_sharedTexture.InteropDevice)
-	{
-		auto res = wglDXLockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
-		render->Draw(state);
-		res = wglDXUnlockObjectsNV(g_sharedTexture.InteropDevice, 1, &g_sharedTexture.InteropObject);
+	render->Draw(state);
 
-		ID3D11Texture2D* pBackBuffer = nullptr;
-		auto hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-		if (SUCCEEDED(hr))
-		{
-			g_pD3DContext->CopyResource(pBackBuffer, g_sharedTexture.d3dTexture);	// 将共享纹理复制到后台缓冲区
-			pBackBuffer->Release();
-		}
-	}
-	else
+	ID3D11Texture2D* pBackBuffer = nullptr;
+	auto hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+	if (SUCCEEDED(hr))
 	{
-		render->Draw(state);
-
-		_renderTarget->BeginDraw();
-		if (_usebitmap1)
-		{
-			ConvertGLTextureToD2DBitmap1();
-			auto bitmap = _openGLBitmap1;
-			if (bitmap)
-			{
-				RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
-				_renderTarget->DrawBitmap(bitmap,
-					D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
-					1.f);
+		IDXGIKeyedMutex* pMutex = nullptr;
+		hr = _sharedTexture->d3dTexture->QueryInterface(IID_PPV_ARGS(&pMutex));
+		if (SUCCEEDED(hr) && pMutex) {
+			hr = pMutex->AcquireSync(0, 0);
+			if (FAILED(hr)) {
+				// 超时或错误，不能继续读取
+				pMutex->Release();
+				pBackBuffer->Release();
+				return;
 			}
 		}
-		else
-		{
-			ConvertGLTextureToD2DBitmap();
-			auto bitmap = _openGLBitmap;
-			if (bitmap)
-			{
-				RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
-				_renderTarget->DrawBitmap(bitmap,
-					D2D1::RectF(main_rect.left, main_rect.top, main_rect.right, main_rect.bottom),
-					1.f);
+
+		//g_pD3DContext->Flush();
+		g_pD3DContext->CopyResource(pBackBuffer, _sharedTexture->d3dTexture);	// 将共享纹理复制到后台缓冲区
+		pBackBuffer->Release();
+
+		if (pMutex) {
+			hr = pMutex->ReleaseSync(0);
+			if (FAILED(hr)) {
+				// 处理错误
 			}
 		}
-		_renderTarget->EndDraw();
-	}
 
+	}
 }
 
-void Render::Renderer::InitOpenGLRender(int scr_width, int scr_height)
+void Render::Renderer::InitVulkanRender(uint32_t scr_width, uint32_t scr_height)
 {
-	if (_openglRenderer)
+	if (_vulkanRenderer)
 		return;
 
-	auto r = std::make_shared<OpenGLRenderer>();
+	auto r = std::make_shared<VulkanRenderer>();
 
-	if (!g_sharedTexture.InteropDevice)
-		CreateSharedTexture(g_pD3DDevice, scr_width, scr_height, DXGI_FORMAT_B8G8R8A8_UNORM, &g_sharedTexture);
+	if (!_sharedTexture)
+		_sharedTexture = CreateSharedTexture(g_pD3DDevice, scr_width, scr_height, DXGI_FORMAT_B8G8R8A8_UNORM);
 
-	if (g_sharedTexture.InteropDevice)
-		r->Init(scr_width, scr_height, &g_sharedTexture);
-	else
-		r->Init(scr_width, scr_height);
+	if (!_sharedTexture)
+		return;
 
-	_openglRenderer = r;
+	std::vector<std::string> extensions;
+	extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 
-	_isOpenGLInit = true;
+	auto vulkanInstance = VulkanRenderer::CreateInstance(extensions);
+	auto vkRenderer = VulkanRenderer::CreateForSharedTexture(vulkanInstance, _sharedTexture);
+
+	if (vkRenderer != nullptr)
+	{
+		_vulkanRenderer = vkRenderer;
+		_isVulkanInit = true;
+	}
 }
 
 int Render::Renderer::GetOpenGLWidth()
 {
-	auto r = _openglRenderer;
+	auto r = _vulkanRenderer;
 	if (!r)
 		return 0;
 	return r->GetWidth();
@@ -540,15 +510,15 @@ int Render::Renderer::GetOpenGLWidth()
 
 int Render::Renderer::GetOpenGLHeight()
 {
-	auto r = _openglRenderer;
+	auto r = _vulkanRenderer;
 	if (!r)
 		return 0;
 	return r->GetHeight();
 }
 
-std::shared_ptr<OpenGLRenderer> Render::Renderer::GetOpenGLRender()
+std::shared_ptr<VulkanRenderer> Render::Renderer::GetOpenGLRender()
 {
-	return _openglRenderer;
+	return _vulkanRenderer;
 }
 
 void Renderer::processSprite(std::shared_ptr<D2DRenderContext::SpriteRenderData> data)
@@ -629,139 +599,6 @@ void Render::Renderer::processDebugLines(std::shared_ptr<D2DRenderContext::Debug
 			D2D1::Point2F(
 				pos2.x, pos2.y),
 			_redBrush);
-	}
-}
-
-void Render::Renderer::ConvertGLTextureToD2DBitmap()
-{
-	if (!_openglRenderer)
-		return;
-
-	GLuint textureId = _openglRenderer->GetColorBuffer();
-	int width = _openglRenderer->GetWidth();
-	int height = _openglRenderer->GetHeight();
-
-	// 1. 读取 OpenGL 纹理数据
-	std::vector<BYTE> pixels(width * height * 4);
-
-	glBindTexture(GL_TEXTURE_2D, textureId);
-	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-	// 2. 转换颜色格式（RGBA -> BGRA）
-	for (int i = 0; i < width * height; i++) {
-		int index = i * 4;
-		std::swap(pixels[index], pixels[index + 2]); // R <-> B
-	}
-
-	// 3. 翻转 Y 轴（OpenGL -> Direct2D）
-	int rowBytes = width * 4;
-	for (int y = 0; y < height / 2; y++) {
-		int srcY = y;
-		int destY = (height - 1) - y;
-		int srcIdx = y * rowBytes;
-		int destIdx = destY * rowBytes;
-		std::swap_ranges(
-			pixels.begin() + srcIdx,
-			pixels.begin() + srcIdx + rowBytes,
-			pixels.begin() + destIdx
-		);
-	}
-
-	if (_openGLBitmap)
-	{
-		_openGLBitmap->Release();
-		_openGLBitmap = NULL;
-	}
-
-	D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-		D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)
-	);
-
-	ID2D1Bitmap* d2dBitmap = nullptr;
-	HRESULT hr = _renderTarget->CreateBitmap(
-		D2D1::SizeU(width, height),
-		pixels.data(),
-		width * 4,  // stride
-		props,
-		&d2dBitmap
-	);
-
-	if (FAILED(hr))
-		d2dBitmap = nullptr;
-
-	_openGLBitmap = d2dBitmap;
-}
-
-void Render::Renderer::ConvertGLTextureToD2DBitmap1()
-{
-
-	if (!_openglRenderer)
-		return;
-
-	GLuint textureId = _openglRenderer->GetColorBuffer();
-	int width = _openglRenderer->GetWidth();
-	int height = _openglRenderer->GetHeight();
-
-	// 1. 读取 OpenGL 纹理数据
-	std::vector<BYTE> pixels(width * height * 4);
-
-	glBindTexture(GL_TEXTURE_2D, textureId);
-	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-	// 2. 转换颜色格式（RGBA -> BGRA）
-	for (int i = 0; i < width * height; i++) {
-		int index = i * 4;
-		std::swap(pixels[index], pixels[index + 2]); // R <-> B
-	}
-
-	// 3. 翻转 Y 轴（OpenGL -> Direct2D）
-	int rowBytes = width * 4;
-	for (int y = 0; y < height / 2; y++) {
-		int srcY = y;
-		int destY = (height - 1) - y;
-		int srcIdx = y * rowBytes;
-		int destIdx = destY * rowBytes;
-		std::swap_ranges(
-			pixels.begin() + srcIdx,
-			pixels.begin() + srcIdx + rowBytes,
-			pixels.begin() + destIdx
-		);
-	}
-
-	if (!_openGLBitmap1)
-	{
-		ID2D1DeviceContext* pDeviceContext = nullptr;
-		HRESULT hr = _renderTarget->QueryInterface(IID_PPV_ARGS(&pDeviceContext));
-		if (SUCCEEDED(hr) && pDeviceContext)
-		{
-			D2D1_BITMAP_PROPERTIES1 props1 = D2D1::BitmapProperties1(
-				D2D1_BITMAP_OPTIONS_TARGET,
-				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)
-			);
-
-			ID2D1Bitmap1* d2dBitmap = nullptr;
-			hr = pDeviceContext->CreateBitmap(
-				D2D1::SizeU(width, height),
-				pixels.data(),
-				width * 4,  // stride
-				props1,
-				&d2dBitmap);
-
-			if (FAILED(hr))
-				d2dBitmap = nullptr;
-
-			_openGLBitmap1 = d2dBitmap;
-			pDeviceContext->Release();
-		}
-	}
-	else
-	{
-		D2D1_RECT_U dstRect = D2D1::RectU(0, 0, width, height);
-		HRESULT hr = _openGLBitmap1->CopyFromMemory(
-			&dstRect,                          // 目标区域
-			pixels.data(),
-			width * 4                          // stride
-		);
 	}
 }
 

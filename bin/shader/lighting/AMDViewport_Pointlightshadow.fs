@@ -5,13 +5,13 @@ struct LightProp{
     float farPlane;
 };
 
-layout(std430, binding = 6) buffer LightProps
+layout(set = 0, binding = 6) buffer LightProps
 {
 	LightProp lightProp[];
 };
 
-flat in int Index;
-in vec3 WorldPos;
+layout (location = 0) flat in int Index;
+layout (location = 1) in vec3 WorldPos;
 
 void main()
 {

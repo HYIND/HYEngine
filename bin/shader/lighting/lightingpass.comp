@@ -1,0 +1,56 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Helper/ligtingHelper.comp"
+
+layout (binding = 0, rgba16f) uniform image2D outPutColor;
+
+layout (binding = 1) uniform sampler2D gPosition;
+layout (binding = 2) uniform sampler2D gNormal;
+layout (binding = 3) uniform sampler2D gAlbedoOpacity;
+layout (binding = 4) uniform sampler2D gMetallicRoughness;
+layout (binding = 5) uniform sampler2D gEmission;
+layout (binding = 6) uniform sampler2D ssao;
+layout (binding = 7) uniform sampler2D atlasShadowMap;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outPutColor);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+	vec3 normal = texture(gNormal, TexCoords).rgb;
+	if(length(normal) <= 0.001)
+	{
+		imageStore(outPutColor, coord, vec4(0.0, 0.0, 0.0, 1.0));
+		return;
+	}
+
+
+	vec3 fragPos = texture(gPosition, TexCoords).rgb;
+	vec4 metallicRoughness = texture(gMetallicRoughness, TexCoords);
+
+	PBRProperties prop;
+    prop.albedo = texture(gAlbedoOpacity, TexCoords).rgb;
+	prop.metallic = metallicRoughness.r;
+	prop.roughness = metallicRoughness.g;
+	prop.ambientOcclusion = clamp(min(texture(ssao, TexCoords).r, metallicRoughness.b), 0.f, 1.f);
+
+	vec3 emission = texture(gEmission, TexCoords).rgb;
+	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal, prop);
+
+	imageStore(outPutColor, coord, vec4(lightColor + emission, 1.0));
+}

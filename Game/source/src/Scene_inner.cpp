@@ -1,5 +1,5 @@
 #include "Scene.h"
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
+#include "GeneralManager/WindowHandleManager.h"
 
 D2D_Bitmap* Scene::AddResourceBitmap(int loc1, int loc2, int loc3, int loc4, ID2D1Bitmap* pBitmap, float opacity)
 {
@@ -160,7 +160,7 @@ void Scene::OnClick(bool isLButtonPress, bool isShiftPress)
 		if (MousePos::ClickX > Button->Button_location1 && MousePos::ClickX < Button->Button_location3 &&
 			MousePos::ClickY > Button->Button_location2 && MousePos::ClickY < Button->Button_location4)
 		{
-			SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+			SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 		}
 	}
 	else if (Bitmap_changed) {
@@ -168,7 +168,7 @@ void Scene::OnClick(bool isLButtonPress, bool isShiftPress)
 		if (MousePos::ClickX > Button->Button_location1 && MousePos::ClickX < Button->Button_location3 &&
 			MousePos::ClickY > Button->Button_location2 && MousePos::ClickY < Button->Button_location4)
 		{
-			SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+			SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 		}
 	}
 	else
@@ -178,7 +178,7 @@ void Scene::OnClick(bool isLButtonPress, bool isShiftPress)
 			if (MousePos::ClickX > Button->Button_location1 && MousePos::ClickX < Button->Button_location3 &&
 				MousePos::ClickY > Button->Button_location2 && MousePos::ClickY < Button->Button_location4)
 			{
-				SendMessage(RENDERCONTEXMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)RENDERCONTEXMANAGER->GetHwnd());
+				SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Button->id, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 			}
 		}
 	}

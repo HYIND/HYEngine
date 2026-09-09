@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ECSCore/IComponent.h"
-#include "OpenGLRenderEngine/Base/TextureCube.h"
+#include "VulkanRenderEngine/Base/TextureCube.h"
 
 struct SkyBox :public Renderable
 {

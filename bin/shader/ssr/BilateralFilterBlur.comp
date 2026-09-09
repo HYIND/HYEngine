@@ -1,4 +1,4 @@
-#version 450 core
+#version 460 core
 
 #ifndef work_size_x
 #define work_size_x 16
@@ -7,30 +7,28 @@
 #define work_size_y 16
 #endif
 
-
-layout(binding = 0, rgba16f) uniform image2D outputImage;
-
-layout(local_size_x = work_size_x, local_size_y = work_size_y) in; 
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
 #include "shader/dataDef/camerauboDef.comp"
 
-uniform ivec2 screenSize;
+layout (binding = 0) uniform Params
+{
+    ivec2 screenSize;
+    int kernelSize; 
+    float sigma;
+    float blurRadius;
+    float blurDepthWeight;
+};
 
-uniform sampler2D gNormal;
-uniform sampler2D depthMap;
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D gNormal;
+layout (binding = 3) uniform sampler2D depthMap;
+layout (binding = 4) uniform sampler2D rawTexture;
 
-uniform sampler2D rawTexture;
-
-uniform int kernelSize; 
-uniform float sigma;
-
-uniform float blurRadius;
-uniform float blurDepthWeight;
 
 float DepthBufferConvertToViewDepth(float depth)
 {
-    float z_ndc = depth * 2.0 - 1.0;
-    return (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - z_ndc * (camera.farPlane - camera.nearPlane));
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
 void GetDepthNormal(vec2 uv, inout float depth, inout float lineraDepth, inout vec3 normal)

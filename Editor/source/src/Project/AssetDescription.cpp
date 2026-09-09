@@ -152,8 +152,8 @@ bool TextureAssetDescription::LoadFromFile(const std::string& filePath)
 		_path = a.value("path", "");
 		_config.minFilter = a.value("minFilter", _config.minFilter);
 		_config.magFilter = a.value("magFilter", _config.magFilter);
-		_config.wrapS = a.value("wrapS", _config.wrapS);
-		_config.wrapT = a.value("wrapT", _config.wrapT);
+		_config.wrapU = a.value("wrapU", _config.wrapU);
+		_config.wrapV = a.value("wrapV", _config.wrapV);
 		_config.anisotropy = a.value("anisotropy", _config.anisotropy);
 		_config.gammaCorrection = a.value("gammaCorrection", _config.gammaCorrection);
 	}
@@ -170,8 +170,8 @@ bool TextureAssetDescription::SaveToFile(const std::string& filePath)
 		a["path"] = _path;
 		a["minFilter"] = _config.minFilter;
 		a["magFilter"] = _config.magFilter;
-		a["wrapS"] = _config.wrapS;
-		a["wrapT"] = _config.wrapT;
+		a["wrapU"] = _config.wrapU;
+		a["wrapV"] = _config.wrapV;
 		a["anisotropy"] = _config.anisotropy;
 		a["gammaCorrection"] = _config.gammaCorrection;
 		content["TextureSetting"] = a;
@@ -182,11 +182,11 @@ bool TextureAssetDescription::SaveToFile(const std::string& filePath)
 
 AssetPath TextureAssetDescription::GetPath() const { return _path; }
 
-TextureConfig TextureAssetDescription::GetConfig() const { return _config; }
+Texture2DConfig TextureAssetDescription::GetConfig() const { return _config; }
 
 void TextureAssetDescription::SetPath(const AssetPath& assetPath) { _path = assetPath; }
 
-void TextureAssetDescription::SetConfig(const TextureConfig& config) { _config = config; }
+void TextureAssetDescription::SetConfig(const Texture2DConfig& config) { _config = config; }
 
 bool AduioAssetDescription::LoadFromFile(const std::string& filePath)
 {

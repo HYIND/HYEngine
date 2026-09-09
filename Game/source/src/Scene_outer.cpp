@@ -7,6 +7,7 @@
 
 #include "GeneralManager/KeyMapManaer.h"
 #include "GeneralManager/RenderManager.h"
+#include "GeneralManager/WindowHandleManager.h"
 
 #include <commctrl.h>
 #pragma comment(lib, "comctl32.lib")
@@ -108,7 +109,7 @@ LRESULT CALLBACK Edit_Hall_Proc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_KEYDOWN: //对键盘消息处理
 		if (wParam == VK_RETURN && (GetAsyncKeyState(VK_CONTROL) & 0x8000))
 		{
-			HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+			HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 			SendMessage(main_hwnd, WM_COMMAND, IDB_HALL_SEND, (LPARAM)main_hwnd);
 		}
 		break;
@@ -125,7 +126,7 @@ LRESULT CALLBACK Edit_Room_Proc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_KEYDOWN: //对键盘消息处理
 		if (wParam == VK_RETURN && (GetAsyncKeyState(VK_CONTROL) & 0x8000))
 		{
-			HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+			HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 			SendMessage(main_hwnd, WM_COMMAND, IDB_ROOM_SEND, (LPARAM)main_hwnd);
 		}
 		break;
@@ -142,7 +143,7 @@ INT_PTR CALLBACK Pause(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 	{
 		RECT Fathermain_rect;
 		RECT Mymain_rect;
-		HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+		HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 		GetWindowRect(main_hwnd, &Fathermain_rect);
 		GetClientRect(hDlg, &Mymain_rect);
 		SetWindowPos(
@@ -188,7 +189,7 @@ INT_PTR CALLBACK Return(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 	{
 		RECT Fathermain_rect;
 		RECT Mymain_rect;
-		HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+		HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 		GetWindowRect(main_hwnd, &Fathermain_rect);
 		GetClientRect(hDlg, &Mymain_rect);
 		SetWindowPos(
@@ -261,7 +262,7 @@ BOOL CALLBACK GetID_Proc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
 void Scene_Main::DrawMain()
 {
-	RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+	RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
 	pRenderTarget->DrawBitmap(ResFactory->GetBitMapRes(ResName::opBK), D2D1::RectF(0, 0, main_rect.right, main_rect.bottom));
 }
 
@@ -298,7 +299,7 @@ void Scene_Main::Load(RECT& rect)
 
 void Scene_Hall::Load(RECT& rect)
 {
-	HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+	HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 
 	AddResourceBitmap(broder_left, broder_top, broder_right, broder_bottom, ResFactory->GetBitMapRes(ResName::textBK), 0.4f);
 
@@ -408,7 +409,7 @@ void Scene_Hall::Load(RECT& rect)
 
 void Scene_Hall::DrawHall()
 {
-	RECT rect = RENDERCONTEXMANAGER->GetRECT();
+	RECT rect = WINDOWHANDLEMANAGER->GetRect();
 	pRenderTarget->DrawBitmap(ResFactory->GetBitMapRes(ResName::opBK), D2D1::RectF(0, 0, rect.right, rect.bottom));
 }
 
@@ -420,7 +421,7 @@ void Scene_Hall::OnDrawScene(double time_diff)
 
 void Scene_Room::Load(RECT& rect)
 {
-	HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+	HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 
 	if (isLoad == false)
 	{
@@ -540,7 +541,7 @@ void Scene_Room::SetScene(bool isHost, bool isready)
 
 void Scene_Option::Load(RECT& rect)
 {
-	HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+	HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 
 	AddResourceBitmap(broder_left, broder_top, broder_right, broder_bottom, ResFactory->GetBitMapRes(ResName::textBK), 0.4f);
 	AddButton(rect.left, rect.top, rect.left + 144, rect.top + 87,
@@ -914,7 +915,7 @@ void Scene_Option::OnDrawScene(double time_diff)
 
 void Scene_Option::DrawOption()
 {
-	RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+	RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
 
 	//FPS选项
 	pRenderTarget->DrawBitmap(ResFactory->GetBitMapRes(ResName::opBK), D2D1::RectF(0, 0, main_rect.right, main_rect.bottom));
@@ -1062,7 +1063,7 @@ void Load_D2DUI(RECT& rect)
 
 void Init_Scene()
 {
-	HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+	HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 
 	GetClientRect(main_hwnd, &rect);
 
@@ -1080,7 +1081,7 @@ void Init_Scene()
 
 void Scene_Room::DrawRoom()
 {
-	RECT main_rect = RENDERCONTEXMANAGER->GetRECT();
+	RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
 	pRenderTarget->DrawBitmap(ResFactory->GetBitMapRes(ResName::opBK), D2D1::RectF(0, 0, main_rect.right, main_rect.bottom));
 }
 void Scene_Room::OnDrawScene(double time_diff)

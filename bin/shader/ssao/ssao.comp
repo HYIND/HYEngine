@@ -1,0 +1,83 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/dataDef/camerauboDef.comp"
+
+layout(binding = 0, r32f) uniform image2D outputAO;
+
+layout(binding = 1) uniform sampler2D gPosition; 
+layout(binding = 2) uniform sampler2D gNormal;   
+layout(binding = 3) uniform sampler2D texNoise;  
+
+layout(binding = 4) uniform SSAOParams {
+    vec4 samples[64];
+    uint kernelSize;
+    float radius;
+    float bias;
+};
+
+float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv)
+{
+    // create TBN change-of-basis matrix: from tangent-space to view-space
+    vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
+    vec3 bitangent = cross(normal, tangent);
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+    // iterate over the sample kernel and calculate occlusion factor
+    float occlusion = 0.0;
+    for(int i = 0; i < kernelSize; ++i)
+    {
+        // get sample position
+        vec3 samplePos = TBN * samples[i].xyz; // from tangent to view-space
+        samplePos = fragPos + samplePos * radius;
+
+        // project sample position (to sample texture) (to get position on screen/texture)
+        vec4 offset = vec4(samplePos, 1.0);
+        offset = camera.projection * offset; // from view to clip-space
+        offset.xyz /= offset.w; // perspective divide
+        offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
+
+        vec3 sampleWorldPos = texture(gPosition, offset.xy).xyz;
+        float sampleDepth = (camera.view * vec4(sampleWorldPos, 1.0f)).z;
+
+        // range check & accumulate
+        float rangeCheck = smoothstep(0.0, 1.0, radius / abs(fragPos.z - sampleDepth));
+        occlusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
+    }
+    occlusion = 1.0 - (occlusion / kernelSize);
+    
+    return occlusion;
+}
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputAO);
+    
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec2 noiseScale = vec2(float(imageSize.x) / 4.0, float(imageSize.y) / 4.0);
+
+    vec3 worldFragPos = texture(gPosition, TexCoords).xyz;
+    vec3 worldNormal = normalize(texture(gNormal, TexCoords).rgb);
+
+    vec3 viewFragPos = (camera.view * vec4(worldFragPos, 1.0f)).xyz;
+    vec3 viewNormal = normalize(mat3(transpose(inverse(camera.view))) * normalize(worldNormal));
+
+    vec3 randomVec = normalize(texture(texNoise, TexCoords * noiseScale).xyz);
+
+    float ao = getOcclusion(viewFragPos, viewNormal, randomVec, TexCoords);
+    
+    imageStore(outputAO, coord, vec4(ao, 0.0, 0.0, 1.0));
+}

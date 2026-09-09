@@ -1,0 +1,51 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout (rgba16f, binding = 0) uniform image2D outputImage;
+layout (binding = 1) uniform sampler2D depthMap;
+layout (binding = 2) uniform samplerCube skybox;
+
+#include "shader/dataDef/camerauboDef.comp"
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 screenSize = imageSize(outputImage);
+
+    if (coord.x >= screenSize.x || coord.y >= screenSize.y) 
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(screenSize);
+
+    float depth = texture(depthMap, TexCoords).r;
+    if (depth <= 0.9999)
+        return;
+
+    vec2 ndc = vec2(
+        (float(coord.x) / screenSize.x) * 2.0 - 1.0,
+        (float(coord.y) / screenSize.y) * 2.0 - 1.0
+    );
+
+    // 构造远平面上的点（齐次坐标）
+    vec4 clipPos = vec4(ndc, 1.0, 1.0);
+    vec4 viewPos = camera.invProjection * clipPos;
+    viewPos /= viewPos.w;           // 得到视图空间坐标
+    vec3 viewDir = viewPos.xyz;     // 视图空间方向
+
+    // 变换到世界空间
+    vec4 worldPos = camera.invView * vec4(viewDir, 0.0);
+    vec3 worldDir = normalize(worldPos.xyz);
+
+    // 采样立方体贴图
+    vec3 color = texture(skybox, worldDir).rgb;
+
+    // 输出到图像
+    imageStore(outputImage, coord, vec4(color, 1.0f));
+}

@@ -28,12 +28,6 @@
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
-    <ClInclude Include="Imgui\backend\imgui_impl_opengl3.h">
-      <Filter>Imgui\backend</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\backend\imgui_impl_opengl3_loader.h">
-      <Filter>Imgui\backend</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\WorldManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -106,6 +100,12 @@
     <ClInclude Include="source\include\AssetImportPopup.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="ImguiInit\VulkanInit.h">
+      <Filter>头文件\ImguiInit</Filter>
+    </ClInclude>
+    <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h">
+      <Filter>Imgui\backend</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="资源文件">
@@ -138,6 +138,12 @@
     <Filter Include="源文件\Project">
       <UniqueIdentifier>{c3f66781-1b72-47a9-a9f0-38636ab24f5d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\ImguiInit">
+      <UniqueIdentifier>{a6b6c389-f629-4f67-9879-19c0e97433b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\ImguiInit">
+      <UniqueIdentifier>{29dc4318-7d3e-448f-88d9-4b21bbac2047}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Imgui\imgui.cpp">
@@ -156,9 +162,6 @@
       <Filter>Imgui</Filter>
     </ClCompile>
     <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp">
-      <Filter>Imgui\backend</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\backend\imgui_impl_opengl3.cpp">
       <Filter>Imgui\backend</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
@@ -223,6 +226,12 @@
     </ClCompile>
     <ClCompile Include="source\src\AssetImportPopup.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ImguiInit\VulkanInit.cpp">
+      <Filter>源文件\ImguiInit</Filter>
+    </ClCompile>
+    <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp">
+      <Filter>Imgui\backend</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

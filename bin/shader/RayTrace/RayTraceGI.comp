@@ -1,44 +1,48 @@
 #version 450 core
 
-#include "shader/dataDef/materialDataDef.comp"
-#include "shader/dataDef/camerauboDef.comp"
-#include "shader/Helper/ligtingHelper.comp"
-
-layout(local_size_x = 16, local_size_y = 16) in; 
-
-layout(binding = 0, rgba16f) uniform image2D outputImage;
-
-#ifndef Max_Recursive_Depth
-#define Max_Recursive_Depth 20
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
 #endif
 
 #ifndef Max_Bounce_limit
 #define Max_Bounce_limit 5
 #endif
 
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+
+#include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Helper/ligtingHelper.comp"
+#include "shader/RayTrace/RayTraceGeneral.comp"
+
+
 //光追参数
-uniform float tMin;
-uniform float tMax;
-uniform uint maxBounce;       // 最大反射次数
+layout (binding = 5) uniform Params
+{
+    ivec2 screenSize;
+    float tMin;
+    float tMax;
+    uint maxBounce;       // 最大反射次数
+    uint sampleRayCount;
+    float GIIntensity;
+    uint frameIndex;
+};
 
-uniform uint sampleRayCount;
-uniform float GIIntensity;
+layout(binding = 6, rgba16f) uniform image2D outputImage;
+layout (binding = 7) uniform sampler2D gPosition;
+layout (binding = 8) uniform sampler2D gNormal;
+layout (binding = 9) uniform sampler2D gAlbedoOpacity;
+layout (binding = 10) uniform sampler2D gMetallicRoughness;
+layout (binding = 11) uniform sampler2D depthMap;
+layout (binding = 12) uniform sampler2D atlasShadowMap;
+layout (binding = 13) uniform sampler2D SSAOMap;
 
-uniform ivec2 screenSize;
-
-uniform sampler2D gPosition;
-uniform sampler2D gNormal;
-uniform sampler2D gAlbedoOpacity;
-uniform sampler2D gMetallicRoughness;
-uniform sampler2D depthMap;
-uniform sampler2D atlasShadowMap;
-uniform sampler2D SSAOMap;
-
-uniform int frameIndex;
 
 const float RussianRouletteFactor = 0.8f;
-
-#include "shader/RayTrace/RayTraceGeneral.comp"
 
 vec3 traceRay(
     vec3 viewPos, 
@@ -104,25 +108,16 @@ vec3 traceRay(
         //计算该点光照颜色
 	    getPBRProperties(hit.materialdata, hit.texCoords, prop);
 
-        vec3 normal = hit.materialdata.texture_normal_count > 0 ?
-            normalize(mat3(hit.tangent, hit.bitangent, hit.normal) * normalize(texture(hit.materialdata.texture_normal, hit.texCoords).rgb * 2.0 - 1.0))
-            : hit.normal;
+        vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
 
         vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
-	    if (emission.x > 0 || emission.y > 0 || emission.z > 0)
-        {
-            colors[hitCount] = emission;
-        }
-        else 
-        {
-            vec3 lightingColor = CalcLighting(
-                camera.view, ray.origin, camera.farPlane,
-                atlasShadowMap, 
-                hit.position, normal,
-                prop
-                );
-            colors[hitCount] = lightingColor;
-        }
+        vec3 lightingColor = CalcLighting(
+            camera.view, ray.origin, camera.farPlane,
+            atlasShadowMap, 
+            hit.position, normal,
+            prop
+            );
+        colors[hitCount] = lightingColor + emission;
 
         viewPos = ray.origin;
         fragPos = hit.position;

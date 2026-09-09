@@ -5,7 +5,7 @@
 #include <string>
 #include <filesystem>
 
-#include "imgui.h"
+#include "stdafx.h"
 #include "Helper/FileIO.h"
 #include "Project/AssetMeta.h"
 #include "Project/AssetDescription.h"
@@ -124,7 +124,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		case AssetType::StaticMesh:
 			break;
 		case AssetType::Texture:
-			DrawTextureConfig();
+			DrawTexture2DConfig();
 			break;
 		case AssetType::Material:
 			break;
@@ -187,44 +187,43 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 	}
 }
 
-void AssetImportPopup::DrawTextureConfig()
+void AssetImportPopup::DrawTexture2DConfig()
 {
 	if (ImGui::CollapsingHeader("Texture Configuration", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		// Min Filter
-		const char* filterItems[] = { "GL_NEAREST", "GL_LINEAR", "GL_NEAREST_MIPMAP_NEAREST",
-									   "GL_LINEAR_MIPMAP_NEAREST", "GL_NEAREST_MIPMAP_LINEAR", "GL_LINEAR_MIPMAP_LINEAR" };
-		unsigned int filterValues[] = { GL_NEAREST, GL_LINEAR, GL_NEAREST_MIPMAP_NEAREST,
-										 GL_LINEAR_MIPMAP_NEAREST, GL_NEAREST_MIPMAP_LINEAR, GL_LINEAR_MIPMAP_LINEAR };
-		int currentMinFilter = GetFilterIndex(m_config.minFilter, filterValues, 6);
-		if (ImGui::Combo("Min Filter", &currentMinFilter, filterItems, IM_ARRAYSIZE(filterItems)))
+
+		const char* minFilterItems[] = { "NEAREST", "LINEAR" };
+		unsigned int minFilterValues[] = { (int)vk::Filter::eNearest, (int)vk::Filter::eLinear };
+		int currentMinFilter = GetFilterIndex((int)m_config.minFilter, minFilterValues, 2);
+		if (ImGui::Combo("Min Filter", &currentMinFilter, minFilterItems, IM_ARRAYSIZE(minFilterItems)))
 		{
-			m_config.minFilter = filterValues[currentMinFilter];
+			m_config.minFilter = (vk::Filter)minFilterValues[currentMinFilter];
 		}
 
 		// Mag Filter
-		const char* magFilterItems[] = { "GL_NEAREST", "GL_LINEAR" };
-		unsigned int magFilterValues[] = { GL_NEAREST, GL_LINEAR };
-		int currentMagFilter = GetFilterIndex(m_config.magFilter, magFilterValues, 2);
+		const char* magFilterItems[] = { "NEAREST", "LINEAR" };
+		unsigned int magFilterValues[] = { (int)vk::Filter::eNearest, (int)vk::Filter::eLinear };
+		int currentMagFilter = GetFilterIndex((int)m_config.magFilter, magFilterValues, 2);
 		if (ImGui::Combo("Mag Filter", &currentMagFilter, magFilterItems, IM_ARRAYSIZE(magFilterItems)))
 		{
-			m_config.magFilter = magFilterValues[currentMagFilter];
+			m_config.magFilter = (vk::Filter)magFilterValues[currentMagFilter];
 		}
 
-		// Wrap S
-		const char* wrapItems[] = { "GL_CLAMP_TO_EDGE", "GL_CLAMP_TO_BORDER", "GL_REPEAT", "GL_MIRRORED_REPEAT" };
-		unsigned int wrapValues[] = { GL_CLAMP_TO_EDGE, GL_CLAMP_TO_BORDER, GL_REPEAT, GL_MIRRORED_REPEAT };
-		int currentWrapS = GetFilterIndex(m_config.wrapS, wrapValues, 4);
-		if (ImGui::Combo("Wrap S", &currentWrapS, wrapItems, IM_ARRAYSIZE(wrapItems)))
+		// Wrap U
+		const char* wrapItems[] = { "CLAMP_TO_EDGE", "CLAMP_TO_BORDER", "REPEAT", "MIRRORED_REPEAT" };
+		unsigned int wrapValues[] = { (int)vk::SamplerAddressMode::eClampToEdge,  (int)vk::SamplerAddressMode::eClampToBorder, (int)vk::SamplerAddressMode::eRepeat, (int)vk::SamplerAddressMode::eMirroredRepeat };
+		int currentWrapU = GetFilterIndex((int)m_config.wrapU, wrapValues, 4);
+		if (ImGui::Combo("Wrap U", &currentWrapU, wrapItems, IM_ARRAYSIZE(wrapItems)))
 		{
-			m_config.wrapS = wrapValues[currentWrapS];
+			m_config.wrapU = (vk::SamplerAddressMode)wrapValues[currentWrapU];
 		}
 
 		// Wrap T
-		int currentWrapT = GetFilterIndex(m_config.wrapT, wrapValues, 4);
-		if (ImGui::Combo("Wrap T", &currentWrapT, wrapItems, IM_ARRAYSIZE(wrapItems)))
+		int currentWrapV = GetFilterIndex((int)m_config.wrapV, wrapValues, 4);
+		if (ImGui::Combo("Wrap V", &currentWrapV, wrapItems, IM_ARRAYSIZE(wrapItems)))
 		{
-			m_config.wrapT = wrapValues[currentWrapT];
+			m_config.wrapV = (vk::SamplerAddressMode)wrapValues[currentWrapV];
 		}
 
 		// Anisotropy

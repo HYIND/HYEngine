@@ -1,5 +1,7 @@
 #version 460 core
 
+#include "shader/dataDef/camerauboDef.comp"
+
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoords;
@@ -8,9 +10,7 @@ layout (location = 4) in vec3 aBitangent;
 layout (location = 5) in ivec4 aBoneIds[2]; 
 layout (location = 7) in vec4 aWeights[2];
 
-#include "shader/dataDef/camerauboDef.comp"
-
-layout(binding = 0, std430) buffer Transforms{
+layout(set = 0, binding = 2) buffer Transforms{
     mat4 models[];
 };
 

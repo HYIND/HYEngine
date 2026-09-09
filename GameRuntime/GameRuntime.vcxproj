@@ -58,7 +58,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -79,7 +79,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
@@ -104,6 +104,7 @@
     <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h" />
     <ClInclude Include="source\include\GeneralManager\MouseManager.h" />
     <ClInclude Include="source\include\GeneralManager\RenderManager.h" />
+    <ClInclude Include="source\include\GeneralManager\WindowHandleManager.h" />
     <ClInclude Include="source\include\Helper\AudioTool.h" />
     <ClInclude Include="source\include\Helper\DynamicFpsController.h" />
     <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h" />
@@ -133,6 +134,7 @@
     <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp" />
     <ClCompile Include="source\src\GeneralManager\MouseManager.cpp" />
     <ClCompile Include="source\src\GeneralManager\RenderManager.cpp" />
+    <ClCompile Include="source\src\GeneralManager\WindowHandleManager.cpp" />
     <ClCompile Include="source\src\Helper\AudioTool.cpp" />
     <ClCompile Include="source\src\Helper\DynamicFpsController.cpp" />
     <ClCompile Include="source\src\Input\LocalInputSystem.cpp" />

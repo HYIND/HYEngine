@@ -1,6 +1,6 @@
 #version 460 core
 
-flat in int Index;
+layout (location = 0) flat in int Index;
 
 void main()
 {

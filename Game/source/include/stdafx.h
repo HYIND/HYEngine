@@ -8,7 +8,7 @@
 #ifdef _DEBUG
 #pragma comment(lib, "GamePlay_d.lib")
 #pragma comment(lib, "GameRuntime_d.lib")
-#pragma comment(lib, "OpenGLRenderEngine_d.lib")
+#pragma comment(lib, "VulkanRenderEngine_d.lib")
 #pragma comment(lib, "Common_d.lib")
 #pragma comment(lib, "net_d.lib")
 #pragma comment(lib, "public_d.lib")
@@ -40,7 +40,7 @@
 #else
 #pragma comment(lib, "GamePlay.lib")
 #pragma comment(lib, "GameRuntime.lib")
-#pragma comment(lib, "OpenGLRenderEngine.lib")
+#pragma comment(lib, "VulkanRenderEngine.lib")
 #pragma comment(lib, "Common.lib")
 #pragma comment(lib, "net.lib")
 #pragma comment(lib, "public.lib")
@@ -72,9 +72,6 @@
 #endif
 
 
-#pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glew32s.lib")
-
 #include <iostream>
 #include <string.h>
 #include <chrono>
@@ -92,7 +89,6 @@
 #include <thread>
 
 #include <vector>
-#include <string>
 #include <queue>
 #include <mutex> 
 

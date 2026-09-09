@@ -162,6 +162,9 @@
     <ClInclude Include="source\include\Render\Systems\AnimationSystem.h">
       <Filter>头文件\Render\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\GeneralManager\WindowHandleManager.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\GameRuntime.cpp">
@@ -217,6 +220,9 @@
     </ClCompile>
     <ClCompile Include="source\src\Render\AnimationSystem.cpp">
       <Filter>源文件\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeneralManager\WindowHandleManager.cpp">
+      <Filter>源文件\GeneralManager</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

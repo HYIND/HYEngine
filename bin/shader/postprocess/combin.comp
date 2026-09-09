@@ -1,0 +1,84 @@
+#version 450 core
+#extension GL_EXT_nonuniform_qualifier : require
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+#ifndef MAX_COLOR_NUMBER
+#define MAX_COLOR_NUMBER 10
+#endif
+
+#ifndef COMBIN_MODE
+#define COMBIN_MODE 0 // 0:Alpha Blend 1:Additive
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout (binding = 0, rgba16f) uniform image2D outPutColor;
+#ifndef SkipBrightOutput
+layout (binding = 1, rgba16f) uniform image2D BrightColor;
+#endif
+
+layout (binding = 2) uniform sampler2D InputMap[];
+
+layout (push_constant) uniform Param{
+	uint InputMapCount;
+};
+
+#if COMBIN_MODE == 0
+vec4 combinColor(vec4 bottom, vec4 top)
+{
+	vec3 color = top.rgb * top.a + bottom.rgb * (1.0 - top.a);
+	float alpha = top.a + bottom.a * (1.0 - top.a);
+	return vec4(color, alpha);
+}
+#endif
+
+#if COMBIN_MODE == 1
+vec4 combinColor(vec4 bottom, vec4 top)
+{
+	vec3 color = bottom.rgb + top.rgb;
+	float alpha = clamp(top.a + bottom.a, 0, 1);
+	return vec4(color, alpha);
+}
+#endif
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outPutColor);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+	vec4 result = vec4(0.f);
+	uint mapcount = min(InputMapCount, MAX_COLOR_NUMBER);
+
+	for(uint i = 0; i < mapcount; i++)
+	{
+		vec4 color = texture(InputMap[i], TexCoords).rgba;
+		result = combinColor(result, color);
+	}
+
+	result.a = clamp(result.a, 0, 1);
+	imageStore(outPutColor, coord, result);
+
+#ifndef SkipBrightOutput
+	vec4 brightresult;
+	vec3 alphaMul_Color = result.rgb * result.a;
+	float brightness = dot(alphaMul_Color, vec3(0.2126, 0.7152, 0.0722));
+    if(brightness > 1.0)
+        brightresult = vec4(alphaMul_Color, result.a);
+	else
+		brightresult = vec4(0.0);
+
+	imageStore(BrightColor, coord, brightresult);
+#endif
+
+}

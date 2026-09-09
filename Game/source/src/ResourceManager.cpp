@@ -1,6 +1,6 @@
 #include "Manager/ResourceManager.h"
-#include "OpenGLRenderEngine/OpenGLRenderContextManager.h"
-#include "OpenGLRenderEngine/General/RenderHelp.h"
+#include "GeneralManager/WindowHandleManager.h"
+#include "VulkanRenderEngine/General/RenderHelp.h"
 #include "resource.h"
 #include "glm/gtc/matrix_transform.hpp"
 #include "ThreadPool.h"
@@ -75,7 +75,7 @@ bool CreateD3DContext(HWND hwnd)
 
 	// 创建交换链
 
-	RECT rect = RENDERCONTEXMANAGER->GetRECT();
+	RECT rect = WINDOWHANDLEMANAGER->GetRect();
 	DXGI_SWAP_CHAIN_DESC1 scDesc = {};
 	scDesc.Width = rect.right - rect.left;
 	scDesc.Height = rect.bottom - rect.top;
@@ -126,7 +126,7 @@ bool Need() {
 	static bool init = false;
 	if (init) return true;
 
-	HWND main_hwnd = RENDERCONTEXMANAGER->GetHwnd();
+	HWND main_hwnd = WINDOWHANDLEMANAGER->GetHwnd();
 
 	HRESULT hr = S_OK;
 
@@ -213,7 +213,7 @@ bool ResourceManager::InitD2DResource()
 {
 	Need();
 
-	HINSTANCE hInst = RENDERCONTEXMANAGER->GetHinstance();
+	HINSTANCE hInst = WINDOWHANDLEMANAGER->GetHinstance();
 
 	ID2D1Bitmap* textBK = LoadResourceBitmap(hInst, pRenderTarget, L"PNG", MAKEINTRESOURCE(TEXTBK_PNG));
 	ID2D1Bitmap* returnBP = LoadResourceBitmap(hInst, pRenderTarget, L"PNG", MAKEINTRESOURCE(RETURN_PNG));
@@ -235,7 +235,7 @@ bool ResourceManager::InitD2DResource()
 
 bool ResourceManager::InitAudioResource()
 {
-	HINSTANCE hInst = RENDERCONTEXMANAGER->GetHinstance();
+	HINSTANCE hInst = WINDOWHANDLEMANAGER->GetHinstance();
 
 	auto heal_audio = GetAudioFromResource(hInst, L"AUDIO", MAKEINTRESOURCE(Heal_Audio));
 	auto default_Shoot_Audio = GetAudioFromResource(hInst, L"AUDIO", MAKEINTRESOURCE(Default_Shoot_Audio));
@@ -272,7 +272,7 @@ bool ResourceManager::InitOpenGLResourceInternal()
 			pool.submit([&]()->void {
 				{
 
-					auto model = std::make_shared<Model>("Test/sponza/Sponza.gltf");
+					auto model = std::make_shared<Model>("Test/sponza/scene.gltf");
 					model->MakeScale(glm::vec3(0.03f));
 					ModelRes[ResName::Sponza] = model;
 				}
@@ -381,8 +381,6 @@ bool ResourceManager::InitOpenGLResourceInternal()
 
 				pool.submit([&]()->void {
 
-					auto guard = THREADCONTEXT->GetBindGuard();
-
 					std::array<std::string, 6> faces
 					{
 						"Test/skybox/box1/right.jpg",
@@ -392,7 +390,8 @@ bool ResourceManager::InitOpenGLResourceInternal()
 						"Test/skybox/box1/front.jpg",
 						"Test/skybox/box1/back.jpg"
 					};
-					TextureCubeRes[ResName::skybox1] = std::make_shared<TextureCube>(faces, true);
+
+					TextureCubeRes[ResName::skybox1] = std::make_shared<TextureCube>(faces);
 					});
 			};
 
@@ -403,9 +402,6 @@ bool ResourceManager::InitOpenGLResourceInternal()
 
 	auto InitGameScene = [&]()-> void {
 		pool.submit([&]()->void {
-
-			auto guard = THREADCONTEXT->GetBindGuard();
-
 			std::array<std::string, 6> faces
 			{
 				"Test/skybox/box2/right.png",
@@ -415,7 +411,7 @@ bool ResourceManager::InitOpenGLResourceInternal()
 				"Test/skybox/box2/front.png",
 				"Test/skybox/box2/back.png"
 			};
-			TextureCubeRes[ResName::skybox2] = std::make_shared<TextureCube>(faces, true);
+			TextureCubeRes[ResName::skybox2] = std::make_shared<TextureCube>(faces);
 			});
 
 		pool.submit([&]()->void {
@@ -429,8 +425,6 @@ bool ResourceManager::InitOpenGLResourceInternal()
 		};
 
 	pool.submit([&]()->void {
-
-		auto guard = THREADCONTEXT->GetBindGuard();
 
 		ModelRes[ResName::Quad] = GetFloorModel();
 		ModelRes[ResName::Cube] = GetCubeModel(glm::vec3(1.0f), 1.0f);
@@ -491,7 +485,7 @@ std::shared_ptr<TextureCube> ResourceManager::GetTextureCubeRes(const std::strin
 {
 	auto it = TextureCubeRes.find(name);
 	if (it == TextureCubeRes.end())
-		return 0;
+		return nullptr;
 	return it->second;
 }
 
@@ -499,6 +493,6 @@ std::shared_ptr<Animation> ResourceManager::GetAnimationRes(const std::string& n
 {
 	auto it = AnimationRes.find(name);
 	if (it == AnimationRes.end())
-		return 0;
+		return nullptr;
 	return it->second;
 }

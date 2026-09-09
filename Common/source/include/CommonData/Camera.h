@@ -12,6 +12,7 @@ public:
 	);
 
 	glm::mat4 GetPerspectiveProjectionMatrix(float aspect) const;
+	glm::mat4 GetPerspectiveProjectionMatrix(uint32_t width, uint32_t height) const;
 	glm::mat4 GetViewMatrix() const;
 
 	glm::vec3 GetPosition() const;
@@ -47,7 +48,7 @@ private:
 	float Yaw;              // 俯仰角
 	float Pitch;            // 偏移角
 
-	float fov = 60.0f;
+	float fov = 75.0f;
 	float nearPlane = 0.1f;
 	float farPlane = 200.0f;
 };

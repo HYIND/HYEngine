@@ -126,7 +126,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)Game\source\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)Game\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
@@ -143,11 +143,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>false</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;NOMINMAX;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions);_SCL_SECURE_NO_WARNINGS;NOMINMAX;_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;__VULKAN;GLM_FORCE_DEPTH_ZERO_TO_ONE</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)OpenGLRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)Game\source\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)Game\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -167,6 +167,7 @@
     <ClInclude Include="..\Game\source\include\Factory\LightFactory.h" />
     <ClInclude Include="..\Game\source\include\Factory\ParticleEmitterFactory.h" />
     <ClInclude Include="Editor.h" />
+    <ClInclude Include="ImguiInit\VulkanInit.h" />
     <ClInclude Include="Imguizmo\GraphEditor.h" />
     <ClInclude Include="Imguizmo\ImCurveEdit.h" />
     <ClInclude Include="Imguizmo\ImGradient.h" />
@@ -176,8 +177,7 @@
     <ClInclude Include="Imguizmo\ImVectorEditor.h" />
     <ClInclude Include="Imguizmo\ImZoomSlider.h" />
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h" />
-    <ClInclude Include="Imgui\backend\imgui_impl_opengl3.h" />
-    <ClInclude Include="Imgui\backend\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h" />
     <ClInclude Include="Imgui\imconfig.h" />
     <ClInclude Include="Imgui\imgui.h" />
     <ClInclude Include="Imgui\imgui_internal.h" />
@@ -203,15 +203,16 @@
     <ClCompile Include="..\Game\source\src\CharacterFactory.cpp" />
     <ClCompile Include="..\Game\source\src\LightFactory.cpp" />
     <ClCompile Include="..\Game\source\src\ParticleEmitterFactory.cpp" />
+    <ClCompile Include="ImguiInit\VulkanInit.cpp" />
     <ClCompile Include="Imguizmo\GraphEditor.cpp" />
     <ClCompile Include="Imguizmo\ImCurveEdit.cpp" />
     <ClCompile Include="Imguizmo\ImGradient.cpp" />
     <ClCompile Include="Imguizmo\ImGuizmo.cpp" />
     <ClCompile Include="Imguizmo\ImSequencer.cpp" />
     <ClCompile Include="Imguizmo\ImVectorEditor.cpp" />
+    <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp" />
-    <ClCompile Include="Imgui\backend\imgui_impl_opengl3.cpp" />
     <ClCompile Include="Imgui\imgui.cpp" />
     <ClCompile Include="Imgui\imgui_demo.cpp" />
     <ClCompile Include="Imgui\imgui_draw.cpp" />

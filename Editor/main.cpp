@@ -1,5 +1,4 @@
-﻿// Editor.cpp : 定义应用程序的入口点。
-//
+﻿
 #include "stdafx.h"
 #include "framework.h"
 #include "Editor.h"
@@ -126,75 +125,270 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 	}
 }
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPWSTR    lpCmdLine,
-	_In_ int       nCmdShow)
+static bool firstFrame = true;
+ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+//int OpenGLMain()
+//{
+//
+//	glfwSetErrorCallback(glfw_error_callback);
+//	if (!glfwInit())
+//		return 1;
+//
+//	const char* glsl_version = nullptr;
+//	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+//	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+//
+//
+//	float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
+//	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+//	int workAreaX, workAreaY, workAreaWidth, workAreaHeight;
+//	glfwGetMonitorWorkarea(monitor, &workAreaX, &workAreaY, &workAreaWidth, &workAreaHeight);
+//	GLFWwindow* window = glfwCreateWindow((int)(workAreaWidth * 0.8f * main_scale), (int)(workAreaHeight * 0.8f * main_scale), "Editor", nullptr, nullptr);
+//	if (window == nullptr)
+//		return 1;
+//
+//	glfwMakeContextCurrent(window);
+//
+//	glfwSwapInterval(0); // Disable vsync
+//
+//	glfwSetDropCallback(window, glfw_filedrop_callback);
+//
+//	glewExperimental = GL_TRUE;
+//	GLenum err = glewInit();
+//	if (err != GLEW_OK) {
+//		std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(err) << std::endl;
+//		return -1;
+//	}
+//
+//	// Setup Dear ImGui context
+//	IMGUI_CHECKVERSION();
+//	ImGui::CreateContext();
+//	ImGuiIO& io = ImGui::GetIO(); (void)io;
+//	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+//	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+//	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+//	//io.ConfigViewportsNoAutoMerge = true;
+//	//io.ConfigViewportsNoTaskBarIcon = true;
+//
+//
+//	// 微软雅黑路径
+//	const char* fontPath = "C:/Windows/Fonts/msyh.ttc";
+//
+//	// 字体配置
+//	ImFontConfig fontConfig;
+//	fontConfig.OversampleH = 2;
+//	fontConfig.OversampleV = 2;
+//	fontConfig.PixelSnapH = true;
+//
+//	// 使用简体中文常用字范围
+//	static const ImWchar ranges[] = {
+//		0x0020, 0x00FF,  // 基本拉丁字母 + 标点
+//		0x4E00, 0x9FA5,  // 常用汉字（CJK统一表意文字）
+//		0
+//	};
+//
+//	// 尝试加载字体
+//	ImFont* font = io.Fonts->AddFontFromFileTTF(
+//		fontPath,
+//		18.0f * main_scale,  // 根据 DPI 缩放
+//		&fontConfig,
+//		ranges  // 或用 io.Fonts->GetGlyphRangesChineseSimplifiedCommon()
+//	);
+//
+//	if (font == nullptr) {
+//		io.Fonts->AddFontDefault();
+//		if (ShowConsole)
+//			std::cout << "警告：加载微软雅黑失败，使用默认字体\n";
+//	}
+//	else {
+//		io.FontDefault = font;
+//		if (ShowConsole)
+//			std::cout << "微软雅黑字体加载成功！\n";
+//	}
+//
+//	// Setup Dear ImGui style
+//	ImGui::StyleColorsDark();
+//	//ImGui::StyleColorsLight();
+//
+//	// Setup scaling
+//	ImGuiStyle& style = ImGui::GetStyle();
+//	style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
+//	style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
+//	io.ConfigDpiScaleFonts = true;          // [Experimental] Automatically overwrite style.FontScaleDpi in Begin() when Monitor DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
+//	io.ConfigDpiScaleViewports = true;      // [Experimental] Scale Dear ImGui and Platform Windows when Monitor DPI changes.
+//
+//	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+//	if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+//	{
+//		style.WindowRounding = 0.0f;
+//		style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+//	}
+//
+//	ImGui_ImplGlfw_InitForOpenGL(window, true);
+//	ImGui_ImplOpenGL3_Init(glsl_version);
+//
+//	ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
+//	ImGuizmo::Enable(true);
+//
+//	{
+//		auto hwnd = glfwGetWin32Window(window);
+//		auto hdc = wglGetCurrentDC();
+//		auto hglrc = wglGetCurrentContext();
+//
+//		WINDOWHANDLEMANAGER->SetHwnd(hwnd);
+//		WINDOWHANDLEMANAGER->SetHGLRC(hglrc);
+//
+//		{
+//			auto guard = THREADCONTEXT->GetBindGuard();
+//
+//			WorldManager::Instance()->InitWorld();
+//			WorldManager::Instance()->RunWorld();
+//			//WorldManager::Instance()->PauseWorld();
+//		}
+//
+//		wglMakeCurrent(hdc, hglrc);
+//	}
+//
+//
+//	while (!glfwWindowShouldClose(window))
+//	{
+//		glfwPollEvents();
+//		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
+//		{
+//			ImGui_ImplGlfw_Sleep(10);
+//			continue;
+//		}
+//
+//		// 开始 ImGui 帧
+//		ImGui_ImplOpenGL3_NewFrame();
+//		ImGui_ImplGlfw_NewFrame();
+//		ImGui::NewFrame();
+//
+//
+//		ImguiLayout::DrawMainMenu(window, ProjectManager::Get());
+//		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
+//		ImguiLayout::SetDockspace(firstFrame);
+//		if (firstFrame) firstFrame = false;
+//		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
+//		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());// 场景物体窗口 (左侧)
+//		ImguiLayout::DrawOptions(WorldManager::Instance());	// 场景物体窗口 (左侧)
+//		ImguiLayout::DrawObjectProperties();// 属性面板 (右侧)
+//		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());	// 资产管理 (底部)
+//		ImguiLayout::DrawStatusBar(WorldManager::Instance());// 底部状态栏
+//		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());// 场景视图 (中间)
+//
+//
+//		// ============ 渲染 ============
+//		ImGui::Render();
+//
+//		int display_w, display_h;
+//		glfwGetFramebufferSize(window, &display_w, &display_h);
+//		glViewport(0, 0, display_w, display_h);
+//		glClearColor(clear_color.x * clear_color.w,
+//			clear_color.y * clear_color.w,
+//			clear_color.z * clear_color.w,
+//			clear_color.w);
+//		glClear(GL_COLOR_BUFFER_BIT);
+//
+//		// 渲染 ImGui
+//		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+//
+//		// 更新多视口
+//		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+//		{
+//			GLFWwindow* backup_current_context = glfwGetCurrentContext();
+//			ImGui::UpdatePlatformWindows();
+//			ImGui::RenderPlatformWindowsDefault();
+//			glfwMakeContextCurrent(backup_current_context);
+//		}
+//
+//		glfwSwapBuffers(window);
+//	}
+//
+//	// Cleanup
+//	ImGui_ImplOpenGL3_Shutdown();
+//	ImGui_ImplGlfw_Shutdown();
+//	ImGui::DestroyContext();
+//
+//	glfwDestroyWindow(window);
+//	glfwTerminate();
+//
+//	return 0;
+//}
+
+#include "ImguiInit/VulkanInit.h"
+
+int ImGuiMain()
 {
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
 
-#ifdef _UNICODE
-	for (int i = 0; i < __argc; i++) {
-		if (__wargv[i] && wcsstr(__wargv[i], L"-console") != nullptr) {
-			ShowConsole = true;
-			break;
-		}
-	}
-#else
-	for (int i = 0; i < __argc; i++) {
-		if (__argv[i] && strstr(__argv[i], "-console") != nullptr) {
-			ShowConsole = true;
-			break;
-		}
-	}
-#endif
-
-	if (ShowConsole)
-		CreateDebugConsole();
-
+	// 1. 初始化 GLFW
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit())
 		return 1;
 
-	// Select GL version + let the backend select a GLSL version
-	const char* glsl_version = nullptr;
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-
-	// Create window with graphics context
-	float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
+	float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 	int workAreaX, workAreaY, workAreaWidth, workAreaHeight;
 	glfwGetMonitorWorkarea(monitor, &workAreaX, &workAreaY, &workAreaWidth, &workAreaHeight);
 	GLFWwindow* window = glfwCreateWindow((int)(workAreaWidth * 0.8f * main_scale), (int)(workAreaHeight * 0.8f * main_scale), "Editor", nullptr, nullptr);
 	if (window == nullptr)
 		return 1;
-	glfwMakeContextCurrent(window);
-	glfwSwapInterval(0); // Disable vsync
-	//glfwSwapInterval(1); // Enable vsync
 
 	glfwSetDropCallback(window, glfw_filedrop_callback);
 
-	glewExperimental = GL_TRUE;
-	GLenum err = glewInit();
-	if (err != GLEW_OK) {
-		std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(err) << std::endl;
-		return -1;
+	// 2. 初始化 Vulkan
+	ImVector<const char*> extensions;
+	std::vector<std::string> extensionStrs;
+	uint32_t extensions_count = 0;
+	const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&extensions_count);
+	for (uint32_t i = 0; i < extensions_count; i++)
+	{
+		extensionStrs.push_back(glfw_extensions[i]);
+		extensions.push_back(glfw_extensions[i]);
 	}
+	//SetupVulkan((VkInstance)vulkanInstance->GetHandle());
 
-	// Setup Dear ImGui context
+	auto vulkanInstance = VulkanRenderer::CreateInstance(extensionStrs);
+
+
+	// 3. 创建窗口表面
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkResult err = glfwCreateWindowSurface((VkInstance)vulkanInstance->GetHandle(), window, g_Allocator, &surface);
+
+	auto vkRenderer = VulkanRenderer::CreateForOffScreen(vulkanInstance, workAreaWidth, workAreaHeight);
+
+	WorldManager::Instance()->SetRender(vkRenderer);
+
+
+	SetupVulkan(
+		VKCONTEXT->GetInstanceHandle(),
+		VKCONTEXT->GetDevice()->GetPhysicalDevice(),
+		VKCONTEXT->GetDevice()->GetHandle(),
+		VKCONTEXT->GetDevice()->GetGraphicsQueueFamily(),
+		VKCONTEXT->GetDevice()->GetGraphicsQueue(),
+		VKCONTEXT->GetDescriptorPool()
+	);
+	check_vk_result(err);
+
+	int w, h;
+	glfwGetFramebufferSize(window, &w, &h);
+	ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
+	SetupVulkanWindow(wd, surface, w, h);
+
+	// 初始化 ImGui
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 	//io.ConfigViewportsNoAutoMerge = true;
 	//io.ConfigViewportsNoTaskBarIcon = true;
-
 
 	// 微软雅黑路径
 	const char* fontPath = "C:/Windows/Fonts/msyh.ttc";
@@ -249,114 +443,151 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 	}
 
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init(glsl_version);
+
+	// 初始化 ImGui 后端
+	ImGui_ImplGlfw_InitForVulkan(window, true);
+
+	ImGui_ImplVulkan_InitInfo init_info = {};
+	init_info.Instance = g_Instance;
+	init_info.PhysicalDevice = g_PhysicalDevice;
+	init_info.Device = g_Device;
+	init_info.QueueFamily = g_QueueFamily;
+	init_info.Queue = g_Queue;
+	init_info.PipelineCache = g_PipelineCache;
+	init_info.DescriptorPool = g_DescriptorPool;
+	init_info.MinImageCount = g_MinImageCount;
+	init_info.ImageCount = wd->ImageCount;
+	init_info.Allocator = g_Allocator;
+	init_info.PipelineInfoMain.RenderPass = wd->RenderPass;
+	init_info.PipelineInfoMain.Subpass = 0;
+	init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	init_info.CheckVkResultFn = check_vk_result;
+	ImGui_ImplVulkan_Init(&init_info);
 
 	ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
 	ImGuizmo::Enable(true);
 
 	{
-		auto hwnd = glfwGetWin32Window(window);
-		auto hdc = wglGetCurrentDC();
-		auto hglrc = wglGetCurrentContext();
-
-		RENDERCONTEXMANAGER->SetHwnd(hwnd);
-		RENDERCONTEXMANAGER->SetHGLRC(hglrc);
 
 		{
-			auto guard = THREADCONTEXT->GetBindGuard();
-
 			WorldManager::Instance()->InitWorld();
 			WorldManager::Instance()->RunWorld();
 			//WorldManager::Instance()->PauseWorld();
 		}
 
-		wglMakeCurrent(hdc, hglrc);
 	}
-
-	bool show_demo_window = true;
-	bool show_another_window = false;
-	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-	// 在主循环中
-	static bool firstFrame = true;
 
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
-		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
-		{
+
+		// 处理窗口大小变化
+		int fb_width, fb_height;
+		glfwGetFramebufferSize(window, &fb_width, &fb_height);
+		if (fb_width > 0 && fb_height > 0 &&
+			(g_SwapChainRebuild || g_MainWindowData.Width != fb_width || g_MainWindowData.Height != fb_height)) {
+			ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
+			ImGui_ImplVulkanH_CreateOrResizeWindow(
+				g_Instance, g_PhysicalDevice, g_Device, wd,
+				g_QueueFamily, g_Allocator,
+				fb_width, fb_height, g_MinImageCount, 0
+			);
+			g_MainWindowData.FrameIndex = 0;
+			g_SwapChainRebuild = false;
+		}
+
+		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0) {
 			ImGui_ImplGlfw_Sleep(10);
 			continue;
 		}
 
 		// 开始 ImGui 帧
-		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
+
 		ImguiLayout::DrawMainMenu(window, ProjectManager::Get());
-
 		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
-		// 获取主视口
 		ImguiLayout::SetDockspace(firstFrame);
-		if (firstFrame)
-			firstFrame = false;
-
+		if (firstFrame) firstFrame = false;
 		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
+		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());// 场景物体窗口 (左侧)
+		ImguiLayout::DrawOptions(WorldManager::Instance());	// 场景物体窗口 (左侧)
+		ImguiLayout::DrawObjectProperties();// 属性面板 (右侧)
+		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());	// 资产管理 (底部)
+		ImguiLayout::DrawStatusBar(WorldManager::Instance());// 底部状态栏
+		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());// 场景视图 (中间)
 
-		// 场景物体窗口 (左侧)
-		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());
-
-		// 场景物体窗口 (左侧)
-		ImguiLayout::DrawOptions(WorldManager::Instance());
-
-		// 属性面板 (右侧)
-		ImguiLayout::DrawObjectProperties();
-
-		// 资产管理 (底部)
-		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());
-
-		// 底部状态栏
-		ImguiLayout::DrawStatusBar(WorldManager::Instance());
-
-		// 场景视图 (中间)
-		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());
-
-		// ============ 渲染 ============
+		// 渲染
 		ImGui::Render();
+		ImDrawData* draw_data = ImGui::GetDrawData();
 
-		int display_w, display_h;
-		glfwGetFramebufferSize(window, &display_w, &display_h);
-		glViewport(0, 0, display_w, display_h);
-		glClearColor(clear_color.x * clear_color.w,
-			clear_color.y * clear_color.w,
-			clear_color.z * clear_color.w,
-			clear_color.w);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		// 渲染 ImGui
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-		// 更新多视口
-		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-		{
-			GLFWwindow* backup_current_context = glfwGetCurrentContext();
+		// 多视口支持（如果启用）
+		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
 			ImGui::UpdatePlatformWindows();
 			ImGui::RenderPlatformWindowsDefault();
-			glfwMakeContextCurrent(backup_current_context);
 		}
 
-		glfwSwapBuffers(window);
+		bool minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
+
+		// 渲染主窗口
+		if (!minimized) {
+			// 设置清除颜色
+			wd->ClearValue.color.float32[0] = clear_color.x;
+			wd->ClearValue.color.float32[1] = clear_color.y;
+			wd->ClearValue.color.float32[2] = clear_color.z;
+			wd->ClearValue.color.float32[3] = clear_color.w;
+			FrameRender(wd, draw_data);
+		}
+
+		if (!minimized)
+			FramePresent(wd);
 	}
 
-	// Cleanup
-	ImGui_ImplOpenGL3_Shutdown();
+	// ==================== 清理 ====================
+	err = vkDeviceWaitIdle(g_Device);
+	check_vk_result(err);
+
+	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+
+	CleanupVulkanWindow(&g_MainWindowData);
+	CleanupVulkan();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
 	return 0;
+}
+
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR    lpCmdLine,
+	_In_ int       nCmdShow)
+{
+	UNREFERENCED_PARAMETER(hPrevInstance);
+	UNREFERENCED_PARAMETER(lpCmdLine);
+
+#ifdef _UNICODE
+	for (int i = 0; i < __argc; i++) {
+		if (__wargv[i] && wcsstr(__wargv[i], L"-console") != nullptr) {
+			ShowConsole = true;
+			break;
+		}
+	}
+#else
+	for (int i = 0; i < __argc; i++) {
+		if (__argv[i] && strstr(__argv[i], "-console") != nullptr) {
+			ShowConsole = true;
+			break;
+		}
+	}
+#endif
+	if (ShowConsole)
+		CreateDebugConsole();
+
+	return ImGuiMain();
 }

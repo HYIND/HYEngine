@@ -2,7 +2,7 @@
 #pragma once
 
 #include "ECSCore/IComponent.h"
-#include "OpenGLRenderEngine/Base/Particle.h"
+#include "VulkanRenderEngine/Base/Particle.h"
 #include "CommonComponent.h"
 #include "Helper/Tools.h"
 #include "glm/gtc/random.hpp"
