@@ -1,0 +1,405 @@
+
+
+// 计算 Halton 序列
+float halton(uint index, int base) 
+{
+    float result = 0.0;
+    float f = 1.0;
+    uint i = index;
+    while (i > 0) 
+    {
+        f /= float(base);
+        result += f * float(i % base);
+        i /= base;
+    }
+    return result;
+}
+
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float pcg_float(uint seed) {
+    return float(pcg_hash(seed)) / 4294967296.0;
+}
+
+vec2 pcg_float2(uint seed) {
+    uint h1 = pcg_hash(seed);
+    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
+    return vec2(float(h1), float(h2)) / 4294967296.0;
+}
+
+vec2 getRandom(uint seed) 
+{
+    return pcg_float2(seed);
+}
+
+vec3 RotateNormal(vec3 normal, float r1, float r2)
+{
+    float theta = acos(r1);
+    float phi = 2.0 * PI * r2;
+    
+    vec3 dir = vec3(
+        sin(theta) * cos(phi),
+        sin(theta) * sin(phi),
+        cos(theta)
+    );
+    
+    // 将局部坐标转到世界空间（以法线为Z轴）
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+
+    return samplerDir;
+}
+
+// 生成余弦加权半球随机方向
+vec3 ImportanceSampleCosine(vec3 normal, vec2 random)
+{
+    float r1 = random.x;
+    float r2 = random.y;  
+    r1 = sqrt(r1); // 余弦加权
+    return RotateNormal(normal, r1, r2);
+}
+
+// 生成GGX权重半球随机方向
+vec3 ImportanceSampleGGX(float roughness, vec3 normal, vec3 viewDir, vec2 random)
+{
+    float r1 = random.x;
+    float r2 = random.y;  
+
+    // 生成局部坐标系的 H（假设 N 朝上）
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float phi = 2.0 * PI * r1;
+    float cosTheta = sqrt((1.0 - r2) / (1.0 + (a2 - 1.0) * r2));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    // 本地空间的 H 向量 (z轴为N)
+    vec3 H_local = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+
+    vec3 N = normal;
+    vec3 V = normalize(-viewDir);
+
+    // 构建 TBN 矩阵
+    vec3 up = abs(N.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    
+    // 将 H 转换到世界空间
+    vec3 H = normalize(tangent * H_local.x + bitangent * H_local.y + N * H_local.z);
+
+    vec3 L = reflect(-V, H);
+
+    // // 计算正确的 PDF（基于 L 空间，补上雅可比）
+    // float NdotH = max(dot(N, H), 0.0);
+    // float VdotH = max(dot(V, H), 0.0);
+    
+    // // 局部空间的 D（为了算 PDF，必须用局部的夹角，但 cosTheta 已经等于 NdotH，因为 H 转到了世界，且 TBN 是正交的）
+    // float denom = cosTheta * cosTheta * (a2 - 1.0) + 1.0;
+    // float D = a2 / (PI * denom * denom);
+    
+    // float pdf_H = D * cosTheta;             // H 空间的 PDF
+    // pdf_L = pdf_H / (4.0 * VdotH + 0.0001); // L 空间的 PDF
+    
+    return L;
+}
+
+vec3 CalcContribute_UniformSample(vec3 light, vec3 lightPos, vec3 fragPos, vec3 fragNormal)
+{
+    vec3 N = normalize(fragNormal);           	        // 表面法线
+	vec3 L = normalize(lightPos - fragPos); 	        // 光线方向（从表面指向光源）
+    float NdotL = max(dot(N, L), 0.0);			        // 表面法线x指向光线
+
+	vec3 Contribute = light * NdotL * 2.0 * PI;
+	return Contribute;
+}
+
+vec3 CalcContribute_CosineSample(vec3 light)
+{
+	return light * PI;
+}
+
+vec3 CalcContribute_GGXSample(
+	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
+	vec3 albedo, float metallic, float roughness)
+{	
+	vec3 N = normalize(normal);           	// 表面法线
+	vec3 V = normalize(fragToViewDir); 		// 视线反方向（从表面指向摄像机）
+	vec3 L = normalize(fragToLightDir); 	// 光线方向（从表面指向光源）
+	vec3 H = normalize(V + L);            	// 半角向量
+	float NdotL = max(dot(N, L), 0.0);		// 表面法线x指向光线
+	float NdotV = max(dot(N, V), 0.0);		// 表面法线x指向摄像机
+	float NdotH = max(dot(N, H), 0.0);		// 表面法线x半程向量
+	float VdotH = max(dot(V, H), 0.0);		// 指向摄像机x半程向量
+
+    if (NdotL <= 0.0)
+        return vec3(0.0);
+
+	vec3 F0 = mix(vec3(0.02), albedo, metallic);
+
+    float G = GeometrySmith(NdotL, NdotV, roughness);
+	vec3 F = fresnelSchlick(F0, VdotH);
+
+	vec3 specular = (F * G) * VdotH / (NdotV * NdotH + 0.0001);
+    return specular;
+}
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float tMin;
+    float tMax;
+};
+
+void getPBRProperties(vec2 uv, inout PBRProperties prop)
+{
+    vec2 values = texture(gMetallicRoughness, uv).rg;
+    prop.albedo = texture(gAlbedoOpacity, uv).rgb;   
+    prop.metallic = values.r;
+    prop.roughness = values.g;
+    prop.ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
+}
+
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+}
+float getThicknessDiff(float diff, float linearSampleDepth)
+{
+	return (diff - 0.05) / linearSampleDepth;
+}
+
+//0->追踪失败、1->追踪成功、2->采样最远处
+int RayTraceOnSceen(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv)	//从世界空间的点出发，沿着dir方向，在colormap上取样，直到碰到colormap上的像素
+{
+	float delta = 1e-6;
+
+	vec3 dirView = normalize(camera.invTransView * ray.direction);
+	vec3 startViewPos = vec3(camera.view * vec4(ray.origin, 1.0f));	//确定光线反射的最远距离	
+	float maxDist = camera.farPlane;
+
+	// 如果光线指向相机方向（会穿过近平面）
+    if (dirView.z > 0.0) 
+    {
+        // 计算到近平面的距离
+        float distToNear = -startViewPos.z / dirView.z;
+        if (distToNear > 0.0) 
+            maxDist = min(maxDist, distToNear * 0.99);// 截断到近平面之前，留一点余量
+        else // 理论上不会发生，但以防万一
+            return 0;
+    }
+    
+    // 确保光线至少有一点长度
+    if (maxDist < 0.001) 
+        return 0;
+
+	vec3 endViewPos = startViewPos + dirView * maxDist;	//确定光线反射的最远距离
+
+	vec4 startProjPos = camera.projection * vec4(startViewPos, 1.0);	//裁切空间位置
+	vec4 endProjPos = camera.projection * vec4(endViewPos, 1.0);		//裁切空间位置
+
+    vec3 startNDC = startProjPos.xyz / startProjPos.w;
+    vec3 endNDC = endProjPos.xyz / endProjPos.w;
+
+	vec2 startTexPos = vec3(startNDC * 0.5 + 0.5).xy;	//(uv.xy, depth)
+	vec2 endTexPos = vec3(endNDC * 0.5 + 0.5).xy;		//(uv.xy, depth)
+
+	//计算出需要跨越多少个像素距离，表示这段路径在colorMap在跨越了多少个像素，意味着如果要不遗漏像素的前进，至少要在区间内分成divisions步前进
+	vec2 screenStart = startTexPos * screenSize;
+	vec2 screenEnd = endTexPos * screenSize;
+	float pixelLength = length(screenEnd -  screenStart);
+	uint steps = min(int(pixelLength) + 1, RayMarchingMaxStep);
+
+	vec2 screenStep = (screenEnd -  screenStart) / steps;
+	float zStart = -startViewPos.z;
+	float zEnd = -endViewPos.z;
+
+	float thinkness = 0.05f;
+
+	bool lastHit = false; 
+	bool potentialHit = false;
+    bool hit = false;
+    float hitT = 0.0;
+	float hitThicknessDiff = uintBitsToFloat(0x7F7FFFFFu);
+
+#ifdef SAMPLER_MAX_DIS
+	bool samplerMax = false;
+	vec2 samplerMaxTexcoord = vec2(0);
+#endif
+
+
+	for(uint i = 1;i <= steps; i++)
+	{
+		float t = float(i) / float(steps); //步进比例
+
+        vec2 screenCurrent = mix(screenStart, screenEnd, t);
+		if(screenCurrent.x >= screenSize.x || screenCurrent.x <= 0.f || screenCurrent.y >= screenSize.y || screenCurrent.y <= 0.f)
+		{
+#ifdef SAMPLER_MAX_DIS
+			samplerMax = false;
+#endif
+			break;
+		}
+
+		float invZ = (1.0 - t) / zStart + t / zEnd;
+		float rayViewDepth = 1.0 / invZ;
+
+		vec2 texcoord = vec2(screenCurrent) / screenSize;
+		float samplerDepth = texture(depthMap, texcoord).r;	//深度图上取样
+		float storedViewDepth = DepthBufferConvertToViewDepth(samplerDepth);
+
+		float hitDiff = rayViewDepth - storedViewDepth;
+		float thicknessDiff  = getThicknessDiff(hitDiff, storedViewDepth);  
+        
+		if (hitDiff > 0.f && samplerDepth < 1.0f - delta)
+		{
+			if(thicknessDiff < 0.015)
+			{
+				hit = true;
+				hitT = t;
+				hitThicknessDiff = thicknessDiff;
+				break;
+			}
+			else if (!lastHit && thicknessDiff < hitThicknessDiff)
+			{	//记录潜在交叉点
+				potentialHit = true;
+				hitT = t;
+				hitThicknessDiff = thicknessDiff;
+			}
+		}
+#ifdef SAMPLER_MAX_DIS
+		else 
+		{
+			if (samplerDepth >= 1.0f - delta)
+			{
+				samplerMax = true;
+				samplerMaxTexcoord = texcoord;
+			}
+		}
+#endif
+		lastHit = hitDiff > 0.f;
+	}
+
+	float minThicknessDiff = 0.02f;
+    if (hit || potentialHit)
+    {
+		bool realHit = false;
+		
+        // 定义搜索区间 [prevT, hitT]
+        float prevT = max(hitT - 1.0 / steps, 0.0);
+        float currentT = hitT;
+        
+        // 二分搜索迭代次数
+        const int BINARY_SEARCH_ITERATIONS = 6;
+        
+		float finalT = currentT;
+
+        for (int i = 0; i < BINARY_SEARCH_ITERATIONS; i++)
+        {
+            float midT = (prevT + currentT) * 0.5;
+            
+            // 计算中间点的位置和深度
+            vec2 midScreenPos = mix(screenStart, screenEnd, midT);
+            vec2 midTexcoord = midScreenPos / screenSize;
+            
+            float midInvZ = (1.0 - midT) / zStart + midT / zEnd;
+            float midRayDepth = 1.0 / midInvZ;
+            float midStoredDepth = DepthBufferConvertToViewDepth(texture(depthMap, midTexcoord).r);
+            
+			float hitDiff = midRayDepth - midStoredDepth;    
+            if (hitDiff > 0.f)
+            {
+                currentT = midT;
+				if(hit) finalT = midT;
+            }
+            else
+            {
+                prevT = midT;
+            }
+
+			float thicknessDiff = getThicknessDiff(hitDiff, midStoredDepth);
+			if (!hit && abs(thicknessDiff) < minThicknessDiff) 
+			{
+				realHit = true;
+				minThicknessDiff = thicknessDiff;
+				finalT = midT;
+			}
+        }
+        
+		vec2 finalScreenPos = mix(screenStart, screenEnd, finalT);
+        if (hit || realHit) 
+        {
+            uv = finalScreenPos / screenSize;
+            return 1;
+        }
+    }
+#ifdef SAMPLER_MAX_DIS
+	else if(samplerMax)
+    {
+        uv = samplerMaxTexcoord;
+        return 2;
+    }
+#endif
+
+	return 0;
+}
+
+bool isEdge(vec2 texcoord, float depthThreshold)
+{
+    float centerDepth = texture(depthMap, texcoord).r;
+    
+    // 采样上下左右四个邻居
+    vec2 pixelSize = 1.0 / screenSize;
+    float leftDepth = texture(depthMap, texcoord + vec2(-pixelSize.x, 0)).r;
+    float rightDepth = texture(depthMap, texcoord + vec2(pixelSize.x, 0)).r;
+    float upDepth = texture(depthMap, texcoord + vec2(0, -pixelSize.y)).r;
+    float downDepth = texture(depthMap, texcoord + vec2(0, pixelSize.y)).r;
+    
+    float maxDepth = max(max(leftDepth, rightDepth), max(upDepth, downDepth));
+    float minDepth = min(min(leftDepth, rightDepth), min(upDepth, downDepth));
+    
+    // 如果深度差异超过阈值，说明在边缘
+    return (maxDepth - minDepth) > depthThreshold;
+}
+
+bool isNormalPass(vec2 texcoord, Ray ray)
+{
+    vec3 hitNormal = texture(gNormal, texcoord).rgb;
+    vec3 hitPos = texture(gPosition, texcoord).rgb;
+    vec3 incidentDir = normalize(hitPos - ray.origin);
+
+    // 如果法线方向和入射方向相反（法线背对光线），说明穿模了
+    if (dot(hitNormal, incidentDir) >= 0.0)
+        return false;
+
+    return true;
+}
+
+bool traceScene(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv) 
+{
+    int result = RayTraceOnSceen(ray, screenSize, RayMarchingMaxStep, uv);
+    if (result == 0 || result == 2)
+        return false;
+    
+    if (isEdge(uv, 0.001))
+        return false;
+
+    if (!isNormalPass(uv, ray))
+        return false;
+
+    return true;
+}
+
+float calc_P_Spec(PBRProperties prop)
+{
+    vec3 F0 = mix(vec3(0.02), prop.albedo, prop.metallic);
+    float avgF0 = (F0.r + F0.g + F0.b) / 3.0;
+    float p_spec = clamp(avgF0 * (1.0 - prop.roughness) + prop.roughness * 0.1, 0.05, 0.95);
+    return p_spec;
+}

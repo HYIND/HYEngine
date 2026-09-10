@@ -12,7 +12,7 @@ struct RenderOption
 		float tMax = 300.f;
 		uint32_t maxBounceLimit = 2;
 
-		uint32_t NumSamples = 1;
+		uint32_t NumSamples = 2;
 
 		uint32_t BlurKernelSize = 1;
 		float BlurGaussSigma = 0.6;
@@ -20,7 +20,7 @@ struct RenderOption
 		float BlurDepthWeight = 10.0;
 
 		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.15;
+		float dynamicBlendFactor = 0.08;
 	} rayTraceReflectParams;
 
 	struct RayTraceGIParams {
@@ -28,49 +28,56 @@ struct RenderOption
 		float tMax = 300.f;
 		uint32_t maxBounceLimit = 2;
 
-		uint32_t NumSamples = 1;
+		uint32_t NumSamples = 3;
 		float GIIntensity = 1.0;
 
-		uint32_t BlurKernelSize = 2;
+		uint32_t BlurKernelSize = 3;
 		float BlurGaussSigma = 1.2;
 		float BlurRadius = 1;
 		float BlurDepthWeight = 10.0;
 
 		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.15;
+		float dynamicBlendFactor = 0.1;
 	} rayTraceGIParams;
 
 	struct SSRTraceParams {
 		float tMin = 0.01;
 		float tMax = 300.f;
-		uint32_t maxBounceLimit = 1;
+		uint32_t maxBounceLimit = 2;
 
-		uint32_t RayMarchingMaxStep = 256;
+		uint32_t RayMarchingMaxStep = 40;
+		uint32_t NumSamples = 6;
+		float Sample_Indirect_Clamp_Value = 2.0;
+		float DistanceFactor = 0.02;
 
-		uint32_t BlurKernelSize = 3;
-		float BlurGaussSigma = 0.6;
-		float BlurRadius = 0.5;
+		uint32_t BlurKernelSize = 2;
+		float BlurGaussSigma = 0.7;
+		float BlurRadius = 0.75;
 		float BlurDepthWeight = 10.0;
 
+		float initBlendFactor = 0.96;
+		float dynamicBlendFactor = 0.05;
 	} ssrTraceParams;
 
 	struct SSGITraceParams {
 		float tMin = 0.01;
-		float tMax = 100.f;
-		uint32_t maxBounceLimit = 1;
+		float tMax = 300.f;
+		uint32_t maxBounceLimit = 2;
 
-		uint32_t RayMarchingMaxStep = 25;
+		uint32_t RayMarchingMaxStep = 30;
 		uint32_t NumSamples = 6;
-		float Sample_Indirect_Clamp_Value = 5.0;
-		float GIIntensity = 8;
-		float AOIntensity = 0.6;
+		float Sample_Indirect_Clamp_Value = 2.0;
+		float GIIntensity = 1.0;
+		float AOIntensity = 0.8;
 		float DistanceFactor = 0.05;
 
 		uint32_t BlurKernelSize = 3;
-		float BlurGaussSigma = 1.8;
-		float BlurRadius = 1;
+		float BlurGaussSigma = 1.2;
+		float BlurRadius = 1.0;
 		float BlurDepthWeight = 10.0;
 
+		float initBlendFactor = 0.96;
+		float dynamicBlendFactor = 0.075;
 	} ssgiTraceParams;
 
 	struct DepthFogParams {
