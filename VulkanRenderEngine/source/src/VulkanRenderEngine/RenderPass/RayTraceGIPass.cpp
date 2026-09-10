@@ -126,22 +126,21 @@ RayTraceGIPass::RayTraceGIPass(
 			_scaleShader.Create(config);
 	}
 
-	RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
-	SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
-	TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
+	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
+	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
+	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
 
-	_rayTraceShader_useGbuffer.SetUniformBlock(RayTraceParamsUBO, 5);
-	_spatialDenoisingShader.SetUniformBlock(SpatialDenoisingParamsUBO, 0);
-	_temporalDenoisingShader.SetUniformBlock(TemporalAccumulateParamsUBO, 0);
+	_rayTraceShader_useGbuffer.SetUniformBlock(_RayTraceParamsUBO, 5);
+	_spatialDenoisingShader.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
+	_temporalDenoisingShader.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 RayTraceGIPass::~RayTraceGIPass()
-{
-}
+{}
 
 bool RayTraceGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (!_enable || state.option.ssgiTraceParams.maxBounceLimit < 0)
+	if (!_enable || state.option.rayTraceGIParams.maxBounceLimit < 0)
 		return false;
 	return true;
 }
@@ -179,18 +178,49 @@ void RayTraceGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const Ren
 		Texture2D::CopyTexture(data.outPutTexture, data.historyColorTexture);
 
 	//if (!DrawScale(data, state)) return;
-
-	//RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
-	//	THREADCONTEXT->UnBind();
-	//	auto task1 = CoroTask::Run([&]()-> void {DrawTexture(data.outPutTexture, "temp/test_RayTraceGIPass.png"); });
-	//	task1.sync_wait();
-	//	THREADCONTEXT->Bind();
-	//	});
 }
 
 void RayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	SetEnable(state.option.flags.rayTraceGIOn);
+
+	if (!ShouldExecute(registry, state))
+		return;
+
+	{
+		//光追参数
+		RayTraceParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.tMin = std::max(0.f, state.option.rayTraceGIParams.tMin),
+			.tMax = std::max(0.f, state.option.rayTraceGIParams.tMax),
+			.maxBounce = std::max((uint32_t)1, std::min(state.option.rayTraceGIParams.maxBounceLimit, GlobalConfig::RayTrace_Max_Bounce_limit)),
+			.sampleRayCount = std::max((uint32_t)1, state.option.rayTraceGIParams.NumSamples),
+			.GIIntensity = std::max(0.01f, state.option.rayTraceGIParams.GIIntensity),
+			.frameIndex = state.renderRecord.frameIndex % 100000
+		};
+		_RayTraceParamsUBO->WriteData(&params, sizeof(RayTraceParams));
+	}
+
+	{
+		SpatialDenoisingParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.kernelSize = state.option.rayTraceGIParams.BlurKernelSize,
+			.sigma = state.option.rayTraceGIParams.BlurGaussSigma,
+			.blurRadius = state.option.rayTraceGIParams.BlurRadius,
+			.blurDepthWeight = state.option.rayTraceGIParams.BlurDepthWeight
+		};
+		_SpatialDenoisingParamsUBO->WriteData(&params, sizeof(SpatialDenoisingParams));
+	}
+
+	{
+		TemporalAccumulateParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.initBlendFactor = state.option.rayTraceGIParams.initBlendFactor,
+			.dynamicBlendFactor = state.option.rayTraceGIParams.dynamicBlendFactor
+		};
+		_TemporalAccumulateParamsUBO->WriteData(&params, sizeof(TemporalAccumulateParams));
+	}
+
 }
 
 void RayTraceGIPass::SetGeneralBuffer(std::shared_ptr<RayTraceGeneralBuffer> buffer) {
@@ -228,18 +258,6 @@ bool RayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
 		state.lights.spotLightInfos,
 		state.lights.shadowAtlas
 	);
-
-	//光追参数
-	RayTraceParams params{
-		.screenSize = data.drawSize,
-		.tMin = std::max(0.f, state.option.rayTraceGIParams.tMin),
-		.tMax = std::max(0.f, state.option.rayTraceGIParams.tMax),
-		.maxBounce = std::max((uint32_t)1, std::min(state.option.rayTraceGIParams.maxBounceLimit, GlobalConfig::RayTrace_Max_Bounce_limit)),
-		.sampleRayCount = std::max((uint32_t)1, state.option.rayTraceGIParams.NumSamples),
-		.GIIntensity = std::max(0.01f, state.option.rayTraceGIParams.GIIntensity),
-		.frameIndex = state.renderRecord.frameIndex % 100000
-	};
-	RayTraceParamsUBO->WriteData(&params, sizeof(RayTraceParams));
 
 
 	rayTraceShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
@@ -285,16 +303,6 @@ bool RayTraceGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& st
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-
-	SpatialDenoisingParams params{
-	.screenSize = data.drawSize,
-	.kernelSize = state.option.rayTraceGIParams.BlurKernelSize,
-	.sigma = state.option.rayTraceGIParams.BlurGaussSigma,
-	.blurRadius = state.option.rayTraceGIParams.BlurRadius,
-	.blurDepthWeight = state.option.rayTraceGIParams.BlurDepthWeight
-	};
-	SpatialDenoisingParamsUBO->WriteData(&params, sizeof(params));
-
 	_spatialDenoisingShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	_spatialDenoisingShader.SetStorageImage(target, 1);
 	_spatialDenoisingShader.SetUniformTexture(data.gNormal, 2);
@@ -339,13 +347,6 @@ bool RayTraceGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& s
 		.setBaseMipLevel(0)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
-
-	TemporalAccumulateParams params{
-		.screenSize = data.drawSize,
-		.initBlendFactor = state.option.rayTraceGIParams.initBlendFactor,
-		.dynamicBlendFactor = state.option.rayTraceGIParams.dynamicBlendFactor
-	};
-	TemporalAccumulateParamsUBO->WriteData(&params, sizeof(params));
 
 	_temporalDenoisingShader.SetStorageImage(target, 1);
 	_temporalDenoisingShader.SetUniformTexture(source, 2);

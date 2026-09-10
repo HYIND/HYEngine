@@ -9,7 +9,7 @@
 #include "VulkanRenderEngine/RenderPass/LightShadowDepthPass.h"
 #include "VulkanRenderEngine/RenderPass/LightingPass.h"
 #include "VulkanRenderEngine/RenderPass/LightDrawPass.h"
-//#include "VulkanRenderEngine/RenderPass/SSRPass.h"
+#include "VulkanRenderEngine/RenderPass/SSRPass.h"
 #include "VulkanRenderEngine/RenderPass/SkyBoxPass.h"
 #include "VulkanRenderEngine/RenderPass/SSAOPass.h"
 //#include "VulkanRenderEngine/RenderPass/EffectPass.h"
@@ -19,7 +19,7 @@
 #include "VulkanRenderEngine/RenderPass/DepthFogPass.h"
 //#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
 #include "VulkanRenderEngine/RenderPass/AutoExposurePass.h"
-//#include "VulkanRenderEngine/RenderPass/SSGIPass.h"
+#include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 
@@ -181,8 +181,7 @@ VulkanRenderer::VulkanRenderer()
 }
 
 VulkanRenderer::~VulkanRenderer()
-{
-}
+{}
 
 void VulkanRenderer::InitForWindow(uint32_t width, uint32_t height)
 {
@@ -602,23 +601,23 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.After(copyDepthPass, rayTraceGeneralPass)
 		.Before(opaqueFence);
 
-	//ssrPass->SetRenderPass(std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/BilateralFilterBlur.comp"))
-	//	.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap)
-	//	.Temp(resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"))
-	//	.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
-	//	.Output(ssr_Output)
-	//	.After(copyDepthPass, skyBoxPass, lightingPass)
-	//	.Before(opaqueFence);
+	ssrPass->SetRenderPass(std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp"))
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, hzbMap)
+		.Temp(resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"), resbuilder.CreateTexture(ssr_Output, "ssrPass_temp2"))
+		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
+		.Output(ssr_Output)
+		.Persistent(resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"))
+		.After(copyDepthPass, lightingPass)
+		.Before(opaqueFence);
 
-	//ssgiPass->SetRenderPass(std::make_unique<SSGIPass>("shader/ssr/SSGI.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp"))
-	//	.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, ssaoOutPut, hzbMap)
-	//	.Temp(resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp1"), resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp2"))
-	//	.Persistent(resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"))
-	//	.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
-	//	.Output(ssgi_Output)
-	//	.After(copyDepthPass, skyBoxPass, lightingPass)
-	//	.Before(opaqueFence);
-
+	ssgiPass->SetRenderPass(std::make_unique<SSGIPass>("shader/ssr/SSGI.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp"))
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, ssaoOutPut, gMotionVectorMap, hzbMap)
+		.Temp(resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp1"), resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp2"))
+		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
+		.Output(ssgi_Output)
+		.Persistent(resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"))
+		.After(copyDepthPass, lightingPass)
+		.Before(opaqueFence);
 
 	constexpr uint32_t work_size_x = 16;
 	constexpr uint32_t work_size_y = 16;

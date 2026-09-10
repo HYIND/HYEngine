@@ -1,36 +1,121 @@
-#include "OpenGLRenderEngine/RenderPass/SSGIPass.h"
-#include "OpenGLRenderEngine/General/RenderHelp.h"
-#include "OpenGLRenderEngine/General/GPUTimer.h"
-#include "glm/gtc/matrix_transform.hpp"
+#include "vkstdafx.h"
+#include "VulkanRenderEngine/RenderPass/SSGIPass.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
-#define work_size_x 16
-#define work_size_y 16
+constexpr uint32_t work_size_x = 16;
+constexpr uint32_t work_size_y = 16;
+
+
+struct SSGIParams
+{
+	glm::ivec2 screenSize;
+	float tMin;
+	float tMax;
+	uint32_t maxBounce = 0;
+	uint32_t SampleRayCount;
+	uint32_t RayMarchingMaxStep;
+	float SampleIndirectClampValue;
+	float GIIntensity;
+	float AOIntensity;
+	float DistanceFactor;
+	uint32_t frameIndex;
+};
+
+struct SpatialDenoisingParams
+{
+	glm::ivec2 screenSize;
+	uint32_t kernelSize;
+	float sigma;
+	float blurRadius;
+	float blurDepthWeight;
+};
+
+struct TemporalAccumulateParams
+{
+	glm::ivec2 screenSize;
+	float initBlendFactor;
+	float dynamicBlendFactor;
+};
 
 SSGIPass::SSGIPass(
-	const std::string& ssgiComputerShaderPath,
+	const std::string& computerShaderPath,
 	const std::string& spatialDenoisingComputerShaderPath,
 	const std::string& temporalDenoisingComputerShaderPath
 )
 	:
 	_enable(false)
 {
-	_ssgiShader.AddDefineMacro("work_size_x", work_size_x);
-	_ssgiShader.AddDefineMacro("work_size_y", work_size_y);
-	_ssgiShader.AddDefineMacro("Max_Bounce_limit", OpenGLRenderConfig::SSTrace_Max_Bounce_limit);
-	_ssgiShader.CompileFromFile(ssgiComputerShaderPath);
 
-	_spatialDenoisingShader.AddDefineMacro("work_size_x", work_size_x);
-	_spatialDenoisingShader.AddDefineMacro("work_size_y", work_size_y);
-	_spatialDenoisingShader.CompileFromFile(spatialDenoisingComputerShaderPath);
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", work_size_x);
+		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("Max_Bounce_limit", GlobalConfig::SSTrace_Max_Bounce_limit);
+		config.computePath = computerShaderPath;
 
-	_temporalDenoisingShader.AddDefineMacro("work_size_x", work_size_x);
-	_temporalDenoisingShader.AddDefineMacro("work_size_y", work_size_y);
-	_temporalDenoisingShader.CompileFromFile(temporalDenoisingComputerShaderPath);
+		config
+			.AddCameraUnifromDataBinding()
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2)
+			.AddUnifromTexture(3)
+			.AddUnifromTexture(4)
+			.AddUnifromTexture(5)
+			.AddUnifromTexture(6)
+			.AddUnifromTexture(7)
+			.AddUnifromTexture(8)
+			.AddUnifromTexture(9);
+
+		if (config.Validate())
+			_ssgiShader.Create(config);
+	}
+
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", work_size_x);
+		config.AddDefineMacro("work_size_y", work_size_y);
+		config.computePath = spatialDenoisingComputerShaderPath;
+
+		config
+			.AddCameraUnifromDataBinding()
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2)
+			.AddUnifromTexture(3)
+			.AddUnifromTexture(4);
+
+		if (config.Validate())
+			_spatialDenoisingShader.Create(config);
+	}
+
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", work_size_x);
+		config.AddDefineMacro("work_size_y", work_size_y);
+		config.computePath = temporalDenoisingComputerShaderPath;
+
+		config
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2)
+			.AddUnifromTexture(3)
+			.AddUnifromTexture(4);
+
+		if (config.Validate())
+			_temporalDenoisingShader.Create(config);
+	}
+
+	_SSGIParamsUBO = std::make_shared<UniformBlock>(sizeof(SSGIParams));
+	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
+	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
+
+	_ssgiShader.SetUniformBlock(_SSGIParamsUBO, 0);
+	_spatialDenoisingShader.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
+	_temporalDenoisingShader.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 bool SSGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	SetEnable(state.option.flags.ssgiOn);
 	if (!_enable || state.option.ssgiTraceParams.maxBounceLimit < 0)
 		return false;
 	return true;
@@ -55,8 +140,8 @@ void SSGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGra
 	data.gNormal = ctx.GetInput(1);
 	data.gAlbedoOpacity = ctx.GetInput(2);
 	data.gMetallicRoughness = ctx.GetInput(3);
-	data.gMotionVector = ctx.GetInput(4);
-	data.ssaoTexture = ctx.GetInput(5);
+	data.ssaoTexture = ctx.GetInput(4);
+	data.gMotionVector = ctx.GetInput(5);
 	data.hzbDepthMap = ctx.GetInput(6);
 
 	data.colorMap = ctx.GetExternal(0);
@@ -68,19 +153,53 @@ void SSGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGra
 
 	if (data.outPutTexture && data.historyColorTexture)
 		Texture2D::CopyTexture(data.outPutTexture, data.historyColorTexture);
+}
 
-	//RENDERCONTEXMANAGER->WithTempReleaseMainOpenGLBind([&]()->void {
-	//	THREADCONTEXT->UnBind();
-	//	auto task1 = CoroTask::Run([&]()-> void {DrawTexture(_originTexture, "temp/SSGIPass1_oris.png"); });
-	//	auto task2 = CoroTask::Run([&]()-> void {DrawTexture(_spatialDenoisingTexture, "temp/SSGIPass2_spatialDenoisingr.png"); });
-	//	auto task3 = CoroTask::Run([&]()-> void {DrawTexture(_temporalDenoisingTexture, "temp/SSGIPass3_temporalDenoisingTexture.png"); });
-	//	auto task4 = CoroTask::Run([&]()-> void {DrawTexture(_outPutTexture, "temp/SSGIPass4_output.png"); });
-	//	task1.sync_wait();
-	//	task2.sync_wait();
-	//	task3.sync_wait();
-	//	task4.sync_wait();
-	//	THREADCONTEXT->Bind();
-	//	});
+void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	SetEnable(state.option.flags.ssgiOn);
+
+	if (!ShouldExecute(registry, state))
+		return;
+
+	{
+
+		SSGIParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.tMin = std::max(0.f, state.option.ssgiTraceParams.tMin),
+			.tMax = std::max(0.f, state.option.ssgiTraceParams.tMax),
+			.maxBounce = std::max(1u, std::min(state.option.ssgiTraceParams.maxBounceLimit, GlobalConfig::SSTrace_Max_Bounce_limit)),
+			.SampleRayCount = state.option.ssgiTraceParams.NumSamples,
+			.RayMarchingMaxStep = std::max(2u, state.option.ssgiTraceParams.RayMarchingMaxStep),
+			.SampleIndirectClampValue = std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value),
+			.GIIntensity = std::max(0.01f, state.option.ssgiTraceParams.GIIntensity),
+			.AOIntensity = std::max(0.01f, state.option.ssgiTraceParams.AOIntensity),
+			.DistanceFactor = std::max(0.0001f, state.option.ssgiTraceParams.DistanceFactor),
+			.frameIndex = state.renderRecord.frameIndex % 100000
+		};
+		_SSGIParamsUBO->WriteData(&params, sizeof(SSGIParams));
+	}
+
+	{
+
+		SpatialDenoisingParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.kernelSize = state.option.ssgiTraceParams.BlurKernelSize,
+			.sigma = state.option.ssgiTraceParams.BlurGaussSigma,
+			.blurRadius = state.option.ssgiTraceParams.BlurRadius,
+			.blurDepthWeight = state.option.ssgiTraceParams.BlurDepthWeight
+		};
+		_SpatialDenoisingParamsUBO->WriteData(&params, sizeof(SpatialDenoisingParams));
+	}
+
+	{
+		TemporalAccumulateParams params{
+			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
+			.initBlendFactor = state.option.ssgiTraceParams.initBlendFactor,
+			.dynamicBlendFactor = state.option.ssgiTraceParams.dynamicBlendFactor
+		};
+		_TemporalAccumulateParamsUBO->WriteData(&params, sizeof(TemporalAccumulateParams));
+	}
 }
 
 void SSGIPass::SetEnable(bool enable) const
@@ -99,111 +218,116 @@ bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
 	if (!target || target->IsEmpty())
 		return false;
 
-	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	glClearTexImage(target->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_ssgiShader.Use();
+	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 
-	_ssgiShader.setIVec2("screenSize", data.drawSize);
+	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+	vk::ImageSubresourceRange range;
+	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseArrayLayer(0)
+		.setLayerCount(1)
+		.setBaseMipLevel(0)
+		.setLevelCount(1);
+	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_ssgiShader.setFloat("tMin", std::max(0.f, state.option.ssgiTraceParams.tMin));
-	_ssgiShader.setFloat("tMax", std::max(0.f, state.option.ssgiTraceParams.tMax));
-	_ssgiShader.setUInt("SampleRayCount", state.option.ssgiTraceParams.NumSamples);
-	_ssgiShader.setUInt("RayMarchingMaxStep", std::max((uint32_t)2, state.option.ssgiTraceParams.RayMarchingMaxStep));
-	_ssgiShader.setFloat("SampleIndirectClampValue", std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value));
-	_ssgiShader.setFloat("GIIntensity", std::max(0.f, state.option.ssgiTraceParams.GIIntensity));
-	_ssgiShader.setFloat("AOIntensity", std::max(0.f, state.option.ssgiTraceParams.AOIntensity));
-	_ssgiShader.setFloat("DistanceFactor", std::max(0.0001f, state.option.ssgiTraceParams.DistanceFactor));
+	_ssgiShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_ssgiShader.SetStorageImage(target, 1);
+	_ssgiShader.SetUniformTexture(data.gPosition, 2);
+	_ssgiShader.SetUniformTexture(data.gNormal, 3);
+	_ssgiShader.SetUniformTexture(data.gAlbedoOpacity, 4);
+	_ssgiShader.SetUniformTexture(data.gMetallicRoughness, 5);
+	_ssgiShader.SetUniformTexture(data.colorMap, 6);
+	_ssgiShader.SetUniformTexture(data.depthMap, 7);
+	_ssgiShader.SetUniformTexture(data.ssaoTexture, 8);
+	_ssgiShader.SetUniformTexture(data.hzbDepthMap, 9);
 
+	_ssgiShader.Bind(cmd);
+	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	_ssgiShader.setTexture(data.gPosition, "gPosition", 5);
-	_ssgiShader.setTexture(data.gNormal, "gNormal", 6);
-	_ssgiShader.setTexture(data.gAlbedoOpacity, "gAlbedoOpacity", 7);
-	_ssgiShader.setTexture(data.gMetallicRoughness, "gMetallicRoughness", 8);
-	_ssgiShader.setTexture(data.colorMap, "colorMap", 9);
-	_ssgiShader.setTexture(data.depthMap, "depthMap", 10);
-	_ssgiShader.setTexture(data.hzbDepthMap, "hzbDepthMap", 11);
-
-	_ssgiShader.setInt("maxLevel", data.hzbDepthMap->GetMaxLevel());
-
-	if (data.ssaoTexture) _ssgiShader.setTexture(data.ssaoTexture, "SSAOMap", 12);
-
-	_ssgiShader.setInt("frameIndex", state.renderRecord.frameIndex % 100000);
-
-	glBindImageTexture(0, target->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	return true;
 }
 
 bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
 {
-	auto& srcTex = data.originTexture;
-	auto& targetTex = data.spatialDenoisingTexture;
+	auto& source = data.originTexture;
+	auto& target = data.spatialDenoisingTexture;
 
-	if (!srcTex || srcTex->IsEmpty())
+	if (!source || source->IsEmpty())
 		return false;
 
-	if (!targetTex || targetTex->IsEmpty())
+	if (!target || target->IsEmpty())
 		return false;
 
-	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	glClearTexImage(targetTex->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_spatialDenoisingShader.Use();
+	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 
-	_spatialDenoisingShader.setIVec2("screenSize", data.drawSize);
+	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+	vk::ImageSubresourceRange range;
+	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseArrayLayer(0)
+		.setLayerCount(1)
+		.setBaseMipLevel(0)
+		.setLevelCount(1);
+	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_spatialDenoisingShader.setTexture(srcTex, "rawTexture", 4);
-	_spatialDenoisingShader.setTexture(data.gNormal, "gNormal", 6);
-	_spatialDenoisingShader.setTexture(data.depthMap, "depthMap", 10);
+	_spatialDenoisingShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_spatialDenoisingShader.SetStorageImage(target, 1);
+	_spatialDenoisingShader.SetUniformTexture(data.gNormal, 2);
+	_spatialDenoisingShader.SetUniformTexture(data.depthMap, 3);
+	_spatialDenoisingShader.SetUniformTexture(source, 4);
 
-	_spatialDenoisingShader.setFloat("blurRadius", state.option.ssgiTraceParams.BlurRadius);
-	_spatialDenoisingShader.setFloat("blurDepthWeight", state.option.ssgiTraceParams.BlurDepthWeight);
-	_spatialDenoisingShader.setInt("kernelSize", state.option.ssgiTraceParams.BlurKernelSize);
-	_spatialDenoisingShader.setFloat("sigma", state.option.ssgiTraceParams.BlurGaussSigma);
+	_spatialDenoisingShader.Bind(cmd);
+	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-	glDispatchCompute((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	return true;
 }
 
 bool SSGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
 {
-	auto& srcTex = data.spatialDenoisingTexture;
-	auto& targetTex = data.outPutTexture;
+	auto& source = data.spatialDenoisingTexture;
+	auto& target = data.outPutTexture;
 
-	if (!srcTex || srcTex->IsEmpty())
+	if (!source || source->IsEmpty())
 		return false;
 
-	if (!targetTex || targetTex->IsEmpty())
+	if (!target || target->IsEmpty())
 		return false;
 
 	if (_firstDrawTemporal || !data.gMotionVector || !data.historyColorTexture)
 	{
-		Texture2D::CopyTexture(srcTex, targetTex);
+		Texture2D::CopyTexture(source, target);
 		_firstDrawTemporal = false;
 		return true;
 	}
 
-	GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	glClearTexImage(targetTex->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
+	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	int width = srcTex->GetWidth();
-	int height = srcTex->GetHeight();
+	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 
-	_temporalDenoisingShader.Use();
-	_temporalDenoisingShader.setIVec2("screenSize", glm::ivec2(width, height));
-	_temporalDenoisingShader.setTexture(srcTex, "rawTexture", 4);
-	_temporalDenoisingShader.setTexture(data.historyColorTexture, "historyColorTexture", 5);
-	_temporalDenoisingShader.setTexture(data.gMotionVector, "motionMap", 6);
+	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+	vk::ImageSubresourceRange range;
+	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseArrayLayer(0)
+		.setLayerCount(1)
+		.setBaseMipLevel(0)
+		.setLevelCount(1);
+	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	glBindImageTexture(0, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-	glDispatchCompute((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	_temporalDenoisingShader.SetStorageImage(target, 1);
+	_temporalDenoisingShader.SetUniformTexture(source, 2);
+	_temporalDenoisingShader.SetUniformTexture(data.historyColorTexture, 3);
+	_temporalDenoisingShader.SetUniformTexture(data.gMotionVector, 4);
+
+	_temporalDenoisingShader.Bind(cmd);
+	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	return true;
 }

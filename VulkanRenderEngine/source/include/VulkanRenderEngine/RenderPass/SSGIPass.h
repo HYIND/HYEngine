@@ -1,7 +1,7 @@
 #pragma once
 
 #include "glm\glm.hpp"
-#include "VulkanRenderEngine/Base/Shader.h"
+#include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/General/RenderItem.h"
 #include "VulkanRenderEngine/General/RenderState.h"
 #include "RenderPassBase.h"
@@ -10,13 +10,14 @@ class SSGIPass :public RenderPassBase
 {
 public:
 	SSGIPass(
-		const std::string& ssgiComputerShaderPath,
+		const std::string& computerShaderPath,
 		const std::string& spatialDenoisingComputerShaderPath,
 		const std::string& temporalDenoisingComputerShaderPath
 	);
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetEnable(bool enable) const;
 
@@ -49,10 +50,14 @@ private:
 	bool DrawTemporalDenoising(FrameRenderData& data, RenderState& state);
 
 private:
-	Shader _ssgiShader;
-	Shader _spatialDenoisingShader;
-	Shader _temporalDenoisingShader;
+	ComputePipeline _ssgiShader;
+	ComputePipeline _spatialDenoisingShader;
+	ComputePipeline _temporalDenoisingShader;
 
 	mutable bool _firstDrawTemporal;
 	mutable bool _enable;
+
+	std::shared_ptr<UniformBlock> _SSGIParamsUBO;
+	std::shared_ptr<UniformBlock> _SpatialDenoisingParamsUBO;
+	std::shared_ptr<UniformBlock> _TemporalAccumulateParamsUBO;
 };

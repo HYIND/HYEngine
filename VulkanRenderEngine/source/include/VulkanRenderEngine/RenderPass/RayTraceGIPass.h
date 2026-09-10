@@ -63,7 +63,7 @@ private:
 
 	std::shared_ptr<RayTraceGeneralBuffer> _buffers;
 
-	std::shared_ptr<UniformBlock> RayTraceParamsUBO;
-	std::shared_ptr<UniformBlock> SpatialDenoisingParamsUBO;
-	std::shared_ptr<UniformBlock> TemporalAccumulateParamsUBO;
+	std::shared_ptr<UniformBlock> _RayTraceParamsUBO;
+	std::shared_ptr<UniformBlock> _SpatialDenoisingParamsUBO;
+	std::shared_ptr<UniformBlock> _TemporalAccumulateParamsUBO;
 };

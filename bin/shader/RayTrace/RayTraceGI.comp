@@ -49,7 +49,8 @@ vec3 traceRay(
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce, 
-    uint sampleId) 
+    uint sampleId
+) 
 {
 
     vec3 colors[Max_Bounce_limit + 1];

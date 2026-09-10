@@ -140,7 +140,7 @@ RayTraceReflectPass::~RayTraceReflectPass()
 
 bool RayTraceReflectPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (!_enable || state.option.ssgiTraceParams.maxBounceLimit < 0)
+	if (!_enable || state.option.rayTraceReflectParams.maxBounceLimit < 0)
 		return false;
 	return true;
 }

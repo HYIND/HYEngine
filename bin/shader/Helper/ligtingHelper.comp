@@ -1,19 +1,10 @@
 
 #include "shader/dataDef/lightingssboDef.comp"
-
-const float PI = 3.14159265359;
+#include "shader/Helper/bdrfHelper.comp"
 
 const float linera_radius_factor = 0.8;	//距离到底0.8光照半径改用线性衰减，使光强平滑衰减至0，消除截断
 const float linera_radius_factor2 = linera_radius_factor * linera_radius_factor;
 const float one_minus_linera_radius_factor = 1.0f - linera_radius_factor;
-
-struct PBRProperties
-{
-    vec3 albedo;
-    float metallic;
-    float roughness; 
-    float ambientOcclusion;
-};
 
 
 DirLightCascade GetCascade(vec3 fragPosWorldSpace, int cascadeFirst, int cascadeCount);
@@ -27,16 +18,6 @@ float SamplerAtlasCubeMapWithCompare(vec3 dir, sampler2D atlasMap, vec2 atlasSiz
 vec3 NormalBias(vec3 fragPos, vec3 lightDir, vec3 normal, float biasFactor);
 float DirLightShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize);
 float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
-
-//BDRF
-float DistributionGGX(float NdotH, float roughness);
-float GeometrySchlickGGX(float NdotX, float roughness);
-float GeometrySmith(float NdotL, float NdotV, float roughness);
-vec3 fresnelSchlick(vec3 F0, float VdotH);
-void CalcBDRF(
-	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
-	vec3 albedo, float metallic, float roughness,
-	inout float NdotL, inout vec3 diffuse, inout vec3 specular);
 
 
 //lighting
@@ -236,80 +217,6 @@ float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fra
     return 1.0f - shadow / float(sumsamplecount);
 }
 
-float DistributionGGX(float NdotH, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / (PI * denom * denom);
-}
-
-float GeometrySchlickGGX(float NdotX, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    return NdotX / (NdotX * (1.0 - k) + k);
-}
-
-float GeometrySmith(float NdotL, float NdotV, float roughness) {
-    float ggx1 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx2 = GeometrySchlickGGX(NdotL, roughness);
-    return ggx1 * ggx2;
-}
-
-vec3 fresnelSchlick(vec3 F0, float VdotH) {
-	float x = 1.0 - VdotH;
-	float x2 = x * x;
-	float x5 = x2 * x2 * x;
-    return F0 + (1.0 - F0) * x5;
-}
-
-void CalcBDRFDiffuse(vec3 albedo, float metallic, inout vec3 diffuse)
-{
-	// vec3 kS = F;
-	// vec3 kD = vec3(1.0) - kS;
-	// kD *= (1.0 - metallic);	  
-
-	vec3 kD = vec3(1.0) - metallic;	//对于直接光照，忽略掉1-F的部分，防止在高光区域周围出现一圈“暗环”，视觉效果差
-	diffuse = kD * albedo / PI;
-}
-
-void CalcBDRFSpecular(
-	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
-	vec3 albedo, float metallic, float roughness,
-	inout float NdotL, inout vec3 specular)
-{	
-	vec3 N = normalize(normal);           	// 表面法线
-	vec3 V = normalize(fragToViewDir); 		// 视线反方向（从表面指向摄像机）
-	vec3 L = normalize(fragToLightDir); 	// 光线方向（从表面指向光源）
-	vec3 H = normalize(V + L);            	// 半角向量
-	NdotL = max(dot(N, L), 0.0);			// 表面法线x指向光线
-	float NdotV = max(dot(N, V), 0.0);		// 表面法线x指向摄像机
-	float NdotH = max(dot(N, H), 0.0);		// 表面法线x半程向量
-	float VdotH = max(dot(V, H), 0.0);		// 指向摄像机x半程向量
-
-    if (NdotL <= 0.0) {
-        specular = vec3(0.0);
-		return;
-    }
-
-	vec3 F0 = mix(vec3(0.02), albedo, metallic);
-
-	// Specular = F × G × D / (4 × NdotL × NdotV)
-	float D = DistributionGGX(NdotH, roughness);			//法线分布项 D
-    float G = GeometrySmith(NdotL, NdotV, roughness);		//几何遮蔽项 G
-	vec3 F = fresnelSchlick(F0, VdotH);
-
-	specular = (F * G * D) / (4.0 * NdotL * NdotV + 0.0001);	//Specular, 0.0001防止除0
-}
-
-void CalcBDRF(
-	vec3 normal, vec3 fragToViewDir, vec3 fragToLightDir,
-	vec3 albedo, float metallic, float roughness,
-	inout float NdotL, inout vec3 diffuse, inout vec3 specular)
-{
- 	CalcBDRFDiffuse(albedo, metallic, diffuse);
-	CalcBDRFSpecular(normal, fragToViewDir, fragToLightDir, albedo, metallic, roughness, NdotL, specular);
-}
-
 vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 view ,vec3 viewDir, PBRProperties prop)
 {
 	float NdotL;
@@ -333,8 +240,8 @@ vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos,
 	
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }
@@ -365,8 +272,8 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
 
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }
@@ -415,8 +322,8 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 
 	vec3 result = (1.0 - shadow) * lightingColor * intensity;              
 	
-	vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	result = max(result, ambient);
+	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+	// result = max(result, ambient);
 
 	return result;
 }

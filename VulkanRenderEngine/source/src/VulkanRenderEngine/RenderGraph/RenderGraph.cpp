@@ -137,6 +137,7 @@ void Graph::Execute(RenderState& state)
 
 	struct BatchData
 	{
+		bool isEnd = false;
 		int batchIndex = -1;
 		std::vector<int> passes;
 		std::vector<RenderGraphResource> batchLifeCycleResource;
@@ -179,7 +180,7 @@ void Graph::Execute(RenderState& state)
 			return !batchs.empty();
 		};
 
-	auto FindReadyNodeAndExcute = [&](BatchData& batchdata)-> bool
+	auto FindReadyNodeAndExcute = [&](BatchData& batchdata)-> void
 		{
 			auto ExcutePass = [&](int passIndex)-> void
 				{
@@ -256,47 +257,92 @@ void Graph::Execute(RenderState& state)
 				}
 			}
 
-			if (batchdata.passes.empty() && !batchdata.batchLifeCycleResource.empty())
-			{
-				for (auto& res : batchdata.batchLifeCycleResource)
-				{
-					auto it = _lifecycles.find(res);
-					if (it == _lifecycles.end())
-						continue;
-
-					auto& lifecycle = it->second;
-					if (lifecycle.lastBatch <= batchdata.batchIndex)
-					{
-						_resManager.ReleaseTexture(res);
-						//std::cout << std::format("release res [{}]\n", res.name);
-					}
-				}
-			}
-
-			return batchdata.passes.empty();
+			if (batchdata.passes.empty())
+				batchdata.isEnd = true;
 		};
 
-	std::vector<BatchData> all_batchs;
+	std::vector<BatchData> running_batchs;
+	std::map<int, std::vector<BatchData>, std::less<int>> end_batchs_map;
 
 	int passIndex = 0;
 	int batchIndex = -1;
-	std::vector<int>batchs;
-	while (GetBatch(passIndex, batchs, batchIndex))
+	std::vector<int>batchpasses;
+	while (GetBatch(passIndex, batchpasses, batchIndex))
 	{
-		all_batchs.push_back({ batchIndex,batchs });
-		batchs.clear();
+		running_batchs.push_back(BatchData{ .batchIndex = batchIndex, .passes = batchpasses });
+		batchpasses.clear();
 	}
 
-	while (!all_batchs.empty())
+	int endPassClearIndex = -1;
+
+	auto ClearBatch = [&]()
+		{
+			for (auto it = end_batchs_map.begin(); it != end_batchs_map.end();)
+			{
+				int index = it->first;
+				auto& batchs = it->second;
+				if (index > endPassClearIndex)
+				{
+					it++;
+					continue;
+				}
+				else
+				{
+					for (auto& batch : batchs)
+					{
+						for (auto& res : batch.batchLifeCycleResource)
+						{
+							auto it = _lifecycles.find(res);
+							if (it == _lifecycles.end())
+								continue;
+
+							auto& lifecycle = it->second;
+							if (lifecycle.lastBatch <= batch.batchIndex)
+							{
+								_resManager.ReleaseTexture(res);
+								//std::cout << std::format("release res [{}]\n", res.name);
+							}
+						}
+					}
+					it = end_batchs_map.erase(it);
+				}
+			}
+		};
+
+	auto OnBatchEnd = [&](BatchData&& endbatch)
+		{
+			end_batchs_map[endbatch.batchIndex].push_back(std::move(endbatch));
+			for (auto& it : end_batchs_map)
+			{
+				int index = it.first;
+				if (index == (endPassClearIndex + 1))
+					endPassClearIndex = index;
+			}
+			ClearBatch();
+		};
+
+	while (!running_batchs.empty())
 	{
-		for (auto it = all_batchs.begin(); it != all_batchs.end(); )
+		for (auto it = running_batchs.begin(); it != running_batchs.end(); )
 		{
 			auto& batch = *it;
-			if (FindReadyNodeAndExcute(batch))
-				it = all_batchs.erase(it);
+			if (!batch.isEnd)
+				FindReadyNodeAndExcute(batch);
+
+			if (batch.isEnd)
+			{
+				OnBatchEnd(std::move(batch));
+				it = running_batchs.erase(it);
+			}
 			else
 				it++;
 		}
+	}
+
+	if (!end_batchs_map.empty())
+	{
+		endPassClearIndex = INT_MAX;
+		ClearBatch();
 	}
 
 	//std::cout << "===========================\n";

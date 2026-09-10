@@ -512,6 +512,12 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\DDSLoader.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="source\include\VulkanRenderEngine\RenderGraph\PassNode.inl">

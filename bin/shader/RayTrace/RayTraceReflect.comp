@@ -74,9 +74,9 @@ vec3 traceRay(
         hit.t = ray.tMax;
 
         // 根据材质，随机选取走高光采样还是漫反射采样
-        float p_spec = calc_P_Spec(prop);
-        bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
-        if (spec)
+        // float p_spec = calc_P_Spec(prop);
+        // bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
+        // if (spec)
         {
             // GGX重要性采样specular
             vec2 random = getRandom(seed);
@@ -86,23 +86,23 @@ vec3 traceRay(
                 break;
 
             // 计算该点向前一个点高光传递贡献
-            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hit.position - ray.origin), prop.albedo, prop.metallic, prop.roughness) / p_spec;
+            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hit.position - ray.origin), prop.albedo, prop.metallic, prop.roughness);
         }
-        else 
-        {
-            // 余弦加权重要性采样diffuse
-            vec2 random = getRandom(seed);
-            ray.direction = ImportanceSampleCosine(fragNormal, random);
+        // else 
+        // {
+        //     // 余弦加权重要性采样diffuse
+        //     vec2 random = getRandom(seed);
+        //     ray.direction = ImportanceSampleCosine(fragNormal, random);
 
-            if(!traceScene(ray, hit))
-                break;
+        //     if(!traceScene(ray, hit))
+        //         break;
     
-            // 计算该点向前一个点漫反射传递贡献
-            vec3 diffuse = vec3(0.0);
-            CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
-            contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
+        //     // 计算该点向前一个点漫反射传递贡献
+        //     vec3 diffuse = vec3(0.0);
+        //     CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
+        //     contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
 
-        }
+        // }
 
         //计算该点光照颜色
 	    getPBRProperties(hit.materialdata, hit.texCoords, prop);
@@ -206,12 +206,14 @@ void ProcessWithGBuffer()
     calculateFirstHitInfo(firstHit, uv);
 
     vec2 values = texture(gMetallicRoughness, uv).rg;
-
     PBRProperties prop;
     prop.albedo = texture(gAlbedoOpacity, uv).rgb;   
     prop.metallic = values.r;
     prop.roughness = values.g;
     prop.ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
+
+    if (prop.metallic < 0.15 || prop.roughness > 0.77)
+        return;
 
     vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
     color = clamp(color, vec3(0.f), vec3(1000.f));
