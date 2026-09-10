@@ -2,7 +2,7 @@
 
 一个使用C++编写的模块化3D游戏引擎，包含完整的编辑器，简单游戏本体与运行时环境。
 
-## 📸 截图
+## 截图
 
 ![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot1.png?raw=true)
 
@@ -13,7 +13,8 @@
  – 模块化设计，引擎各模块可独立编译，Gameplay和多媒体运行时解耦，低耦合
 – 运行时动态编译Render Graph，自动处理渲染Pass的时序和资源依赖，分析并进行基于时序的自动资源复用
 
-### OpenGL渲染
+### Vulkan/OpenGL渲染
+- Vulkan/OpenGL 支持
 – 混合渲染，结合延迟渲染与向前渲染，支持多光源渲染，支持间接调用的批量渲染
 – 后处理效果，HDR、SSAO、SSR、SSGI、RayTrace、自动曝光、泛光等
 – 基于距离排序的半透明渲染
