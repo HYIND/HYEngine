@@ -199,8 +199,12 @@ vec3 CalcContribute_GGXSample(
 
 bool traceScene(Ray ray, inout HitInfo hit) 
 {
-    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0,
-                ray.origin, ray.tMin, ray.direction, ray.tMax, 0);
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsOpaqueEXT, 
+        0xFF, 0, 0, 0,
+        ray.origin, ray.tMin, ray.direction, ray.tMax, 
+        0
+    );
 
     if(payload.isHit)
     {
@@ -222,4 +226,63 @@ float calc_P_Spec(PBRProperties prop)
     float avgF0 = (F0.r + F0.g + F0.b) / 3.0;
     float p_spec = clamp(avgF0 * (1.0 - prop.roughness) + prop.roughness * 0.1, 0.05, 0.95);
     return p_spec;
+}
+
+vec3 CalcLightingWithShadowRay(
+    vec3 viewPos,
+    vec3 fragPos, vec3 fragNormal, 
+	PBRProperties prop
+)
+{
+	vec3 viewDir = normalize(fragPos - viewPos);		
+    vec3 rayOrigin = fragPos + fragNormal * 0.001;
+
+	vec3 lightColor = vec3(0.f,0.f,0.f);
+	for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
+    {
+        vec3 fragTolightDir = -dirLightMetaData.info[i].direction;
+        const float lightDistance = 10000.f;
+        payload.isHit = true;
+        traceRayEXT(topLevelAS,
+            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+            0xFF, 0, 0, 0,
+            rayOrigin, 0.001, fragTolightDir, lightDistance,
+            0
+        );
+        if (payload.isHit)
+            continue;
+		lightColor += CalcDirLightWithoutShadow(dirLightMetaData.info[i], fragNormal, viewDir, prop);
+    }
+	for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
+    {
+        vec3 fragTolightDir = pointLightMetaData.info[i].position - rayOrigin;
+        const float lightDistance = distance(rayOrigin, pointLightMetaData.info[i].position);
+        payload.isHit = true;
+        traceRayEXT(topLevelAS,
+            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+            0xFF, 0, 0, 0,
+            rayOrigin, 0.001, fragTolightDir, lightDistance,
+            0
+        );
+        if (payload.isHit)
+            continue;
+		lightColor += CalcPointLightWithoutShadow(pointLightMetaData.info[i], fragNormal, fragPos, viewDir, prop);
+    }
+	for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
+    {
+        vec3 fragTolightDir = pointLightMetaData.info[i].position - rayOrigin;
+        const float lightDistance = distance(rayOrigin, pointLightMetaData.info[i].position);
+        payload.isHit = true;
+        traceRayEXT(topLevelAS,
+            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+            0xFF, 0, 0, 0,
+            rayOrigin, 0.001, fragTolightDir, lightDistance,
+            0
+        );
+        if (payload.isHit)
+            continue;
+		lightColor += CalcSpotLightWithoutShadow(spotLightMetaData.info[i], fragNormal, fragPos, viewDir, prop);
+    }
+
+	return lightColor;
 }

@@ -101,12 +101,7 @@ vec3 traceRay(
         vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
 
         vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
-        vec3 lightingColor = CalcLighting(
-            camera.view, ray.origin, camera.farPlane,
-            atlasShadowMap, 
-            hit.position, normal,
-            prop
-            );
+        vec3 lightingColor = CalcLightingWithShadowRay(ray.origin, hit.position, normal, prop);
         colors[hitCount] = lightingColor + emission;
 
         viewPos = ray.origin;
