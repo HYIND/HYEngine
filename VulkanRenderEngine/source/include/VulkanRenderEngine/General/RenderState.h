@@ -82,6 +82,12 @@ struct PointLightInfo
 	std::shared_ptr<Atlas> atlas;
 };
 
+struct alignas(16) TransAndMaterialIndex
+{
+	glm::mat4 model;
+	uint32_t materialIndex = 0;
+};
+
 struct RenderState
 {
 	// 相机参数
@@ -126,7 +132,7 @@ struct RenderState
 	struct IndirectCommands {
 		std::vector<IndirectDrawCommand> staticMesh_OneSideCommand;
 		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommand;
-		std::shared_ptr<StorageBlock> ssbo_StaticMesh_Transforms;
+		std::shared_ptr<StorageBlock> ssbo_StaticMesh_TransformAndMaterialIndices;
 		std::shared_ptr<IndirectBufferBlock> indirectCommandBuffer;
 	} indirectCommands;
 

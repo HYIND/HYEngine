@@ -29,6 +29,7 @@ public:
 
 private:
 	void CalculateShadowAtlas(RenderState& state);
+
 	void processDirAndSpotLight(RenderState& state, DynamicRenderInfo& renderInfo);
 	void processPointLight(RenderState& state, DynamicRenderInfo& renderInfo);
 
@@ -71,5 +72,6 @@ private:
 	std::shared_ptr<IndirectBufferBlock> _oneSideCommandBuffer;
 	std::shared_ptr<IndirectBufferBlock> _twoSideCommandBuffer;
 
-	std::vector<glm::mat4> _staticMesh_Transforms;
+	std::shared_ptr<StorageBlock> _ssbo_StaticMeshOneSideMaterialIndex;
+	std::shared_ptr<StorageBlock> _ssbo_StaticMeshTwoSideMaterialIndex;
 };

@@ -66,7 +66,6 @@ LightShadowDepthPass::LightShadowDepthPass(
 {
 	_ssbo_LightProps = std::make_shared<StorageBlock>(batch_max * sizeof(LightProp));
 	_ssbo_ShadowMatrices = std::make_shared<StorageBlock>(batch_max * sizeof(glm::mat4));
-	//_ssbo_StaticMesh_Transforms = std::make_shared<SSBO>();
 
 	_oneSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
 	_twoSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
@@ -85,6 +84,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
+			.AddBindlessMaterialTextureBinding()
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5);
 
@@ -108,6 +108,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
+			.AddBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5);
@@ -132,6 +133,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
+			.AddBindlessMaterialTextureBinding()
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5)
 			.AddStorageBuffer(6);
@@ -156,6 +158,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
+			.AddBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5)
@@ -166,6 +169,9 @@ LightShadowDepthPass::LightShadowDepthPass(
 		if (config.Validate())
 			_pointLightShadowDepthSkinnedShader->Create(config);
 	}
+
+	_dirLightShadowDepthStaticMeshShader->SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	_pointLightShadowDepthStaticMeshShader->SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 
 	_dirLightShadowDepthStaticMeshShader->SetStorageBlock(_ssbo_ShadowMatrices, 4);
 	_dirLightShadowDepthSkinnedShader->SetStorageBlock(_ssbo_ShadowMatrices, 4);
@@ -179,8 +185,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 }
 
 LightShadowDepthPass::~LightShadowDepthPass()
-{
-}
+{}
 
 bool LightShadowDepthPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
@@ -199,8 +204,8 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 	glm::u32vec2 size = glm::max(_atlas->GetSize(), glm::u32vec2(16, 16));
 	shadowAtlas->Resize(size.x, size.y);
 
-	_dirLightShadowDepthStaticMeshShader->SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_Transforms, 5);
-	_pointLightShadowDepthStaticMeshShader->SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_Transforms, 5);
+	_dirLightShadowDepthStaticMeshShader->SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
+	_pointLightShadowDepthStaticMeshShader->SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
 
 	{
 		auto cmd = VKCONTEXT->GetCommandBuffer();
@@ -237,14 +242,6 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	CalculateShadowAtlas(state);
-
-	//if (_shouldUpdateTexture)
-	//{
-
-	//	{
-	//		auto& skinnedItems = state.objects.sceneRenderData.opaqueSkinnedModel;
-	//	}
-	//}
 }
 
 void LightShadowDepthPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)

@@ -12,25 +12,36 @@ layout (location = 7) in vec4 aWeights[2];
 
 layout (location = 0) flat out int Index;
 layout (location = 1) out vec3 WorldPos;
+layout (location = 2) out vec2 FragTextureCoords;
+layout (location = 3) flat out uint dataIndex;
+
 
 layout(set = 0, binding = 4) buffer ShadowMatrices
 {
 	mat4 shadowMatrices[];
 };
 
+struct TransMatIndex
+{
+    mat4 model;
+    uint materialIndex;
+};
+
 layout(set = 0, binding = 5) buffer Transforms
 {
-	mat4 models[];
+    TransMatIndex data[];
 };
 
 void main()
 {
     int InstanceID = gl_InstanceIndex - gl_BaseInstance;
 
-    vec4 worldPos = models[gl_BaseInstance] * vec4(aPos, 1.0);
+    dataIndex = gl_BaseInstance;
+    vec4 worldPos = data[dataIndex].model * vec4(aPos, 1.0);
          
     Index = InstanceID;
     gl_ViewportIndex = Index;
     WorldPos = worldPos.xyz;
+    FragTextureCoords = aTexCoords;
     gl_Position = shadowMatrices[Index] * worldPos;
 }

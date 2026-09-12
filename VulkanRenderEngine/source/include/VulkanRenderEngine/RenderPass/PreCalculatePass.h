@@ -21,10 +21,6 @@ public:
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
-	void SetupIndirectDrawData(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-
-private:
-	//std::vector<glm::mat4> _staticMesh_Transforms;
-	std::shared_ptr<StorageBlock> _ssbo_StaticMesh_Transforms;
+	std::shared_ptr<StorageBlock> _ssbo_StaticMesh_TransformAndMaterialIndices;
 	std::shared_ptr<IndirectBufferBlock> _indirectCommandBuffer;
 };
