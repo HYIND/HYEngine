@@ -238,8 +238,7 @@ bool GeometryPass::SetupStaticBufferData(
 	if (!materialssbo)
 		return false;
 
-	shader->SetStorageBlock(materialssbo, 0, 2);
-	shader->SetUniformTextureArray(binlessManager, 1, 2);
+	shader->SetBindlessMaterialTexture(indirectManager->GetMaterialSSBO(), binlessManager);
 
 	auto renderdata_ssbo = shader->GetStorageBlock(2);
 	if (!renderdata_ssbo)
