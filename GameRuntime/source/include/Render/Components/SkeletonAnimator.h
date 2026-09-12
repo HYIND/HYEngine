@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanRenderEngine/Base/Animator.h"
-#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext.h"
 #include "ECSCore/IComponent.h"
 #include "ECSCore/Entity.h"
 
@@ -10,7 +10,7 @@ struct SkeletonAnimatorGroup :public IComponent
 	struct SkeletonAnimatorData
 	{
 		std::shared_ptr<Animator> animator;
-		OpenGLRenderContext::AnimatorView renderView;
+		VKRenderContext::AnimatorView renderView;
 
 		bool enable = false;
 		int maxLoopCount = 0;

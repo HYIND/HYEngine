@@ -268,7 +268,7 @@ int VulkanMain()
 
 		for (auto& info : keqing_model->getMeshInfos())
 		{
-			OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem item;
+			VKRenderObjectData::SceneRenderData::OpaqueMeshItem item;
 			item.meshinfo = info;
 			item.transform = item.prevTransform = glm::mat4(1.f);
 			state.objects.sceneRenderData.opaqueMesh.push_back(item);

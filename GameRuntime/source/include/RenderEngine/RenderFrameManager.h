@@ -4,7 +4,7 @@
 #include <variant>
 #include "glm/glm.hpp"
 #include "RenderEngine/D2DTools.h"
-#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext.h"
 #include "RenderEngine/D2DRenderContext.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
 
@@ -14,7 +14,7 @@ namespace Render
 	{
 		uint64_t frameId = 0;
 		std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
-		std::vector<std::shared_ptr<OpenGLRenderContext::RenderContext>> GL_Contexts;
+		std::vector<std::shared_ptr<VKRenderContext::RenderContext>> GL_Contexts;
 
 		std::shared_ptr<TextureCube> skybox;
 

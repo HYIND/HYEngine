@@ -883,7 +883,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 
 //enum class WriteAnimatorSource { Current = 0, Previous };
 //void SetUpAnimatorGroupData(
-//	Shader& shader, const std::vector<OpenGLRenderContext::AnimatorView>& animatorViews,
+//	Shader& shader, const std::vector<VKRenderContext::AnimatorView>& animatorViews,
 //	std::shared_ptr<SSBO>& meta_ssbo, std::shared_ptr<SSBO>& mat_ssbo,
 //	const std::string& AnimationMetaDataName, const std::string& AnimationMatDataName,
 //	WriteAnimatorSource source
@@ -963,7 +963,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 //	ani_Meta_ssbo->WriteData(&animationcount, sizeof(int), 0);
 //}
 
-//void RenderHelp::SetupAnimatorGroupData(Shader& shader, const std::vector<OpenGLRenderContext::AnimatorView>& animatorViews)
+//void RenderHelp::SetupAnimatorGroupData(Shader& shader, const std::vector<VKRenderContext::AnimatorView>& animatorViews)
 //{
 //	static std::shared_ptr<SSBO> meta_ssbo = std::make_shared<SSBO>();
 //	static std::shared_ptr<SSBO> mat_ssbo = std::make_shared<SSBO>();

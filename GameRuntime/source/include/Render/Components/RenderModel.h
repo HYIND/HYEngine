@@ -7,7 +7,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "ECSCore/IComponent.h"
 #include "Components/Renderable.h"
-#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext.h"
 
 extern class Model;
 
@@ -16,11 +16,11 @@ struct RenderModel : public Renderable
 	std::shared_ptr<Model> model;
 	glm::mat4 trans = glm::mat4(1.0f);
 
-	OpenGLRenderContext::TransFormView renderView;
+	VKRenderContext::TransFormView renderView;
 
 	RenderModel() {}
 	RenderModel(const RenderModel& other)
-		:model(other.model), trans(other.trans), renderView(OpenGLRenderContext::TransFormView()){
+		:model(other.model), trans(other.trans), renderView(VKRenderContext::TransFormView()){
 	}
 	RenderModel(std::shared_ptr<Model> model
 	) : model(model) {

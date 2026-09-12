@@ -120,7 +120,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\General\OpenGLRenderContext.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h" />

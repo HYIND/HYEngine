@@ -2,7 +2,7 @@
 
 #include "VulkanRenderEngine/Base/AtlasMap.h"
 #include "VulkanRenderEngine/Base/Pipeline.h"
-#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext.h"
 #include "VulkanRenderEngine/General/RenderItem.h"
 #include "VulkanRenderEngine/General/RenderState.h"
 #include "VulkanRenderEngine/VKWrapper/VKCommandBuffer.h"
@@ -22,7 +22,7 @@ public:
 	static void renderLightSphere(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
 
 public:
-	static void SetupAnimatorGroupData(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const std::vector<OpenGLRenderContext::AnimatorView>& animatorViews);
+	static void SetupAnimatorGroupData(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const std::vector<VKRenderContext::AnimatorView>& animatorViews);
 	static void SetupLightingData(Pipeline& pieline,
 		const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
 		const std::vector<std::shared_ptr<PointLightInfo>>& pointLights,

@@ -198,7 +198,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\General\OpenGLRenderContext.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h">
