@@ -16,7 +16,7 @@ void MemorySegmentBuffer::ReSize(uint64_t length) {
 void MemorySegmentBuffer::WriteData(const void* mem, uint64_t first, uint64_t length)
 {
 	if (_buffer.Length() < first + length)
-		_buffer.ReSize(std::max(size_t(_buffer.Length() * 1.5), first + length));
+		_buffer.ReSize(std::max(size_t(_buffer.Length() * expendFactor), first + length));
 	_buffer.Seek(first);
 	_buffer.Write(mem, length);
 }
@@ -36,8 +36,7 @@ VertexBufferSegmentBuffer::VertexBufferSegmentBuffer()
 }
 
 VertexBufferSegmentBuffer::~VertexBufferSegmentBuffer()
-{
-}
+{}
 
 void VertexBufferSegmentBuffer::ReSize(uint64_t length) {
 	_block->SetSize(length);
@@ -49,7 +48,7 @@ void VertexBufferSegmentBuffer::WriteData(const void* mem, uint64_t first, uint6
 	uint64_t needSize = length + first;
 	if (needSize > size)
 	{
-		uint64_t newSize = std::max(uint64_t(size * 1.5), needSize + 1);
+		uint64_t newSize = std::max(uint64_t(size * expendFactor), needSize + 1);
 		ReSize(newSize);
 	}
 	_block->WriteData(mem, length, first);
@@ -69,8 +68,7 @@ IndexBufferSegmentBuffer::IndexBufferSegmentBuffer()
 }
 
 IndexBufferSegmentBuffer::~IndexBufferSegmentBuffer()
-{
-}
+{}
 
 void IndexBufferSegmentBuffer::ReSize(uint64_t length) {
 	_block->SetSize(length);
@@ -82,7 +80,7 @@ void IndexBufferSegmentBuffer::WriteData(const void* mem, uint64_t first, uint64
 	uint64_t needSize = length + first;
 	if (needSize > size)
 	{
-		uint64_t newSize = std::max(uint64_t(size * 1.5), needSize + 1);
+		uint64_t newSize = std::max(uint64_t(size * expendFactor), needSize + 1);
 		ReSize(newSize);
 	}
 	_block->WriteData(mem, length, first);
@@ -112,7 +110,7 @@ void StorageSegmentBuffer::WriteData(const void* mem, uint64_t first, uint64_t l
 	uint64_t needSize = length + first;
 	if (needSize > size)
 	{
-		uint64_t newSize = std::max(uint64_t(size * 1.5), needSize + 1);
+		uint64_t newSize = std::max(uint64_t(size * expendFactor), needSize + 1);
 		ReSize(newSize);
 	}
 	_block->WriteData(mem, length, first);
