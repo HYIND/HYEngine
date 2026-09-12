@@ -18,7 +18,8 @@ struct alignas(16) InstanceInfo
 	glm::vec4 normalMatRow3;
 
 	uint32_t materialIndex;
-	uint32_t primitiveOffset;
+	uint32_t indexOffset;
+	uint32_t vertexOffset;
 };
 
 static vk::TransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix)
@@ -181,7 +182,8 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		uint32_t indexFirst = meta.firstIndex;
 
 		info.materialIndex = materialIndex;
-		info.primitiveOffset = indexFirst;
+		info.indexOffset = indexFirst;
+		info.vertexOffset = meta.vertexOffset;
 
 		BlasData* blasData = nullptr;
 

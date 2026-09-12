@@ -10,7 +10,7 @@ struct Vertex
     vec3 bitangent;
     int padding;
     int m_BoneIDs[8];
-    int m_Weights[8];
+    float m_Weights[8];
 };
 
 struct InstanceInfo {
@@ -18,7 +18,8 @@ struct InstanceInfo {
     mat4 invModel;
     mat3 invTransModel;
     uint materialIndex;
-    uint primitiveOffset;
+    uint indexOffset;
+    uint vertexOffset;
 };
 
 struct HitPayLoad {
@@ -64,13 +65,13 @@ void main() {
 
     // 拿到图元索引和三个顶点索引
     uint primitiveIndex = gl_PrimitiveID;
-    uint i0 = indices[instanceInfo.primitiveOffset + primitiveIndex * 3 + 0];
-    uint i1 = indices[instanceInfo.primitiveOffset + primitiveIndex * 3 + 1];
-    uint i2 = indices[instanceInfo.primitiveOffset + primitiveIndex * 3 + 2];
+    uint i0 = indices[instanceInfo.indexOffset + primitiveIndex * 3 + 0];
+    uint i1 = indices[instanceInfo.indexOffset + primitiveIndex * 3 + 1];
+    uint i2 = indices[instanceInfo.indexOffset + primitiveIndex * 3 + 2];
 
-    Vertex v0 = vertices[i0];
-    Vertex v1 = vertices[i1];
-    Vertex v2 = vertices[i2];
+    Vertex v0 = vertices[instanceInfo.vertexOffset + i0];
+    Vertex v1 = vertices[instanceInfo.vertexOffset + i1];
+    Vertex v2 = vertices[instanceInfo.vertexOffset + i2];
 
     // 重心坐标
     vec3 bary = vec3(1.0 - attrib.x - attrib.y, attrib.x, attrib.y);
@@ -78,9 +79,9 @@ void main() {
     vec3 worldPos = vec3(instanceInfo.model * vec4(lerpVec3(v0.position, v1.position, v2.position, bary), 1.0));
 
     // 插值法线、切线、副切线
-    vec3 localNormal    = lerpVec3(v0.normal,    v1.normal,    v2.normal,    bary);
-    vec3 localTangent   = lerpVec3(v0.tangent,   v1.tangent,   v2.tangent,   bary);
-    vec3 localBitangent = lerpVec3(v0.bitangent, v1.bitangent, v2.bitangent, bary);
+    vec3 localTangent   = normalize(lerpVec3(v0.tangent,   v1.tangent,   v2.tangent,   bary));
+    vec3 localBitangent = normalize(lerpVec3(v0.bitangent, v1.bitangent, v2.bitangent, bary));
+    vec3 localNormal    = normalize(lerpVec3(v0.normal,    v1.normal,    v2.normal,    bary));
 
     // 用逆转置矩阵变换法线到世界空间
     payload.position = worldPos;  // 世界坐标位置

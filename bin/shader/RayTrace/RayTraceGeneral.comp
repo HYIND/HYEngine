@@ -14,7 +14,7 @@ struct Vertex_Extension
     vec3 Bitangent;
     int padding;
     int m_BoneIDs[8];
-    int m_Weights[8];
+    float m_Weights[8];
 };
 
 struct Triangle {
