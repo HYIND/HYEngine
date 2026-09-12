@@ -2,6 +2,11 @@
 #include <execution>
 #include "SegmentBufferManager.h"
 
+inline static uint32_t align_up(uint64_t value, uint64_t alignment)
+{
+	return (value + alignment - 1) & ~(alignment - 1);
+}
+
 template<typename BufferImpl, typename SegmentID>
 SegmentBufferManager<BufferImpl, SegmentID>::SegmentBufferManager(uint64_t initsize)
 	:_useSpace(0)
@@ -23,12 +28,14 @@ bool SegmentBufferManager<BufferImpl, SegmentID>::AddSegment(const SegmentID& id
 	if (it != _usingSegment.end())
 		return false;
 
+	uint64_t alignSize = align_up(length, _align);
+
 	Segment seg;
-	if (!FetchIdleSegment(length, seg))
+	if (!FetchIdleSegment(alignSize, seg))
 	{
 		seg.first = _useSpace;
-		seg.count = length;
-		_useSpace += length;
+		seg.count = alignSize;
+		_useSpace += alignSize;
 	}
 	_usingSegment[id] = seg;
 	_userDatas[id] = userData;
@@ -45,31 +52,32 @@ SegmentData SegmentBufferManager<BufferImpl, SegmentID>::SetSegment(const Segmen
 {
 	_userDatas[id] = userData;
 
+	uint64_t alignSize = align_up(length, _align);
+
 	auto it = _usingSegment.find(id);
 	if (it != _usingSegment.end())
 	{
 		auto oriSegment = it->second;
-		if (oriSegment.count >= length)
+		if (oriSegment.count >= alignSize)
 		{
 			_buffer->WriteData(mem, oriSegment.first, length);
-			return SegmentData{ userData, oriSegment.first, length };;
+			return SegmentData{ userData, oriSegment.first, alignSize };
 		}
 		else
 		{	//空间不足，移动
-			size_t newsize = length;
-			auto newSegment = MoveSegment(id, newsize);
+			auto newSegment = MoveSegment(id, alignSize);
 			_buffer->WriteData(mem, newSegment.first, length);
-			return SegmentData{ userData, newSegment.first,newsize };
+			return SegmentData{ userData, newSegment.first, alignSize };
 		}
 	}
 	else
 	{
 		Segment seg;
-		if (!FetchIdleSegment(length, seg))
+		if (!FetchIdleSegment(alignSize, seg))
 		{
 			seg.first = _useSpace;
-			seg.count = length;
-			_useSpace += length;
+			seg.count = alignSize;
+			_useSpace += alignSize;
 		}
 		_usingSegment[id] = seg;
 		_buffer->WriteData(mem, seg.first, length);
@@ -222,13 +230,25 @@ Segment SegmentBufferManager<BufferImpl, SegmentID>::MoveSegment(const SegmentID
 }
 
 template<typename BufferImpl, typename SegmentID>
-const BufferImpl* SegmentBufferManager<BufferImpl, SegmentID>::GetBuffer()
+void SegmentBufferManager<BufferImpl, SegmentID>::SetAlign(uint64_t align)
+{
+	_align = std::max(1ull, align);
+}
+
+template<typename BufferImpl, typename SegmentID>
+const BufferImpl* SegmentBufferManager<BufferImpl, SegmentID>::GetBuffer() const
 {
 	return _buffer.get();
 }
 
 template<typename BufferImpl, typename SegmentID>
-uint64_t SegmentBufferManager<BufferImpl, SegmentID>::GetUseSpace()
+uint64_t SegmentBufferManager<BufferImpl, SegmentID>::GetAlign() const
+{
+	return _align;
+}
+
+template<typename BufferImpl, typename SegmentID>
+uint64_t SegmentBufferManager<BufferImpl, SegmentID>::GetUseSpace() const
 {
 	return _useSpace;
 }

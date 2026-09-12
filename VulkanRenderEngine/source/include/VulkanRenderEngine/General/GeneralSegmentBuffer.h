@@ -18,6 +18,7 @@ public:
 
 private:
 	Buffer _buffer;
+	float expendFactor = 1.5f;		//扩容系数、1.0表示扩容时按需分配，不额外扩容
 };
 
 class VertexBufferSegmentBuffer :public SegmentBufferBase
@@ -33,6 +34,7 @@ public:
 
 private:
 	std::shared_ptr<VertexBufferBlock> _block;
+	float expendFactor = 1.5f;		//扩容系数、1.0表示扩容时按需分配，不额外扩容
 };
 
 class IndexBufferSegmentBuffer :public SegmentBufferBase
@@ -48,6 +50,7 @@ public:
 
 private:
 	std::shared_ptr<IndexBufferBlock> _block;
+	float expendFactor = 1.5f;		//扩容系数、1.0表示扩容时按需分配，不额外扩容
 };
 
 class StorageSegmentBuffer :public SegmentBufferBase
@@ -63,4 +66,5 @@ public:
 
 private:
 	std::shared_ptr<StorageBlock> _block;
+	float expendFactor = 1.5f;		//扩容系数、1.0表示扩容时按需分配，不额外扩容
 };

@@ -36,8 +36,11 @@ public:
 	bool RemoveSegment(const SegmentID& id, SegmentData& data);													// 移除段
 	bool RemoveSegment(const SegmentID& id);																	// 移除段
 
-	const BufferImpl* GetBuffer();
-	uint64_t GetUseSpace();
+	void SetAlign(uint64_t align);
+
+	const BufferImpl* GetBuffer() const;
+	uint64_t GetAlign() const;
+	uint64_t GetUseSpace() const;
 
 private:
 	void SortAndMegerIdleSegment();
@@ -52,6 +55,8 @@ private:
 	std::vector<Segment> _idleSegment;
 
 	std::unordered_map<SegmentID, void*> _userDatas;
+
+	uint64_t _align = 1;
 };
 
 #include "SegmentBufferManager.inl"

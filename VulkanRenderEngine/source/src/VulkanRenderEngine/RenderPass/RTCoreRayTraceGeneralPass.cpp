@@ -54,6 +54,7 @@ static vk::TransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix)
 RTCoreRayTraceGeneralBuffer::RTCoreRayTraceGeneralBuffer()
 	:_blasBufferManager(1024 * 1024 * 200)
 {
+	_blasBufferManager.SetAlign(256);
 	_scratchBlock = std::make_shared<StorageBlock>();
 	_tlasInstancesBlock = std::make_shared<StorageBlock>();
 	_tlasBlock = std::make_shared<StorageBlock>();
