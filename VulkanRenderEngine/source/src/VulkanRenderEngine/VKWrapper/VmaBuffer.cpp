@@ -2,6 +2,7 @@
 #include "VulkanRenderEngine/VKWrapper/VmaBuffer.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/VKContext.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
 using namespace VKWrapper;
 
@@ -40,12 +41,15 @@ bool VmaBuffer::Create(VKCore::VulkanDevice* vulkanDevice, const vk::BufferCreat
 	m_size = bufferInfo.size;
 	m_bufferInfo = bufferInfo;
 	m_allocInfo = allocInfo;
-	return vmaCreateBuffer(m_allocator, (VkBufferCreateInfo*)&bufferInfo, &allocInfo, (VkBuffer*)&m_buffer, &m_allocation, nullptr) == VK_SUCCESS;
+	bool result = vmaCreateBuffer(m_allocator, (VkBufferCreateInfo*)&bufferInfo, &allocInfo, (VkBuffer*)&m_buffer, &m_allocation, nullptr) == VK_SUCCESS;
+	if (!result)
+		std::cout << std::format("[ VmaBuffer ] CreateBuffer failed!\n");
+	return result;
 }
 
 bool VmaBuffer::Create(VKCore::VulkanDevice* vulkanDevice, uint64_t size, Usage usage, bool cpuAccess)
 {
-	vk::BufferUsageFlags usageFlags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc;
+	vk::BufferUsageFlags usageFlags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	if (usage & Usage::UniformBuffer)
 		usageFlags |= vk::BufferUsageFlagBits::eUniformBuffer;
 	if (usage & Usage::StorageBuffer)
@@ -56,6 +60,12 @@ bool VmaBuffer::Create(VKCore::VulkanDevice* vulkanDevice, uint64_t size, Usage 
 		usageFlags |= vk::BufferUsageFlagBits::eIndexBuffer;
 	if (usage & Usage::IndirectBuffer)
 		usageFlags |= vk::BufferUsageFlagBits::eIndirectBuffer;
+	if (usage & Usage::SBTBuffer)
+		usageFlags |= vk::BufferUsageFlagBits::eShaderBindingTableKHR;
+
+	if (GlobalConfig::RTCoreEnable)
+		usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+	usageFlags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
 
 	vk::BufferCreateInfo bufferInfo = {};
 	bufferInfo.

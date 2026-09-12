@@ -20,7 +20,7 @@ static float GetAnisotropicTextureFiltering()
 		return s_value.value();
 
 	if (auto device = VKCONTEXT->GetDevice())
-		s_value = device->GetPhysicalDeviceProperties().limits.maxSamplerAnisotropy;
+		s_value = device->GetPhysicalDeviceProperties().properties.limits.maxSamplerAnisotropy;
 	else
 		return 1.0f;  // 返回默认值
 
@@ -361,6 +361,11 @@ void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::Pipel
 			if (isStencilFormat)
 				newLayout = Layout::eStencilReadOnlyOptimal;
 		}
+		else if (stage == BindStage::RayTracing)
+		{
+			dstStageMask = StageFlag::eRayTracingShaderKHR;
+			newLayout = Layout::eGeneral;
+		}
 	}
 	else if (usage == BindUsage::Output)
 	{
@@ -386,6 +391,11 @@ void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::Pipel
 				if (isStencilFormat)
 					newLayout = Layout::eStencilAttachmentOptimal;
 			}
+		}
+		else if (stage == BindStage::RayTracing)
+		{
+			dstStageMask = StageFlag::eRayTracingShaderKHR;
+			newLayout = Layout::eGeneral;
 		}
 	}
 

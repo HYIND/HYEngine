@@ -55,5 +55,13 @@ void DynamicBlock::CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t 
 
 std::shared_ptr<VKWrapper::VmaBuffer> DynamicBlock::GetBuffer() const { return _curBuffer; }
 
-uint64_t DynamicBlock::GetSize() { return _size; }
+vk::Buffer DynamicBlock::GetHandle() const { return _curBuffer->GetHandle(); }
+
+vk::DeviceAddress DynamicBlock::GetDeviceAddress() const {
+	vk::BufferDeviceAddressInfo addressInfo;
+	addressInfo.setBuffer(_curBuffer->GetHandle());
+	return _device->GetHandle().getBufferAddress(addressInfo);
+}
+
+uint64_t DynamicBlock::GetSize() const { return _size; }
 

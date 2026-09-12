@@ -31,7 +31,8 @@ namespace VKCore
 		vk::Device GetHandle() const;
 		VmaAllocator GetAllocator() const;
 		vk::PhysicalDevice GetPhysicalDevice() const;
-		const vk::PhysicalDeviceProperties& GetPhysicalDeviceProperties() const;
+		const VulkanPhysicalDeviceInfo& GetVulkanPhysicalDeviceInfo() const;
+		const vk::PhysicalDeviceProperties2& GetPhysicalDeviceProperties() const;
 		const vk::PhysicalDeviceMemoryProperties& GetPhysicalDeviceMemoryProperties() const;
 
 		std::weak_ptr<VulkanInstance> GetInstance() const;

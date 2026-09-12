@@ -6,6 +6,11 @@ struct ComputePipelineConfig :public PipelineConfig
 	std::string computePath;
 	vk::PipelineCreateFlags flags = {};
 
+	ComputePipelineConfig()
+	{
+		defaultShaderStageFlags = vk::ShaderStageFlagBits::eCompute;
+	}
+
 	ComputePipelineConfig& AddStorageImage(uint32_t binding, uint32_t set = 0);
 	ComputePipelineConfig& AddStorageImageArray(uint32_t binding, uint32_t count = 1, uint32_t set = 0);
 
@@ -38,7 +43,8 @@ public:
 		VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get()
 	);
 
-	void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) override;
+	virtual void Release() override;
+	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) override;
 
 	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set = 0);
 	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);

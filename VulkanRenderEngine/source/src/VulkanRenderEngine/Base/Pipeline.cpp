@@ -142,6 +142,18 @@ shaderc::SpvCompilationResult CompileSourceCodeToSPIRV(const std::string& source
 		shaderKind = shaderc_shader_kind::shaderc_fragment_shader;
 	else if (type == ShaderType::Compute)
 		shaderKind = shaderc_shader_kind::shaderc_compute_shader;
+	else if (type == ShaderType::RayGen)
+		shaderKind = shaderc_shader_kind::shaderc_raygen_shader;
+	else if (type == ShaderType::Miss)
+		shaderKind = shaderc_shader_kind::shaderc_miss_shader;
+	else if (type == ShaderType::ClosestHit)
+		shaderKind = shaderc_shader_kind::shaderc_closesthit_shader;
+	else if (type == ShaderType::AnyHit)
+		shaderKind = shaderc_shader_kind::shaderc_anyhit_shader;
+	else if (type == ShaderType::Intersection)
+		shaderKind = shaderc_shader_kind::shaderc_intersection_shader;
+	else if (type == ShaderType::Callable)
+		shaderKind = shaderc_shader_kind::shaderc_callable_shader;
 
 	options.SetOptimizationLevel(shaderc_optimization_level_performance);// 开启性能优化
 	options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);// 设置目标环境为 Vulkan 1.4
@@ -215,34 +227,34 @@ void PipelineConfig::RemoveDefineMarco(const std::string& name)
 
 PipelineConfig& PipelineConfig::AddUnifromBuffer(uint32_t binding, uint32_t set)
 {
-	return AddDescriptor(binding, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, 1, set);
+	return AddDescriptor(binding, vk::DescriptorType::eUniformBuffer, defaultShaderStageFlags, 1, set);
 }
 
 PipelineConfig& PipelineConfig::AddStorageBuffer(uint32_t binding, uint32_t set)
 {
-	return AddDescriptor(binding, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, 1, set);
+	return AddDescriptor(binding, vk::DescriptorType::eStorageBuffer, defaultShaderStageFlags, 1, set);
 }
 
 PipelineConfig& PipelineConfig::AddUnifromTexture(uint32_t binding, uint32_t set)
 {
-	return AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, 1, set);
+	return AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, defaultShaderStageFlags, 1, set);
 }
 
 PipelineConfig& PipelineConfig::AddUnifromBufferArray(uint32_t binding, uint32_t count, uint32_t set)
 {
-	return AddDescriptor(binding, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, count, set);
+	return AddDescriptor(binding, vk::DescriptorType::eUniformBuffer, defaultShaderStageFlags, count, set);
 }
 
 PipelineConfig& PipelineConfig::AddUnifromTextureArray(uint32_t binding, uint32_t count, uint32_t set)
 {
-	return AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, count, set);
+	return AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, defaultShaderStageFlags, count, set);
 }
 
 PipelineConfig& PipelineConfig::AddUnifromVariableTextureArray(uint32_t binding, uint32_t maxCount, uint32_t set)
 {
 	vk::DescriptorBindingFlags flags =
 		vk::DescriptorBindingFlagBits::eUpdateAfterBind | vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eVariableDescriptorCount;
-	auto& result = AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute, maxCount, set, flags);
+	auto& result = AddDescriptor(binding, vk::DescriptorType::eCombinedImageSampler, defaultShaderStageFlags, maxCount, set, flags);
 	variableEntrys[set].isVariable = true;
 	variableEntrys[set].maxCount = maxCount;
 	return result;
@@ -459,20 +471,17 @@ void Pipeline::Release()
 {
 	if (m_device)
 	{
-		if (m_pipeline) {
-			vkDestroyPipeline(m_device->GetHandle(), m_pipeline, nullptr);
-		}
-		if (m_layout) {
-			vkDestroyPipelineLayout(m_device->GetHandle(), m_layout, nullptr);
-		}
+		if (m_pipeline)
+			m_device->GetHandle().destroyPipeline(m_pipeline);
+		if (m_layout)
+			m_device->GetHandle().destroyPipelineLayout(m_layout);
 		for (auto& desc : m_descriptorSetLayouts)
 		{
 			if (desc)
 				m_device->GetHandle().destroyDescriptorSetLayout(desc);
 		}
-		if (!m_descriptorSets.empty()) {
+		if (!m_descriptorSets.empty())
 			m_device->GetHandle().freeDescriptorSets(VKCONTEXT->GetDescriptorPool(), m_descriptorSets);
-		}
 	}
 	m_device = nullptr;
 	m_pipeline = VK_NULL_HANDLE;
@@ -688,11 +697,17 @@ void Pipeline::SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 		return;
 
 	vk::ShaderStageFlags flags;
-
 	if (m_bindStage == Texture2D::BindStage::Graphics)
-		flags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+		flags = vk::ShaderStageFlagBits::eAllGraphics;
 	else if (m_bindStage == Texture2D::BindStage::Compute)
 		flags = vk::ShaderStageFlagBits::eCompute;
+	else if (m_bindStage == Texture2D::BindStage::RayTracing)
+		flags = vk::ShaderStageFlagBits::eRaygenKHR
+		| vk::ShaderStageFlagBits::eClosestHitKHR
+		| vk::ShaderStageFlagBits::eMissKHR
+		| vk::ShaderStageFlagBits::eAnyHitKHR
+		| vk::ShaderStageFlagBits::eIntersectionKHR
+		| vk::ShaderStageFlagBits::eCallableKHR;
 
 	cmd->pushConstants(m_layout, flags, offset, size, data);
 }
@@ -749,6 +764,12 @@ void Pipeline::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer,
 		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
 		if (!dataptr) return;
 		BindStorageImageArray(cmdBuffer, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
+	{
+		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
+		if (!dataptr) return;
+		BindAccelerationStructure(*dataptr, point.binding, point.set);
 	}
 }
 
@@ -908,6 +929,9 @@ void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffe
 		imageInfos.push_back(imageInfo);
 	}
 
+	if (imageInfos.empty())
+		return;
+
 	vk::WriteDescriptorSet write;
 	write
 		.setDstSet(m_descriptorSets[set])
@@ -993,6 +1017,25 @@ void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
+void Pipeline::BindAccelerationStructure(AccelerationStructureEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (entry.handle == VK_NULL_HANDLE)
+		return;
+
+	vk::WriteDescriptorSetAccelerationStructureKHR asWrite;
+	asWrite.setAccelerationStructures(entry.handle);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(m_descriptorSets[set])
+		.setDstBinding(binding)
+		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+		.setDescriptorCount(1)
+		.setPNext(&asWrite);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
 vk::Result Pipeline::CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule) {
 	vk::ShaderModuleCreateInfo createInfo = {};
 	createInfo.setCode(code);
@@ -1023,6 +1066,14 @@ vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
 		flags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
 	else if (m_bindStage == Texture2D::BindStage::Compute)
 		flags = vk::ShaderStageFlagBits::eCompute;
+	else if (m_bindStage == Texture2D::BindStage::RayTracing)
+		flags =
+		vk::ShaderStageFlagBits::eRaygenKHR
+		| vk::ShaderStageFlagBits::eClosestHitKHR
+		| vk::ShaderStageFlagBits::eMissKHR
+		| vk::ShaderStageFlagBits::eAnyHitKHR
+		| vk::ShaderStageFlagBits::eIntersectionKHR
+		| vk::ShaderStageFlagBits::eCallableKHR;
 
 	uint32_t offset = 0;
 	for (const auto& size : config.pushConstantSizes)

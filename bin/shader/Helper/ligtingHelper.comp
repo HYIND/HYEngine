@@ -219,29 +219,39 @@ float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fra
 
 vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 view ,vec3 viewDir, PBRProperties prop)
 {
-	float NdotL;
-	vec3 diffuse = vec3(0.0);
-	vec3 specular = vec3(0.0);
-
-	CalcBDRF(normal, -viewDir, -light.direction, prop.albedo, prop.metallic, prop.roughness, NdotL, diffuse, specular);
-
-    vec3 radiance = light.color * light.luxIntensity;
-	vec3 Lo = diffuse + specular;
-	vec3 lightingColor = Lo * radiance * NdotL;
-
     vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
 	DirLightCascade cascade = GetCascade(view * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
 	vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
 	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
 											vec2(cascade.atlasX, cascade.atlasY),
 	 										vec2(cascade.atlasWidth, cascade.atlasHeight));
-
     shadow = clamp(shadow, 0.f, 1.f);
-	
+
+	vec3 radiance = light.color * light.luxIntensity;
+	if (shadow >= 1.0f)
+	{
+#ifdef Virtual_Ambient_Enable
+		return vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+#else
+		return vec3(0.f);
+#endif 
+	}
+
+	float NdotL;
+	vec3 diffuse = vec3(0.0);
+	vec3 specular = vec3(0.0);
+
+	CalcBDRF(normal, -viewDir, -light.direction, prop.albedo, prop.metallic, prop.roughness, NdotL, diffuse, specular);
+
+	vec3 Lo = diffuse + specular;
+	vec3 lightingColor = Lo * radiance * NdotL;
+
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	// result = max(result, ambient);
+#ifdef Virtual_Ambient_Enable
+		vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+		result = max(result, ambient);
+#endif
 
 	return result;
 }
@@ -252,28 +262,39 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
     if(dist >= light.radius)
 		return vec3(0.f);
 
-	float NdotL;
-	vec3 diffuse = vec3(0.0);
-	vec3 specular = vec3(0.0);
-
-	CalcBDRF(normal, -viewDir,  normalize(light.position - fragPos), prop.albedo, prop.metallic, prop.roughness, NdotL, diffuse, specular);
+	// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
+	float shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
+    shadow = clamp(shadow, 0.f, 1.f);
 
 	float linera_radius = light.radius * linera_radius_factor;
     float attenuation = dist <= linera_radius ?
 						1.0 / (dist * dist + 1) 
 						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
     vec3 radiance = light.color * light.cdIntensity * attenuation;
+	if (shadow >= 1.0f)
+	{
+#ifdef Virtual_Ambient_Enable
+		return vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+#else
+		return vec3(0.f);
+#endif 
+	}
+
+	float NdotL;
+	vec3 diffuse = vec3(0.0);
+	vec3 specular = vec3(0.0);
+
+	CalcBDRF(normal, -viewDir,  normalize(light.position - fragPos), prop.albedo, prop.metallic, prop.roughness, NdotL, diffuse, specular);
+
 	vec3 Lo = diffuse + specular;	
 	vec3 lightingColor = Lo * radiance * NdotL;
 
-	// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
-	float shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
-    shadow = clamp(shadow, 0.f, 1.f);
-
 	vec3 result = (1.0 - shadow) * lightingColor;
 
-	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	// result = max(result, ambient);
+#ifdef Virtual_Ambient_Enable
+		vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+		result = max(result, ambient);
+#endif
 
 	return result;
 }
@@ -289,11 +310,6 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 	float outerCutOff = min(light.cutOff ,light.outerCutOff);
 	vec3 lightDir = normalize(fragPos - light.position);
 
-    float linera_radius = light.radius * linera_radius_factor;
-    float attenuation = dist <= linera_radius ?
-						1.0 / (dist * dist + 1) 
-						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
-
 	float theta = dot(lightDir, normalize(light.direction));
 	if(theta < outerCutOff)
 	{
@@ -305,25 +321,40 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 		intensity = clamp((theta - outerCutOff) / epsilon, 0.0f, 1.0f); 
 	}
 
+	vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
+	vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
+    shadow = clamp(shadow, 0.f, 1.f);
+
+  	float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+	vec3 radiance = light.color * light.cdIntensity * attenuation;
+	if (shadow >= 1.0f)
+	{
+#ifdef Virtual_Ambient_Enable
+		return vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+#else
+		return vec3(0.f);
+#endif 
+	}
+
 	float NdotL;
 	vec3 diffuse = vec3(0.0);
 	vec3 specular = vec3(0.0);
 
 	CalcBDRF(normal, -viewDir,  normalize(light.position - fragPos), prop.albedo, prop.metallic, prop.roughness, NdotL, diffuse, specular);
 
-    vec3 radiance = light.color * light.cdIntensity * attenuation;
 	vec3 Lo = diffuse + specular;
 	vec3 lightingColor = Lo * radiance * NdotL;
 
-	vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
-	vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
-    shadow = clamp(shadow, 0.f, 1.f);
-
 	vec3 result = (1.0 - shadow) * lightingColor * intensity;              
 	
-	// vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
-	// result = max(result, ambient);
+#ifdef Virtual_Ambient_Enable
+		vec3 ambient = vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
+		result = max(result, ambient);
+#endif 
 
 	return result;
 }

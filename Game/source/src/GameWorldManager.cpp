@@ -429,9 +429,9 @@ void CreateTestDustScene(World& world)
 void SetupeTestGameLight(World& world)
 {
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 2.5f, true, 4, 3000, 3000);
-		auto& renderlight = entity.getComponent<RenderLight>();
-		renderlight.renderCube = true;
+		//Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 2.5f, true, 4, 3000, 3000);
+		//auto& renderlight = entity.getComponent<RenderLight>();
+		//renderlight.renderCube = true;
 	}
 
 	{
@@ -948,8 +948,8 @@ void CreateTestSponzaScene(World& world)
 
 void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world)
 {
-	//CreateTestDustScene(*world);
-	CreateTestGameScene(*world);
+	CreateTestDustScene(*world);
+	//CreateTestGameScene(*world);
 	//CreateTestSponzaScene(*world);
 }
 

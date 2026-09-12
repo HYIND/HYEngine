@@ -9,8 +9,7 @@
 using namespace VKWrapper;
 
 VKCommandBuffer::VKCommandBuffer(VKCommandPool* pool)
-{
-}
+{}
 
 VKWrapper::VKCommandBuffer::~VKCommandBuffer()
 {
@@ -372,5 +371,17 @@ void VKWrapper::VKCommandBuffer::endRendering() {
 void VKWrapper::VKCommandBuffer::setCullMode(vk::CullModeFlags cullMode) {
 	Need();
 	_handle.setCullMode(cullMode);
+}
+
+// 光追管线
+void VKWrapper::VKCommandBuffer::buildAccelerationStructuresKHR(vk::ArrayProxy<vk::AccelerationStructureBuildGeometryInfoKHR const> const& infos, vk::ArrayProxy<vk::AccelerationStructureBuildRangeInfoKHR const* const> const& pBuildRangeInfos) {
+	Need();
+	_handle.buildAccelerationStructuresKHR(infos, pBuildRangeInfos);
+}
+
+void VKWrapper::VKCommandBuffer::traceRaysKHR(vk::StridedDeviceAddressRegionKHR const& raygenShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& missShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& hitShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& callableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth)
+{
+	Need();
+	_handle.traceRaysKHR(raygenShaderBindingTable, missShaderBindingTable, hitShaderBindingTable, callableShaderBindingTable, width, height, depth);
 }
 

@@ -19,7 +19,7 @@ static float GetAnisotropicTextureFiltering()
 		return s_value.value();
 
 	if (auto device = VKCONTEXT->GetDevice())
-		s_value = device->GetPhysicalDeviceProperties().limits.maxSamplerAnisotropy;
+		s_value = device->GetPhysicalDeviceProperties().properties.limits.maxSamplerAnisotropy;
 	else
 		return 1.0f;  // 返回默认值
 

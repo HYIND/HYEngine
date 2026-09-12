@@ -216,27 +216,22 @@ void LoadInitScene(World& world)
 
 	{
 		float floorSize = 50.f;
-		auto model = GetFloorModel();
-		model->MakeScale(glm::vec3(floorSize));
+		auto model = GetCubeModel(glm::vec3(0.5f), 1.0f);
 
 		auto& meshInfo = model->getMeshInfos();
 		if (!meshInfo.empty())
 			meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
 
-		AABB aabb = model->GetAABB();
-		float Half_SizeX = (aabb.max.x - aabb.min.x) / 2.f;
-		float Half_SizeZ = (aabb.max.z - aabb.min.z) / 2.f;
-
 		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
 		trans.position = glm::vec3(0, 0, 0);
-		trans.rotation = glm::identity<glm::quat>();
+		trans.scale = glm::vec3(floorSize, 1.f, floorSize);
 
 		auto& physics = floor.addComponent<Physics>();
 		physics.bodyType = Physics::BodyType::Static;
 		physics.isSensor = false;
 		physics.isBullet = true;
-		physics.collisionShape.AddBoxShape(glm::vec3(Half_SizeX, 0.2f, Half_SizeZ), glm::vec3(0, -0.2, 0));
+		physics.collisionShape.AddBoxShape();
 
 		auto& rendermodel = floor.addComponent<RenderModel>();
 		rendermodel.model = model;
@@ -512,7 +507,7 @@ bool WorldManager::ResizeOpenGL(uint32_t width, uint32_t height)
 			return true;
 		}
 	}
-	
+
 	return false;
 }
 

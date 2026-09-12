@@ -32,12 +32,10 @@ struct DynamicViewport
 	DynamicViewport() {}
 	DynamicViewport(uint32_t width, uint32_t height)
 		:width(width), height(height), x(0u), y(0u)
-	{
-	}
+	{}
 	DynamicViewport(uint32_t width, uint32_t height, uint32_t x, uint32_t y)
 		:width(width), height(height), x(x), y(y)
-	{
-	}
+	{}
 };
 
 struct DynamicRenderInfo
@@ -187,5 +185,9 @@ namespace VKWrapper
 
 		// 动态剔除
 		void setCullMode(vk::CullModeFlags cullMode);
+
+		// 光追管线
+		void buildAccelerationStructuresKHR(vk::ArrayProxy<vk::AccelerationStructureBuildGeometryInfoKHR const> const& infos, vk::ArrayProxy<vk::AccelerationStructureBuildRangeInfoKHR const* const> const& pBuildRangeInfos);
+		void traceRaysKHR(vk::StridedDeviceAddressRegionKHR const& raygenShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& missShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& hitShaderBindingTable, vk::StridedDeviceAddressRegionKHR const& callableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth);
 	};
 }

@@ -1,7 +1,6 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine\VKCore\VulkanInstance.h"
-#include <format>
-#include <iostream>
+#include "VulkanRenderEngine\GlobalConfig.h"
 
 using namespace VKCore;
 
@@ -192,6 +191,33 @@ uint32_t VulkanInstance::GetAvailablePhysicalDeviceCount() const {
 	return uint32_t(m_availablePhysicalDevices.size());
 }
 
+static void GetPhysicalDeviceProp(VulkanPhysicalDeviceInfo& info)
+{
+	if (GlobalConfig::RTCoreEnable)
+	{
+		using ChainType = vk::StructureChain<
+			vk::PhysicalDeviceProperties2,
+			vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+			vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+		>;
+
+		ChainType chain =
+			info.physicalDevice.getProperties2<
+			vk::PhysicalDeviceProperties2,
+			vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+			vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+			>();
+
+		info.physicalDeviceProperties = chain.get<vk::PhysicalDeviceProperties2>();
+		info.accelProps = chain.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+		info.rtPipelineProps = chain.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+	}
+	else
+		info.physicalDeviceProperties = info.physicalDevice.getProperties2();
+
+	info.physicalDeviceMemoryProperties = info.physicalDevice.getMemoryProperties();
+}
+
 bool VulkanInstance::GetSuitablePhysicalDevice(
 	VulkanPhysicalDeviceInfo& info,
 	bool enableGraphicsQueue, bool enablePresentQueue, bool enableComputeQueue,
@@ -226,14 +252,12 @@ bool VulkanInstance::GetSuitablePhysicalDevice(
 			)
 			continue;
 
-
 		info.physicalDevice = device;
 		info.graphicsQueueFamily = graphicsFamily;
 		info.presentQueueFamily = presentFamily;
 		info.computeQueueFamily = computeFamily;
 
-		info.physicalDeviceProperties = device.getProperties();
-		info.physicalDeviceMemoryProperties = device.getMemoryProperties();
+		GetPhysicalDeviceProp(info);
 
 		return true;
 	}
@@ -279,8 +303,7 @@ bool VulkanInstance::GetSuitablePhysicalDevice(
 		info.presentQueueFamily = presentFamily;
 		info.computeQueueFamily = computeFamily;
 
-		info.physicalDeviceProperties = device.getProperties();
-		info.physicalDeviceMemoryProperties = device.getMemoryProperties();
+		GetPhysicalDeviceProp(info);
 
 		return true;
 	}

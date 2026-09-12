@@ -351,9 +351,9 @@ void VKContext::NeedDescriptorPool()
 		//	.setDescriptorCount(100),
 
 		// Acceleration Structure (用于光线追踪)
-		//vk::DescriptorPoolSize()
-		//	.setType(vk::DescriptorType::eAccelerationStructureKHR)
-		//	.setDescriptorCount(100),
+		vk::DescriptorPoolSize()
+			.setType(vk::DescriptorType::eAccelerationStructureKHR)
+			.setDescriptorCount(500),
 	};
 
 	vk::DescriptorPoolCreateInfo poolInfo;

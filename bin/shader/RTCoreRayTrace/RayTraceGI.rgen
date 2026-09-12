@@ -1,0 +1,194 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+
+#ifndef Max_Bounce_limit
+#define Max_Bounce_limit 5
+#endif
+
+#include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Helper/ligtingHelper.comp"
+#include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
+
+
+//光追参数
+layout (binding = 5) uniform Params
+{
+    ivec2 screenSize;
+    float tMin;
+    float tMax;
+    uint maxBounce;       // 最大反射次数
+    uint sampleRayCount;
+    float GIIntensity;
+    uint frameIndex;
+};
+
+layout(binding = 6, rgba16f) uniform image2D outputImage;
+layout (binding = 7) uniform sampler2D gPosition;
+layout (binding = 8) uniform sampler2D gNormal;
+layout (binding = 9) uniform sampler2D gAlbedoOpacity;
+layout (binding = 10) uniform sampler2D gMetallicRoughness;
+layout (binding = 11) uniform sampler2D depthMap;
+layout (binding = 12) uniform sampler2D atlasShadowMap;
+layout (binding = 13) uniform sampler2D SSAOMap;
+
+
+const float RussianRouletteFactor = 0.8f;
+
+vec3 traceRay(
+    vec3 viewPos, 
+    vec3 fragPos, vec3 fragNormal,
+    PBRProperties prop,
+    uint maxBounce, 
+    uint sampleId
+) 
+{
+
+    vec3 colors[Max_Bounce_limit + 1];
+    vec3 contributeFacts[Max_Bounce_limit + 1];
+    int hitCount = 0;
+
+    float throughput = 1.0f;
+
+    uint seedbase = uint(gl_LaunchIDEXT.x) * 197u 
+            + uint(gl_LaunchIDEXT.y) * 927u
+            + uint(frameIndex) * 777u;
+
+    for (uint depth = 0; depth < maxBounce; depth++) 
+    {
+        uint seed = seedbase + uint(sampleId * (maxBounce + 1) + depth) * 269u;
+
+        Ray ray;
+        ray.origin = fragPos + fragNormal * 0.001;
+        ray.tMin = tMin;
+        ray.tMax = tMax;
+
+        HitInfo hit;
+        hit.t = ray.tMax;
+
+        // 根据材质，随机选取走高光采样还是漫反射采样
+        float p_spec = calc_P_Spec(prop);
+        bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
+        if (spec)
+        {
+            // GGX重要性采样specular
+            vec2 random = getRandom(seed);
+            ray.direction = ImportanceSampleGGX(prop.roughness, fragNormal, normalize(ray.origin - viewPos), random);
+
+            if(!traceScene(ray, hit))
+                break;
+
+            // 计算该点向前一个点高光传递贡献
+            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hit.position - ray.origin), prop.albedo, prop.metallic, prop.roughness) / p_spec;
+        }
+        else 
+        {
+            // 余弦加权重要性采样diffuse
+            vec2 random = getRandom(seed);
+            ray.direction = ImportanceSampleCosine(fragNormal, random);
+
+            if(!traceScene(ray, hit))
+                break;
+    
+            // 计算该点向前一个点漫反射传递贡献
+            vec3 diffuse = vec3(0.0);
+            CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
+            contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
+        }
+
+        //计算该点光照颜色
+	    getPBRProperties(hit.materialdata, hit.texCoords, prop);
+
+        vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
+
+        vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
+        vec3 lightingColor = CalcLighting(
+            camera.view, ray.origin, camera.farPlane,
+            atlasShadowMap, 
+            hit.position, normal,
+            prop
+            );
+        colors[hitCount] = lightingColor + emission;
+
+        viewPos = ray.origin;
+        fragPos = hit.position;
+        fragNormal = normal;
+
+        contributeFacts[hitCount] = contributeFacts[hitCount] / throughput;
+
+        hitCount++;
+
+        if ((pcg_float(seed * 72789645u + 29157653u) >= RussianRouletteFactor))
+            break;
+        throughput *= RussianRouletteFactor;
+    }
+
+    if (hitCount > 0)
+    {
+        vec3 result = vec3(0.f);
+        for (int i = hitCount - 1; i >= 0; i--)
+        {
+            result = (result + colors[i]) * contributeFacts[i];
+        }
+        return result;
+    }
+
+    return vec3(0.f);
+}
+
+vec3 tracePath(
+    vec3 viewPos, 
+    vec3 fragPos, vec3 fragNormal,
+    PBRProperties prop,
+    uint maxBounce,
+    uint sampleCount
+    ) 
+{
+    vec3 totalIndirect = vec3(0.0);
+
+    for (uint i = 0; i < sampleCount; i++) 
+        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i);
+
+    return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
+}
+
+void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
+{
+    vec3 normal = normalize(texture(gNormal, uv).rgb);
+	vec3 fragPos = texture(gPosition, uv).rgb;
+    info.position = fragPos + normal * 0.001;
+    info.normal = normal;
+}
+
+void main() 
+{
+    ivec2 pixelCoord = ivec2(gl_LaunchIDEXT.xy);
+    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y || maxBounce < 0) {
+        return;
+    }
+
+    vec2 pixelCenter = vec2(pixelCoord) + 0.5;
+    vec2 uv = pixelCenter / screenSize;
+
+    float depth = texture(depthMap, uv).r;
+    if(depth >= 0.99999)
+        return;
+
+    if(maxBounce <= 0)
+        return;
+
+    vec2 values = texture(gMetallicRoughness, uv).rg;
+    PBRProperties prop;
+    prop.albedo = texture(gAlbedoOpacity, uv).rgb;   
+    prop.metallic = values.r;
+    prop.roughness = values.g;
+    prop.ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
+
+    HitInfo firstHit;
+    calculateFirstHitInfo(firstHit, uv);
+
+    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
+    color *= GIIntensity;
+    color = clamp(color, vec3(0.f), vec3(1000.f));
+    imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+}

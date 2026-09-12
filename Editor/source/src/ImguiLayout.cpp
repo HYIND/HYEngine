@@ -940,7 +940,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 		{
 			textureID = ImGui_ImplVulkan_AddTexture(
 				worldManager->GetOpenGLRener()->GetColorBuffer()->GetImageView(),
-				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+				VK_IMAGE_LAYOUT_GENERAL
 			);
 		}
 

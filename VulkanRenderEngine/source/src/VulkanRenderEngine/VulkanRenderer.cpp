@@ -23,6 +23,10 @@
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 
+#include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
+#include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
+#include "VulkanRenderEngine/RenderPass/RTCoreRayTraceReflectPass.h"
+
 static void NeedVulkanBaseInitlized()
 {
 	static std::once_flag flag;
@@ -38,6 +42,32 @@ static void NeedVulkanBaseInitlized()
 		});
 }
 
+std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VKCore::VulkanPhysicalDeviceInfo info)
+{
+	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
+	vulkanDevice->AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+	vulkanDevice->AddDeviceExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
+	vulkanDevice->AddDeviceExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+	vulkanDevice->AddDeviceExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
+	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+
+	if (GlobalConfig::RTCoreEnable)
+	{
+		vulkanDevice->AddDeviceExtension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+	}
+
+	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
+		return nullptr;
+
+	return vulkanDevice;
+}
 
 // 提供扩展，创建vk实例，实例用于初始化VulkanRenderer
 std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::CreateInstance(const std::vector<std::string>& extensionNames)
@@ -76,15 +106,9 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForWindow(std::shared_ptr<
 	}
 
 	auto vulkanSurface = std::make_shared<VKCore::VulkanSurface>(instance, surface);
-	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
-	vulkanDevice->AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
 
-	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
+	auto vulkanDevice = CreateVKDevice(instance, info);
+	if (!vulkanDevice)
 		return nullptr;
 
 	VKCONTEXT->SetDevice(vulkanDevice);
@@ -120,15 +144,8 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForSharedTexture(std::shar
 		return nullptr;
 	}
 
-	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
-	vulkanDevice->AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
-
-	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
+	auto vulkanDevice = CreateVKDevice(instance, info);
+	if (!vulkanDevice)
 		return nullptr;
 
 	VKCONTEXT->SetDevice(vulkanDevice);
@@ -154,14 +171,8 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForOffScreen(std::shared_p
 		return nullptr;
 	}
 
-	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
-	vulkanDevice->AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-	vulkanDevice->AddDeviceExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
-
-	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
+	auto vulkanDevice = CreateVKDevice(instance, info);
+	if (!vulkanDevice)
 		return nullptr;
 
 	VKCONTEXT->SetDevice(vulkanDevice);
@@ -575,31 +586,67 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.After(copyDepthPass)
 		.Before(opaqueFence);
 
-	auto generalPass = std::make_unique<RayTraceGeneralPass>();
-	auto reflectPass = std::make_unique<RayTraceReflectPass>("shader/RayTrace/RayTraceReflect.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
-	auto giPass = std::make_unique<RayTraceGIPass>("shader/RayTrace/RayTraceGI.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
-	giPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
-	reflectPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+	if (!GlobalConfig::RTCoreEnable)
+	{
+		auto generalPass = std::make_unique<RayTraceGeneralPass>();
+		auto reflectPass = std::make_unique<RayTraceReflectPass>("shader/RayTrace/RayTraceReflect.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+		auto giPass = std::make_unique<RayTraceGIPass>("shader/RayTrace/RayTraceGI.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+		giPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+		reflectPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+		rayTraceGeneralPass->SetRenderPass(std::move(generalPass));
 
-	rayTraceGeneralPass->SetRenderPass(std::move(generalPass));
+		rayTraceReflectPass->SetRenderPass(std::move(reflectPass))
+			.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
+			.Temp(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp1"), resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"))
+			.External(Ext_RenderTargetDepthBuffer)
+			.Output(rayTraceReflect_Output)
+			.Persistent(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"))
+			.After(copyDepthPass, rayTraceGeneralPass)
+			.Before(opaqueFence);
 
-	rayTraceReflectPass->SetRenderPass(std::move(reflectPass))
-		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
-		.Temp(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp1"), resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"))
-		.External(Ext_RenderTargetDepthBuffer)
-		.Output(rayTraceReflect_Output)
-		.Persistent(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"))
-		.After(copyDepthPass, rayTraceGeneralPass)
-		.Before(opaqueFence);
+		rayTraceGIPass->SetRenderPass(std::move(giPass))
+			.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
+			.Temp(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"))
+			.External(Ext_RenderTargetDepthBuffer)
+			.Output(rayTraceGI_Output)
+			.Persistent(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"))
+			.After(copyDepthPass, rayTraceGeneralPass)
+			.Before(opaqueFence);
+	}
+	else
+	{
+		auto generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
+		auto reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
+			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+			"", "", "",
+			"shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+		auto giPass = std::make_unique<RTCoreRayTraceGIPass>(
+			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+			"", "", "",
+			"shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
 
-	rayTraceGIPass->SetRenderPass(std::move(giPass))
-		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
-		.Temp(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"))
-		.External(Ext_RenderTargetDepthBuffer)
-		.Output(rayTraceGI_Output)
-		.Persistent(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"))
-		.After(copyDepthPass, rayTraceGeneralPass)
-		.Before(opaqueFence);
+		giPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+		reflectPass->SetGeneralBuffer(generalPass->GetGeneralBuffer());
+		rayTraceGeneralPass->SetRenderPass(std::move(generalPass));
+
+		rayTraceReflectPass->SetRenderPass(std::move(reflectPass))
+			.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
+			.Temp(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp1"), resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"))
+			.External(Ext_RenderTargetDepthBuffer)
+			.Output(rayTraceReflect_Output)
+			.Persistent(resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"))
+			.After(copyDepthPass, rayTraceGeneralPass)
+			.Before(opaqueFence);
+
+		rayTraceGIPass->SetRenderPass(std::move(giPass))
+			.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gMotionVectorMap)
+			.Temp(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"))
+			.External(Ext_RenderTargetDepthBuffer)
+			.Output(rayTraceGI_Output)
+			.Persistent(resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"))
+			.After(copyDepthPass, rayTraceGeneralPass)
+			.Before(opaqueFence);
+	}
 
 	ssrPass->SetRenderPass(std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp"))
 		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, hzbMap)

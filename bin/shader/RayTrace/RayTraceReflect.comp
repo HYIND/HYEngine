@@ -185,7 +185,7 @@ void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
     info.normal = normal;
 }
 
-void ProcessWithGBuffer()
+void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
     vec2 pixelCenter = pixelCoord + 0.5;
@@ -202,9 +202,6 @@ void ProcessWithGBuffer()
     if(maxBounce <= 0)
         return;
 
-    HitInfo firstHit;
-    calculateFirstHitInfo(firstHit, uv);
-
     vec2 values = texture(gMetallicRoughness, uv).rg;
     PBRProperties prop;
     prop.albedo = texture(gAlbedoOpacity, uv).rgb;   
@@ -215,12 +212,10 @@ void ProcessWithGBuffer()
     if (prop.metallic < 0.15 || prop.roughness > 0.77)
         return;
 
+    HitInfo firstHit;
+    calculateFirstHitInfo(firstHit, uv);
+
     vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
     color = clamp(color, vec3(0.f), vec3(1000.f));
     imageStore(outputImage, pixelCoord, vec4(color, 1.0));
-}
-
-void main()
-{
-    ProcessWithGBuffer();
 }

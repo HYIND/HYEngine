@@ -163,15 +163,35 @@ vk::Result VulkanDevice::Create(
 	for (auto& e : m_deviceExtensions)
 		deviceExtensions.push_back(e.c_str());
 
-	using ChainType = vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features>;
+	using ChainType = vk::StructureChain<
+		vk::PhysicalDeviceFeatures2, 
+		vk::PhysicalDeviceVulkan11Features, 
+		vk::PhysicalDeviceVulkan12Features, 
+		vk::PhysicalDeviceVulkan13Features,
+		vk::PhysicalDeviceVulkan14Features,
+		vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
+		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+	>;
 
 	ChainType chain =
-		info.physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features>();
+		info.physicalDevice.getFeatures2<
+		vk::PhysicalDeviceFeatures2,
+		vk::PhysicalDeviceVulkan11Features, 
+		vk::PhysicalDeviceVulkan12Features, 
+		vk::PhysicalDeviceVulkan13Features,
+		vk::PhysicalDeviceVulkan14Features,
+		vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
+		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+		>();
 
 	auto& deviceFeatures2 = chain.get<vk::PhysicalDeviceFeatures2>();
 	auto& features11 = chain.get<vk::PhysicalDeviceVulkan11Features>();
 	auto& features12 = chain.get<vk::PhysicalDeviceVulkan12Features>();
 	auto& features13 = chain.get<vk::PhysicalDeviceVulkan13Features>();
+	auto& features14 = chain.get<vk::PhysicalDeviceVulkan14Features>();
+	auto& rayTraceExt = chain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
 
 	if (!features12.descriptorBindingPartiallyBound ||
 		!features12.runtimeDescriptorArray ||
@@ -188,6 +208,7 @@ vk::Result VulkanDevice::Create(
 
 	if (!features13.shaderDemoteToHelperInvocation)
 		std::cerr << std::format("shaderDemoteToHelperInvocation not support!\n");
+
 
 	vk::DeviceCreateInfo deviceCreateInfo;
 	deviceCreateInfo.setFlags(flags)
@@ -207,8 +228,8 @@ vk::Result VulkanDevice::Create(
 		NeedDeviceProc(VkDevice(device));
 	}
 
-	if (GetPhysicalDeviceProperties().limits.maxViewports < 16)
-		std::cout << std::format("[ VulkanDevice Warning ] PhysicalDeviceLimits maxViewports < 16 , count = {}", GetPhysicalDeviceProperties().limits.maxViewports);
+	if (info.physicalDeviceProperties.properties.limits.maxViewports < 16)
+		std::cout << std::format("[ VulkanDevice Warning ] PhysicalDeviceLimits maxViewports < 16 , count = {}", info.physicalDeviceProperties.properties.limits.maxViewports);
 
 	if (info.graphicsQueueFamily != VK_QUEUE_FAMILY_IGNORED)
 		m_queue_graphics = m_device.getQueue(info.graphicsQueueFamily, 0);
@@ -224,6 +245,7 @@ vk::Result VulkanDevice::Create(
 	allocatorInfo.physicalDevice = info.physicalDevice;
 	allocatorInfo.device = m_device;
 	allocatorInfo.vulkanApiVersion = instance->GetApiVersion();
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
 	VmaVulkanFunctions vkFuncs = {};
 	vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vkFuncs);
@@ -234,7 +256,7 @@ vk::Result VulkanDevice::Create(
 		return result;
 	}
 
-	std::cout << std::format("[ VulkanDevice ] use physical Device: {}\n", std::string(info.physicalDeviceProperties.deviceName.data()));
+	std::cout << std::format("[ VulkanDevice ] use physical Device: {}\n", std::string(info.physicalDeviceProperties.properties.deviceName.data()));
 	ExecuteCallbacks(m_callbacks_createDevice);
 	return vk::Result::eSuccess;
 }
@@ -246,7 +268,9 @@ VmaAllocator VulkanDevice::GetAllocator() const { return m_allocator; }
 
 vk::PhysicalDevice VulkanDevice::GetPhysicalDevice() const { return m_physicalDeviceInfo.physicalDevice; }
 
-const vk::PhysicalDeviceProperties& VulkanDevice::GetPhysicalDeviceProperties() const { return m_physicalDeviceInfo.physicalDeviceProperties; }
+const VulkanPhysicalDeviceInfo& VKCore::VulkanDevice::GetVulkanPhysicalDeviceInfo() const { return m_physicalDeviceInfo; }
+
+const vk::PhysicalDeviceProperties2& VulkanDevice::GetPhysicalDeviceProperties() const { return m_physicalDeviceInfo.physicalDeviceProperties; }
 
 const vk::PhysicalDeviceMemoryProperties& VulkanDevice::GetPhysicalDeviceMemoryProperties() const { return m_physicalDeviceInfo.physicalDeviceMemoryProperties; }
 

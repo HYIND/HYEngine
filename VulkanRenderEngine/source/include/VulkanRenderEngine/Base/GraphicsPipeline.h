@@ -61,8 +61,11 @@ struct GraphicsPipelineConfig : public PipelineConfig
 	// ---------- 着色器路径 ----------
 	std::string vertexPath;
 	std::string fragmentPath;
-	std::string geometryPath;    // 可选
+	std::string geometryPath;
 
+	GraphicsPipelineConfig() {
+		defaultShaderStageFlags = vk::ShaderStageFlagBits::eAllGraphics;
+	}
 
 	// ---------- 固定功能设置 ----------
 	void UpdateAllProps();
@@ -128,6 +131,7 @@ private:
 	bool CreateShaderStages(GraphicsPipelineConfig& config);
 	bool CreatePipeline(GraphicsPipelineConfig& config);
 
+private:
 	// ShaderModule
 	vk::ShaderModule m_vertModule = VK_NULL_HANDLE;
 	vk::ShaderModule m_fragModule = VK_NULL_HANDLE;

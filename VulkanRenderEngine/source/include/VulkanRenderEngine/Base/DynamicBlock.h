@@ -21,12 +21,14 @@ public:
 	void CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
 
 	std::shared_ptr<VKWrapper::VmaBuffer> GetBuffer() const;
-	uint64_t GetSize();
+	vk::Buffer GetHandle() const;
+	vk::DeviceAddress GetDeviceAddress() const;
+	uint64_t GetSize() const;
 
 private:
 	void Need();
 
-private:
+protected:
 	VKCore::VulkanDevice* _device;
 	std::shared_ptr<VKWrapper::VmaBuffer> _curBuffer;
 	uint64_t _size;
@@ -39,31 +41,31 @@ class UniformBlock : public DynamicBlock
 {
 public:
 	UniformBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::UniformBuffer, device) {
-	}
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::UniformBuffer, device) {}
 };
 
 class StorageBlock : public DynamicBlock
 {
 public:
 	StorageBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::StorageBuffer, device) {
-	}
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::StorageBuffer, device) {}
 };
 
-class VertexBufferBlock : public DynamicBlock
+class VertexBufferBlock : public StorageBlock
 {
 public:
 	VertexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::VertexBuffer, device) {
+		: StorageBlock(size, device) {
+		_usage = _usage | VKWrapper::VmaBuffer::Usage::VertexBuffer;
 	}
 };
 
-class IndexBufferBlock : public DynamicBlock
+class IndexBufferBlock : public StorageBlock
 {
 public:
 	IndexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::IndexBuffer, device) {
+		: StorageBlock(size, device) {
+		_usage = _usage | VKWrapper::VmaBuffer::Usage::IndexBuffer;
 	}
 };
 
@@ -71,6 +73,12 @@ class IndirectBufferBlock : public DynamicBlock
 {
 public:
 	IndirectBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::IndirectBuffer, device) {
-	}
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::IndirectBuffer, device) {}
+};
+
+class SBTBufferBlock : public DynamicBlock
+{
+public:
+	SBTBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::SBTBuffer, device) {}
 };
