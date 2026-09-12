@@ -37,8 +37,8 @@ private:
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 		std::shared_ptr<GraphicsPipeline>& shader_Skinned,
 		uint32_t count,
-		std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& meshes,
-		std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& skinned,
+		std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& meshes,
+		std::vector<VKRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& skinned,
 		DynamicRenderInfo& renderInfo,
 		std::vector<DynamicViewport>& viewPorts
 	);

@@ -514,8 +514,8 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 	std::shared_ptr<GraphicsPipeline>& shader_Skinned,
 	uint32_t count,
-	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
-	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels,
+	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
+	std::vector<VKRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels,
 	DynamicRenderInfo& renderInfo,
 	std::vector<DynamicViewport>& viewPorts
 )

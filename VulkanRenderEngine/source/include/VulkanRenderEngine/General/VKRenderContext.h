@@ -8,7 +8,7 @@
 #include "VulkanRenderEngine/Base/Effect.h"
 #include "Helper/TripleBuffer.h"
 
-namespace OpenGLRenderContext
+namespace VKRenderContext
 {
 	struct AnimatorView
 	{

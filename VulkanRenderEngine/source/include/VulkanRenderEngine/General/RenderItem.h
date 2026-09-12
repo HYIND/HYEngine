@@ -2,9 +2,9 @@
 
 #include "glm/glm.hpp"
 #include "VulkanRenderEngine/Base/Model.h"
-#include "VulkanRenderEngine/General/OpenGLRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext.h"
 
-namespace OpenGLRenderObjectData
+namespace VKRenderObjectData
 {
 	struct RenderIndex {
 		std::vector<size_t> oneSideIndex;
@@ -31,7 +31,7 @@ namespace OpenGLRenderObjectData
 		struct TransparentMeshItem :public MeshItem {};
 
 		struct Skinned {
-			std::shared_ptr<std::vector<OpenGLRenderContext::AnimatorView>> animators;
+			std::shared_ptr<std::vector<VKRenderContext::AnimatorView>> animators;
 		};
 		struct TransparentSkinnedMeshItem :public Skinned, public MeshItem {};
 		struct OpaqueSkinnedModelItem :public Skinned, public ModelItem {};
@@ -70,7 +70,7 @@ namespace OpenGLRenderObjectData
 		struct TransparentMeshItem :public MeshItem {};
 
 		struct Skinned {
-			std::shared_ptr<std::vector<OpenGLRenderContext::AnimatorView>> animators;
+			std::shared_ptr<std::vector<VKRenderContext::AnimatorView>> animators;
 		};
 		struct TransparentSkinnedMeshItem :public Skinned, public MeshItem {};
 		struct OpaqueSkinnedModelItem :public Skinned, public ModelItem {};

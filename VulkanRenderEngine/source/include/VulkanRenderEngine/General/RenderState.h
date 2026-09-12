@@ -119,8 +119,8 @@ struct RenderState
 
 	// 渲染对象
 	struct RenderObjects {
-		OpenGLRenderObjectData::SceneRenderData sceneRenderData;
-		OpenGLRenderObjectData::FirstPersonRenderData firstPersonRenderData;
+		VKRenderObjectData::SceneRenderData sceneRenderData;
+		VKRenderObjectData::FirstPersonRenderData firstPersonRenderData;
 	} objects;
 
 	struct IndirectCommands {

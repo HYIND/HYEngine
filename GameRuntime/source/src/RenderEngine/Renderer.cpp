@@ -49,18 +49,18 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 
 		switch (context->type)
 		{
-		case OpenGLRenderContext::RenderContextType::Model:
+		case VKRenderContext::RenderContextType::Model:
 		{
 			processSceneModel(
 				state,
 				state.objects.sceneRenderData,
-				std::static_pointer_cast<OpenGLRenderContext::SceneModelRenderData>(context->data)
+				std::static_pointer_cast<VKRenderContext::SceneModelRenderData>(context->data)
 			);
 			break;
 		}
-		case OpenGLRenderContext::RenderContextType::DirLight:
+		case VKRenderContext::RenderContextType::DirLight:
 		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::DirLightRenderData>(context->data);
+			auto ptr = std::static_pointer_cast<VKRenderContext::DirLightRenderData>(context->data);
 			if (ptr && ptr->light)
 			{
 				auto info = std::make_shared<DirLightInfo>();
@@ -70,9 +70,9 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 			}
 			break;
 		}
-		case OpenGLRenderContext::RenderContextType::PointLight:
+		case VKRenderContext::RenderContextType::PointLight:
 		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::PointLightRenderData>(context->data);
+			auto ptr = std::static_pointer_cast<VKRenderContext::PointLightRenderData>(context->data);
 			if (ptr && ptr->light)
 			{
 				auto info = std::make_shared<PointLightInfo>();
@@ -82,9 +82,9 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 			}
 			break;
 		}
-		case OpenGLRenderContext::RenderContextType::SpotLight:
+		case VKRenderContext::RenderContextType::SpotLight:
 		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::SpotLightRenderData>(context->data);
+			auto ptr = std::static_pointer_cast<VKRenderContext::SpotLightRenderData>(context->data);
 			if (ptr && ptr->light)
 			{
 				auto info = std::make_shared<SpotLightInfo>();
@@ -94,18 +94,18 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 			}
 			break;
 		}
-		case OpenGLRenderContext::RenderContextType::FirstPersonModel:
+		case VKRenderContext::RenderContextType::FirstPersonModel:
 		{
 			processFirstPersonModel(
 				state,
 				state.objects.firstPersonRenderData,
-				std::static_pointer_cast<OpenGLRenderContext::FirstPersonRenderData>(context->data)
+				std::static_pointer_cast<VKRenderContext::FirstPersonRenderData>(context->data)
 			);
 			break;
 		}
-		case OpenGLRenderContext::RenderContextType::Effect:
+		case VKRenderContext::RenderContextType::Effect:
 		{
-			auto ptr = std::static_pointer_cast<OpenGLRenderContext::SceneEffectRenderData>(context->data);
+			auto ptr = std::static_pointer_cast<VKRenderContext::SceneEffectRenderData>(context->data);
 			if (ptr && ptr->properties)
 				state.objects.sceneRenderData.effectItems.push_back(ptr->properties);
 			break;
@@ -121,14 +121,14 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 
 void OpenGLRenderFrameDataAnalysisHelp::processSceneModel(
 	RenderState& state,
-	OpenGLRenderObjectData::SceneRenderData& renderData,
-	const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
+	VKRenderObjectData::SceneRenderData& renderData,
+	const std::shared_ptr<VKRenderContext::SceneModelRenderData>& data
 )
 {
-	using OpaqueMeshItem = OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem;
-	using TransparentMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentMeshItem;
-	using OpaqueSkinnedModelItem = OpenGLRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem;
-	using TransparentSkinnedMeshItem = OpenGLRenderObjectData::SceneRenderData::TransparentSkinnedMeshItem;
+	using OpaqueMeshItem = VKRenderObjectData::SceneRenderData::OpaqueMeshItem;
+	using TransparentMeshItem = VKRenderObjectData::SceneRenderData::TransparentMeshItem;
+	using OpaqueSkinnedModelItem = VKRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem;
+	using TransparentSkinnedMeshItem = VKRenderObjectData::SceneRenderData::TransparentSkinnedMeshItem;
 
 	if (!data || !data->model)
 		return;
@@ -178,7 +178,7 @@ void OpenGLRenderFrameDataAnalysisHelp::processSceneModel(
 	else
 	{
 		std::vector<MeshInfo> meshInfos;
-		auto shadredAnimatorViews = std::make_shared<std::vector<OpenGLRenderContext::AnimatorView>>(data->animatorViews);
+		auto shadredAnimatorViews = std::make_shared<std::vector<VKRenderContext::AnimatorView>>(data->animatorViews);
 
 		for (auto& info : data->model->getMeshInfos())
 		{
@@ -219,13 +219,13 @@ void OpenGLRenderFrameDataAnalysisHelp::processSceneModel(
 
 void OpenGLRenderFrameDataAnalysisHelp::processFirstPersonModel(
 	RenderState& state,
-	OpenGLRenderObjectData::FirstPersonRenderData& renderData,
-	const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data)
+	VKRenderObjectData::FirstPersonRenderData& renderData,
+	const std::shared_ptr<VKRenderContext::FirstPersonRenderData>& data)
 {
-	using OpaqueMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::OpaqueMeshItem;
-	using TransparentMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::TransparentMeshItem;
-	using OpaqueSkinnedModelItem = OpenGLRenderObjectData::FirstPersonRenderData::OpaqueSkinnedModelItem;
-	using TransparentSkinnedMeshItem = OpenGLRenderObjectData::FirstPersonRenderData::TransparentSkinnedMeshItem;
+	using OpaqueMeshItem = VKRenderObjectData::FirstPersonRenderData::OpaqueMeshItem;
+	using TransparentMeshItem = VKRenderObjectData::FirstPersonRenderData::TransparentMeshItem;
+	using OpaqueSkinnedModelItem = VKRenderObjectData::FirstPersonRenderData::OpaqueSkinnedModelItem;
+	using TransparentSkinnedMeshItem = VKRenderObjectData::FirstPersonRenderData::TransparentSkinnedMeshItem;
 
 	if (!data || !data->model)
 		return;
@@ -264,7 +264,7 @@ void OpenGLRenderFrameDataAnalysisHelp::processFirstPersonModel(
 	else
 	{
 		std::vector<MeshInfo> meshInfos;
-		auto shadredAnimatorViews = std::make_shared<std::vector<OpenGLRenderContext::AnimatorView>>(std::move(data->animatorViews));
+		auto shadredAnimatorViews = std::make_shared<std::vector<VKRenderContext::AnimatorView>>(std::move(data->animatorViews));
 
 		for (auto& info : data->model->getMeshInfos())
 		{

@@ -57,6 +57,7 @@
 #include <future>
 #include <deque>
 #include <random>
+#include <ranges>
 
 #include "Helper/Tools.h"
 #include "VulkanRenderEngine/Public.h"

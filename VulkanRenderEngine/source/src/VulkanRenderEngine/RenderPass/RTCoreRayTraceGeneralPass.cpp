@@ -2,11 +2,6 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 
-struct BlasData {
-	uint32_t meshVersion = 0;
-	vk::AccelerationStructureKHR handle;
-	uint32_t offset;
-};
 
 struct alignas(16) InstanceInfo
 {
@@ -51,12 +46,201 @@ static vk::TransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix)
 	return result;
 }
 
-
-RTCoreRayTraceGeneralBuffer::RTCoreRayTraceGeneralBuffer()
-	:_blasBufferManager(1024 * 1024 * 200)
+BlasHandleManager::BlasHandleManager()
+	:_blasBufferManager(1024 * 1024 * 20)
 {
 	_blasBufferManager.SetAlign(256);
-	_scratchBlock = std::make_shared<StorageBlock>();
+}
+
+void BlasHandleManager::RemoveBlasData(std::shared_ptr<Mesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device)
+{
+	auto it = _blasHandles.find(mesh.get());
+	if (it == _blasHandles.end())
+		return;
+
+	auto& data = it->second;
+	if (data.handle != VK_NULL_HANDLE)
+		device->GetHandle().destroyAccelerationStructureKHR(data.handle);
+	_blasBufferManager.RemoveSegment(data.meshUUID);
+	_blasHandles.erase(it);
+}
+
+bool BlasHandleManager::FindBlasData(std::shared_ptr<Mesh>& mesh, BlasHandleData& data) {
+	auto it = _blasHandles.find(mesh.get());
+	if (it == _blasHandles.end())
+		return false;
+	data = it->second;
+	return true;
+}
+
+bool BlasHandleManager::UpdateBlasData(
+	std::vector<std::shared_ptr<Mesh>>& meshs,
+	std::shared_ptr<VertexBufferBlock>& vertexBlock,
+	std::shared_ptr<IndexBufferBlock>& indexBlock,
+	std::shared_ptr<VKCore::VulkanDevice>& device,
+	std::shared_ptr<StorageBlock>& scratchBlock
+)
+{
+	vk::DeviceAddress vertexBufferAddress = vertexBlock->GetDeviceAddress();
+	vk::DeviceAddress indexBufferAddress = indexBlock->GetDeviceAddress();
+
+	struct BlasContext {
+		std::shared_ptr<Mesh> mesh;
+		vk::AccelerationStructureGeometryTrianglesDataKHR trianglesData;
+		vk::AccelerationStructureGeometryDataKHR geometryData;
+		vk::AccelerationStructureGeometryKHR blasGeometry;
+		vk::AccelerationStructureBuildGeometryInfoKHR blasBuildGeometryInfo;
+		vk::AccelerationStructureBuildSizesInfoKHR blasBuildSizes;
+		vk::AccelerationStructureBuildRangeInfoKHR buildRange;
+		BlasHandleData blasData;
+		uint32_t blasFirst;
+		uint32_t vertexOffset;
+		uint32_t indicesOffset;
+		BlasContext(std::shared_ptr<Mesh>& m) :mesh(m) {
+			blasData.meshWeakPtr = m;
+			blasData.meshVersion = m->GetVerticesIndicesVsrsion();
+			blasData.meshUUID = m->GetUUID();
+		}
+	};
+
+	std::unordered_map<std::shared_ptr<Mesh>, std::shared_ptr<BlasContext>> ctxs;
+
+	auto indirectManager = IndirectDrawManager::Instance();
+
+	auto addToCreate = [&](std::vector<std::shared_ptr<Mesh>>& toCreateMeshs) -> void
+		{
+			for (auto& mesh : toCreateMeshs)
+			{
+				if (ctxs.find(mesh) != ctxs.end())
+					continue;
+
+				auto ctx = std::make_shared<BlasContext>(mesh);
+
+				auto& vertices = mesh->GetVertices();
+				auto& indices = mesh->GetIndices();
+
+				IndirectDrawMeta meta;
+				if (!indirectManager->GetIndirectDrawMeta(*mesh, meta))
+					continue;
+
+				ctx->indicesOffset = meta.firstIndex;
+				ctx->vertexOffset = meta.vertexOffset;
+
+				ctx->trianglesData = vk::AccelerationStructureGeometryTrianglesDataKHR(
+					vk::Format::eR32G32B32Sfloat,
+					vertexBufferAddress,
+					sizeof(Vertex),
+					vertices.size() - 1,
+					vk::IndexType::eUint32,
+					indexBufferAddress
+				);
+
+				ctx->geometryData = vk::AccelerationStructureGeometryDataKHR(ctx->trianglesData);
+
+				ctx->blasGeometry = vk::AccelerationStructureGeometryKHR(
+					vk::GeometryTypeKHR::eTriangles,
+					ctx->geometryData,
+					vk::GeometryFlagBitsKHR::eOpaque
+				);
+
+				ctx->blasBuildGeometryInfo
+					.setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
+					.setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
+					.setGeometries(ctx->blasGeometry);
+
+				ctx->blasBuildSizes = device->GetHandle().getAccelerationStructureBuildSizesKHR(
+					vk::AccelerationStructureBuildTypeKHR::eDevice,
+					ctx->blasBuildGeometryInfo,
+					indices.size() / 3
+				);
+
+				auto blasSegData = _blasBufferManager.SetSegment(mesh->GetUUID(), (void*)mesh->GetVerticesIndicesVsrsion(), nullptr, ctx->blasBuildSizes.accelerationStructureSize);
+				ctx->blasFirst = blasSegData.first;
+
+				ctxs[mesh] = std::move(ctx);
+			}
+		};
+
+	addToCreate(meshs);
+
+
+	// vertexAddress 或者 indexAddress 发生变化，需要重建原有的blas
+	auto vertexAddress = vertexBlock->GetDeviceAddress();
+	auto indexAddress = indexBlock->GetDeviceAddress();
+	if (_lastVertexAddress == 0
+		|| _lastIndexAddress == 0
+		|| _lastVertexAddress != vertexAddress
+		|| _lastIndexAddress != indexAddress
+		)
+	{
+		_lastVertexAddress = vertexAddress;
+		_lastIndexAddress = indexAddress;
+
+		std::vector<std::shared_ptr<Mesh>> hasExistedMeshs;
+		for (auto& it : _blasHandles)
+		{
+			auto& data = it.second;
+			if (data.handle != VK_NULL_HANDLE)
+				device->GetHandle().destroyAccelerationStructureKHR(data.handle);
+			_blasBufferManager.RemoveSegment(data.meshUUID);
+
+			if (auto mesh = data.meshWeakPtr.lock())
+				hasExistedMeshs.push_back(mesh);
+		}
+		_blasHandles.clear();
+
+		addToCreate(hasExistedMeshs);
+	}
+
+
+	auto blasBlock = _blasBufferManager.GetBuffer()->GetBlock();
+	auto blasBlockHandle = blasBlock->GetHandle();
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	for (auto& [mesh, ctx] : ctxs)
+	{
+		auto& vertices = ctx->mesh->GetVertices();
+		auto& indices = ctx->mesh->GetIndices();
+
+		scratchBlock->SetSize(ctx->blasBuildSizes.buildScratchSize);
+		VkDeviceAddress scratchAddress = scratchBlock->GetDeviceAddress();
+
+		vk::AccelerationStructureCreateInfoKHR blasCreateInfo;
+		blasCreateInfo
+			.setBuffer(blasBlockHandle)
+			.setOffset(ctx->blasFirst)
+			.setSize(ctx->blasBuildSizes.accelerationStructureSize)
+			.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
+
+		auto [blasHandleResult, blasHandle] = device->GetHandle().createAccelerationStructureKHR(blasCreateInfo);
+		if (blasHandleResult != vk::Result::eSuccess)
+			continue;
+
+		// 存回构建信息
+		ctx->blasBuildGeometryInfo.dstAccelerationStructure = blasHandle;
+		ctx->blasBuildGeometryInfo.scratchData.deviceAddress = scratchAddress;
+
+		ctx->buildRange.primitiveCount = indices.size() / 3;									// 三角形数量
+		ctx->buildRange.primitiveOffset = ctx->indicesOffset * sizeof(unsigned int);			// 索引缓冲区字节偏移
+		ctx->buildRange.firstVertex = ctx->vertexOffset;										// 顶点缓冲区顶点索引偏移
+		ctx->buildRange.transformOffset = 0;
+
+		cmd->buildAccelerationStructuresKHR(ctx->blasBuildGeometryInfo, &(ctx->buildRange));
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+
+		ctx->blasData.handle = blasHandle;
+		ctx->blasData.offset = ctx->blasFirst;
+
+		_blasHandles[ctx->mesh.get()] = std::move(ctx->blasData);
+	}
+
+	return true;
+}
+
+
+RTCoreRayTraceGeneralBuffer::RTCoreRayTraceGeneralBuffer()
+{
 	_tlasInstancesBlock = std::make_shared<StorageBlock>();
 	_tlasBlock = std::make_shared<StorageBlock>();
 	_tlasInstancesInfosBlock = std::make_shared<StorageBlock>();
@@ -70,6 +254,7 @@ RTCoreRayTraceGeneralPass::RTCoreRayTraceGeneralPass()
 {
 	_buffers = std::make_shared<RTCoreRayTraceGeneralBuffer>();
 	_fence = std::make_shared< VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
+	_scratchBlock = std::make_shared<StorageBlock>();
 }
 
 RTCoreRayTraceGeneralPass::~RTCoreRayTraceGeneralPass()
@@ -112,53 +297,68 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
-	auto traiangleBlock = indirectManager->GetVertexBlock();
+	auto vertexBlock = indirectManager->GetVertexBlock();
 	auto indexBlock = indirectManager->GetIndexBlock();
-
-	auto& blasBufferManager = _buffers->_blasBufferManager;
 
 	auto& tlasBlock = _buffers->_tlasBlock;
 	auto& tlasInstancesBlock = _buffers->_tlasInstancesBlock;
 	auto& tlasInstancesInfosBlock = _buffers->_tlasInstancesInfosBlock;
 
-	auto& scratchBlock = _buffers->_scratchBlock;
-
 	auto device = VKCONTEXT->GetDevice();
-	auto blasBuffer = blasBufferManager.GetBuffer()->GetBlock()->GetHandle();
-	vk::DeviceAddress blasBufferAddress = blasBufferManager.GetBuffer()->GetBlock()->GetDeviceAddress();
 
 	auto& opaqueMesh = state.objects.sceneRenderData.opaqueMesh;
 
-	uint32_t tlasInstanceCount = 0;
-
 	std::vector<vk::AccelerationStructureInstanceKHR> tlasInstances;
-	tlasInstances.reserve(opaqueMesh.size());
-
 	std::vector<InstanceInfo> tlasInstanceInfos;
+	tlasInstances.reserve(opaqueMesh.size());
 	tlasInstanceInfos.reserve(opaqueMesh.size());
 
 	uint32_t infosIndex = 0;
 
+	std::vector<std::shared_ptr<Mesh>> needUpdateBlasMeshs;
+	auto getItem = [&](VKRenderObjectData::SceneRenderData::OpaqueMeshItem& item) -> bool {
+		auto& meshInfo = item.meshinfo;
+		if (!meshInfo.mesh || !meshInfo.material)
+			return false;
+
+		auto& mesh = meshInfo.mesh;
+		AABB aabb = mesh->GetAABB();
+		aabb.MakeTransform(item.transform);
+		float dis_sqrt = aabb.DistancePointToAABBSqrt(state.camera.position);
+		if (dis_sqrt > maxCacheClearDistanceSqrt)
+		{
+			_buffers->_blasManager.RemoveBlasData(mesh, device);
+			return false;
+		}
+
+		if (dis_sqrt > maxDistanceSqrt)
+			return false;
+
+		BlasHandleManager::BlasHandleData data;
+		if (!_buffers->_blasManager.FindBlasData(mesh, data)
+			|| data.meshVersion != mesh->GetVerticesIndicesVsrsion()
+			|| data.handle == VK_NULL_HANDLE)
+			needUpdateBlasMeshs.emplace_back(mesh);
+
+		return true;
+		};
+
+	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem*> matches;
 	for (auto& item : opaqueMesh)
 	{
-		auto& meshInfo = item.meshinfo;
-		if (!meshInfo.mesh || !meshInfo.material) continue;
+		if (getItem(item))
+			matches.push_back(&item);
+	}
 
-		{
-			AABB aabb = meshInfo.mesh->GetAABB();
-			aabb.MakeTransform(item.transform);
-			float dis_sqrt = aabb.DistancePointToAABBSqrt(state.camera.position);
-			if (dis_sqrt > maxCacheClearDistanceSqrt)
-			{
-				//SegmentData data;
-				//traiangleBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
-				//indexBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
-				//meshBVHNodeBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
-				continue;
-			}
-			else if (dis_sqrt > maxDistanceSqrt)
-				continue;
-		}
+	_buffers->_blasManager.UpdateBlasData(needUpdateBlasMeshs, vertexBlock, indexBlock, device, _scratchBlock);
+
+	auto blasBlock = _buffers->_blasManager._blasBufferManager.GetBuffer()->GetBlock();
+	auto blasBlockAddress = blasBlock->GetDeviceAddress();
+
+	for (auto& itemptr : matches)
+	{
+		auto& item = *itemptr;
+		auto& meshInfo = item.meshinfo;
 
 		InstanceInfo info;
 		info.model = item.transform;
@@ -178,106 +378,20 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		if (!indirectManager->GetIndirectDrawMeta(*mesh, meta) || !indirectManager->GetMaterialIndex(*material, materialIndex))
 			continue;
 
-		uint32_t triangleFirst = meta.vertexOffset;
-		uint32_t indexFirst = meta.firstIndex;
-
 		info.materialIndex = materialIndex;
-		info.indexOffset = indexFirst;
+		info.indexOffset = meta.firstIndex;
 		info.vertexOffset = meta.vertexOffset;
 
-		BlasData* blasData = nullptr;
-
-		{
-			SegmentData blasSegData;
-			bool find = blasBufferManager.FindSegment(meshuuid, blasSegData);
-			if (find)
-				blasData = (BlasData*)blasSegData.userData;
-		}
-
-		if (blasData == nullptr || blasData->meshVersion != meshVersion || blasData->handle == VK_NULL_HANDLE)
-		{
-			auto& vertices = meshInfo.mesh->GetVertices();
-			auto& indices = meshInfo.mesh->GetIndices();
-
-			vk::DeviceAddress vertexBufferAddress = traiangleBlock->GetDeviceAddress();
-			vk::DeviceAddress indexBufferAddress = indexBlock->GetDeviceAddress();
-
-			vk::AccelerationStructureGeometryTrianglesDataKHR trianglesData(
-				vk::Format::eR32G32B32Sfloat,
-				vertexBufferAddress,
-				sizeof(Vertex),
-				vertices.size() - 1,
-				vk::IndexType::eUint32,
-				indexBufferAddress
-			);
-
-			vk::AccelerationStructureGeometryDataKHR geometryData(trianglesData);
-
-			vk::AccelerationStructureGeometryKHR blasGeometry(
-				vk::GeometryTypeKHR::eTriangles,
-				geometryData,
-				vk::GeometryFlagBitsKHR::eOpaque
-			);
-
-			vk::AccelerationStructureBuildGeometryInfoKHR blasBuildGeometryInfo;
-			blasBuildGeometryInfo
-				.setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
-				.setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
-				.setGeometries(blasGeometry);
-
-			vk::AccelerationStructureBuildSizesInfoKHR blasBuildSizes =
-				device->GetHandle().getAccelerationStructureBuildSizesKHR(
-					vk::AccelerationStructureBuildTypeKHR::eDevice,
-					blasBuildGeometryInfo,
-					indices.size() / 3
-				);
-
-			blasData = new BlasData();
-			blasData->meshVersion = meshVersion;
-			auto blasSegData = blasBufferManager.SetSegment(meshuuid, blasData, nullptr, blasBuildSizes.accelerationStructureSize);
-			uint32_t blasFirst = blasSegData.first;
-
-			scratchBlock->SetSize(blasBuildSizes.buildScratchSize);
-			VkDeviceAddress scratchAddress = scratchBlock->GetDeviceAddress();
-
-			vk::AccelerationStructureCreateInfoKHR blasCreateInfo;
-			blasCreateInfo
-				.setBuffer(blasBuffer)
-				.setOffset(blasFirst)
-				.setSize(blasBuildSizes.accelerationStructureSize)
-				.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
-
-			auto [blasHandleResult, blasHandle] = device->GetHandle().createAccelerationStructureKHR(blasCreateInfo);
-			if (blasHandleResult != vk::Result::eSuccess)
-				continue;
-
-			// 存回构建信息
-			blasBuildGeometryInfo.dstAccelerationStructure = blasHandle;
-			blasBuildGeometryInfo.scratchData.deviceAddress = scratchAddress;
-
-			vk::AccelerationStructureBuildRangeInfoKHR buildRange{};
-			buildRange.primitiveCount = indices.size() / 3;							// 三角形数量
-			buildRange.primitiveOffset = indexFirst * sizeof(unsigned int);			// 索引缓冲区字节偏移
-			buildRange.firstVertex = triangleFirst;									// 顶点缓冲区顶点索引偏移
-			buildRange.transformOffset = 0;
-
-			const vk::AccelerationStructureBuildRangeInfoKHR* pBuildRange = &buildRange;
-
-			auto cmd = VKCONTEXT->GetCommandBuffer();
-			cmd->buildAccelerationStructuresKHR(blasBuildGeometryInfo, pBuildRange);
-			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-
-			blasData->handle = blasHandle;
-			blasData->offset = blasFirst;
-		}
-
-		vk::AccelerationStructureKHR blasHandle = blasData->handle;
+		BlasHandleManager::BlasHandleData data;
+		if (!_buffers->_blasManager.FindBlasData(mesh, data)
+			|| data.handle == VK_NULL_HANDLE)
+			continue;
 
 		vk::AccelerationStructureInstanceKHR tlasInstance;
 		tlasInstance
 			.setTransform(toTransformMatrixKHR(item.transform))
-			.setInstanceCustomIndex(infosIndex++)												// 设置自定义索引 (用于在着色器中查找实例信息)
-			.setAccelerationStructureReference(blasBufferAddress + blasData->offset)			// 设置 BLAS 设备地址
+			.setInstanceCustomIndex(infosIndex++)											// 设置自定义索引 (用于在着色器中查找实例信息)
+			.setAccelerationStructureReference(blasBlockAddress + data.offset)			// 设置 BLAS 设备地址
 			.setMask(0xFF)
 			.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable)
 			.setInstanceShaderBindingTableRecordOffset(0);
@@ -315,8 +429,8 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	// 分配 TLAS 缓冲区和 scratch 缓冲区，创建 TLAS 句柄 (流程与 BLAS 相同)
 	tlasBlock->SetSize(tlasBuildSizes.accelerationStructureSize);
-	scratchBlock->SetSize(tlasBuildSizes.buildScratchSize);
-	VkDeviceAddress scratchAddress = scratchBlock->GetDeviceAddress();
+	_scratchBlock->SetSize(tlasBuildSizes.buildScratchSize);
+	VkDeviceAddress scratchAddress = _scratchBlock->GetDeviceAddress();
 
 	vk::AccelerationStructureCreateInfoKHR tlasCreateInfo;
 	tlasCreateInfo
@@ -348,3 +462,4 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	return true;
 }
+

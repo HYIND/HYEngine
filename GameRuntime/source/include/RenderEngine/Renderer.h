@@ -28,13 +28,13 @@ namespace Render
 	private:
 		static void processSceneModel(
 			RenderState& state,
-			OpenGLRenderObjectData::SceneRenderData& renderData,
-			const std::shared_ptr<OpenGLRenderContext::SceneModelRenderData>& data
+			VKRenderObjectData::SceneRenderData& renderData,
+			const std::shared_ptr<VKRenderContext::SceneModelRenderData>& data
 		);
 		static void processFirstPersonModel(
 			RenderState& state,
-			OpenGLRenderObjectData::FirstPersonRenderData& renderData,
-			const std::shared_ptr<OpenGLRenderContext::FirstPersonRenderData>& data);
+			VKRenderObjectData::FirstPersonRenderData& renderData,
+			const std::shared_ptr<VKRenderContext::FirstPersonRenderData>& data);
 	};
 
 	class Renderer

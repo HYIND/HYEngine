@@ -224,8 +224,8 @@ void GeometryPass::SetupIndirecDrawMaterial(RenderState& state)
 
 bool GeometryPass::SetupStaticBufferData(
 	std::shared_ptr<GraphicsPipeline>& shader,
-	std::vector<OpenGLRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
-	OpenGLRenderObjectData::RenderIndex& renderIndex,
+	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
+	VKRenderObjectData::RenderIndex& renderIndex,
 	std::vector<IndirectDrawCommand>& oneSideCommands,
 	std::vector<IndirectDrawCommand>& twoSideCommands
 )
