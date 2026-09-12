@@ -17,8 +17,12 @@ namespace VKCore
 
 	struct VulkanPhysicalDeviceInfo {
 		vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
-		vk::PhysicalDeviceProperties physicalDeviceProperties;
+		vk::PhysicalDeviceProperties2 physicalDeviceProperties;
 		vk::PhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+
+		vk::PhysicalDeviceAccelerationStructurePropertiesKHR accelProps;
+		vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProps;
+
 		uint32_t graphicsQueueFamily = VK_QUEUE_FAMILY_IGNORED;
 		uint32_t presentQueueFamily = VK_QUEUE_FAMILY_IGNORED;
 		uint32_t computeQueueFamily = VK_QUEUE_FAMILY_IGNORED;

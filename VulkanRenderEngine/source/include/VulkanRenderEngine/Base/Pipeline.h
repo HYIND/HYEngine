@@ -13,7 +13,18 @@ concept StringConvertable = !std::is_same_v<T, std::string>
 	{ std::to_string(value) } -> std::convertible_to<std::string>;
 };
 
-enum class ShaderType { Vertex = 0, Geometry, Fragment, Compute };
+enum class ShaderType {
+	Vertex = 0,
+	Geometry,
+	Fragment,
+	Compute,
+	RayGen,
+	Miss,
+	ClosestHit,
+	AnyHit,
+	Intersection,
+	Callable
+};
 
 struct PipelineConfig {
 
@@ -21,6 +32,8 @@ struct PipelineConfig {
 		bool isVariable = false;
 		uint32_t maxCount = 0;
 	};
+
+	vk::ShaderStageFlags defaultShaderStageFlags;
 
 	// ---------- 从源码编译时可选的动态宏定义 ----------
 	std::map<std::string, std::string> defines;
@@ -145,11 +158,21 @@ public:
 		std::vector<StorageImageEntry> entrys;
 	};
 
+	struct AccelerationStructureEntry
+	{
+		vk::AccelerationStructureKHR handle;
+	};
+
 	struct BindingEntry
 	{
-		enum class DataType { UniformBlock = 0, StorageBlock, UniformTex, UniformTexCube, UniformTexArray, StorageImage, StorageImageArray };
+		enum class DataType { UniformBlock = 0, StorageBlock, UniformTex, UniformTexCube, UniformTexArray, StorageImage, StorageImageArray, AccelerationStructure };
 		DataType type;
-		std::variant<UniformBlockEntry, StorageBlockEntry, UniformTextureEntry, UniformTextureCubeEntry, UniformTextureArrayEntry, StorageImageEntry, StorageImageArrayEntry> data;
+		std::variant<
+			UniformBlockEntry, StorageBlockEntry,
+			UniformTextureEntry, UniformTextureCubeEntry, UniformTextureArrayEntry,
+			StorageImageEntry, StorageImageArrayEntry,
+			AccelerationStructureEntry>
+			data;
 	};
 
 public:
@@ -233,6 +256,7 @@ private:
 	void BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindAccelerationStructure(AccelerationStructureEntry& entry, uint32_t binding, uint32_t set);
 
 protected:
 	// ---------- 工具函数 ----------

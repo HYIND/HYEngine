@@ -4,13 +4,13 @@
 
 ComputePipelineConfig& ComputePipelineConfig::AddStorageImage(uint32_t binding, uint32_t set)
 {
-	AddDescriptor(binding, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 1, set);
+	AddDescriptor(binding, vk::DescriptorType::eStorageImage, defaultShaderStageFlags, 1, set);
 	return *this;
 }
 
 ComputePipelineConfig& ComputePipelineConfig::AddStorageImageArray(uint32_t binding, uint32_t count, uint32_t set)
 {
-	AddDescriptor(binding, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, count, set);
+	AddDescriptor(binding, vk::DescriptorType::eStorageImage, defaultShaderStageFlags, count, set);
 	return *this;
 }
 
@@ -18,7 +18,7 @@ ComputePipelineConfig& ComputePipelineConfig::AddStorageVariableImageArray(uint3
 {
 	vk::DescriptorBindingFlags flags =
 		vk::DescriptorBindingFlagBits::eUpdateAfterBind | vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eVariableDescriptorCount;
-	auto& result = AddDescriptor(binding, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, maxCount, set, flags);
+	auto& result = AddDescriptor(binding, vk::DescriptorType::eStorageImage, defaultShaderStageFlags, maxCount, set, flags);
 	variableEntrys[set].isVariable = true;
 	variableEntrys[set].maxCount = maxCount;
 	return *this;
@@ -39,9 +39,7 @@ ComputePipeline::ComputePipeline() {
 }
 
 ComputePipeline::~ComputePipeline() {
-	if (m_device && m_computeModule) {
-		vkDestroyShaderModule(m_device->GetHandle(), m_computeModule, nullptr);
-	}
+	Release();
 }
 
 bool ComputePipeline::Create(
@@ -90,6 +88,17 @@ bool ComputePipeline::CreatePipeline(vk::PipelineCreateFlags flag) {
 
 	m_pipeline = pipeline;
 	return true;
+}
+
+void ComputePipeline::Release()
+{
+	if (m_device)
+	{
+		if (m_computeModule) m_device->GetHandle().destroyShaderModule(m_computeModule);
+	}
+	m_computeModule = VK_NULL_HANDLE;
+
+	Pipeline::Release();
 }
 
 void ComputePipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) {

@@ -231,11 +231,7 @@ bool GraphicsPipeline::Create(
 	}
 
 	// 创建 Pipeline
-	if (!CreatePipeline(config)) {
-		return false;
-	}
-
-	return true;
+	return CreatePipeline(config);
 }
 
 void GraphicsPipeline::Release()
@@ -244,20 +240,21 @@ void GraphicsPipeline::Release()
 	// 这里只销毁 ShaderModule
 	if (m_device)
 	{
-		if (m_vertModule) vkDestroyShaderModule(m_device->GetHandle(), m_vertModule, nullptr);
-		if (m_fragModule) vkDestroyShaderModule(m_device->GetHandle(), m_fragModule, nullptr);
-		if (m_geomModule) vkDestroyShaderModule(m_device->GetHandle(), m_geomModule, nullptr);
-		if (m_tessControlModule) vkDestroyShaderModule(m_device->GetHandle(), m_tessControlModule, nullptr);
-		if (m_tessEvalModule) vkDestroyShaderModule(m_device->GetHandle(), m_tessEvalModule, nullptr);
+		if (m_vertModule) m_device->GetHandle().destroyShaderModule(m_vertModule);
+		if (m_fragModule) m_device->GetHandle().destroyShaderModule(m_fragModule);
+		if (m_geomModule) m_device->GetHandle().destroyShaderModule(m_geomModule);
+		if (m_tessControlModule) m_device->GetHandle().destroyShaderModule(m_tessControlModule);
+		if (m_tessEvalModule) m_device->GetHandle().destroyShaderModule(m_tessEvalModule);
 
-		m_vertModule = VK_NULL_HANDLE;
-		m_fragModule = VK_NULL_HANDLE;
-		m_geomModule = VK_NULL_HANDLE;
-		m_tessControlModule = VK_NULL_HANDLE;
-		m_tessEvalModule = VK_NULL_HANDLE;
-
-		m_shaderStages.clear();
 	}
+
+	m_vertModule = VK_NULL_HANDLE;
+	m_fragModule = VK_NULL_HANDLE;
+	m_geomModule = VK_NULL_HANDLE;
+	m_tessControlModule = VK_NULL_HANDLE;
+	m_tessEvalModule = VK_NULL_HANDLE;
+
+	m_shaderStages.clear();
 
 	Pipeline::Release();
 }
@@ -276,26 +273,23 @@ bool GraphicsPipeline::CreateShaderStages(GraphicsPipelineConfig& config)
 		};
 
 
-
-	std::vector<uint32_t> code;
-
 	// 顶点着色器
 	if (!config.vertexPath.empty()) {
-		code = ReadSPIRVFromSourcePath(config.vertexPath, ShaderType::Vertex, config.defines);
+		auto code = ReadSPIRVFromSourcePath(config.vertexPath, ShaderType::Vertex, config.defines);
 		if (CreateShaderModule(code, m_vertModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_vertModule, vk::ShaderStageFlagBits::eVertex));
 	}
 
 	// 片段着色器
 	if (!config.fragmentPath.empty()) {
-		code = ReadSPIRVFromSourcePath(config.fragmentPath, ShaderType::Fragment, config.defines);
+		auto code = ReadSPIRVFromSourcePath(config.fragmentPath, ShaderType::Fragment, config.defines);
 		if (CreateShaderModule(code, m_fragModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_fragModule, vk::ShaderStageFlagBits::eFragment));
 	}
 
 	// 几何着色器
 	if (!config.geometryPath.empty()) {
-		code = ReadSPIRVFromSourcePath(config.geometryPath, ShaderType::Geometry, config.defines);
+		auto code = ReadSPIRVFromSourcePath(config.geometryPath, ShaderType::Geometry, config.defines);
 		if (CreateShaderModule(code, m_geomModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_geomModule, vk::ShaderStageFlagBits::eGeometry));
 	}

@@ -48,8 +48,8 @@ class Texture2D
 {
 
 public:
-	enum class BindStage { Graphics = 0, Compute };	// 使用场景，图像渲染管线还是计算管线
-	enum class BindUsage { Output = 0, Sample };	// 用途,作为管线输出(Graphics中的附件，Compute中imagestore的对象)，还是输入的采样纹理
+	enum class BindStage { Graphics = 0, Compute, RayTracing };	// 使用场景，图像渲染管线、计算管线、光追管线
+	enum class BindUsage { Output = 0, Sample };				// 用途,作为管线输出(Graphics中的附件，Compute中imagestore的对象)，还是输入的采样纹理
 
 public:
 	static void BlitImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight);
@@ -153,8 +153,7 @@ public:
 	}
 
 	BaseTextureArrayProvider(const std::vector<std::shared_ptr<Texture2D>>& texs)
-		: _texs(texs) {
-	}
+		: _texs(texs) {}
 
 	virtual std::vector<TextureDescBindEntry> GetTextureDescBindEntrys()const
 	{

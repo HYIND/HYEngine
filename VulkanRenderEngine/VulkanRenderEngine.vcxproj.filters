@@ -315,6 +315,18 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceGIPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\RayTracingPipeline.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -516,6 +528,18 @@
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceGIPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\RayTracingPipeline.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
   </ItemGroup>

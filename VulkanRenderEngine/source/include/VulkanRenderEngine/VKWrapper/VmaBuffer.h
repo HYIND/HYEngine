@@ -16,7 +16,8 @@ namespace VKWrapper
 			StorageBuffer = 1 << 1,
 			VertexBuffer = 1 << 2,
 			IndexBuffer = 1 << 3,
-			IndirectBuffer = 1 << 4
+			IndirectBuffer = 1 << 4,
+			SBTBuffer = 1 << 5
 		};
 
 	public:

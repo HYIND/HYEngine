@@ -186,8 +186,8 @@ void Graph::Execute(RenderState& state)
 				{
 					auto* pass = _sortedPasses[passIndex];
 
+					//auto start = Tool::GetTimestampMircoseconds();
 					//std::cout << std::format("ExcutePass {}\n", pass->GetName());
-					//GPUTimer timer;
 
 					if (pass->ShouldExecute(frameIndex, state))
 					{
@@ -222,8 +222,7 @@ void Graph::Execute(RenderState& state)
 						pass->Execute(frameIndex, ctx, state);
 					}
 
-					//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), timer.End());
-
+					//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
 
 					pass->SetDone(true);
 					auto& passLifeTimeResource = pass->GetLifeCycleResource();
@@ -249,8 +248,8 @@ void Graph::Execute(RenderState& state)
 
 				if (handle->is_ready() && canExcute(_sortedPasses[idx]))
 				{
-					it = batchdata.passes.erase(it);
 					ExcutePass(idx);
+					it = batchdata.passes.erase(it);
 				}
 				else {
 					++it;
