@@ -16,14 +16,6 @@ VKWrapper::VKCommandBuffer::~VKCommandBuffer()
 	Release();
 }
 
-void VKCommandBuffer::Create(VKCommandPool* pool)
-{
-	Release();
-
-	pool->AllocateBuffers(this);
-	_pool = pool;
-}
-
 void VKCommandBuffer::Release()
 {
 	if (_handle && _pool)

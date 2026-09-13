@@ -2,7 +2,6 @@
 #include "VulkanRenderEngine/VKContext.h"
 #include <format>
 #include <thread>
-#include "FlexThreadPool.h"
 #include "CriticalSectionLock.h"
 
 thread_local VKThreadContext tls_context;

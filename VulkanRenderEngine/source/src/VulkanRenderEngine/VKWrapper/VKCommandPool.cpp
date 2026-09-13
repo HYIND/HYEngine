@@ -55,8 +55,9 @@ vk::Result VKCommandPool::Create(VKCore::VulkanDevice* device, QueueFamilyType t
 
 void VKCommandPool::Release() {
 	if (_handle && _device)
-		vkDestroyCommandPool(_device->GetHandle(), _handle, nullptr);
+		_device->GetHandle().destroyCommandPool(_handle);
 
+	_cmdResPool.Clear();
 	_handle = VK_NULL_HANDLE;
 	_device = nullptr;
 	_queueType = QueueFamilyType::Graphics;
@@ -65,21 +66,21 @@ void VKCommandPool::Release() {
 
 vk::CommandPool VKCommandPool::GetHandle() const { return  _handle; }
 
-//SpinLock& VKWrapper::VKCommandPool::GetCommandPoolMutex() { return _commandPoolMutex; }
+SpinLock& VKWrapper::VKCommandPool::GetCommandPoolMutex() { return _commandPoolMutex; }
 
-vk::Result VKCommandPool::AllocateBuffers(VKCommandBuffer* buffer, vk::CommandBufferLevel level) {
-	if (!buffer)
-		return vk::Result::eErrorInitializationFailed;
-
-	vk::CommandBufferAllocateInfo allocateInfo;
-	allocateInfo
-		.setCommandPool(_handle)
-		.setLevel(level)
-		.setCommandBufferCount(1);
-
-	vk::CommandBuffer handle;
+vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer, vk::CommandBufferLevel level)
+{
+	vk::CommandBuffer handle = _cmdResPool.FetchHandle();
+	if (handle == VK_NULL_HANDLE)
 	{
-		//LockGuard guard(_commandPoolMutex);
+		vk::CommandBufferAllocateInfo allocateInfo;
+		allocateInfo
+			.setCommandPool(_handle)
+			.setLevel(level)
+			.setCommandBufferCount(1);
+
+
+		LockGuard guard(_commandPoolMutex);
 		auto [res, hs] = _device->GetHandle().allocateCommandBuffers(allocateInfo);
 		if (res != vk::Result::eSuccess)
 		{
@@ -90,48 +91,9 @@ vk::Result VKCommandPool::AllocateBuffers(VKCommandBuffer* buffer, vk::CommandBu
 		handle = hs[0];
 	}
 
-	buffer->Release();
+	buffer = std::make_shared<VKCommandBuffer>();
 	buffer->_handle = handle;
 	buffer->_pool = this;
-
-	return vk::Result::eSuccess;
-}
-
-vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer> buffer, vk::CommandBufferLevel level)
-{
-	return AllocateBuffers(buffer.get(), level);
-}
-
-vk::Result VKCommandPool::AllocateBuffers(std::vector<std::shared_ptr<VKCommandBuffer>>& buffers, vk::CommandBufferLevel level) {
-	if (buffers.empty())
-		return vk::Result::eErrorInitializationFailed;
-
-	vk::CommandBufferAllocateInfo allocateInfo;
-	allocateInfo
-		.setCommandPool(_handle)
-		.setLevel(level)
-		.setCommandBufferCount(buffers.size());
-
-	std::vector<vk::CommandBuffer> handles;
-
-	{
-		//LockGuard guard(_commandPoolMutex);
-		auto [res, hs] = _device->GetHandle().allocateCommandBuffers(allocateInfo);
-		if (res != vk::Result::eSuccess)
-		{
-			outStream << std::format("[ VKCommandPool ] ERROR\nFailed to allocate command buffers!\nError code: {}\n", to_string(res));
-			return res;
-		}
-
-		handles = std::move(hs);
-	}
-
-	for (int i = 0; i < handles.size(); i++)
-	{
-		buffers[i]->Release();
-		buffers[i]->_handle = handles[i];
-		buffers[i]->_pool = this;
-	}
 
 	return vk::Result::eSuccess;
 }
@@ -139,30 +101,71 @@ vk::Result VKCommandPool::AllocateBuffers(std::vector<std::shared_ptr<VKCommandB
 void VKCommandPool::FreeBuffers(VKCommandBuffer* buffer) {
 	if (!buffer)
 		return;
-	vk::CommandBuffer bufferhandle = buffer->GetHandle();
-	//LockGuard guard(_commandPoolMutex);
-	_device->GetHandle().freeCommandBuffers(_handle, 1, &bufferhandle);
-}
 
-void VKCommandPool::FreeBuffers(std::shared_ptr<VKCommandBuffer> buffer) {
-	if (!buffer)
-		return;
 	vk::CommandBuffer bufferhandle = buffer->GetHandle();
-	//LockGuard guard(_commandPoolMutex);
-	_device->GetHandle().freeCommandBuffers(_handle, 1, &bufferhandle);
-}
-
-void VKCommandPool::FreeBuffers(std::vector<std::shared_ptr<VKCommandBuffer>>& buffers) {
-	if (buffers.empty())
+	if (bufferhandle == VK_NULL_HANDLE)
 		return;
-	std::vector<vk::CommandBuffer> bufferhandles(buffers.size(), VK_NULL_HANDLE);
-	for (int i = 0; i < buffers.size(); i++)
-		bufferhandles[i] = buffers[i]->_handle;
-	//LockGuard guard(_commandPoolMutex);
-	_device->GetHandle().freeCommandBuffers(_handle, bufferhandles);
+
+	LockGuard guard(_commandPoolMutex);
+	if (buffer->IsRecording())
+		buffer->Reset();
+	if (!_cmdResPool.RecycleHandle((VkCommandBuffer)bufferhandle))
+		_device->GetHandle().freeCommandBuffers(_handle, 1, &bufferhandle);
 }
 
 void VKCommandPool::Trim(vk::CommandPoolTrimFlags flags) {
-	//LockGuard guard(_commandPoolMutex);
+	LockGuard guard(_commandPoolMutex);
 	_device->GetHandle().trimCommandPool(_handle, flags);
+}
+
+
+VKWrapper::VKCommandPool::CmdResPool::CmdResPool(uint32_t maxResNum) :_maxResNum(maxResNum) {}
+
+VkCommandBuffer VKWrapper::VKCommandPool::CmdResPool::FetchHandle()
+{
+	if (_iDleList.size() > 0) // 不为空，从中取一个
+	{
+		auto it = _iDleList.begin();
+		auto handle = *it;
+		_iDleList.erase(it);
+		return handle;
+	}
+	return VK_NULL_HANDLE;
+}
+
+bool VKWrapper::VKCommandPool::CmdResPool::RecycleHandle(VkCommandBuffer handle)
+{
+	// 已持有的数据
+	auto it = _datas.find(handle);
+	if (it != _datas.end())
+	{
+		if (_iDleList.find(handle) == _iDleList.end())
+		{
+			_iDleList.insert(handle);
+			return true;
+		}
+		else
+		{
+			std::cerr << "CmdResPool::RecycleData double free!!!\n";
+			return true;
+		}
+	}
+	else // 外部数据，非池子持有的
+	{
+		if (_datas.size() < _maxResNum)
+		{
+			_datas.insert(handle);
+			_iDleList.insert(handle);
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+}
+
+void VKWrapper::VKCommandPool::CmdResPool::Clear() {
+	_iDleList.clear();
+	_datas.clear();
 }
