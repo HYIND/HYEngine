@@ -534,6 +534,8 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 			auto& shader = shader_StaticMesh;
 			cmd1 = VKCONTEXT->GetCommandBuffer();
 
+			shader->Bind(cmd1);
+
 			cmd1->setDynamicViewports(viewPorts);
 			cmd1->beginRendering(renderInfo);
 			if (renderInfo.depthAttachment->loadOp == vk::AttachmentLoadOp::eClear)
@@ -543,7 +545,6 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 			cmd1->bindIndexBuffer(manager->GetIndexBlock());
 			cmd1->setCullMode(vk::CullModeFlagBits::eNone);
 
-			shader->Bind(cmd1);
 
 			if (!oneSideCommands.empty())
 			{

@@ -76,7 +76,6 @@ namespace VKWrapper
 
 		~VKCommandBuffer();
 
-		void Create(VKCommandPool* pool);
 		void Release();
 
 		vk::CommandBuffer GetHandle() const;
