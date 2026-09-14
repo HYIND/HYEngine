@@ -948,8 +948,13 @@ void CreateTestSponzaScene(World& world)
 
 void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world)
 {
+	ResFactory->InitOpenGLResource(0);
 	CreateTestDustScene(*world);
+
+	//ResFactory->InitOpenGLResource(1);
 	//CreateTestGameScene(*world);
+
+	//ResFactory->InitOpenGLResource(2);
 	//CreateTestSponzaScene(*world);
 }
 
