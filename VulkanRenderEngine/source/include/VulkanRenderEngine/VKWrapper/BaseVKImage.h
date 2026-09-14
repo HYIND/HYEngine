@@ -8,24 +8,14 @@ namespace VKWrapper {
 
 	class BaseVKImage
 	{
-	public:
+	protected:
 		struct SubresourceState {
 			vk::ImageLayout layout = vk::ImageLayout::eUndefined;
 			vk::AccessFlags accessMask = vk::AccessFlagBits::eNone;
 		};
 
-		uint64_t MakeKey(uint32_t mipLevel, uint32_t arrayLayer = 0) const {
-			return (static_cast<uint32_t>(mipLevel) << 32) | 0;
-		}
-
-		SubresourceState& GetState(uint32_t mipLevel, uint32_t arrayLayer = 0) const {
-			uint64_t key = MakeKey(mipLevel, 0);
-			auto it = _subresourceStates.find(key);
-			if (it == _subresourceStates.end()) {
-				it = _subresourceStates.emplace(key, SubresourceState{}).first;
-			}
-			return it->second;
-		}
+		uint64_t MakeKey(uint32_t mipLevel, uint32_t arrayLayer = 0) const;
+		SubresourceState& GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer = 0) const;
 
 	public:
 		static bool IsColorFormat(vk::Format format);

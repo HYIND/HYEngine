@@ -1,7 +1,25 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine\VKWrapper\VKFence.h"
+#include "VulkanRenderEngine\VKWrapper\VKResource.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 using namespace VKWrapper;
+
+class RestireFence :public IVKResource
+{
+public:
+	RestireFence(VKCore::VulkanDevice* device, vk::Fence handle)
+		:_device(device), _handle(handle)
+	{}
+	virtual void Destroy() {
+		_device->GetHandle().destroyFence(_handle);
+	}
+
+public:
+	VKCore::VulkanDevice* _device = nullptr;
+	vk::Fence _handle = VK_NULL_HANDLE;
+};
+
 
 VKFence::VKFence(VKCore::VulkanDevice* device, const vk::FenceCreateInfo& createInfo)
 {
@@ -50,7 +68,7 @@ vk::Result VKFence::Create(VKCore::VulkanDevice* device, const vk::FenceCreateIn
 
 void VKFence::Release() {
 	if (_device && _handle != VK_NULL_HANDLE)
-		vkDestroyFence(_device->GetHandle(), _handle, nullptr);
+		VKCONTEXT->Retire(new RestireFence(_device, _handle));
 	_device = nullptr;
 	_handle = VK_NULL_HANDLE;
 }

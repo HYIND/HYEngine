@@ -18,12 +18,12 @@ public:
 	static void renderCube(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
 	static void renderSphere(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
 	static void renderCylinder(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
-	static void renderLightCube(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
-	static void renderLightSphere(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
 
 public:
 	static void SetupAnimatorGroupData(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const std::vector<VKRenderContext::AnimatorView>& animatorViews);
-	static void SetupLightingData(Pipeline& pieline,
+	static void SetupLightingData(
+		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+		Pipeline& pieline,
 		const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
 		const std::vector<std::shared_ptr<PointLightInfo>>& pointLights,
 		const std::vector<std::shared_ptr<SpotLightInfo>>& spotLights,

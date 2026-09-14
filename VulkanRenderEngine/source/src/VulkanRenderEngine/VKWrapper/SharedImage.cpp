@@ -139,7 +139,7 @@ bool VKWrapper::SharedImage::Create(VKCore::VulkanDevice* device, std::shared_pt
 	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetState(i);
+		auto state = GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}

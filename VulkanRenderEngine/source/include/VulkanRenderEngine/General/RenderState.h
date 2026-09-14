@@ -133,7 +133,6 @@ struct RenderState
 		std::vector<IndirectDrawCommand> staticMesh_OneSideCommand;
 		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommand;
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_TransformAndMaterialIndices;
-		std::shared_ptr<IndirectBufferBlock> indirectCommandBuffer;
 	} indirectCommands;
 
 	struct SkyBoxParams {

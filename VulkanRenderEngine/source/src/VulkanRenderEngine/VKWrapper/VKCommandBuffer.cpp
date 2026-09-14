@@ -216,14 +216,67 @@ void VKWrapper::VKCommandBuffer::clearDepthStencilImage(vk::Image image, vk::Ima
 }
 
 // 同步命令
-void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::DependencyFlags dependencyFlags, uint32_t memoryBarrierCount, const vk::MemoryBarrier* pMemoryBarriers, uint32_t bufferMemoryBarrierCount, const vk::BufferMemoryBarrier* pBufferMemoryBarriers, uint32_t imageMemoryBarrierCount, const vk::ImageMemoryBarrier* pImageMemoryBarriers) {
-	Need();
-	_handle.pipelineBarrier(srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
-}
-
-void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::DependencyFlags dependencyFlags, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers) {
+void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags) {
 	Need();
 	_handle.pipelineBarrier(srcStageMask, dstStageMask, dependencyFlags, memoryBarriers, bufferMemoryBarriers, imageMemoryBarriers);
+}
+
+void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	_handle.pipelineBarrier(srcStageMask, dstStageMask, dependencyFlags, memoryBarriers, {}, {});
+}
+
+void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	_handle.pipelineBarrier(srcStageMask, dstStageMask, dependencyFlags, {}, bufferMemoryBarriers, {});
+}
+
+void VKWrapper::VKCommandBuffer::pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	_handle.pipelineBarrier(srcStageMask, dstStageMask, dependencyFlags, {}, {}, imageMemoryBarriers);
+}
+
+void VKWrapper::VKCommandBuffer::pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::MemoryBarrier2 const> const& memoryBarriers, vk::ArrayProxyNoTemporaries<vk::BufferMemoryBarrier2 const> const& bufferMemoryBarriers, vk::ArrayProxyNoTemporaries<vk::ImageMemoryBarrier2 const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	vk::DependencyInfo dep;
+	dep
+		.setDependencyFlags(dependencyFlags)
+		.setMemoryBarriers(memoryBarriers)
+		.setBufferMemoryBarriers(bufferMemoryBarriers)
+		.setImageMemoryBarriers(imageMemoryBarriers);
+	_handle.pipelineBarrier2(dep);
+}
+
+void VKWrapper::VKCommandBuffer::pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::MemoryBarrier2 const> const& memoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	vk::DependencyInfo dep;
+	dep
+		.setDependencyFlags(dependencyFlags)
+		.setMemoryBarriers(memoryBarriers);
+	_handle.pipelineBarrier2(dep);
+}
+void VKWrapper::VKCommandBuffer::pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::BufferMemoryBarrier2 const> const& bufferMemoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	vk::DependencyInfo dep;
+	dep
+		.setDependencyFlags(dependencyFlags)
+		.setBufferMemoryBarriers(bufferMemoryBarriers);
+	_handle.pipelineBarrier2(dep);
+}
+void VKWrapper::VKCommandBuffer::pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::ImageMemoryBarrier2 const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags)
+{
+	Need();
+	vk::DependencyInfo dep;
+	dep
+		.setDependencyFlags(dependencyFlags)
+		.setImageMemoryBarriers(imageMemoryBarriers);
+	_handle.pipelineBarrier2(dep);
 }
 
 // 视口/裁剪命令

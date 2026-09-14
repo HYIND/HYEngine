@@ -5,6 +5,19 @@
 
 using namespace VKWrapper;
 
+uint64_t VKWrapper::BaseVKImage::MakeKey(uint32_t mipLevel, uint32_t arrayLayer) const {
+	return (static_cast<uint32_t>(mipLevel) << 32) | 0;
+}
+
+VKWrapper::BaseVKImage::SubresourceState& VKWrapper::BaseVKImage::GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer) const {
+	uint64_t key = MakeKey(mipLevel, 0);
+	auto it = _subresourceStates.find(key);
+	if (it == _subresourceStates.end()) {
+		it = _subresourceStates.emplace(key, SubresourceState{}).first;
+	}
+	return it->second;
+}
+
 bool BaseVKImage::IsColorFormat(vk::Format format)
 {
 	switch (format)
@@ -305,7 +318,7 @@ vk::ImageAspectFlags BaseVKImage::GetAspectMask(vk::Format format)
 
 vk::Image BaseVKImage::GetHandle() const { return m_image; }
 
-vk::ImageLayout BaseVKImage::GetCurrentLayout(uint32_t level) const { return GetState(level).layout; }
+vk::ImageLayout BaseVKImage::GetCurrentLayout(uint32_t level) const { return GetSubresourceState(level).layout; }
 
 uint32_t BaseVKImage::GetMipLevels() const { return m_mipLevels; }
 
@@ -329,7 +342,7 @@ void BaseVKImage::TransitionLayout(
 
 	for (uint32_t level = baseMipLevel; level < std::min(m_mipLevels, baseMipLevel + levelCount); ++level)
 	{
-		auto& state = GetState(level);
+		auto& state = GetSubresourceState(level);
 
 		if (!force && state.layout == newLayout && state.accessMask == newAccessMask)
 			continue;
@@ -351,7 +364,7 @@ void BaseVKImage::TransitionLayout(
 		barrier.setDstAccessMask(newAccessMask);
 		barrier.setSubresourceRange(subresourceRange);
 
-		cmd->pipelineBarrier(srcStageMask, dstStageMask, vk::DependencyFlagBits::eByRegion, {}, {}, barrier);
+		cmd->pipelineBarrier(srcStageMask, dstStageMask, barrier, vk::DependencyFlagBits::eByRegion);
 
 		state.layout = newLayout;
 		state.accessMask = newAccessMask;
@@ -484,7 +497,7 @@ bool BaseVKImage::GenerateMipmaps(
 				.setLayerCount(1)
 			);
 
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion, {}, {}, srcBarrier);
+		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, srcBarrier, vk::DependencyFlagBits::eByRegion);
 
 		// ---- 计算当前 Mip 的尺寸 ----
 		mipWidth = std::max(1, mipWidth / 2);
@@ -541,7 +554,7 @@ bool BaseVKImage::GenerateMipmaps(
 					.setLayerCount(1)
 				);
 
-			cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion, {}, {}, dstBarrier);
+			cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, dstBarrier, vk::DependencyFlagBits::eByRegion);
 		}
 	}
 
@@ -564,7 +577,7 @@ bool BaseVKImage::GenerateMipmaps(
 				.setLayerCount(1)
 			);
 
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion, {}, {}, finalBarrier0);
+		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, finalBarrier0, vk::DependencyFlagBits::eByRegion);
 	}
 
 	return true;

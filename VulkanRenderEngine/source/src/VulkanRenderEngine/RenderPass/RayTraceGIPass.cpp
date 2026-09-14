@@ -252,13 +252,13 @@ bool RayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
 		return false;
 
 	RenderHelp::SetupLightingData(
+		cmd,
 		rayTraceShader,
 		state.lights.dirLightInfos,
 		state.lights.pointLightInfos,
 		state.lights.spotLightInfos,
 		state.lights.shadowAtlas
 	);
-
 
 	rayTraceShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	rayTraceShader.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());

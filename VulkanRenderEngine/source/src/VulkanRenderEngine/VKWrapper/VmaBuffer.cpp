@@ -6,6 +6,22 @@
 
 using namespace VKWrapper;
 
+class RestireBuffer :public IVKResource
+{
+public:
+	RestireBuffer(VmaAllocator allocator, vk::Buffer buffer, VmaAllocation allocation)
+		:m_allocator(allocator), m_buffer(buffer), m_allocation(allocation)
+	{}
+	virtual void Destroy() {
+		vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
+	}
+
+public:
+	VmaAllocator m_allocator = VK_NULL_HANDLE;
+	vk::Buffer m_buffer = VK_NULL_HANDLE;
+	VmaAllocation m_allocation = VK_NULL_HANDLE;
+};
+
 VKWrapper::VmaBuffer::VmaBuffer(VKCore::VulkanDevice* vulkanDevice, uint64_t size, Usage usage, bool cpuAccess) {
 	Create(vulkanDevice, size, usage, cpuAccess);
 }
@@ -14,7 +30,9 @@ VmaBuffer::VmaBuffer(VKCore::VulkanDevice* vulkanDevice, const vk::BufferCreateI
 	Create(vulkanDevice, bufferInfo, allocInfo);
 }
 
-VmaBuffer::~VmaBuffer() { Destroy(); }
+VmaBuffer::~VmaBuffer() {
+	Destroy();
+}
 
 
 // 移动语义
@@ -84,7 +102,7 @@ bool VmaBuffer::Create(VKCore::VulkanDevice* vulkanDevice, uint64_t size, Usage 
 
 void VmaBuffer::Destroy() {
 	if (m_allocator && m_buffer && m_allocation) {
-		vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
+		VKCONTEXT->Retire(new RestireBuffer(m_allocator, m_buffer, m_allocation));
 	}
 	m_allocator = VK_NULL_HANDLE;
 	m_buffer = VK_NULL_HANDLE;
@@ -127,7 +145,23 @@ bool VmaBuffer::Update(const void* data, size_t size, size_t offset)
 
 	if (IsMappable())
 		return UpdateMappable(data, size, offset); 	// 直接 CPU 写入
-	return UpdateStagingBuffer(data, size, offset);
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	bool result = UpdateStagingBuffer(cmd, data, size, offset);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	return result;
+}
+
+bool VmaBuffer::UpdateAsync(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
+{
+	if (!cmd) return false;
+	if (size == 0 || data == nullptr) return true;
+	if (offset + size > m_size) return false;
+
+	if (IsMappable())
+		return UpdateMappable(data, size, offset); 	// 直接 CPU 写入
+	return UpdateStagingBuffer(cmd, data, size, offset);
 }
 
 bool VmaBuffer::Readback(void* outData, size_t size, size_t offset)
@@ -141,7 +175,28 @@ bool VmaBuffer::Readback(void* outData, size_t size, size_t offset)
 	}
 
 	// Buffer 不可映射（DEVICE_LOCAL）, 需要 Staging Buffer 中转
-	return ReadStagingBuffer(outData, size, offset);
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	bool result = ReadStagingBuffer(cmd, outData, size, offset);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	return result;
+}
+
+bool VmaBuffer::Readback(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
+{
+	if (!cmd) return false;
+	if (outData == nullptr || size == 0) return true;
+	if (offset + size > m_size) return false;
+
+	// Buffer 可映射（HOST_VISIBLE）, 直接 CPU 读取
+	if (IsMappable()) {
+		if (cmd->IsRecording())
+			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		return ReadMappable(outData, size, offset);
+	}
+
+	// Buffer 不可映射（DEVICE_LOCAL）, 需要 Staging Buffer 中转
+	return ReadStagingBuffer(cmd, outData, size, offset);
 }
 
 bool VmaBuffer::IsHostVisible() const
@@ -213,7 +268,7 @@ bool VmaBuffer::UpdateMappable(const void* data, size_t size, size_t offset)
 	return true;
 }
 
-bool VmaBuffer::UpdateStagingBuffer(const void* data, size_t size, size_t offset)
+bool VmaBuffer::UpdateStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
 {
 	// 创建临时 Staging Buffer
 	VkBuffer stagingBuffer;
@@ -263,14 +318,10 @@ bool VmaBuffer::UpdateStagingBuffer(const void* data, size_t size, size_t offset
 		.setDstOffset(offset)
 		.setSize(size);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	cmd->Begin();
 	cmd->copyBuffer(stagingBuffer, m_buffer, region);
-	cmd->End();
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	// 销毁 Staging Buffer
-	vmaDestroyBuffer(m_allocator, stagingBuffer, stagingAllocation);
+	VKCONTEXT->Retire(new RestireBuffer(m_allocator, stagingBuffer, stagingAllocation));
 
 	return true;
 }
@@ -299,7 +350,7 @@ bool VmaBuffer::ReadMappable(void* outData, size_t size, size_t offset)
 	return true;
 }
 
-bool VmaBuffer::ReadStagingBuffer(void* outData, size_t size, size_t offset)
+bool VmaBuffer::ReadStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
 {
 
 	// 创建 Staging Buffer（CPU 可读）
@@ -324,10 +375,7 @@ bool VmaBuffer::ReadStagingBuffer(void* outData, size_t size, size_t offset)
 	region.dstOffset = 0;
 	region.size = size;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	cmd->Begin();
 	cmd->copyBuffer(m_buffer, stagingBuffer, region);
-	cmd->End();
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	void* mapped;
@@ -354,7 +402,7 @@ bool VmaBuffer::ReadStagingBuffer(void* outData, size_t size, size_t offset)
 	vmaUnmapMemory(m_allocator, stagingAllocation);
 
 	// 销毁 Staging Buffer
-	vmaDestroyBuffer(m_allocator, stagingBuffer, stagingAllocation);
+	VKCONTEXT->Retire(new RestireBuffer(m_allocator, stagingBuffer, stagingAllocation));
 
 	return true;
 }
@@ -369,8 +417,22 @@ bool VmaBuffer::CopyBuffer(VmaBuffer& src, VmaBuffer& dst, size_t size, size_t s
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 	if (!cmd) return false;
+	bool result = CopyBufferAsync(cmd, src, dst, size, srcOffset, dstOffset);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
-	cmd->Begin();
+	return result;
+}
+
+bool VKWrapper::VmaBuffer::CopyBufferAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset, size_t dstOffset)
+{
+	if (srcOffset + size > src.GetSize() || dstOffset + size > dst.GetSize())
+		return false;
+
+	if (&src == &dst && srcOffset == dstOffset)
+		return true;
+
+	if (!cmd) return false;
 
 	if (&src != &dst)
 	{
@@ -391,24 +453,19 @@ bool VmaBuffer::CopyBuffer(VmaBuffer& src, VmaBuffer& dst, size_t size, size_t s
 
 		cmd->copyBuffer(src, tempBuffer, copyRegion1);
 
-		// 确保第一次拷贝完成后再开始第二次
-		vk::BufferMemoryBarrier barrier;
-		barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-			.setDstAccessMask(vk::AccessFlagBits::eTransferRead)
-			.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-			.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-			.setBuffer(tempBuffer.GetHandle())  // 临时缓冲区
-			.setOffset(0)
-			.setSize(size);
+		{
+			// 确保第一次拷贝完成后再开始第二次
+			vk::BufferMemoryBarrier barrier;
+			barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+				.setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+				.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setBuffer(tempBuffer.GetHandle())  // 临时缓冲区
+				.setOffset(0)
+				.setSize(size);
 
-		cmd->pipelineBarrier(
-			vk::PipelineStageFlagBits::eTransfer,
-			vk::PipelineStageFlagBits::eTransfer,
-			vk::DependencyFlagBits::eByRegion,
-			{},
-			barrier,                           // 缓冲区屏障
-			{}
-		);
+			cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
+		}
 
 		vk::BufferCopy copyRegion2;
 		copyRegion1.setSrcOffset(0)
@@ -417,10 +474,19 @@ bool VmaBuffer::CopyBuffer(VmaBuffer& src, VmaBuffer& dst, size_t size, size_t s
 
 		// 临时缓冲区 → 原缓冲区
 		cmd->copyBuffer(tempBuffer, dst, copyRegion2);
-	}
 
-	cmd->End();
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		//{
+		//	vk::BufferMemoryBarrier barrier;
+		//	barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+		//		.setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+		//		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		//		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		//		.setBuffer(dst.GetHandle())  // 临时缓冲区
+		//		.setOffset(0)
+		//		.setSize(size);
+		//	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
+		//}
+	}
 
 	return true;
 }

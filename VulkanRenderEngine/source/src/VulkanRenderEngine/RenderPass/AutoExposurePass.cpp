@@ -59,12 +59,11 @@ void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const R
 
 	_shader.Bind(cmd);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
-
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	_paramsSSBO->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
 
 	std::vector<uint32_t> bins;
 	bins.resize(256, 0);
-	if (!_paramsSSBO->GetBuffer()->Readback(bins.data(), bins.size() * sizeof(uint32_t), sizeof(glm::ivec2)))
+	if (!_paramsSSBO->GetBuffer()->Readback(cmd, bins.data(), bins.size() * sizeof(uint32_t), sizeof(glm::ivec2)))
 		return;
 
 	static std::once_flag onceFlag;

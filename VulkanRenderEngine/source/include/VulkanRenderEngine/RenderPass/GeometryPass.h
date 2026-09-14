@@ -18,10 +18,8 @@ public:
 	~GeometryPass();
 
 	virtual void EarlyExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);;
-
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
-
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
@@ -36,8 +34,8 @@ private:
 		std::shared_ptr<Texture2D>& tempDepthStencilMap
 	);
 
-	void SetupIndirecDrawMaterial(RenderState& state);
 	bool SetupStaticBufferData(
+		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		std::shared_ptr<GraphicsPipeline>& shader,
 		std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
 		VKRenderObjectData::RenderIndex& renderIndex,

@@ -11,3 +11,4 @@
 #include "SharedImage.h"
 #include "VKImageView.h"
 #include "VKSampler.h"
+#include "VKResource.h"

@@ -31,6 +31,9 @@ LightingPass::LightingPass(const std::string& computeShaderPath)
 
 LightingPass::~LightingPass() {}
 
+void LightingPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{}
+
 void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
 {
 	auto gPosition = ctx.GetInput(0);
@@ -54,7 +57,10 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	_shader.SetUniformTexture(ssao, 6);
 	_shader.SetUniformTexture(atlasShadowMap, 7);
 
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
 	RenderHelp::SetupLightingData(
+		cmd,
 		_shader,
 		state.lights.dirLightInfos,
 		state.lights.pointLightInfos,
@@ -62,14 +68,8 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 		state.lights.shadowAtlas
 	);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
 	_shader.Bind(cmd);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-}
-
-void LightingPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
 }

@@ -82,8 +82,7 @@ GeometryPass::GeometryPass(
 }
 
 GeometryPass::~GeometryPass()
-{
-}
+{}
 
 DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 	RenderState& state,
@@ -146,6 +145,9 @@ void GeometryPass::EarlyExecute(RenderGraph::FrameDataRegistry& registry, Render
 	}
 }
 
+void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{}
+
 void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
 {
 
@@ -157,72 +159,26 @@ void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	auto gDepthStencilMap = ctx.GetOutput(5);
 	auto gEmission = ctx.GetOutput(6);
 
-	SetupIndirecDrawMaterial(state);
-
 	DynamicRenderInfo renderInfo = GenerateDynamicRenderInfo(
 		state,
 		gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gEmission, gDepthStencilMap
 	);
 	DynamicViewport viewPort(state.framebuffer.width, state.framebuffer.height);
 
-	auto cmd1 = VKCONTEXT->GetCommandBuffer();
-	auto cmd2 = VKCONTEXT->GetCommandBuffer();
+	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	auto fence1 = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
-	auto fence2 = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
+	RenderSceneGeometryPassStatic(cmd, state, renderInfo, viewPort);
+	RenderSceneGeometryPassSkinned(cmd, state, renderInfo, viewPort);
 
-	RenderSceneGeometryPassStatic(cmd1, state, renderInfo, viewPort);
-	RenderSceneGeometryPassSkinned(cmd2, state, renderInfo, viewPort);
-
-	VKCONTEXT->SubmitCommandImmediately(cmd1, {}, fence1);
-
-	fence1->Wait();
-}
-
-void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }
 
 void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
-}
-
-void GeometryPass::SetupIndirecDrawMaterial(RenderState& state)
-{
-	auto indirectManager = IndirectDrawManager::Instance();
-
-	{
-		auto items = state.objects.sceneRenderData.opaqueMesh;
-		for (auto& item : items)
-		{
-			auto& material = item.meshinfo.material;
-			if (material->GetNeedUpdateIndirectDraw())
-			{
-				indirectManager->setupMaterial(*material);
-				material->SetNeedUpdateIndirectDraw(false);
-			}
-		}
-	}
-
-	{
-		auto items = state.objects.sceneRenderData.opaqueSkinnedModel;
-		for (auto& item : items)
-		{
-			for (auto& info : item.models)
-			{
-				auto& material = info.material;
-				if (material->GetNeedUpdateIndirectDraw())
-				{
-					indirectManager->setupMaterial(*material);
-					material->SetNeedUpdateIndirectDraw(false);
-				}
-			}
-		}
-	}
-
-}
+{}
 
 bool GeometryPass::SetupStaticBufferData(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<GraphicsPipeline>& shader,
 	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
 	VKRenderObjectData::RenderIndex& renderIndex,
@@ -230,6 +186,8 @@ bool GeometryPass::SetupStaticBufferData(
 	std::vector<IndirectDrawCommand>& twoSideCommands
 )
 {
+	if (!cmd)
+		return false;
 
 	auto indirectManager = IndirectDrawManager::Instance();
 	auto binlessManager = BindlessTextureManager::Instance();
@@ -296,7 +254,8 @@ bool GeometryPass::SetupStaticBufferData(
 		startInedx += indices.size();
 	}
 
-	renderdata_ssbo->WriteData(renderData.data(), renderData.size() * sizeof(RenderData));
+	renderdata_ssbo->WriteDataAsync(cmd, renderData.data(), renderData.size() * sizeof(RenderData));
+	renderdata_ssbo->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 
 	return true;
 }
@@ -310,10 +269,9 @@ void GeometryPass::RenderSceneGeometryPassStatic(std::shared_ptr<VKWrapper::VKCo
 	if (opaqueMeshes.empty() && renderIndex.oneSideIndex.empty() && renderIndex.twoSideIndex.empty())
 		return;
 
-
 	std::vector<IndirectDrawCommand> oneSideCommands;
 	std::vector<IndirectDrawCommand> twoSideCommands;
-	if (!SetupStaticBufferData(shader, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
+	if (!SetupStaticBufferData(cmd, shader, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
 		return;
 
 	shader->SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
@@ -328,7 +286,8 @@ void GeometryPass::RenderSceneGeometryPassStatic(std::shared_ptr<VKWrapper::VKCo
 
 	if (!oneSideCommands.empty())
 	{
-		_oneSideCommandBuffer->WriteData(oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
+		_oneSideCommandBuffer->WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
+		_oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eBack);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
@@ -337,7 +296,8 @@ void GeometryPass::RenderSceneGeometryPassStatic(std::shared_ptr<VKWrapper::VKCo
 
 	if (!twoSideCommands.empty())
 	{
-		_twoSideCommandBuffer->WriteData(twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
+		_twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
+		_twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eNone);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());

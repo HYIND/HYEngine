@@ -61,6 +61,8 @@ std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::Vul
 		vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+		//vulkanDevice->AddDeviceExtension(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
 	}
 
 	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
@@ -712,6 +714,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 				return;
 
 			auto tempColorBuffer = ctx.GetTemp(0);
+
+			auto cmd = VKCONTEXT->GetCommandBuffer();
+
 			if (!Texture2D::CopyTexture(sceneColorBuffer, tempColorBuffer))
 				return;
 
@@ -719,8 +724,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 			uint32_t width = sceneColorBuffer->GetWidth();
 			uint32_t height = sceneColorBuffer->GetHeight();
-
-			auto cmd = VKCONTEXT->GetCommandBuffer();
 
 			_shader->SetStorageImage(sceneColorBuffer, 0);
 			_shader->SetUniformTextureArray(all_tex, 2);
@@ -778,6 +781,8 @@ void VulkanRenderer::InitFirstPersonRenderGraph()
 
 void VulkanRenderer::Draw_Internal(RenderState& state)
 {
+	VKCONTEXT->ProcessRetire();
+
 	SetupRenderState(state);
 	SetupIndirectDrawData(state);
 
@@ -837,12 +842,7 @@ void VulkanRenderer::DrawPresent(RenderState& state)
 				.setBaseArrayLayer(0)
 				.setLayerCount(1));
 
-		cmd->pipelineBarrier(
-			vk::PipelineStageFlagBits::eTopOfPipe,
-			vk::PipelineStageFlagBits::eColorAttachmentOutput,
-			vk::DependencyFlagBits::eByRegion,
-			{}, {}, barrier
-		);
+		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput, barrier, vk::DependencyFlagBits::eByRegion);
 		cmd->End();
 		CmdSyncSeamphore data{ .waitSemaphores = {{imageAcquiredSemaphore}} };
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd, data);
@@ -857,7 +857,7 @@ void VulkanRenderer::DrawPresent(RenderState& state)
 
 		_renderTarget.finalColorBuffer->TransitionLayout(cmd, nullptr);
 
-		Texture2D::BlitImage(cmd, *_renderTarget.finalColorBuffer, _vulkanSwapchain->SwapchainImage()[imageIndex], scr_width, scr_height);
+		Texture2D::BlitImageAsync(cmd, *_renderTarget.finalColorBuffer, _vulkanSwapchain->SwapchainImage()[imageIndex], scr_width, scr_height);
 
 		vk::ImageMemoryBarrier presentBarrier;
 		presentBarrier
@@ -871,12 +871,7 @@ void VulkanRenderer::DrawPresent(RenderState& state)
 				.setBaseArrayLayer(0)
 				.setLayerCount(1));
 
-		cmd->pipelineBarrier(
-			vk::PipelineStageFlagBits::eColorAttachmentOutput,
-			vk::PipelineStageFlagBits::eBottomOfPipe,
-			vk::DependencyFlagBits::eByRegion,
-			{}, {}, presentBarrier
-		);
+		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eBottomOfPipe, presentBarrier, vk::DependencyFlagBits::eByRegion);
 
 		cmd->End();
 		CmdSyncSeamphore data{ .signalSemaphores = {renderFinishedSemaphore} };
