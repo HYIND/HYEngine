@@ -78,37 +78,11 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 	_shader.SetStorageBlock(_transformAndColors_ssbo, 0);
 }
 
-void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
-{
-
-	auto targetColorBuffer = ctx.GetExternal(0);
-	auto targetDepthBuffer = ctx.GetExternal(1);
-
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	targetColorBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	targetDepthBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-
-	DynamicRenderInfo info;
-	info.AddColorAttachment(targetColorBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
-		.AddDepthStencilAttachment(targetDepthBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
-		.SetRenderArea(state.framebuffer.width, state.framebuffer.height);
-
-	DynamicViewport viewport(state.framebuffer.width, state.framebuffer.height);
-
-	cmd->beginRendering(info);
-	cmd->setDynamicViewport(viewport);
-
-	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_shader.Bind(cmd);
-
-	cmd->bindVertexBuffers(_vertexBuffer);
-	cmd->bindIndexBuffer(_indexBuffer);
-	cmd->drawIndexedIndirect(_indirectBuffer, _commands.size());
-
-	cmd->endRendering();
-
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+bool LightDrawPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state) {
+	return
+		state.option.flags.lightDrawOn
+		&&
+		(!state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty());
 }
 
 void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -184,13 +158,46 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		addCubeCommand(index++);
 	}
 
-	_indirectBuffer->WriteData(_commands.data(), _commands.size() * sizeof(IndirectDrawCommand));
-	_transformAndColors_ssbo->WriteData(transAndColors.data(), transAndColors.size() * sizeof(TransformAndColor));
+	if (!_commands.empty() || !transAndColors.empty())
+	{
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		_indirectBuffer->WriteDataAsync(cmd, _commands.data(), _commands.size() * sizeof(IndirectDrawCommand));
+		_transformAndColors_ssbo->WriteDataAsync(cmd, transAndColors.data(), transAndColors.size() * sizeof(TransformAndColor));
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	}
 }
 
-bool LightDrawPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state) {
-	return
-		state.option.flags.lightDrawOn
-		&&
-		(!state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty());
+void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+{
+	if (_commands.empty())
+		return;
+
+	auto targetColorBuffer = ctx.GetExternal(0);
+	auto targetDepthBuffer = ctx.GetExternal(1);
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	targetColorBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
+	targetDepthBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
+
+	DynamicRenderInfo info;
+	info.AddColorAttachment(targetColorBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
+		.AddDepthStencilAttachment(targetDepthBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
+		.SetRenderArea(state.framebuffer.width, state.framebuffer.height);
+
+	DynamicViewport viewport(state.framebuffer.width, state.framebuffer.height);
+
+	cmd->beginRendering(info);
+	cmd->setDynamicViewport(viewport);
+
+	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_shader.Bind(cmd);
+
+	cmd->bindVertexBuffers(_vertexBuffer);
+	cmd->bindIndexBuffer(_indexBuffer);
+	cmd->drawIndexedIndirect(_indirectBuffer, _commands.size());
+
+	cmd->endRendering();
+
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }

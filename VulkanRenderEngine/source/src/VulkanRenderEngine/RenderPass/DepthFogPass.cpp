@@ -71,12 +71,13 @@ void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 		)
 		return;
 
-	Texture2D::CopyTexture(sceneColorBuffer, tempColor);
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColor);
 
 	uint32_t width = sceneColorBuffer->GetWidth();
 	uint32_t height = sceneColorBuffer->GetHeight();
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	_shader.SetStorageImage(sceneColorBuffer, 1);

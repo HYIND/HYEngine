@@ -668,80 +668,83 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.After(copyDepthPass, lightingPass)
 		.Before(opaqueFence);
 
-	constexpr uint32_t work_size_x = 16;
-	constexpr uint32_t work_size_y = 16;
-	auto makeCombinShader = [&](const std::string& path) -> std::shared_ptr<ComputePipeline>
-		{
-			auto shader = std::make_shared<ComputePipeline>();
+	{
 
-			ComputePipelineConfig config;
-			config.AddDefineMacro("COMBIN_MODE", 1);
-			config.AddDefineMacro("SkipBrightOutput", "");
-			config.AddDefineMacro("work_size_x", work_size_x);
-			config.AddDefineMacro("work_size_y", work_size_y);
-			config.computePath = "shader/postprocess/combin.comp";
+		constexpr uint32_t work_size_x = 16;
+		constexpr uint32_t work_size_y = 16;
+		auto makeCombinShader = [&](const std::string& path) -> std::shared_ptr<ComputePipeline>
+			{
+				auto shader = std::make_shared<ComputePipeline>();
 
-			config
-				.AddStorageImage(0)
-				.AddStorageImage(1)
-				.AddUnifromVariableTextureArray(2, 20)
-				.AddPushConstant(sizeof(uint32_t));
+				ComputePipelineConfig config;
+				config.AddDefineMacro("COMBIN_MODE", 1);
+				config.AddDefineMacro("SkipBrightOutput", "");
+				config.AddDefineMacro("work_size_x", work_size_x);
+				config.AddDefineMacro("work_size_y", work_size_y);
+				config.computePath = "shader/postprocess/combin.comp";
 
-			if (config.Validate())
-				shader->Create(config);
+				config
+					.AddStorageImage(0)
+					.AddStorageImage(1)
+					.AddUnifromVariableTextureArray(2, 20)
+					.AddPushConstant(sizeof(uint32_t));
 
-			return shader;
-		};
+				if (config.Validate())
+					shader->Create(config);
 
-	combinIndirectLightingPass->SetRenderPass(MakeLambdaPass(
-		[_shader = makeCombinShader("shader/postprocess/combin.comp"), work_size_x = work_size_x, work_size_y = work_size_y]
-		(const RenderGraph::PassContext& ctx, RenderState& state) mutable -> void
-		{
-			if (!_shader)
-				return;
+				return shader;
+			};
 
-			std::vector<std::shared_ptr<Texture2D>> all_tex;
-			for (auto& textures : { ctx.inputTextures, ctx.optionInputTextures }) {
-				for (auto& tex : textures) {
-					if (tex) all_tex.push_back(tex);
+		combinIndirectLightingPass->SetRenderPass(MakeLambdaPass(
+			[_shader = makeCombinShader("shader/postprocess/combin.comp"), work_size_x = work_size_x, work_size_y = work_size_y]
+			(const RenderGraph::PassContext& ctx, RenderState& state) mutable -> void
+			{
+				if (!_shader)
+					return;
+
+				std::vector<std::shared_ptr<Texture2D>> all_tex;
+				for (auto& textures : { ctx.inputTextures, ctx.optionInputTextures }) {
+					for (auto& tex : textures) {
+						if (tex) all_tex.push_back(tex);
+					}
 				}
-			}
-			if (all_tex.empty())
-				return;
+				if (all_tex.empty())
+					return;
 
-			auto sceneColorBuffer = ctx.GetExternal(0);
-			if (!sceneColorBuffer)
-				return;
+				auto sceneColorBuffer = ctx.GetExternal(0);
+				if (!sceneColorBuffer)
+					return;
 
-			auto tempColorBuffer = ctx.GetTemp(0);
+				auto tempColorBuffer = ctx.GetTemp(0);
 
-			auto cmd = VKCONTEXT->GetCommandBuffer();
+				auto cmd = VKCONTEXT->GetCommandBuffer();
 
-			if (!Texture2D::CopyTexture(sceneColorBuffer, tempColorBuffer))
-				return;
+				if (!Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColorBuffer))
+					return;
 
-			all_tex.push_back(tempColorBuffer);
+				all_tex.push_back(tempColorBuffer);
 
-			uint32_t width = sceneColorBuffer->GetWidth();
-			uint32_t height = sceneColorBuffer->GetHeight();
+				uint32_t width = sceneColorBuffer->GetWidth();
+				uint32_t height = sceneColorBuffer->GetHeight();
 
-			_shader->SetStorageImage(sceneColorBuffer, 0);
-			_shader->SetUniformTextureArray(all_tex, 2);
+				_shader->SetStorageImage(sceneColorBuffer, 0);
+				_shader->SetUniformTextureArray(all_tex, 2);
 
-			uint32_t count = (uint32_t)all_tex.size();
+				uint32_t count = (uint32_t)all_tex.size();
 
-			_shader->Bind(cmd);
-			_shader->SetPushConstants(cmd, &count, sizeof(count));
+				_shader->Bind(cmd);
+				_shader->SetPushConstants(cmd, &count, sizeof(count));
 
-			cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
+				cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
-			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-		}))
-		.InputOption(rayTraceReflect_Output, rayTraceGI_Output, ssr_Output, ssgi_Output)
-		.External(Ext_RenderTargetColorBuffer)
-		.Temp(resbuilder.CreateTexture(_renderTarget.sceneColorBuffer, "combinIndirectLightingPass_temp1"))
-		.After(rayTraceReflectPass, ssrPass, ssgiPass)
-		.Before(opaqueFence);
+				VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+			}))
+			.InputOption(rayTraceReflect_Output, rayTraceGI_Output, ssr_Output, ssgi_Output)
+			.External(Ext_RenderTargetColorBuffer)
+			.Temp(resbuilder.CreateTexture(_renderTarget.sceneColorBuffer, "combinIndirectLightingPass_temp1"))
+			.After(rayTraceReflectPass, ssrPass, ssgiPass)
+			.Before(opaqueFence);
+	}
 
 	lightDrawPass->SetRenderPass(std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs"))
 		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
