@@ -93,24 +93,18 @@ vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buff
 
 	buffer = std::make_shared<VKCommandBuffer>();
 	buffer->_handle = handle;
-	buffer->_pool = this;
+	buffer->_pool = shared_from_this();
 
 	return vk::Result::eSuccess;
 }
 
-void VKCommandPool::FreeBuffers(VKCommandBuffer* buffer) {
-	if (!buffer)
-		return;
-
-	vk::CommandBuffer bufferhandle = buffer->GetHandle();
-	if (bufferhandle == VK_NULL_HANDLE)
+void VKCommandPool::FreeBuffers(vk::CommandBuffer handle) {
+	if (handle == VK_NULL_HANDLE)
 		return;
 
 	LockGuard guard(_commandPoolMutex);
-	if (buffer->IsRecording())
-		buffer->Reset();
-	if (!_cmdResPool.RecycleHandle((VkCommandBuffer)bufferhandle))
-		_device->GetHandle().freeCommandBuffers(_handle, 1, &bufferhandle);
+	if (!_cmdResPool.RecycleHandle((VkCommandBuffer)handle))
+		_device->GetHandle().freeCommandBuffers(_handle, 1, &handle);
 }
 
 void VKCommandPool::Trim(vk::CommandPoolTrimFlags flags) {

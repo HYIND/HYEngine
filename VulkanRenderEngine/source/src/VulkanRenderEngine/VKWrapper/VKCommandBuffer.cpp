@@ -8,6 +8,22 @@
 
 using namespace VKWrapper;
 
+class RestireCommandBuffer :public IVKResource
+{
+public:
+	RestireCommandBuffer(std::weak_ptr<VKCommandPool>&& pool, vk::CommandBuffer handle)
+		:_pool(pool), _handle(handle)
+	{}
+	virtual void Destroy() {
+		if (auto pool = _pool.lock())
+			pool->FreeBuffers(_handle);
+	}
+
+public:
+	std::weak_ptr<VKCommandPool> _pool;
+	vk::CommandBuffer _handle = VK_NULL_HANDLE;
+};
+
 VKCommandBuffer::VKCommandBuffer(VKCommandPool* pool)
 {}
 
@@ -18,10 +34,14 @@ VKWrapper::VKCommandBuffer::~VKCommandBuffer()
 
 void VKCommandBuffer::Release()
 {
-	if (_handle && _pool)
-		_pool->FreeBuffers(this);
+	if (auto pool = _pool.lock(); pool && _handle)
+	{
+		if (IsRecording())
+			Reset();
+		VKCONTEXT->Retire(new RestireCommandBuffer(std::move(_pool), _handle));
+	}
 
-	_pool = nullptr;
+	_pool.reset();
 	_handle = VK_NULL_HANDLE;
 }
 

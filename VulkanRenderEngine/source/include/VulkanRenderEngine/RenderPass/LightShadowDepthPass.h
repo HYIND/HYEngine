@@ -30,8 +30,8 @@ public:
 private:
 	void CalculateShadowAtlas(RenderState& state);
 
-	void processDirAndSpotLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo);
-	void processPointLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processDirAndSpotLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processPointLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
 
 	void RenderSceneLightShadowPassSceneInstance(
 		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,

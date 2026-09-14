@@ -8,7 +8,7 @@ namespace VKWrapper
 {
 	class VKCommandBuffer;
 
-	class VKCommandPool
+	class VKCommandPool :public std::enable_shared_from_this<VKCommandPool>
 	{
 		class CmdResPool
 		{
@@ -40,7 +40,7 @@ namespace VKWrapper
 		SpinLock& GetCommandPoolMutex();
 
 		vk::Result AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer, vk::CommandBufferLevel level = vk::CommandBufferLevel::ePrimary);
-		void FreeBuffers(VKCommandBuffer* buffer);
+		void FreeBuffers(vk::CommandBuffer handle);
 		void Trim(vk::CommandPoolTrimFlags flags = {});
 
 	private:

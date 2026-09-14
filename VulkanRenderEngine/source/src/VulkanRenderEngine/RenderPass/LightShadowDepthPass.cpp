@@ -222,13 +222,13 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 		.SetRenderArea(shadowAtlas->GetWidth(), shadowAtlas->GetHeight())
 		.AddDepthAttachment(shadowAtlas->GetImageView());
 
-	std::shared_ptr<VKWrapper::VKCommandBuffer> cmd = VKCONTEXT->GetCommandBuffer();
+	auto semaphore = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
+	uint64_t cmdcount = 0;
+	processDirAndSpotLight(semaphore, cmdcount, state, renderInfo);
+	processPointLight(semaphore, cmdcount, state, renderInfo);
 
-	processDirAndSpotLight(cmd, state, renderInfo);
-	processPointLight(cmd, state, renderInfo);
-
-	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	if (cmdcount > 0)
+		semaphore->Wait(cmdcount);
 }
 
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -317,7 +317,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 	_shouldUpdateTexture = true;
 }
 
-void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& dirLightsInfo = state.lights.dirLightInfos;
 	auto& spotLightsInfo = state.lights.spotLightInfos;
@@ -330,6 +330,7 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKC
 	uint32_t count = 0;
 
 	auto render = [&]()->void {
+		auto cmd = VKCONTEXT->GetCommandBuffer();
 		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
 		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 		RenderSceneLightShadowPassSceneInstance(
@@ -347,6 +348,13 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKC
 		count = 0;
 		shadowMatrices.clear();
 		viewPorts.clear();
+		if (cmd->IsRecording())
+		{
+			CmdSyncSeamphore sync;
+			sync.waitSemaphores.push_back({ .semaphore = semaphore, .value = cmdcount++ });
+			sync.signalSemaphores.push_back({ .semaphore = semaphore, .value = cmdcount });
+			VKCONTEXT->SubmitCommandImmediately(cmd, sync);
+		}
 		};
 
 	for (auto& info : dirLightsInfo)
@@ -411,7 +419,7 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKC
 		render();
 }
 
-void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& pointLightsInfo = state.lights.pointLightInfos;
 
@@ -425,6 +433,7 @@ void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKComman
 	uint32_t count = 0;
 
 	auto render = [&]()->void {
+		auto cmd = VKCONTEXT->GetCommandBuffer();
 		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
 		_ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
 		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
@@ -442,7 +451,13 @@ void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKComman
 		);
 		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
 		_ssbo_LightProps->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
-
+		if (cmd->IsRecording())
+		{
+			CmdSyncSeamphore sync;
+			sync.waitSemaphores.push_back({ .semaphore = semaphore, .value = cmdcount++ });
+			sync.signalSemaphores.push_back({ .semaphore = semaphore, .value = cmdcount });
+			VKCONTEXT->SubmitCommandImmediately(cmd, sync);
+		}
 		count = 0;
 		shadowMatrices.clear();
 		viewPorts.clear();
