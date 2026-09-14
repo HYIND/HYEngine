@@ -237,8 +237,8 @@ void VulkanRenderer::InitForWindow(uint32_t width, uint32_t height)
 
 	for (int i = 0; i < imageCount; i++)
 	{
-		_imageAcquiredSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKSemaphore>(_vulkanDevice.get())));
-		_renderFinishedSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKSemaphore>(_vulkanDevice.get())));
+		_imageAcquiredSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
+		_renderFinishedSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
 	}
 
 	InitRenderGraph();
@@ -877,7 +877,7 @@ void VulkanRenderer::DrawPresent(RenderState& state)
 		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eBottomOfPipe, presentBarrier, vk::DependencyFlagBits::eByRegion);
 
 		cmd->End();
-		CmdSyncSeamphore data{ .signalSemaphores = {renderFinishedSemaphore} };
+		CmdSyncSeamphore data{ .signalSemaphores = {SignalSemaphoreData{.semaphore = renderFinishedSemaphore}} };
 		VKCONTEXT->SubmitCommandImmediately(cmd, data, _fence);
 		_vulkanSwapchain->PresentImage(*renderFinishedSemaphore);
 		_fence->WaitAndReset();

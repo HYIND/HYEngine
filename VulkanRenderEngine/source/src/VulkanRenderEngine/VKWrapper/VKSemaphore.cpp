@@ -5,7 +5,6 @@
 
 using namespace VKWrapper;
 
-
 class RestireSemaphore :public IVKResource
 {
 public:
@@ -22,19 +21,32 @@ public:
 };
 
 
-VKSemaphore::VKSemaphore(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo)
+vk::Semaphore VKWrapper::VKSemaphore::GetHandle() const { return _handle; }
+
+bool VKWrapper::VKSemaphore::IsTimeline() const { return _isTimeline; }
+
+void VKWrapper::VKSemaphore::Release()
 {
-	Create(device, createInfo);
+	if (_device && _handle != VK_NULL_HANDLE)
+		VKCONTEXT->Retire(new RestireSemaphore(_device, _handle));
+	_device = nullptr;
+	_handle = VK_NULL_HANDLE;
 }
 
-VKSemaphore::VKSemaphore(VKSemaphore&& other) noexcept {
+VKBinarySemaphore::VKBinarySemaphore(VKCore::VulkanDevice* device)
+{
+	_isTimeline = false;
+	Create(device);
+}
+
+VKBinarySemaphore::VKBinarySemaphore(VKBinarySemaphore&& other) noexcept {
 	_device = other._device;
 	_handle = other._handle;
 	other._device = nullptr;
 	other._handle = nullptr;
 }
 
-VKSemaphore& VKSemaphore::operator=(VKSemaphore&& other) noexcept
+VKBinarySemaphore& VKBinarySemaphore::operator=(VKBinarySemaphore&& other) noexcept
 {
 	if (this == &other)
 		return *this;
@@ -47,25 +59,65 @@ VKSemaphore& VKSemaphore::operator=(VKSemaphore&& other) noexcept
 	return *this;
 }
 
-VKSemaphore::~VKSemaphore() { Release(); }
+VKBinarySemaphore::~VKBinarySemaphore() { Release(); }
 
-vk::Result VKSemaphore::Create(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo) {
+vk::Result VKBinarySemaphore::Create(VKCore::VulkanDevice* device) {
 	Release();
 
+	vk::SemaphoreCreateInfo createInfo;
 	auto [result, handle] = device->GetHandle().createSemaphore(createInfo);
 	if (result != vk::Result::eSuccess)
-		outStream << std::format("[ VKSemaphore ] ERROR\nFailed to create a VKSemaphore!\nError code: {}\n", to_string(result));
+		outStream << std::format("[ VKBinarySemaphore ] ERROR\nFailed to create a VKBinarySemaphore!\nError code: {}\n", to_string(result));
 	else
 		_device = device;
 	_handle = handle;
 	return result;
 }
 
-void VKSemaphore::Release() {
-	if (_device && _handle != VK_NULL_HANDLE)
-		VKCONTEXT->Retire(new RestireSemaphore(_device, _handle));
-	_device = nullptr;
-	_handle = VK_NULL_HANDLE;
+VKTimelineSemaphore::VKTimelineSemaphore(VKCore::VulkanDevice* device, const uint64_t initialValue)
+{
+	_isTimeline = true;
+	Create(device, initialValue);
 }
 
-vk::Semaphore VKWrapper::VKSemaphore::GetHandle() const { return _handle; }
+VKTimelineSemaphore::VKTimelineSemaphore(VKTimelineSemaphore&& other) noexcept {
+	_device = other._device;
+	_handle = other._handle;
+	other._device = nullptr;
+	other._handle = nullptr;
+}
+
+VKTimelineSemaphore& VKTimelineSemaphore::operator=(VKTimelineSemaphore&& other) noexcept
+{
+	if (this == &other)
+		return *this;
+
+	_device = other._device;
+	_handle = other._handle;
+	other._device = nullptr;
+	other._handle = nullptr;
+
+	return *this;
+}
+
+VKTimelineSemaphore::~VKTimelineSemaphore() { Release(); }
+
+vk::Result VKTimelineSemaphore::Create(VKCore::VulkanDevice* device, const uint64_t initialValue) {
+	Release();
+
+	vk::SemaphoreTypeCreateInfo typeInfo;
+	typeInfo
+		.setSemaphoreType(vk::SemaphoreType::eTimeline)
+		.setInitialValue(0);
+
+	vk::SemaphoreCreateInfo createInfo;
+	createInfo.setPNext(&typeInfo);
+
+	auto [result, handle] = device->GetHandle().createSemaphore(createInfo);
+	if (result != vk::Result::eSuccess)
+		outStream << std::format("[ VKTimelineSemaphore ] ERROR\nFailed to create a VKTimelineSemaphore!\nError code: {}\n", to_string(result));
+	else
+		_device = device;
+	_handle = handle;
+	return result;
+}

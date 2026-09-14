@@ -90,7 +90,7 @@ namespace VKWrapper
 		void Need() const;
 
 	private:
-		VKCommandPool* _pool = nullptr;
+		std::weak_ptr<VKCommandPool> _pool;
 		vk::CommandBuffer _handle = VK_NULL_HANDLE;
 		mutable bool _isRecording = false;
 

@@ -11,53 +11,80 @@ static vk::Result SubmitCommandBuffer(
 	SpinLock& queuemutex,
 	const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& commandBuffers,
 	const std::vector<WaitSemaphoreData>& waitSemaphores = {},
-	const std::vector<std::shared_ptr<VKWrapper::VKSemaphore>>& signalSemaphores = {},
+	const std::vector<SignalSemaphoreData>& signalSemaphores = {},
 	const std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr
 )
 {
-
 	std::vector<vk::CommandBuffer> cmdHandles;
 	std::vector<vk::Semaphore> waitHandles;
 	std::vector<vk::PipelineStageFlags> flags;
 	std::vector<vk::Semaphore> signalHandles;
+
+	std::vector<uint64_t> waitValues;
+	std::vector<uint64_t> signalValues;
+
 	auto fenceHandle = signalFence ? signalFence->GetHandle() : VK_NULL_HANDLE;
 
 	for (auto& cmd : commandBuffers)
 		cmdHandles.push_back(cmd->GetHandle());
 
+	bool hasTimeLine = false;
+
 	if (!waitSemaphores.empty())
 	{
-		waitHandles.resize(waitSemaphores.size(), VK_NULL_HANDLE);
-		flags.resize(waitSemaphores.size(), vk::PipelineStageFlagBits::eColorAttachmentOutput);
+		waitHandles.reserve(waitSemaphores.size());
+		flags.reserve(waitSemaphores.size());
+		waitValues.reserve(waitSemaphores.size());
 		for (int i = 0; i < waitSemaphores.size(); i++)
 		{
 			auto& data = waitSemaphores[i];
 			auto& semaphore = data.semaphore;
-			if (semaphore) waitHandles[i] = semaphore->GetHandle();
-			flags[i] = vk::PipelineStageFlags(data.flags);
+			waitHandles.push_back(semaphore ? semaphore->GetHandle() : VK_NULL_HANDLE);
+			waitValues.push_back(data.value);
+			flags.push_back(data.flags);
+
+			if (!hasTimeLine && semaphore->IsTimeline())
+				hasTimeLine = true;
 		}
 	}
 
 	if (!signalSemaphores.empty())
 	{
-		signalHandles.resize(signalSemaphores.size(), VK_NULL_HANDLE);
+		signalHandles.reserve(signalSemaphores.size());
+		signalValues.reserve(signalSemaphores.size());
 		for (int i = 0; i < signalSemaphores.size(); i++)
 		{
-			auto& semaphore = signalSemaphores[i];
-			if (semaphore) signalHandles[i] = semaphore->GetHandle();
+			auto& data = signalSemaphores[i];
+			auto& semaphore = data.semaphore;
+			signalHandles.push_back(semaphore ? semaphore->GetHandle() : VK_NULL_HANDLE);
+			signalValues.push_back(data.value);
+
+			if (!hasTimeLine && semaphore->IsTimeline())
+				hasTimeLine = true;
 		}
 	}
 
+
 	vk::SubmitInfo submitInfo;
-	submitInfo.setWaitSemaphores(waitHandles)
+	submitInfo
+		.setWaitSemaphores(waitHandles)
 		.setWaitDstStageMask(flags)
 		.setCommandBuffers(cmdHandles)
 		.setSignalSemaphores(signalHandles);
 
+	vk::TimelineSemaphoreSubmitInfo timelineInfo;
+	if (hasTimeLine)
+	{
+		timelineInfo
+			.setWaitSemaphoreValues(waitValues)
+			.setSignalSemaphoreValues(signalValues);
+		submitInfo.setPNext(&timelineInfo);
+	}
+
 	LockGuard guard(queuemutex);
 	auto result = queue.submit(submitInfo, fenceHandle);
 	if (result != vk::Result::eSuccess)
-		outStream << std::format("[ graphicsBase ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
+		outStream << std::format("[ SubmitCommandBuffer ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
 	return result;
 }
 
@@ -278,14 +305,16 @@ void VKContext::ProcessPendingCommandAndWait()
 		auto& waitSemaphores = submitData.syncSeamphore.waitSemaphores;
 		auto& signalSemaphores = submitData.syncSeamphore.signalSemaphores;
 
-		WaitSemaphoreData data{ .semaphore = std::make_shared<VKWrapper::VKSemaphore>(device.get()) };
-		signalSemaphores.push_back(data.semaphore);
+		auto sem = std::make_shared<VKWrapper::VKBinarySemaphore>(device.get());
+		WaitSemaphoreData wait{ .semaphore = sem };
+		SignalSemaphoreData signal{ .semaphore = sem };
+		signalSemaphores.push_back(std::move(signal));
 
 		vk::Result result = SubmitCommandBuffer(device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), submitData.buffers, submitData.syncSeamphore.waitSemaphores, signalSemaphores, submitData.signalFence);
 		if (result != vk::Result::eSuccess)
 			outStream << std::format("[ graphicsBase ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
 
-		allWaits.push_back(std::move(data));
+		allWaits.push_back(std::move(wait));
 	}
 
 	auto fence = std::make_shared<VKWrapper::VKFence>(_device.get());

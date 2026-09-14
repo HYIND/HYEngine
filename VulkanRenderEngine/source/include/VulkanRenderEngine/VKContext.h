@@ -13,13 +13,20 @@ class VKWrapper::VKFence;
 struct WaitSemaphoreData
 {
 	std::shared_ptr<VKWrapper::VKSemaphore> semaphore;
-	VkPipelineStageFlags flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	vk::PipelineStageFlags flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+	uint64_t value = 0;
+};
+
+struct SignalSemaphoreData
+{
+	std::shared_ptr<VKWrapper::VKSemaphore> semaphore;
+	uint64_t value = 0;
 };
 
 struct CmdSyncSeamphore
 {
 	std::vector<WaitSemaphoreData> waitSemaphores;
-	std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> signalSemaphores;
+	std::vector<SignalSemaphoreData> signalSemaphores;
 };
 
 class VKThreadContext

@@ -206,7 +206,7 @@ vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& semaphore_im
 
 vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKFence& fence_imageIsAvailable)
 {
-	static VKWrapper::VKSemaphore s_null_seamphore(nullptr);
+	static VKWrapper::VKBinarySemaphore s_null_seamphore(nullptr);
 	return SwapImage(s_null_seamphore, fence_imageIsAvailable);
 }
 

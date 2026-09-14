@@ -8,18 +8,52 @@ namespace VKWrapper
 	class VKSemaphore
 	{
 	public:
-		VKSemaphore(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo = {});
-		VKSemaphore(VKSemaphore&& other) noexcept;
-		VKSemaphore& operator=(VKSemaphore&& other) noexcept;
-		~VKSemaphore();
-
-		vk::Result Create(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo = {});
+		vk::Semaphore GetHandle() const;
+		bool IsTimeline() const;
 		void Release();
 
-		vk::Semaphore GetHandle() const;
+	protected:
+		VKSemaphore() = default;
 
-	private:
 		VKCore::VulkanDevice* _device = nullptr;
 		vk::Semaphore _handle = VK_NULL_HANDLE;
+		bool _isTimeline = false;
+	};
+
+	class VKBinarySemaphore : public VKSemaphore
+	{
+	public:
+		VKBinarySemaphore(VKCore::VulkanDevice* device);
+		VKBinarySemaphore(VKBinarySemaphore&& other) noexcept;
+		VKBinarySemaphore& operator=(VKBinarySemaphore&& other) noexcept;
+		~VKBinarySemaphore();
+
+		vk::Result Create(VKCore::VulkanDevice* device);
+	};
+
+	class VKTimelineSemaphore : public VKSemaphore
+	{
+	public:
+		VKTimelineSemaphore(VKCore::VulkanDevice* device, const uint64_t initialValue = 0);
+		VKTimelineSemaphore(VKTimelineSemaphore&& other) noexcept;
+		VKTimelineSemaphore& operator=(VKTimelineSemaphore&& other) noexcept;
+		~VKTimelineSemaphore();
+
+		vk::Result Create(VKCore::VulkanDevice* device, const uint64_t initialValue = 0);
+
+		bool Wait(uint64_t targetValue)
+		{
+			vk::SemaphoreWaitInfo waitInfo;
+			waitInfo
+				.setSemaphores(_handle)
+				.setValues(targetValue);
+
+			vk::Result result = _device->GetHandle().waitSemaphores(waitInfo, UINT64_MAX);
+			if (result != vk::Result::eSuccess) {
+				std::cerr << std::format("[ VKTimelineSemaphore ] Error when Wait Semaphore! Error : {}\n", to_string(result));
+				return false;
+			}
+			return true;
+		}
 	};
 }
