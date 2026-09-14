@@ -260,6 +260,7 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& st
 		return false;
 
 	RenderHelp::SetupLightingData(
+		cmd,
 		rayTraceShader,
 		state.lights.dirLightInfos,
 		state.lights.pointLightInfos,

@@ -5,6 +5,22 @@
 
 using namespace VKWrapper;
 
+class RestireImage :public IVKResource
+{
+public:
+	RestireImage(VmaAllocator allocator, vk::Image image, VmaAllocation allocation)
+		:m_allocator(allocator), m_image(image), m_allocation(allocation)
+	{}
+	virtual void Destroy() {
+		vmaDestroyImage(m_allocator, m_image, m_allocation);
+	}
+
+public:
+	VmaAllocator m_allocator = VK_NULL_HANDLE;
+	vk::Image m_image = VK_NULL_HANDLE;
+	VmaAllocation m_allocation = VK_NULL_HANDLE;
+};
+
 void static PrintFormatSupport(vk::PhysicalDevice physicalDevice, vk::Format format)
 {
 	vk::FormatProperties2 formatProps{};
@@ -80,7 +96,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetState(i);
+		auto state = GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}
@@ -184,7 +200,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetState(i);
+		auto state = GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}
@@ -195,7 +211,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 
 void VmaImage::Release() {
 	if (m_allocator && m_image && m_allocation) {
-		vmaDestroyImage(m_allocator, m_image, m_allocation);
+		VKCONTEXT->Retire(new RestireImage(m_allocator, m_image, m_allocation));
 	}
 	m_device = nullptr;
 	m_allocator = VK_NULL_HANDLE;

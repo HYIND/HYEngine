@@ -67,6 +67,34 @@ std::shared_ptr<VKWrapper::VKCommandBuffer> VKContext::GetCommandBuffer()
 	return tls_context.GetCommandBuffer();
 }
 
+void VKContext::Retire(VKWrapper::IVKResource* res) {
+	LockGuard guard(_pendingDestoryResourceMutex);
+	_pendingDestoryResource.push(res);
+}
+
+void VKContext::ProcessRetire() {
+	if (_pendingDestoryResource.empty())
+		return;
+
+	std::queue<VKWrapper::IVKResource*> temp;
+
+	{
+		LockGuard guard(_pendingDestoryResourceMutex);
+		temp.swap(_pendingDestoryResource);
+	}
+
+	while (!temp.empty())
+	{
+		auto res = temp.front();
+		if (res)
+		{
+			res->Destroy();
+			delete res;
+		}
+		temp.pop();
+	}
+}
+
 std::shared_ptr<VKWrapper::VKCommandBuffer> VKThreadContext::GetCommandBuffer()
 {
 	NeedCommandPool();
@@ -272,11 +300,9 @@ void VKContext::ProcessPendingCommandAndWait()
 }
 
 VKContext::VKContext()
-{
-}
+{}
 VKContext::~VKContext()
-{
-}
+{}
 
 void VKContext::NeedDescriptorPool()
 {

@@ -30,10 +30,11 @@ public:
 private:
 	void CalculateShadowAtlas(RenderState& state);
 
-	void processDirAndSpotLight(RenderState& state, DynamicRenderInfo& renderInfo);
-	void processPointLight(RenderState& state, DynamicRenderInfo& renderInfo);
+	void processDirAndSpotLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processPointLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo);
 
 	void RenderSceneLightShadowPassSceneInstance(
+		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		RenderState& state,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 		std::shared_ptr<GraphicsPipeline>& shader_Skinned,
@@ -69,9 +70,9 @@ private:
 	std::shared_ptr<StorageBlock> _ssbo_ShadowMatrices;
 	std::shared_ptr<StorageBlock> _ssbo_LightProps;
 
+	std::vector<IndirectDrawCommand> _staticMesh_OneSideCommands;
+	std::vector<IndirectDrawCommand> _staticMesh_TwoSideCommands;
+
 	std::shared_ptr<IndirectBufferBlock> _oneSideCommandBuffer;
 	std::shared_ptr<IndirectBufferBlock> _twoSideCommandBuffer;
-
-	std::shared_ptr<StorageBlock> _ssbo_StaticMeshOneSideMaterialIndex;
-	std::shared_ptr<StorageBlock> _ssbo_StaticMeshTwoSideMaterialIndex;
 };

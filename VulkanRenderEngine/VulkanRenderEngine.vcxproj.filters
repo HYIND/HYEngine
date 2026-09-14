@@ -327,6 +327,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKResource.h">
+      <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">

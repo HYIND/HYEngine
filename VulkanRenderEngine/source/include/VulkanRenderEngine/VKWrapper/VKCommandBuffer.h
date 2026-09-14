@@ -136,8 +136,15 @@ namespace VKWrapper
 		void clearDepthStencilImage(vk::Image image, vk::ImageLayout imageLayout, const vk::ClearDepthStencilValue& depthStencil, vk::ArrayProxy<vk::ImageSubresourceRange const> const& ranges);
 
 		// 同步命令
-		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::DependencyFlags dependencyFlags, uint32_t memoryBarrierCount, const vk::MemoryBarrier* pMemoryBarriers, uint32_t bufferMemoryBarrierCount, const vk::BufferMemoryBarrier* pBufferMemoryBarriers, uint32_t imageMemoryBarrierCount, const vk::ImageMemoryBarrier* pImageMemoryBarriers);
-		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::DependencyFlags dependencyFlags, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers);
+		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::MemoryBarrier const> const& memoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::BufferMemoryBarrier const> const& bufferMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier(vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask, vk::ArrayProxy<vk::ImageMemoryBarrier const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+
+		void pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::MemoryBarrier2 const> const& memoryBarriers, vk::ArrayProxyNoTemporaries<vk::BufferMemoryBarrier2 const> const& bufferMemoryBarriers, vk::ArrayProxyNoTemporaries<vk::ImageMemoryBarrier2 const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::MemoryBarrier2 const> const& memoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::BufferMemoryBarrier2 const> const& bufferMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
+		void pipelineBarrier2(vk::ArrayProxyNoTemporaries<vk::ImageMemoryBarrier2 const> const& imageMemoryBarriers, vk::DependencyFlags dependencyFlags = (vk::DependencyFlagBits)0);
 
 		// 视口/裁剪命令
 		void setViewportWithCount(vk::ArrayProxy<vk::Viewport const> const& viewports);

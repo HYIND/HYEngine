@@ -29,9 +29,9 @@ public:
 	uint32_t GetMaxLevel();
 
 private:
-	void DrawDepthMap(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state);
-	void DrawHZB(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state);
-	void GetOcclusionCulling(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state);
+	void DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state);
+	void DrawHZB(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state);
+	void GetOcclusionCulling(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _depthShader;
@@ -40,4 +40,5 @@ private:
 	uint32_t _maxLevel = 7;
 
 	std::vector<IndirectDrawCommand> _commands;
+	std::shared_ptr<IndirectBufferBlock> _indirectCommandBuffer;
 };

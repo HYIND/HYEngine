@@ -177,6 +177,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKFrameBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKImageView.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKRenderPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKResource.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSampler.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKSemaphore.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaBuffer.h" />

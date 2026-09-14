@@ -193,6 +193,9 @@ vk::Result VulkanDevice::Create(
 	auto& features14 = chain.get<vk::PhysicalDeviceVulkan14Features>();
 	auto& rayTraceExt = chain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
 
+	if (!rayTraceExt.rayTracingInvocationReorder)
+		std::cerr << std::format("rayTracingInvocationReorder not support!\n");
+
 	if (!features12.descriptorBindingPartiallyBound ||
 		!features12.runtimeDescriptorArray ||
 		!features12.descriptorBindingSampledImageUpdateAfterBind ||

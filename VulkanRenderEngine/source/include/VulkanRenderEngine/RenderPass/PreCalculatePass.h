@@ -17,10 +17,13 @@ public:
 
 	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& stat);
 
+
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
+	void AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices);
+
+private:
 	std::shared_ptr<StorageBlock> _ssbo_StaticMesh_TransformAndMaterialIndices;
-	std::shared_ptr<IndirectBufferBlock> _indirectCommandBuffer;
 };

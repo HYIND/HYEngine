@@ -221,6 +221,7 @@ bool RayTraceReflectPass::DrawRayTraceGI(FrameRenderData& data, RenderState& sta
 		return false;
 
 	RenderHelp::SetupLightingData(
+		cmd,
 		rayTraceShader,
 		state.lights.dirLightInfos,
 		state.lights.pointLightInfos,

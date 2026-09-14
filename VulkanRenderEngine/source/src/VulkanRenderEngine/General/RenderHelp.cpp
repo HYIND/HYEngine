@@ -485,12 +485,12 @@ bool GetCubeViewPorts(std::array<DynamicViewport, 6>& viewports, const std::shar
 	return true;
 }
 
-static auto writePaddingCount = [](uint32_t count, std::shared_ptr<StorageBlock>& ssbo)-> void {
+static inline void writePaddingCount(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint32_t count, std::shared_ptr<StorageBlock>& ssbo) {
 	glm::ivec4 padding = glm::ivec4(count, 0.f, 0.f, 0.f);
-	ssbo->WriteData(&padding, sizeof(padding), 0);
-	};
+	ssbo->WriteDataAsync(cmd, &padding, sizeof(padding), 0);
+};
 
-void SetupDirLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<DirLightInfo>>& dirLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
+void SetupDirLightData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Pipeline& pipeline, const std::vector<std::shared_ptr<DirLightInfo>>& dirLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
 {
 	static auto meta_ssbo = std::make_shared<StorageBlock>();
 	static auto cascade_ssbo = std::make_shared<StorageBlock>();
@@ -555,16 +555,20 @@ void SetupDirLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<Dir
 		cascadeOffset += metainfo.cascadeCount;
 	}
 
-	dirLightMeta_ssbo->SetSize(16 + dirLightMetaInfos.size() * sizeof(DirLightMetaInfo));
-	writePaddingCount(dirLightMetaInfos.size(), dirLightMeta_ssbo);
-	dirLightMeta_ssbo->WriteData(dirLightMetaInfos.data(), dirLightMetaInfos.size() * sizeof(DirLightMetaInfo), 16);
+	dirLightMeta_ssbo->SetSizeAsync(cmd, 16 + dirLightMetaInfos.size() * sizeof(DirLightMetaInfo));
+	writePaddingCount(cmd, dirLightMetaInfos.size(), dirLightMeta_ssbo);
+	dirLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	dirLightMeta_ssbo->WriteDataAsync(cmd, dirLightMetaInfos.data(), dirLightMetaInfos.size() * sizeof(DirLightMetaInfo), 16);
+	dirLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 
-	dirLightCascade_ssbo->SetSize(16 + dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo));
-	writePaddingCount(dirLightCascadeInfos.size(), dirLightCascade_ssbo);
-	dirLightCascade_ssbo->WriteData(dirLightCascadeInfos.data(), dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo), 16);
+	dirLightCascade_ssbo->SetSizeAsync(cmd, 16 + dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo));
+	writePaddingCount(cmd, dirLightCascadeInfos.size(), dirLightCascade_ssbo);
+	dirLightCascade_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	dirLightCascade_ssbo->WriteDataAsync(cmd, dirLightCascadeInfos.data(), dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo), 16);
+	dirLightCascade_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 }
 
-void SetupPointLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<PointLightInfo>>& pointLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
+void SetupPointLightData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Pipeline& pipeline, const std::vector<std::shared_ptr<PointLightInfo>>& pointLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
 {
 	static auto meta_ssbo = std::make_shared<StorageBlock>();
 
@@ -598,12 +602,14 @@ void SetupPointLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<P
 		pointLightMetaInfos.push_back(metainfo);
 	}
 
-	pointLightMeta_ssbo->SetSize(16 + pointLightMetaInfos.size() * sizeof(PointLightMetaInfo));
-	writePaddingCount(pointLightMetaInfos.size(), pointLightMeta_ssbo);
-	pointLightMeta_ssbo->WriteData(pointLightMetaInfos.data(), pointLightMetaInfos.size() * sizeof(PointLightMetaInfo), 16);
+	pointLightMeta_ssbo->SetSizeAsync(cmd, 16 + pointLightMetaInfos.size() * sizeof(PointLightMetaInfo));
+	writePaddingCount(cmd, pointLightMetaInfos.size(), pointLightMeta_ssbo);
+	pointLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	pointLightMeta_ssbo->WriteDataAsync(cmd, pointLightMetaInfos.data(), pointLightMetaInfos.size() * sizeof(PointLightMetaInfo), 16);
+	pointLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 }
 
-void SetupSpotLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<SpotLightInfo>>& spotLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
+void SetupSpotLightData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Pipeline& pipeline, const std::vector<std::shared_ptr<SpotLightInfo>>& spotLights, const std::shared_ptr<AtlasMap>& atlasShadowMap)
 {
 	static auto meta_ssbo = std::make_shared<StorageBlock>();
 
@@ -643,9 +649,11 @@ void SetupSpotLightData(Pipeline& pipeline, const std::vector<std::shared_ptr<Sp
 		spotLightMetaInfos.push_back(std::move(metainfo));
 	}
 
-	spotLightMeta_ssbo->SetSize(16 + spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo));
-	writePaddingCount(spotLightMetaInfos.size(), spotLightMeta_ssbo);
-	spotLightMeta_ssbo->WriteData(spotLightMetaInfos.data(), spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo), 16);
+	spotLightMeta_ssbo->SetSizeAsync(cmd, 16 + spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo));
+	writePaddingCount(cmd, spotLightMetaInfos.size(), spotLightMeta_ssbo);
+	spotLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	spotLightMeta_ssbo->WriteDataAsync(cmd, spotLightMetaInfos.data(), spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo), 16);
+	spotLightMeta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 }
 
 void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
@@ -975,6 +983,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 //}
 
 void RenderHelp::SetupLightingData(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	Pipeline& pieline,
 	const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
 	const std::vector<std::shared_ptr<PointLightInfo>>& pointLights,
@@ -982,7 +991,7 @@ void RenderHelp::SetupLightingData(
 	const std::shared_ptr<AtlasMap>& atlasShadowMap
 )
 {
-	SetupDirLightData(pieline, dirLights, atlasShadowMap);
-	SetupPointLightData(pieline, pointLights, atlasShadowMap);
-	SetupSpotLightData(pieline, spotLights, atlasShadowMap);
+	SetupDirLightData(cmd, pieline, dirLights, atlasShadowMap);
+	SetupPointLightData(cmd, pieline, pointLights, atlasShadowMap);
+	SetupSpotLightData(cmd, pieline, spotLights, atlasShadowMap);
 }

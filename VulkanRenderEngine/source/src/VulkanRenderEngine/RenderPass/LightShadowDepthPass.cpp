@@ -201,6 +201,9 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 	if (state.lights.dirLightInfos.empty() && state.lights.spotLightInfos.empty() && state.lights.pointLightInfos.empty())
 		return;
 
+	_staticMesh_OneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
+	_staticMesh_TwoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
+
 	glm::u32vec2 size = glm::max(_atlas->GetSize(), glm::u32vec2(16, 16));
 	shadowAtlas->Resize(size.x, size.y);
 
@@ -219,24 +222,13 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 		.SetRenderArea(shadowAtlas->GetWidth(), shadowAtlas->GetHeight())
 		.AddDepthAttachment(shadowAtlas->GetImageView());
 
-	processDirAndSpotLight(state, renderInfo);
-	processPointLight(state, renderInfo);
+	std::shared_ptr<VKWrapper::VKCommandBuffer> cmd = VKCONTEXT->GetCommandBuffer();
 
+	processDirAndSpotLight(cmd, state, renderInfo);
+	processPointLight(cmd, state, renderInfo);
 
-	auto& oneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
-	auto& twoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
-	std::for_each(oneSideCommands.begin(), oneSideCommands.end(),
-		[&](IndirectDrawCommand& command)->void {
-			if (command.instanceCount > 0)
-				command.instanceCount = 1;
-		}
-	);
-	std::for_each(twoSideCommands.begin(), twoSideCommands.end(),
-		[&](IndirectDrawCommand& command)->void {
-			if (command.instanceCount > 0)
-				command.instanceCount = 1;
-		}
-	);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }
 
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -325,7 +317,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 	_shouldUpdateTexture = true;
 }
 
-void LightShadowDepthPass::processDirAndSpotLight(RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& dirLightsInfo = state.lights.dirLightInfos;
 	auto& spotLightsInfo = state.lights.spotLightInfos;
@@ -337,10 +329,11 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state, DynamicRen
 
 	uint32_t count = 0;
 
-
 	auto render = [&]()->void {
-		_ssbo_ShadowMatrices->WriteData(shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
+		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
+		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 		RenderSceneLightShadowPassSceneInstance(
+			cmd,
 			state,
 			_dirLightShadowDepthStaticMeshShader,
 			_dirLightShadowDepthSkinnedShader,
@@ -350,6 +343,7 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state, DynamicRen
 			renderInfo,
 			viewPorts
 		);
+		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
 		count = 0;
 		shadowMatrices.clear();
 		viewPorts.clear();
@@ -417,7 +411,7 @@ void LightShadowDepthPass::processDirAndSpotLight(RenderState& state, DynamicRen
 		render();
 }
 
-void LightShadowDepthPass::processPointLight(RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& pointLightsInfo = state.lights.pointLightInfos;
 
@@ -431,9 +425,12 @@ void LightShadowDepthPass::processPointLight(RenderState& state, DynamicRenderIn
 	uint32_t count = 0;
 
 	auto render = [&]()->void {
-		_ssbo_ShadowMatrices->WriteData(shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
-		_ssbo_LightProps->WriteData(lightProps.data(), lightProps.size() * sizeof(LightProp));
+		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
+		_ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
+		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+		_ssbo_LightProps->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 		RenderSceneLightShadowPassSceneInstance(
+			cmd,
 			state,
 			_pointLightShadowDepthStaticMeshShader,
 			_pointLightShadowDepthSkinnedShader,
@@ -443,6 +440,9 @@ void LightShadowDepthPass::processPointLight(RenderState& state, DynamicRenderIn
 			renderInfo,
 			viewPorts
 		);
+		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
+		_ssbo_LightProps->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
+
 		count = 0;
 		shadowMatrices.clear();
 		viewPorts.clear();
@@ -507,6 +507,7 @@ void LightShadowDepthPass::processPointLight(RenderState& state, DynamicRenderIn
 }
 
 void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	RenderState& state,
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 	std::shared_ptr<GraphicsPipeline>& shader_Skinned,
@@ -519,63 +520,62 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 {
 	auto manager = IndirectDrawManager::Instance();
 
-	std::shared_ptr<VKWrapper::VKFence> fence1;
-	std::shared_ptr<VKWrapper::VKFence> fence2;
-
-	std::shared_ptr<VKWrapper::VKCommandBuffer> cmd1;
-	std::shared_ptr<VKWrapper::VKCommandBuffer> cmd2;
 	if (!opaqueMeshes.empty())
 	{
-		auto& oneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
-		auto& twoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
+		auto& oneSideCommands = _staticMesh_OneSideCommands;
+		auto& twoSideCommands = _staticMesh_TwoSideCommands;
 
 		if (!oneSideCommands.empty() || !twoSideCommands.empty())
 		{
 			auto& shader = shader_StaticMesh;
-			cmd1 = VKCONTEXT->GetCommandBuffer();
 
-			shader->Bind(cmd1);
+			shader->Bind(cmd);
 
-			cmd1->setDynamicViewports(viewPorts);
-			cmd1->beginRendering(renderInfo);
+			cmd->setDynamicViewports(viewPorts);
+			cmd->beginRendering(renderInfo);
 			if (renderInfo.depthAttachment->loadOp == vk::AttachmentLoadOp::eClear)
 				renderInfo.depthAttachment->loadOp = vk::AttachmentLoadOp::eLoad;
 
-			cmd1->bindVertexBuffers(manager->GetVertexBlock());
-			cmd1->bindIndexBuffer(manager->GetIndexBlock());
-			cmd1->setCullMode(vk::CullModeFlagBits::eNone);
+			cmd->bindVertexBuffers(manager->GetVertexBlock());
+			cmd->bindIndexBuffer(manager->GetIndexBlock());
+			cmd->setCullMode(vk::CullModeFlagBits::eNone);
 
 
 			if (!oneSideCommands.empty())
 			{
-				std::for_each(oneSideCommands.begin(), oneSideCommands.end(),
+				std::for_each(std::execution::par_unseq, oneSideCommands.begin(), oneSideCommands.end(),
 					[&](IndirectDrawCommand& command)->void {
 						if (command.instanceCount > 0)
 							command.instanceCount = count;
 					}
 				);
 
-				_oneSideCommandBuffer->WriteData(oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
-				cmd1->drawIndexedIndirect(_oneSideCommandBuffer, oneSideCommands.size());
+				_oneSideCommandBuffer->WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
+				_oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+
+				cmd->drawIndexedIndirect(_oneSideCommandBuffer, oneSideCommands.size());
+
+				_oneSideCommandBuffer->Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
 			}
 
 			if (!twoSideCommands.empty())
 			{
-				std::for_each(twoSideCommands.begin(), twoSideCommands.end(),
+				std::for_each(std::execution::par_unseq, twoSideCommands.begin(), twoSideCommands.end(),
 					[&](IndirectDrawCommand& command)->void {
 						if (command.instanceCount > 0)
 							command.instanceCount = count;
 					}
 				);
 
-				_twoSideCommandBuffer->WriteData(twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
-				cmd1->drawIndexedIndirect(_twoSideCommandBuffer, twoSideCommands.size());
+				_twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
+				_twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+
+				cmd->drawIndexedIndirect(_twoSideCommandBuffer, twoSideCommands.size());
+
+				_twoSideCommandBuffer->Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
 			}
 
-			cmd1->endRendering();
-
-			fence1 = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
-			VKCONTEXT->SubmitCommandImmediately(cmd1, {}, fence1);
+			cmd->endRendering();
 		}
 	}
 
@@ -608,9 +608,4 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 	//		}
 	//	}
 	//}
-
-	if (fence1)
-		fence1->Wait();
-	if (fence2)
-		fence2->Wait();
 }

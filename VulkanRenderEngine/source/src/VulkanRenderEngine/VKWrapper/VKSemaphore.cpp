@@ -1,7 +1,26 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine\VKWrapper\VKSemaphore.h"
+#include "VulkanRenderEngine\VKWrapper\VKResource.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 using namespace VKWrapper;
+
+
+class RestireSemaphore :public IVKResource
+{
+public:
+	RestireSemaphore(VKCore::VulkanDevice* device, vk::Semaphore handle)
+		:_device(device), _handle(handle)
+	{}
+	virtual void Destroy() {
+		_device->GetHandle().destroySemaphore(_handle);
+	}
+
+public:
+	VKCore::VulkanDevice* _device = nullptr;
+	vk::Semaphore _handle = VK_NULL_HANDLE;
+};
+
 
 VKSemaphore::VKSemaphore(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo)
 {
@@ -30,7 +49,7 @@ VKSemaphore& VKSemaphore::operator=(VKSemaphore&& other) noexcept
 
 VKSemaphore::~VKSemaphore() { Release(); }
 
-vk::Result VKSemaphore::Create(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo & createInfo) {
+vk::Result VKSemaphore::Create(VKCore::VulkanDevice* device, const vk::SemaphoreCreateInfo& createInfo) {
 	Release();
 
 	auto [result, handle] = device->GetHandle().createSemaphore(createInfo);
@@ -44,7 +63,7 @@ vk::Result VKSemaphore::Create(VKCore::VulkanDevice* device, const vk::Semaphore
 
 void VKSemaphore::Release() {
 	if (_device && _handle != VK_NULL_HANDLE)
-		vkDestroySemaphore(_device->GetHandle(), _handle, nullptr);
+		VKCONTEXT->Retire(new RestireSemaphore(_device, _handle));
 	_device = nullptr;
 	_handle = VK_NULL_HANDLE;
 }

@@ -52,6 +52,11 @@ public:
 
 	std::shared_ptr<VKWrapper::VKCommandBuffer> GetCommandBuffer();
 
+public:
+	void Retire(VKWrapper::IVKResource* res);
+	void ProcessRetire();
+
+public:
 	void SubmitCommandBufferToPendingQueue(std::shared_ptr<VKWrapper::VKCommandBuffer> buffer, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
 	void SubmitCommandBufferToPendingQueue(std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> buffer, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
 
@@ -87,6 +92,9 @@ private:
 	SpinLock _submitQueueMutex;
 
 	SpinLock _descriptorPoolCreateMutex;
+
+	std::queue<VKWrapper::IVKResource*> _pendingDestoryResource;
+	SpinLock _pendingDestoryResourceMutex;
 };
 
 #define VKCONTEXT VKContext::Instance()

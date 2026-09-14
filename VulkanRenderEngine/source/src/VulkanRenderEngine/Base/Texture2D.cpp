@@ -183,7 +183,107 @@ static vk::ImageAspectFlags GetAspectMaskForFormat(vk::Format format, bool prefe
 	}
 }
 
-void Texture2D::BlitImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::PipelineStageFlags* outDestStageFlag, vk::Format format, BindStage stage, BindUsage usage)
+{
+	using Layout = vk::ImageLayout;
+	using StageFlag = vk::PipelineStageFlagBits;
+
+	vk::ImageLayout newLayout;
+	vk::PipelineStageFlags dstStageMask;
+
+	bool isColorFormat = VKWrapper::VmaImage::IsColorFormat(format);
+	bool isDepthStencilFormat = VKWrapper::VmaImage::IsDepthStencilFormat(format);
+	bool isDepthFormat = VKWrapper::VmaImage::IsDepthFormat(format);
+	bool isStencilFormat = VKWrapper::VmaImage::IsStencilFormat(format);
+
+	if (usage == BindUsage::Sample)
+	{
+		if (stage == BindStage::Compute)
+		{
+			dstStageMask = StageFlag::eComputeShader;
+			newLayout = Layout::eGeneral;
+		}
+		else if (stage == BindStage::Graphics)
+		{
+			dstStageMask = StageFlag::eVertexShader | StageFlag::eFragmentShader;
+			if (isColorFormat)
+				newLayout = Layout::eShaderReadOnlyOptimal;
+			if (isDepthStencilFormat)
+				newLayout = Layout::eDepthStencilReadOnlyOptimal;
+			if (isDepthFormat)
+				newLayout = Layout::eDepthReadOnlyOptimal;
+			if (isStencilFormat)
+				newLayout = Layout::eStencilReadOnlyOptimal;
+		}
+		else if (stage == BindStage::RayTracing)
+		{
+			dstStageMask = StageFlag::eRayTracingShaderKHR;
+			newLayout = Layout::eGeneral;
+		}
+	}
+	else if (usage == BindUsage::Output)
+	{
+		if (stage == BindStage::Compute)
+		{
+			dstStageMask = StageFlag::eComputeShader;
+			newLayout = Layout::eGeneral;
+		}
+		else if (stage == BindStage::Graphics)
+		{
+			if (isColorFormat)
+			{
+				dstStageMask = StageFlag::eColorAttachmentOutput;
+				newLayout = Layout::eColorAttachmentOptimal;
+			}
+			else
+			{
+				dstStageMask = StageFlag::eEarlyFragmentTests;
+				if (isDepthStencilFormat)
+					newLayout = Layout::eDepthStencilAttachmentOptimal;
+				if (isDepthFormat)
+					newLayout = Layout::eDepthAttachmentOptimal;
+				if (isStencilFormat)
+					newLayout = Layout::eStencilAttachmentOptimal;
+			}
+		}
+		else if (stage == BindStage::RayTracing)
+		{
+			dstStageMask = StageFlag::eRayTracingShaderKHR;
+			newLayout = Layout::eGeneral;
+		}
+	}
+
+	if (outLayout)
+		*outLayout = newLayout;
+	if (outDestStageFlag)
+		*outDestStageFlag = dstStageMask;
+}
+
+void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+{
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	BlitImageAsync(cmd, src, dstImage, dstWidth, dstHeight);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+}
+
+bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
+{
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	bool result = CopyTextureAsync(cmd, src, dest, srcLevel, destLevel);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	return result;
+}
+
+bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
+{
+	if (!src || !dest)
+		return false;
+	return CopyTexture(*src, *dest, srcLevel, destLevel);
+}
+
+void Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
 {
 	vk::Image srcImage = src._image->GetHandle();
 	vk::ImageLayout srcLayout = src._image->GetCurrentLayout(0);
@@ -211,7 +311,7 @@ void Texture2D::BlitImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Text
 	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eLinear);
 }
 
-bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
+bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
 {
 	using namespace VKWrapper;
 
@@ -236,11 +336,8 @@ bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, 
 	if (srcWidth != destWidth || srcHeight != destHeight)
 		return false;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
 	if (!cmd)
 		return false;
-
-	cmd->Begin();
 
 	// 获取源和目标图像
 	vk::Image srcImage = src._image->GetHandle();
@@ -316,93 +413,14 @@ bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, 
 		);
 	}
 
-	cmd->End();
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-
 	return true;
 }
 
-bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
+bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
 {
 	if (!src || !dest)
 		return false;
-	return CopyTexture(*src, *dest, srcLevel, destLevel);
-}
-
-void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::PipelineStageFlags* outDestStageFlag, vk::Format format, BindStage stage, BindUsage usage)
-{
-	using Layout = vk::ImageLayout;
-	using StageFlag = vk::PipelineStageFlagBits;
-
-	vk::ImageLayout newLayout;
-	vk::PipelineStageFlags dstStageMask;
-
-	bool isColorFormat = VKWrapper::VmaImage::IsColorFormat(format);
-	bool isDepthStencilFormat = VKWrapper::VmaImage::IsDepthStencilFormat(format);
-	bool isDepthFormat = VKWrapper::VmaImage::IsDepthFormat(format);
-	bool isStencilFormat = VKWrapper::VmaImage::IsStencilFormat(format);
-
-	if (usage == BindUsage::Sample)
-	{
-		if (stage == BindStage::Compute)
-		{
-			dstStageMask = StageFlag::eComputeShader;
-			newLayout = Layout::eGeneral;
-		}
-		else if (stage == BindStage::Graphics)
-		{
-			dstStageMask = StageFlag::eVertexShader | StageFlag::eFragmentShader;
-			if (isColorFormat)
-				newLayout = Layout::eShaderReadOnlyOptimal;
-			if (isDepthStencilFormat)
-				newLayout = Layout::eDepthStencilReadOnlyOptimal;
-			if (isDepthFormat)
-				newLayout = Layout::eDepthReadOnlyOptimal;
-			if (isStencilFormat)
-				newLayout = Layout::eStencilReadOnlyOptimal;
-		}
-		else if (stage == BindStage::RayTracing)
-		{
-			dstStageMask = StageFlag::eRayTracingShaderKHR;
-			newLayout = Layout::eGeneral;
-		}
-	}
-	else if (usage == BindUsage::Output)
-	{
-		if (stage == BindStage::Compute)
-		{
-			dstStageMask = StageFlag::eComputeShader;
-			newLayout = Layout::eGeneral;
-		}
-		else if (stage == BindStage::Graphics)
-		{
-			if (isColorFormat)
-			{
-				dstStageMask = StageFlag::eColorAttachmentOutput;
-				newLayout = Layout::eColorAttachmentOptimal;
-			}
-			else
-			{
-				dstStageMask = StageFlag::eEarlyFragmentTests;
-				if (isDepthStencilFormat)
-					newLayout = Layout::eDepthStencilAttachmentOptimal;
-				if (isDepthFormat)
-					newLayout = Layout::eDepthAttachmentOptimal;
-				if (isStencilFormat)
-					newLayout = Layout::eStencilAttachmentOptimal;
-			}
-		}
-		else if (stage == BindStage::RayTracing)
-		{
-			dstStageMask = StageFlag::eRayTracingShaderKHR;
-			newLayout = Layout::eGeneral;
-		}
-	}
-
-	if (outLayout)
-		*outLayout = newLayout;
-	if (outDestStageFlag)
-		*outDestStageFlag = dstStageMask;
+	return CopyTextureAsync(cmd, *src, *dest, srcLevel, destLevel);
 }
 
 Texture2D::Texture2D(const std::string& filepath, const Texture2DConfig& config)
