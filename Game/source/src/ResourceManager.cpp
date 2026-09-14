@@ -256,13 +256,13 @@ bool ResourceManager::InitAudioResource()
 	return true;
 }
 
-bool ResourceManager::InitOpenGLResource()
+bool ResourceManager::InitOpenGLResource(uint32_t mapFlag)
 {
-	std::call_once(initOpenGLFlag, std::bind(&ResourceManager::InitOpenGLResourceInternal, this));
+	std::call_once(initOpenGLFlag, std::bind(&ResourceManager::InitOpenGLResourceInternal, this, mapFlag));
 	return true;
 }
 
-bool ResourceManager::InitOpenGLResourceInternal()
+bool ResourceManager::InitOpenGLResourceInternal(uint32_t mapFlag)
 {
 	ThreadPool pool;
 	pool.start();
@@ -434,9 +434,12 @@ bool ResourceManager::InitOpenGLResourceInternal()
 		});
 
 
-	InitDust();
-	//InitGameScene();
-	//InitSponza();
+	if (mapFlag == 0)
+		InitDust();
+	else if (mapFlag == 1)
+		InitGameScene();
+	else if (mapFlag == 2)
+		InitSponza();
 
 	pool.stop();
 

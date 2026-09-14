@@ -385,7 +385,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				{
 					auto task = CoroTask::Run([]()->bool {
 						WaitForInitOpenGL();
-						ResFactory->InitOpenGLResource();
 						GameWorldManager::Instance()->InitGameWorld();
 						return true;
 						});

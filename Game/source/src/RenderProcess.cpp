@@ -98,12 +98,6 @@ void Render_Thread(
 
 	InitManager.Init(new Task<void>(CoroTask::Run([]()->void {})));
 
-	CoroTask::Run([]()->void {
-		//InitManager.waitDone();
-		ResFactory->InitOpenGLResource();
-		}
-	);
-
 	FPSPrinter fpsprinter;
 	fpscontroller->reset();
 

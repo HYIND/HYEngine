@@ -102,7 +102,7 @@ public:
 
 	bool InitD2DResource();
 	bool InitAudioResource();
-	bool InitOpenGLResource();
+	bool InitOpenGLResource(uint32_t mapFlag = 0);
 
 	ID2D1Bitmap* GetBitMapRes(const std::string& name);
 	GIFINFO* GetGIFRes(const std::string& name);
@@ -113,7 +113,7 @@ public:
 	std::shared_ptr<Animation> GetAnimationRes(const std::string& name);
 private:
 	ResourceManager();
-	bool InitOpenGLResourceInternal();
+	bool InitOpenGLResourceInternal(uint32_t mapFlag = 0);
 
 private:
 	std::map <std::string, ID2D1Bitmap* > BitMapRes;
