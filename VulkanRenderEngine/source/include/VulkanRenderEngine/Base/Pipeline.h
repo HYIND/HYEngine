@@ -156,9 +156,12 @@ public:
 		std::vector<vk::DescriptorSetLayout> setLayouts;
 		DescriptorSetGroupPool setGroupPool;
 
-		vk::DescriptorSetAllocateInfo allocInfo;
-		vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
-		std::vector<uint32_t> variableCounts;
+		struct SetLayoutInfo {
+			bool isNullSet = false;
+			bool isVariable = false;
+			uint32_t variableCount = 0;
+		};
+		std::vector<SetLayoutInfo> setLayoutInfos;
 
 		DescriptorSetLayoutData(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSetLayout>& setLayouts);
 		~DescriptorSetLayoutData();
@@ -293,6 +296,7 @@ public:
 public:
 	void SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO);
 	void SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
+	void SetLightStorageData(const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta);
 
 public:
 	// 推送常量

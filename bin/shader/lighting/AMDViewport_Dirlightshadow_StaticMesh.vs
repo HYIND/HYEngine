@@ -35,7 +35,7 @@ void main()
     int InstanceID = gl_InstanceIndex - gl_BaseInstance;
 
     dataIndex = gl_BaseInstance;
-    vec4 worldPos = data[gl_BaseInstance].model * vec4(aPos, 1.0);
+    vec4 worldPos = data[dataIndex].model * vec4(aPos, 1.0);
 
     Index = InstanceID;
     gl_ViewportIndex = InstanceID;

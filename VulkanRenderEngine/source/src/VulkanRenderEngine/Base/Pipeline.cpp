@@ -450,7 +450,7 @@ void Pipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer)
 		return;
 
 	BindAllEntry(cmdBuffer, setGroupHolder.data);
-	cmdBuffer->bindDescriptorSets(m_bindPoint, m_layout, 0, setGroupHolder.data->sets, {});
+	cmdBuffer->bindDescriptorSets(m_bindPoint, m_layout, 0, setGroupHolder.data->sets);
 }
 
 vk::Pipeline Pipeline::GetHandle() const { return m_pipeline; }
@@ -698,6 +698,19 @@ void Pipeline::SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& m
 	if (textures) SetUniformTextureArray(textures, GeneralBindingPoint::Material_textures);
 }
 
+void Pipeline::SetLightStorageData(
+	const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta,
+	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade,
+	const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
+	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta
+)
+{
+	if (_ssbo_dirLightMeta) SetStorageBlock(_ssbo_dirLightMeta, GeneralBindingPoint::Light_DirLightMetaData);
+	if (_ssbo_dirLightCascade) SetStorageBlock(_ssbo_dirLightCascade, GeneralBindingPoint::Light_DirLightCascadeData);
+	if (_ssbo_pointLightMeta) SetStorageBlock(_ssbo_pointLightMeta, GeneralBindingPoint::Light_PointLightMetaData);
+	if (_ssbo_spotLightMeta) SetStorageBlock(_ssbo_spotLightMeta, GeneralBindingPoint::Light_SpotLightMetaData);
+}
+
 void Pipeline::SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset)
 {
 	if (!cmd)
@@ -724,8 +737,12 @@ void Pipeline::BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuff
 	if (!cmdBuffer)
 		return;
 
+	uint32_t size = data->sets.size();
 	for (auto& [bindingpoint, entry] : m_bindingData)
-		BindEntry(cmdBuffer, data, bindingpoint, entry);
+	{
+		if (bindingpoint.set < size && data->sets[bindingpoint.set] != VK_NULL_HANDLE)
+			BindEntry(cmdBuffer, data, bindingpoint, entry);
+	}
 }
 
 void Pipeline::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, const BindingPoint& point, BindingEntry& entry)
@@ -1154,29 +1171,14 @@ vk::Result Pipeline::CreateDescriptorSets(
 )
 {
 	const std::vector<vk::DescriptorSetLayout>& setLayouts = m_descriptorSetLayouts->setLayouts;
-	vk::DescriptorSetAllocateInfo& allocInfo = m_descriptorSetLayouts->allocInfo;
-	vk::DescriptorSetVariableDescriptorCountAllocateInfo& variableCountInfo = m_descriptorSetLayouts->variableCountInfo;
-	std::vector<uint32_t>& variableCounts = m_descriptorSetLayouts->variableCounts;
-
-	bool isVariable = false;
-	variableCounts.resize(setLayouts.size(), 0);
+	std::vector<DescriptorSetLayoutData::SetLayoutInfo>& setLayoutInfos = m_descriptorSetLayouts->setLayoutInfos;
+	setLayoutInfos.resize(setLayouts.size());
 	for (uint32_t i = 0; i < setLayouts.size(); i++)
 	{
-		if (variableEntrys[i].isVariable)
-		{
-			variableCounts[i] = variableEntrys[i].maxCount;
-			isVariable = true;
-		}
+		setLayoutInfos[i].isVariable = variableEntrys[i].isVariable;
+		setLayoutInfos[i].variableCount = variableEntrys[i].maxCount;
+		setLayoutInfos[i].isNullSet = bindingFlags[i].empty();
 	}
-
-	variableCountInfo.setDescriptorCounts(variableCounts);
-	allocInfo
-		.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
-		.setSetLayouts(setLayouts);
-
-	//if (isVariable)
-		//allocInfo.setPNext(&variableCountInfo);
-
 	return vk::Result::eSuccess;
 }
 
@@ -1287,10 +1289,35 @@ bool Pipeline::DescriptorSetLayoutData::GetDescriptorSetGroup(DescriptorSetGroup
 	auto setGroup = setGroupPool.Fetch();
 	if (!setGroup)
 	{
-		auto [result, descriptorSets] = VKCONTEXT->GetDeviceHandle().allocateDescriptorSets(allocInfo);
-		if (result != vk::Result::eSuccess) {
-			std::cout << std::format("fail to create descriptorSets! error = {}\n", to_string(result));
-			return false;
+		std::vector<vk::DescriptorSet> descriptorSets;
+		descriptorSets.reserve(setLayouts.size());
+		for (uint32_t i = 0; i < setLayouts.size(); i++)
+		{
+			//if (setLayoutInfos[i].isNullSet)
+			//{
+			//	descriptorSets.push_back(VK_NULL_HANDLE);
+			//	continue;
+			//}
+
+			vk::DescriptorSetAllocateInfo allocInfo;
+			allocInfo
+				.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
+				.setSetLayouts(setLayouts[i]);
+
+			vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
+			if (setLayoutInfos[i].isVariable)
+			{
+				variableCountInfo.setDescriptorCounts(setLayoutInfos[i].variableCount);
+				allocInfo.setPNext(&variableCountInfo);
+			}
+
+			auto [result, temp] = VKCONTEXT->GetDeviceHandle().allocateDescriptorSets(allocInfo);
+			if (result != vk::Result::eSuccess) {
+				std::cout << std::format("fail to create descriptorSets! error = {}\n", to_string(result));
+				return false;
+			}
+
+			descriptorSets.push_back(temp[0]);
 		}
 
 		setGroup = std::make_shared<DescriptorSetGroup>(device, pool, std::move(descriptorSets));

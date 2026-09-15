@@ -126,11 +126,6 @@ void VKWrapper::VKCommandBuffer::bindIndexBuffer(vk::Buffer buffer, vk::DeviceSi
 	_handle.bindIndexBuffer(buffer, offset, indexType);
 }
 
-void VKWrapper::VKCommandBuffer::bindDescriptorSets(vk::PipelineBindPoint pipelineBindPoint, vk::PipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const vk::DescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets) {
-	Need();
-	_handle.bindDescriptorSets(pipelineBindPoint, layout, firstSet, descriptorSetCount, pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
-}
-
 void VKWrapper::VKCommandBuffer::bindDescriptorSets(vk::PipelineBindPoint pipelineBindPoint, vk::PipelineLayout layout, uint32_t firstSet, vk::ArrayProxy<vk::DescriptorSet const> const& descriptorSets, vk::ArrayProxy<uint32_t const> const& dynamicOffsets) {
 	Need();
 	_handle.bindDescriptorSets(pipelineBindPoint, layout, firstSet, descriptorSets, dynamicOffsets);

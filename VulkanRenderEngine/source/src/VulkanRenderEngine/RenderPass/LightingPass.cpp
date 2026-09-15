@@ -24,7 +24,8 @@ LightingPass::LightingPass(const std::string& computeShaderPath)
 		.AddUnifromTexture(4)
 		.AddUnifromTexture(5)
 		.AddUnifromTexture(6)
-		.AddUnifromTexture(7);
+		.AddUnifromTexture(7)
+		.AddUnifromTexture(8);
 
 	_shader.Create(config);
 }
@@ -43,6 +44,7 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	auto atlasShadowMap = ctx.GetInput(4);
 	auto ssao = ctx.GetInput(5);
 	auto gEmission = ctx.GetInput(6);
+	auto gDepthStencilMap = ctx.GetInput(7);
 
 	auto target = ctx.GetExternal(0);
 
@@ -56,18 +58,16 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	_shader.SetUniformTexture(gEmission, 5);
 	_shader.SetUniformTexture(ssao, 6);
 	_shader.SetUniformTexture(atlasShadowMap, 7);
+	_shader.SetUniformTexture(gDepthStencilMap, 8);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	RenderHelp::SetupLightingData(
-		cmd,
-		_shader,
-		state.lights.dirLightInfos,
-		state.lights.pointLightInfos,
-		state.lights.spotLightInfos,
-		state.lights.shadowAtlas
+	_shader.SetLightStorageData(
+		state.lights.ssbo_dirLightMeta,
+		state.lights.ssbo_dirLightCascade,
+		state.lights.ssbo_pointLightMeta,
+		state.lights.ssbo_spotLightMeta
 	);
 
+	auto cmd = VKCONTEXT->GetCommandBuffer();
 	_shader.Bind(cmd);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 

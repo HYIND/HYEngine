@@ -169,7 +169,7 @@ vk::Result VulkanDevice::Create(
 		vk::PhysicalDeviceVulkan12Features, 
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDeviceVulkan14Features,
-		vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
+		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
 	>;
@@ -181,7 +181,7 @@ vk::Result VulkanDevice::Create(
 		vk::PhysicalDeviceVulkan12Features, 
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDeviceVulkan14Features,
-		vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
+		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
 		>();
@@ -191,10 +191,10 @@ vk::Result VulkanDevice::Create(
 	auto& features12 = chain.get<vk::PhysicalDeviceVulkan12Features>();
 	auto& features13 = chain.get<vk::PhysicalDeviceVulkan13Features>();
 	auto& features14 = chain.get<vk::PhysicalDeviceVulkan14Features>();
-	auto& rayTraceExt = chain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
 
-	if (!rayTraceExt.rayTracingInvocationReorder)
-		std::cerr << std::format("rayTracingInvocationReorder not support!\n");
+	//auto& rayTraceExt = chain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+	//if (!rayTraceExt.rayTracingInvocationReorder)
+	//	std::cerr << std::format("rayTracingInvocationReorder not support!\n");
 
 	if (!features12.descriptorBindingPartiallyBound ||
 		!features12.runtimeDescriptorArray ||

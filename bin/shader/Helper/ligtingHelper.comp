@@ -324,13 +324,17 @@ vec3 CalcSpotLightWithoutShadow(SpotLight light, vec3 normal, vec3 fragPos, vec3
 
 vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 cameraView ,vec3 viewDir, PBRProperties prop)
 {
-    vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
-	DirLightCascade cascade = GetCascade(cameraView * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
-	vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
-											vec2(cascade.atlasX, cascade.atlasY),
-	 										vec2(cascade.atlasWidth, cascade.atlasHeight));
-    shadow = clamp(shadow, 0.f, 1.f);
+	float shadow = 0.f;
+	if (light.castShadow)
+	{
+		vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
+		DirLightCascade cascade = GetCascade(cameraView * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
+		vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+		shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
+												vec2(cascade.atlasX, cascade.atlasY),
+												vec2(cascade.atlasWidth, cascade.atlasHeight));
+		shadow = clamp(shadow, 0.f, 1.f);
+	}
 
 	vec3 radiance = light.color * light.luxIntensity;
 	if (shadow >= 1.0f)
@@ -367,9 +371,13 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
     if(dist >= light.radius)
 		return vec3(0.f);
 
-	// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
-	float shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
-    shadow = clamp(shadow, 0.f, 1.f);
+	float shadow = 0.f;
+	if (light.castShadow)
+	{
+		// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
+		shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
+		shadow = clamp(shadow, 0.f, 1.f);
+	}
 
 	float linera_radius = light.radius * linera_radius_factor;
     float attenuation = dist <= linera_radius ?
@@ -426,10 +434,14 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 		intensity = clamp((theta - outerCutOff) / epsilon, 0.0f, 1.0f); 
 	}
 
-	vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
-	vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-	float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
-    shadow = clamp(shadow, 0.f, 1.f);
+	float shadow = 0.f;
+	if (light.castShadow)
+	{
+		vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
+		vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+		shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
+		shadow = clamp(shadow, 0.f, 1.f);
+	}
 
   	float linera_radius = light.radius * linera_radius_factor;
     float attenuation = dist <= linera_radius ?

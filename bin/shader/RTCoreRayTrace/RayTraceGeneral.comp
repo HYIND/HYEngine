@@ -293,32 +293,41 @@ vec3 CalcLightingWithShadowRay(
 	vec3 lightColor = vec3(0.f,0.f,0.f);
 	for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
     {
-        ray.direction = -dirLightMetaData.info[i].direction;
-        ray.tMax = 10000.f;
-        payload.isHit = true;
-        ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-        if (payload.isHit)
-            continue;
+        if (dirLightMetaData.info[i].castShadow)
+        {
+            ray.direction = -dirLightMetaData.info[i].direction;
+            ray.tMax = 10000.f;
+            payload.isHit = true;
+            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
+            if (payload.isHit)
+                continue;
+        }
 		lightColor += CalcDirLightWithoutShadow(dirLightMetaData.info[i], fragNormal, viewDir, prop);
     }
 	for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
     {
-        ray.direction = pointLightMetaData.info[i].position - ray.origin;
-        ray.tMax = distance(ray.origin, pointLightMetaData.info[i].position);
-        payload.isHit = true;
-        ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-        if (payload.isHit)
-            continue;
+        if (pointLightMetaData.info[i].castShadow)
+        {
+            ray.direction = pointLightMetaData.info[i].position - ray.origin;
+            ray.tMax = distance(ray.origin, pointLightMetaData.info[i].position);
+            payload.isHit = true;
+            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
+            if (payload.isHit)
+                continue;
+        }
 		lightColor += CalcPointLightWithoutShadow(pointLightMetaData.info[i], fragNormal, fragPos, viewDir, prop);
     }
 	for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
     {
-        ray.direction = pointLightMetaData.info[i].position - ray.origin;
-        ray.tMax = distance(ray.origin, pointLightMetaData.info[i].position);
-        payload.isHit = true;
-        ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-        if (payload.isHit)
-            continue;
+        if (spotLightMetaData.info[i].castShadow)
+        {
+            ray.direction = spotLightMetaData.info[i].position - ray.origin;
+            ray.tMax = distance(ray.origin, spotLightMetaData.info[i].position);
+            payload.isHit = true;
+            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
+            if (payload.isHit)
+                continue;
+        }
 		lightColor += CalcSpotLightWithoutShadow(spotLightMetaData.info[i], fragNormal, fragPos, viewDir, prop);
     }
 

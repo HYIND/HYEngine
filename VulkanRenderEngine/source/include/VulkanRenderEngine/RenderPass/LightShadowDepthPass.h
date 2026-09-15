@@ -22,9 +22,8 @@ public:
 	);
 	virtual ~LightShadowDepthPass();
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
-
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
@@ -44,6 +43,8 @@ private:
 		DynamicRenderInfo& renderInfo,
 		std::vector<DynamicViewport>& viewPorts
 	);
+
+	void SetupLightingData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthStaticMeshShader;
@@ -75,4 +76,9 @@ private:
 
 	std::shared_ptr<IndirectBufferBlock> _oneSideCommandBuffer;
 	std::shared_ptr<IndirectBufferBlock> _twoSideCommandBuffer;
+
+	std::shared_ptr<StorageBlock> _ssbo_dirLightMeta;
+	std::shared_ptr<StorageBlock> _ssbo_dirLightCascade;
+	std::shared_ptr<StorageBlock> _ssbo_pointLightMeta;
+	std::shared_ptr<StorageBlock> _ssbo_spotLightMeta;
 };

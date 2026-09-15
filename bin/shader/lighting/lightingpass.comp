@@ -21,6 +21,7 @@ layout (binding = 4) uniform sampler2D gMetallicRoughness;
 layout (binding = 5) uniform sampler2D gEmission;
 layout (binding = 6) uniform sampler2D ssao;
 layout (binding = 7) uniform sampler2D atlasShadowMap;
+layout (binding = 8) uniform sampler2D depthMap;
 
 void main()
 {
@@ -34,11 +35,11 @@ void main()
 
 	vec3 normal = texture(gNormal, TexCoords).rgb;
 	if(length(normal) <= 0.001)
-	{
-		imageStore(outPutColor, coord, vec4(0.0, 0.0, 0.0, 1.0));
 		return;
-	}
 
+	float depth = texture(depthMap, TexCoords).r;
+    if (depth > 0.9999)
+        return;
 
 	vec3 fragPos = texture(gPosition, TexCoords).rgb;
 	vec4 metallicRoughness = texture(gMetallicRoughness, TexCoords);
