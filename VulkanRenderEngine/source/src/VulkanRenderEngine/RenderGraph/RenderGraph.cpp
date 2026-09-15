@@ -7,6 +7,7 @@ Graph::Graph(const std::string& name)
 	:_name(name)
 {
 	_frameParallelPool.start();
+	_executeParallelPool.start();
 	_earlyParallelPool.start();
 }
 
@@ -90,8 +91,8 @@ void Graph::EarlyExecute(RenderState& state)
 	if (_needsCompile)
 		Compile();
 
-	int executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
-	int earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
+	uint32_t executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
+	uint32_t earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
 
 	while (earlyIdx - executeIdx > _maxFramesInFlight)
 	{
@@ -100,7 +101,7 @@ void Graph::EarlyExecute(RenderState& state)
 		earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
 	}
 
-	int frameIndex = _earlyFrameIndex.fetch_add(1);
+	uint32_t frameIndex = _earlyFrameIndex.fetch_add(1);
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EarlyHandles;
 	for (auto& pass : _sortedPasses)
@@ -119,6 +120,140 @@ void Graph::EarlyExecute(RenderState& state)
 	//std::cout << std::format("Early done {}\n", frameIndex);
 }
 
+bool Graph::GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex)
+{
+	if (startIndex >= _sortedPasses.size())
+		return false;
+
+	int lastBatch = _sortedPasses[startIndex]->GetBatch();
+	while (startIndex < _sortedPasses.size())
+	{
+		auto* pass = _sortedPasses[startIndex];
+		int currentBatch = pass->GetBatch();
+
+		if (currentBatch != lastBatch || lastBatch == -1)
+			break;
+
+		passes.push_back(BatchData::PassData{ .passIndex = startIndex });
+		startIndex++;
+	}
+
+	batchIndex = lastBatch;
+	return !passes.empty();
+};
+
+void Graph::FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles, BatchData& batchdata, RenderState& state, uint32_t frameIndex)
+{
+
+	static auto canExcute = [](PassNode* node)-> bool {
+		for (auto& pass : node->GetAfters())
+		{
+			if (!pass->IsDone())
+				return false;
+		}
+		return true;
+		};
+
+	//for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
+	//{
+	//	int idx = *it;
+	//	auto& handle = BeginHandles[idx];
+	//	auto* node = _sortedPasses[idx];
+	//	if (handle->is_ready() && canExcute(_sortedPasses[idx]))
+	//	{
+	//		ExcutePass(node, state, frameIndex);
+	//		EndPass(node, batchdata);
+	//		it = batchdata.passes.erase(it);
+	//		continue;
+	//	}
+	//	++it;
+	//}
+
+	for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
+	{
+		auto& passData = *it;
+		int idx = passData.passIndex;
+		auto& executeHandle = passData.executeHandle;
+
+		auto& handle = BeginHandles[idx];
+		if (!executeHandle)
+		{
+			if (handle->is_ready() && canExcute(_sortedPasses[idx]))
+			{
+				auto* node = _sortedPasses[idx];
+				executeHandle = _executeParallelPool.submit([&, frameIndex = frameIndex, node = node]()->void { ExcutePass(node, state, frameIndex); });
+				//executeHandle = _executeParallelPool.submit_to(0, [&, frameIndex = frameIndex, node = node]()->void { ExcutePass(node, state, frameIndex); });
+			}
+		}
+		else
+		{
+			if (executeHandle->is_ready())
+			{
+				auto* node = _sortedPasses[idx];
+				EndPass(node, batchdata);
+				it = batchdata.passes.erase(it);
+				continue;
+			}
+		}
+		++it;
+	}
+
+	if (batchdata.passes.empty())
+		batchdata.isEnd = true;
+}
+
+void RenderGraph::Graph::EndPass(PassNode* node, BatchData& batchdata) {
+	node->SetDone(true);
+	auto& passLifeTimeResource = node->GetLifeCycleResource();
+	batchdata.batchLifeCycleResource.insert(
+		batchdata.batchLifeCycleResource.end(),
+		passLifeTimeResource.begin(),
+		passLifeTimeResource.end());
+}
+
+void Graph::ExcutePass(PassNode* node, RenderState& state, uint32_t frameIndex)
+{
+	//auto start = Tool::GetTimestampMircoseconds();
+	//std::cout << std::format("ExcutePass {}\n", pass->GetName());
+
+	if (node->ShouldExecute(frameIndex, state))
+	{
+		PassContext ctx;
+		ctx.passName = node->GetName();
+
+		for (const auto& input : node->GetInputs()) {
+			ctx.inputTextures.push_back(_resManager.GetTexture(input));
+		}
+
+		for (const auto& input : node->GetInputOptions()) {
+			ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input));
+		}
+
+		for (const auto& output : node->GetOutputs()) {
+			ctx.outputTextures.push_back(_resManager.GetTexture(output));
+		}
+
+		for (const auto& temp : node->GetTemps()) {
+			ctx.tempTextures.push_back(_resManager.GetTexture(temp));
+		}
+
+		for (const auto& persitent : node->GetPersistents()) {
+			ctx.persitentTextures.push_back(_resManager.GetTexture(persitent));
+		}
+
+		for (const auto& external : node->GetExternals()) {
+			if (external.type == ResourceType::Texture)
+				ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
+		}
+
+		node->Execute(frameIndex, ctx, state);
+		//std::cout << std::format("ExcutePass {}\n ", pass->GetName());
+	}
+
+	//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
+}
+;
+
 // 执行
 void Graph::Execute(RenderState& state)
 {
@@ -133,17 +268,10 @@ void Graph::Execute(RenderState& state)
 	if (_needsCompile)
 		Compile();
 
-	int frameIndex = _executeFrameIndex.load();
-
-	struct BatchData
-	{
-		bool isEnd = false;
-		int batchIndex = -1;
-		std::vector<int> passes;
-		std::vector<RenderGraphResource> batchLifeCycleResource;
-	};
+	uint32_t frameIndex = _executeFrameIndex.load();
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
+	BeginHandles.reserve(_sortedPasses.size());
 	for (auto& pass : _sortedPasses)
 	{
 		pass->SetDone(false);
@@ -158,117 +286,16 @@ void Graph::Execute(RenderState& state)
 		));
 	}
 
-	auto GetBatch = [&](int& startIndex, std::vector<int>& batchs, int& batchIndex)-> bool
-		{
-			if (startIndex >= _sortedPasses.size())
-				return false;
-
-			int lastBatch = _sortedPasses[startIndex]->GetBatch();
-			while (startIndex < _sortedPasses.size())
-			{
-				auto* pass = _sortedPasses[startIndex];
-				int currentBatch = pass->GetBatch();
-
-				if (currentBatch != lastBatch || lastBatch == -1)
-					break;
-
-				batchs.push_back(startIndex);
-				startIndex++;
-			}
-
-			batchIndex = lastBatch;
-			return !batchs.empty();
-		};
-
-	auto FindReadyNodeAndExcute = [&](BatchData& batchdata)-> void
-		{
-			auto ExcutePass = [&](int passIndex)-> void
-				{
-					auto* pass = _sortedPasses[passIndex];
-
-					//auto start = Tool::GetTimestampMircoseconds();
-					//std::cout << std::format("ExcutePass {}\n", pass->GetName());
-
-					if (pass->ShouldExecute(frameIndex, state))
-					{
-						PassContext ctx;
-						ctx.passName = pass->GetName();
-
-						for (const auto& input : pass->GetInputs()) {
-							ctx.inputTextures.push_back(_resManager.GetTexture(input));
-						}
-
-						for (const auto& input : pass->GetInputOptions()) {
-							ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input));
-						}
-
-						for (const auto& output : pass->GetOutputs()) {
-							ctx.outputTextures.push_back(_resManager.GetTexture(output));
-						}
-
-						for (const auto& temp : pass->GetTemps()) {
-							ctx.tempTextures.push_back(_resManager.GetTexture(temp));
-						}
-
-						for (const auto& persitent : pass->GetPersistents()) {
-							ctx.persitentTextures.push_back(_resManager.GetTexture(persitent));
-						}
-
-						for (const auto& external : pass->GetExternals()) {
-							if (external.type == ResourceType::Texture)
-								ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
-						}
-
-						pass->Execute(frameIndex, ctx, state);
-					}
-
-					//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
-
-					pass->SetDone(true);
-					auto& passLifeTimeResource = pass->GetLifeCycleResource();
-					batchdata.batchLifeCycleResource.insert(
-						batchdata.batchLifeCycleResource.end(),
-						passLifeTimeResource.begin(),
-						passLifeTimeResource.end());
-				};
-
-			static auto canExcute = [](PassNode* node)-> bool {
-				for (auto& pass : node->GetAfters())
-				{
-					if (!pass->IsDone())
-						return false;
-				}
-				return true;
-				};
-
-			for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
-			{
-				int idx = *it;
-				auto& handle = BeginHandles[idx];
-
-				if (handle->is_ready() && canExcute(_sortedPasses[idx]))
-				{
-					ExcutePass(idx);
-					it = batchdata.passes.erase(it);
-				}
-				else {
-					++it;
-				}
-			}
-
-			if (batchdata.passes.empty())
-				batchdata.isEnd = true;
-		};
-
 	std::vector<BatchData> running_batchs;
+	running_batchs.reserve(_sortedPasses.size());
 	std::map<int, std::vector<BatchData>, std::less<int>> end_batchs_map;
 
 	int passIndex = 0;
 	int batchIndex = -1;
-	std::vector<int>batchpasses;
+	std::vector<BatchData::PassData> batchpasses;
 	while (GetBatch(passIndex, batchpasses, batchIndex))
 	{
-		running_batchs.push_back(BatchData{ .batchIndex = batchIndex, .passes = batchpasses });
+		running_batchs.push_back(BatchData{ .batchIndex = batchIndex, .passes = std::move(batchpasses) });
 		batchpasses.clear();
 	}
 
@@ -326,7 +353,7 @@ void Graph::Execute(RenderState& state)
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(batch);
+				FindReadyNodeAndExcute(BeginHandles, batch, state, frameIndex);
 
 			if (batch.isEnd)
 			{
@@ -347,6 +374,7 @@ void Graph::Execute(RenderState& state)
 	//std::cout << "===========================\n";
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EndHandles;
+	EndHandles.reserve(_sortedPasses.size());
 	for (auto& pass : _sortedPasses)
 		EndHandles.push_back(std::move(_frameParallelPool.submit([pass = pass, &state, &frameIndex]()->void {pass->FrameEnd(frameIndex, state); })));
 	for (auto& handle : EndHandles)

@@ -58,11 +58,10 @@ std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::Vul
 		vulkanDevice->AddDeviceExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 		vulkanDevice->AddDeviceExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
 		//vulkanDevice->AddDeviceExtension(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+		//vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
 	}
 
 	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
@@ -568,7 +567,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Before(lightingPass);
 
 	lightingPass->SetRenderPass(std::make_unique<LightingPass>("shader/lighting/lightingpass.comp"))
-		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gEmission)
+		.Input(gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, atlasShadowMap, ssaoOutPut, gEmission, gDepthStencilMap)
 		.External(Ext_RenderTargetColorBuffer)
 		.After(lightingShadowDepthPass, ssaoPass)
 		.Before(opaqueFence);

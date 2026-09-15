@@ -27,5 +27,8 @@ namespace RenderGraph
 		TexturePool _texPool;
 		std::unordered_map<ResourceName, TextureHandle> _textures;
 		std::unordered_map<ResourceName, std::shared_ptr<Texture2D>> _externalTextures;
+
+		mutable SpinLock _texturesMutex;
+		mutable SpinLock _externalTexturesMutex;
 	};
 }

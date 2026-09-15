@@ -118,4 +118,3 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 void PreCalculatePass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
-

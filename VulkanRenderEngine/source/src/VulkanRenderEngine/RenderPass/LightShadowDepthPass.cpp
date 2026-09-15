@@ -2,6 +2,242 @@
 #include "VulkanRenderEngine/RenderPass/LightShadowDepthPass.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
+constexpr uint32_t maxUpdateDeltaMs = 25;
+constexpr float maxUpdateDeltaTime = maxUpdateDeltaMs * 1000.f;
+
+struct alignas(16) DirLightMetaInfo {
+	alignas(16) glm::vec3 direction;
+	alignas(16) glm::vec3 color;
+
+	float luxIntensity;
+
+	uint32_t castShadow;
+	int cascadeFirst;
+	int cascadeCount;
+};
+
+struct alignas(16) DirLightCascadeInfo {
+	alignas(16) glm::mat4 lightSpaceMatrix;
+	int atlasX;
+	int atlasY;
+	int atlasWidth;
+	int atlasHeight;
+	float cascadePlaneDistance;
+};
+
+struct SpotLightMetaInfo {
+	alignas(16) glm::vec3 position;
+	alignas(16) glm::vec3 color;
+	alignas(16) glm::vec3 direction;
+
+	float cdIntensity;
+
+	uint32_t castShadow;
+	float cutOff;
+	float outerCutOff;
+
+	float radius;
+
+	int atlasX;
+	int atlasY;
+	int atlasWidth;
+	int atlasHeight;
+
+	alignas(16) glm::mat4 lightSpaceMatrix;
+};
+
+struct alignas(16) PointLightMetaInfo {
+	alignas(16) glm::vec3 position;
+	alignas(16) glm::vec3 color;
+	alignas(16) glm::vec2 atlasStart[6];
+	alignas(16) glm::vec2 atlasSize[6];
+	uint32_t castShadow;
+	float cdIntensity;
+	float radius;
+};
+
+static bool GetCubeViewPorts(std::array<DynamicViewport, 6>& viewports, const std::shared_ptr<PointLightInfo>& info, const AtlasMap& atlasShadowMap)
+{
+	if (!info || !info->atlas)
+		return false;
+
+	for (int i = 0; i < 6; i++)
+	{
+		AtlasMap::AtlasRect rect;
+		if (!atlasShadowMap.GetSpace(info->atlas->ids[i], rect))
+			return false;
+
+		viewports[i].x = rect.x;
+		viewports[i].y = rect.y;
+		viewports[i].width = rect.width;
+		viewports[i].height = rect.height;
+	}
+	return true;
+}
+
+static inline void writePaddingCount(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint32_t count, std::shared_ptr<StorageBlock>& ssbo) {
+	glm::ivec4 padding = glm::ivec4(count, 0.f, 0.f, 0.f);
+	ssbo->WriteDataAsync(cmd, &padding, sizeof(padding), 0);
+};
+
+void SetupDirLightData(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	std::shared_ptr<StorageBlock>& meta_ssbo,
+	std::shared_ptr<StorageBlock>& cascade_ssbo,
+	const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
+	const std::shared_ptr<AtlasMap>& atlasShadowMap
+)
+{
+
+	uint32_t cascadeOffset = 0;
+	std::vector<DirLightMetaInfo> dirLightMetaInfos;
+	std::vector<DirLightCascadeInfo> dirLightCascadeInfos;
+	for (auto& info : dirLights)
+	{
+		if (!info || !info->light)
+			continue;
+
+		auto& light = info->light;
+
+		DirLightMetaInfo metainfo;
+		metainfo.direction = light->getDirection();
+		metainfo.color = light->getColor();
+
+		metainfo.luxIntensity = light->getIntensity();
+
+		metainfo.castShadow = info->light->getCastShadow() || !info->cascades.empty();
+		if (metainfo.castShadow)
+		{
+			std::vector<DirLightCascadeInfo> cascadeInfos;
+			cascadeInfos.reserve(info->cascades.size());
+			for (auto& cascade : info->cascades)
+			{
+
+				AtlasMap::AtlasRect rect;
+				if (!atlasShadowMap->GetSpace(cascade.id, rect))
+					continue;
+
+				DirLightCascadeInfo cascadeinfo;
+				cascadeinfo.atlasX = rect.x;
+				cascadeinfo.atlasY = rect.y;
+				cascadeinfo.atlasWidth = rect.width;
+				cascadeinfo.atlasHeight = rect.height;
+				cascadeinfo.cascadePlaneDistance = cascade.cascadePlaneDistance;
+				cascadeinfo.lightSpaceMatrix = cascade.lightSpaceMatrix;
+
+				cascadeInfos.push_back(cascadeinfo);
+			}
+
+			metainfo.cascadeFirst = cascadeOffset;
+			metainfo.cascadeCount = cascadeInfos.size();
+
+			if (!cascadeInfos.empty())
+				dirLightCascadeInfos.append_range(cascadeInfos);
+
+			cascadeOffset += metainfo.cascadeCount;
+		}
+		else
+		{
+			metainfo.cascadeFirst = 0;
+			metainfo.cascadeCount = 0;
+		}
+
+		dirLightMetaInfos.push_back(metainfo);
+	}
+
+	meta_ssbo->SetSizeAsync(cmd, 16 + dirLightMetaInfos.size() * sizeof(DirLightMetaInfo));
+	writePaddingCount(cmd, dirLightMetaInfos.size(), meta_ssbo);
+	meta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	meta_ssbo->WriteDataAsync(cmd, dirLightMetaInfos.data(), dirLightMetaInfos.size() * sizeof(DirLightMetaInfo), 16);
+
+	cascade_ssbo->SetSizeAsync(cmd, 16 + dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo));
+	writePaddingCount(cmd, dirLightCascadeInfos.size(), cascade_ssbo);
+	cascade_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	cascade_ssbo->WriteDataAsync(cmd, dirLightCascadeInfos.data(), dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo), 16);
+}
+
+void SetupPointLightData(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	std::shared_ptr<StorageBlock>& meta_ssbo,
+	const std::vector<std::shared_ptr<PointLightInfo>>& pointLights,
+	const std::shared_ptr<AtlasMap>& atlasShadowMap)
+{
+
+	std::vector<PointLightMetaInfo> pointLightMetaInfos;
+	for (auto& info : pointLights)
+	{
+		auto light = info->light;
+		bool castShadow = light->getCastShadow();
+
+		std::array<DynamicViewport, 6> viewports;
+		if (castShadow && !GetCubeViewPorts(viewports, info, *atlasShadowMap))
+			continue;
+
+		PointLightMetaInfo metainfo;
+		metainfo.position = light->getPosition();
+		metainfo.color = light->getColor();
+		metainfo.castShadow = castShadow;
+		metainfo.cdIntensity = light->getIntensity();
+		metainfo.radius = light->getRadius();
+		for (int i = 0; i < 6; i++)
+		{
+			auto& viewport = viewports[i];
+			metainfo.atlasStart[i] = glm::vec2(viewport.x, viewport.y);
+			metainfo.atlasSize[i] = glm::vec2(viewport.width, viewport.height);
+		}
+		pointLightMetaInfos.push_back(metainfo);
+	}
+
+	meta_ssbo->SetSizeAsync(cmd, 16 + pointLightMetaInfos.size() * sizeof(PointLightMetaInfo));
+	writePaddingCount(cmd, pointLightMetaInfos.size(), meta_ssbo);
+	meta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	meta_ssbo->WriteDataAsync(cmd, pointLightMetaInfos.data(), pointLightMetaInfos.size() * sizeof(PointLightMetaInfo), 16);
+}
+
+void SetupSpotLightData(
+	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	std::shared_ptr<StorageBlock>& meta_ssbo,
+	const std::vector<std::shared_ptr<SpotLightInfo>>& spotLights,
+	const std::shared_ptr<AtlasMap>& atlasShadowMap)
+{
+
+	std::vector<SpotLightMetaInfo> spotLightMetaInfos;
+	for (auto& info : spotLights)
+	{
+		if (!info || !info->light)
+			continue;
+
+		auto light = info->light;
+		bool castShadow = light->getCastShadow();
+
+		AtlasMap::AtlasRect rect;
+		if (castShadow && (!info->atlas || !atlasShadowMap->GetSpace(info->atlas->id, rect)))
+			continue;
+
+		SpotLightMetaInfo metainfo;
+		metainfo.position = light->getPosition();
+		metainfo.color = light->getColor();
+		metainfo.cdIntensity = light->getIntensity();
+		metainfo.castShadow = castShadow;
+		metainfo.direction = light->getDirection();
+		metainfo.cutOff = glm::cos(glm::radians(light->getCutOffAngle()));
+		metainfo.outerCutOff = glm::cos(glm::radians(light->getOuterCutOffAngle()));
+		metainfo.lightSpaceMatrix = light->getLightSpaceMatrix();
+		metainfo.radius = light->getRadius();
+		metainfo.atlasX = rect.x;
+		metainfo.atlasY = rect.y;
+		metainfo.atlasWidth = rect.width;
+		metainfo.atlasHeight = rect.height;
+
+		spotLightMetaInfos.push_back(std::move(metainfo));
+	}
+
+	meta_ssbo->SetSizeAsync(cmd, 16 + spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo));
+	writePaddingCount(cmd, spotLightMetaInfos.size(), meta_ssbo);
+	meta_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
+	meta_ssbo->WriteDataAsync(cmd, spotLightMetaInfos.data(), spotLightMetaInfos.size() * sizeof(SpotLightMetaInfo), 16);
+}
+
 struct CascadeSplit
 {
 	float nearPlane;
@@ -181,6 +417,11 @@ LightShadowDepthPass::LightShadowDepthPass(
 	_pointLightShadowDepthStaticMeshShader->SetStorageBlock(_ssbo_LightProps, 6);
 	_pointLightShadowDepthSkinnedShader->SetStorageBlock(_ssbo_LightProps, 6);
 
+	_ssbo_dirLightMeta = std::make_shared<StorageBlock>();
+	_ssbo_dirLightCascade = std::make_shared<StorageBlock>();
+	_ssbo_pointLightMeta = std::make_shared<StorageBlock>();
+	_ssbo_spotLightMeta = std::make_shared<StorageBlock>();
+
 	_atlas = std::make_shared<AtlasMap>(2000, 2000, 32768);
 }
 
@@ -190,6 +431,23 @@ LightShadowDepthPass::~LightShadowDepthPass()
 bool LightShadowDepthPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	return _shouldUpdateTexture;
+}
+
+void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{
+	CalculateShadowAtlas(state);
+	if (_shouldUpdateTexture)
+	{
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		SetupLightingData(cmd, state);
+		if (cmd->IsRecording())
+			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	}
+
+	state.lights.ssbo_dirLightMeta = _ssbo_dirLightMeta;
+	state.lights.ssbo_dirLightCascade = _ssbo_dirLightCascade;
+	state.lights.ssbo_pointLightMeta = _ssbo_pointLightMeta;
+	state.lights.ssbo_spotLightMeta = _ssbo_spotLightMeta;
 }
 
 void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
@@ -231,11 +489,6 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 		semaphore->Wait(cmdcount);
 }
 
-void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
-	CalculateShadowAtlas(state);
-}
-
 void LightShadowDepthPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!_shouldUpdateTexture)
@@ -256,7 +509,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 
 	bool shouldCalculate = updateFrameDelta <= 0
 		|| state.renderRecord.frameIndex % updateFrameDelta == 0
-		|| (state.renderRecord.currentRenderMicroTimeStamp - _lastUpadteTime >= 25 * 1000.f);
+		|| (state.renderRecord.currentRenderMicroTimeStamp - _lastUpadteTime >= maxUpdateDeltaTime);
 
 	if (!shouldCalculate)
 	{
@@ -276,7 +529,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 
 	for (auto& info : dirLightInfos)
 	{
-		if (!info || !info->light)continue;
+		if (!info || !info->light || !info->light->getCastShadow())continue;
 		auto& light = info->light;
 		for (int i = 0; i < light->getCascadeLevel(); i++)
 		{
@@ -286,11 +539,20 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 			else
 				break;
 		}
+
+		float aspect = fabs(state.camera.projection[1][1] / state.camera.projection[0][0]);
+		auto cascadeSplit = CalculateCascadeSplit(state.camera.fov, aspect, state.camera.nearPlane, state.camera.farPlane, info->cascades.size());
+
+		for (int i = 0; i < cascadeSplit.size(); i++)
+		{
+			info->cascades[i].lightSpaceMatrix = info->light->getLightSpaceMatrixWithFrustumCorners(cascadeSplit[i].projection, state.camera.view, &info->cascades[i].center, &info->cascades[i].radius);
+			info->cascades[i].cascadePlaneDistance = cascadeSplit[i].farPlane;
+		}
 	}
 
 	for (auto& info : spotLightInfos)
 	{
-		if (!info || !info->light)continue;
+		if (!info || !info->light || !info->light->getCastShadow())continue;
 		auto& light = info->light;
 		uint32_t id;
 		if (_atlas->AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
@@ -302,7 +564,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 
 	for (auto& info : pointLightInfos)
 	{
-		if (!info || !info->light)continue;
+		if (!info || !info->light || !info->light->getCastShadow())continue;
 		auto& light = info->light;
 		uint32_t id;
 
@@ -361,15 +623,6 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKT
 	{
 		if (!info || !info->light || info->cascades.empty() || !info->light->getCastShadow())
 			continue;
-
-		float aspect = fabs(state.camera.projection[1][1] / state.camera.projection[0][0]);
-		auto cascadeSplit = CalculateCascadeSplit(state.camera.fov, aspect, state.camera.nearPlane, state.camera.farPlane, info->cascades.size());
-
-		for (int i = 0; i < cascadeSplit.size(); i++)
-		{
-			info->cascades[i].lightSpaceMatrix = info->light->getLightSpaceMatrixWithFrustumCorners(cascadeSplit[i].projection, state.camera.view, &info->cascades[i].center, &info->cascades[i].radius);
-			info->cascades[i].cascadePlaneDistance = cascadeSplit[i].farPlane;
-		}
 
 		for (auto& cascade : info->cascades)
 		{
@@ -623,4 +876,11 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 	//		}
 	//	}
 	//}
+}
+
+void LightShadowDepthPass::SetupLightingData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
+{
+	SetupDirLightData(cmd, _ssbo_dirLightMeta, _ssbo_dirLightCascade, state.lights.dirLightInfos, _atlas);
+	SetupPointLightData(cmd, _ssbo_pointLightMeta, state.lights.pointLightInfos, _atlas);
+	SetupSpotLightData(cmd, _ssbo_spotLightMeta, state.lights.spotLightInfos, _atlas);
 }

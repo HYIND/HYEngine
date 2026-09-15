@@ -5,6 +5,7 @@ struct DirLight {
 
 	float luxIntensity;
 
+	bool castShadow;
 	int cascadeFirst;
 	int cascadeCount;
 };
@@ -27,6 +28,7 @@ struct PointLight {
 	vec2 atlasStart[6];
 	vec2 atlasSize[6];
 	
+	bool castShadow;
 	float cdIntensity;
 	float radius;
 };
@@ -38,6 +40,7 @@ struct SpotLight {
 
 	float cdIntensity;
 
+	bool castShadow;
     float cutOff;	
     float outerCutOff;
 

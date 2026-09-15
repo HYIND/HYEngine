@@ -5,10 +5,7 @@ using namespace RenderGraph;
 
 std::shared_ptr<Texture2D> ResourceManager::TryGetTexture(const RenderGraphResource& res)
 {
-	auto ext_it = _externalTextures.find(res.name);
-	if (ext_it != _externalTextures.end())
-		return ext_it->second;
-
+	LockGuard guard(_texturesMutex);
 	auto it = _textures.find(res.name);
 	if (it != _textures.end())
 		return _texPool.GetTexture(it->second);
@@ -17,10 +14,7 @@ std::shared_ptr<Texture2D> ResourceManager::TryGetTexture(const RenderGraphResou
 
 std::shared_ptr<Texture2D> ResourceManager::GetTexture(const RenderGraphResource& res)
 {
-	auto ext_it = _externalTextures.find(res.name);
-	if (ext_it != _externalTextures.end())
-		return ext_it->second;
-
+	LockGuard guard(_texturesMutex);
 	auto it = _textures.find(res.name);
 	if (it != _textures.end())
 		return _texPool.GetTexture(it->second);
@@ -40,6 +34,7 @@ std::shared_ptr<Texture2D> ResourceManager::GetTexture(const RenderGraphResource
 
 void ResourceManager::ReleaseTexture(const RenderGraphResource& res)
 {
+	LockGuard guard(_texturesMutex);
 	auto it = _textures.find(res.name);
 	if (it == _textures.end())
 		return;
@@ -49,11 +44,13 @@ void ResourceManager::ReleaseTexture(const RenderGraphResource& res)
 
 void ResourceManager::RegisterExternalTexture(const ResourceName& name, std::shared_ptr<Texture2D> texture)
 {
+	LockGuard guard(_externalTexturesMutex);
 	_externalTextures[name] = texture;
 }
 
 void ResourceManager::UnregisterExternalTexture(const ResourceName& name)
 {
+	LockGuard guard(_externalTexturesMutex);
 	if (_externalTextures.find(name) == _externalTextures.end())
 		return;
 	_externalTextures.erase(name);
@@ -61,6 +58,7 @@ void ResourceManager::UnregisterExternalTexture(const ResourceName& name)
 
 std::shared_ptr<Texture2D> ResourceManager::GetExternalTexture(const ResourceName& name) const
 {
+	LockGuard guard(_externalTexturesMutex);
 	auto it = _externalTextures.find(name);
 	if (it == _externalTextures.end())
 		return nullptr;
@@ -69,5 +67,6 @@ std::shared_ptr<Texture2D> ResourceManager::GetExternalTexture(const ResourceNam
 
 void RenderGraph::ResourceManager::CleanupIdleResource()
 {
+	LockGuard guard(_texturesMutex);
 	_texPool.CleanupIdleTextures();
 }

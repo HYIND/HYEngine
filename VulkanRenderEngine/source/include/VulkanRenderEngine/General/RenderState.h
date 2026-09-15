@@ -120,6 +120,10 @@ struct RenderState
 		std::vector<std::shared_ptr<PointLightInfo>> pointLightInfos;
 		std::vector<std::shared_ptr<SpotLightInfo>> spotLightInfos;
 
+		std::shared_ptr<StorageBlock> ssbo_dirLightMeta;
+		std::shared_ptr<StorageBlock> ssbo_dirLightCascade;
+		std::shared_ptr<StorageBlock> ssbo_pointLightMeta;
+		std::shared_ptr<StorageBlock> ssbo_spotLightMeta;
 		std::shared_ptr<AtlasMap> shadowAtlas;
 	} lights;
 

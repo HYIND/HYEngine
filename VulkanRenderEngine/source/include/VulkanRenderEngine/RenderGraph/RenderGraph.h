@@ -40,6 +40,26 @@ namespace RenderGraph
 		void SetRenderTargetFBO(std::shared_ptr<VKWrapper::VKFrameBuffer> fbo);
 
 	private:
+		struct BatchData
+		{
+			struct PassData
+			{
+				int passIndex;
+				std::shared_ptr<ThreadPool::SubmitHandle<void>> executeHandle;
+			};
+
+			bool isEnd = false;
+			int batchIndex = -1;
+			std::vector<PassData> passes;
+			std::vector<RenderGraphResource> batchLifeCycleResource;
+		};
+
+		bool GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex);
+		void FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles, BatchData& batchdata, RenderState& state, uint32_t frameIndex);
+		void ExcutePass(PassNode* node, RenderState& state, uint32_t frameIndex);
+		void EndPass(PassNode* node, BatchData& batchdata);;
+
+	private:
 		std::string _name;
 
 		ResourceManager _resManager;
@@ -56,6 +76,7 @@ namespace RenderGraph
 		std::shared_ptr<VKWrapper::VKFrameBuffer> _renderTargetFBO;
 
 		ThreadPool _earlyParallelPool;
+		ThreadPool _executeParallelPool;
 		ThreadPool _frameParallelPool;
 
 		int64_t _lastCleanupTimeAccumulator;

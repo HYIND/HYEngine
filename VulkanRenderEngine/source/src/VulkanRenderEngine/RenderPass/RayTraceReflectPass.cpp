@@ -220,13 +220,11 @@ bool RayTraceReflectPass::DrawRayTraceGI(FrameRenderData& data, RenderState& sta
 	if (!BindGeneralData(rayTraceShader))
 		return false;
 
-	RenderHelp::SetupLightingData(
-		cmd,
-		rayTraceShader,
-		state.lights.dirLightInfos,
-		state.lights.pointLightInfos,
-		state.lights.spotLightInfos,
-		state.lights.shadowAtlas
+	rayTraceShader.SetLightStorageData(
+		state.lights.ssbo_dirLightMeta,
+		state.lights.ssbo_dirLightCascade,
+		state.lights.ssbo_pointLightMeta,
+		state.lights.ssbo_spotLightMeta
 	);
 
 	//光追参数

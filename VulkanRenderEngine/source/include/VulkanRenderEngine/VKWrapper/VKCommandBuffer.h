@@ -103,8 +103,7 @@ namespace VKWrapper
 		void bindVertexBuffers(uint32_t firstBinding, uint32_t bindingCount, const vk::Buffer* pBuffers, const vk::DeviceSize* pOffsets);
 		void bindVertexBuffers(uint32_t firstBinding, vk::ArrayProxy<vk::Buffer const> const& buffers, vk::ArrayProxy<vk::DeviceSize const> const& offsets);
 		void bindIndexBuffer(vk::Buffer buffer, vk::DeviceSize offset, vk::IndexType indexType);
-		void bindDescriptorSets(vk::PipelineBindPoint pipelineBindPoint, vk::PipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const vk::DescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets);
-		void bindDescriptorSets(vk::PipelineBindPoint pipelineBindPoint, vk::PipelineLayout layout, uint32_t firstSet, vk::ArrayProxy<vk::DescriptorSet const> const& descriptorSets, vk::ArrayProxy<uint32_t const> const& dynamicOffsets);
+		void bindDescriptorSets(vk::PipelineBindPoint pipelineBindPoint, vk::PipelineLayout layout, uint32_t firstSet, vk::ArrayProxy<vk::DescriptorSet const> const& descriptorSets, vk::ArrayProxy<uint32_t const> const& dynamicOffsets = {});
 
 		void bindVertexBuffers(const std::shared_ptr<VertexBufferBlock>& vertexBufferBlock, uint32_t firstBinding = 0, const vk::DeviceSize& offset = 0);				//bindVertexBuffers封装
 		void bindIndexBuffer(const std::shared_ptr<IndexBufferBlock>& indexBufferBlock, vk::DeviceSize offset = 0, vk::IndexType indexType = vk::IndexType::eUint32);	//bindIndexBuffer封装
