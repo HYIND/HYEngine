@@ -215,6 +215,23 @@ static bool ProcessCodeToSPIRV(const std::string& source, std::vector<uint32_t>&
 	return true;
 };
 
+
+class RestireSetGroupHolder :public VKWrapper::IVKResource
+{
+public:
+	RestireSetGroupHolder(std::weak_ptr<Pipeline::DescriptorSetLayoutData> parent, std::shared_ptr<Pipeline::DescriptorSetGroup> data)
+		:parent(parent), data(data) {}
+	virtual void Destroy() {
+		if (auto layoutData = parent.lock()) {
+			layoutData->setGroupPool.Recycle(std::move(data));
+		}
+	}
+
+public:
+	std::weak_ptr<Pipeline::DescriptorSetLayoutData> parent;
+	std::shared_ptr<Pipeline::DescriptorSetGroup> data;
+};
+
 void PipelineConfig::AddDefineMacro(const std::string& name, const std::string& value)
 {
 	defines[name] = value;
@@ -402,14 +419,11 @@ Pipeline::Pipeline(Pipeline&& other) noexcept
 	: m_device(other.m_device)
 	, m_pipeline(other.m_pipeline)
 	, m_layout(other.m_layout)
-	, m_descriptorSetLayouts(other.m_descriptorSetLayouts)
-	, m_descriptorSets(other.m_descriptorSets)
+	, m_descriptorSetLayouts(std::move(other.m_descriptorSetLayouts))
 {
 	other.m_device = nullptr;
 	other.m_pipeline = VK_NULL_HANDLE;
 	other.m_layout = VK_NULL_HANDLE;
-	other.m_descriptorSetLayouts.clear();
-	other.m_descriptorSets.clear();
 }
 
 Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
@@ -418,13 +432,10 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 		m_device = other.m_device;
 		m_pipeline = other.m_pipeline;
 		m_layout = other.m_layout;
-		m_descriptorSetLayouts = other.m_descriptorSetLayouts;
-		m_descriptorSets = other.m_descriptorSets;
+		m_descriptorSetLayouts = std::move(other.m_descriptorSetLayouts);
 		other.m_device = nullptr;
 		other.m_pipeline = VK_NULL_HANDLE;
 		other.m_layout = VK_NULL_HANDLE;
-		other.m_descriptorSetLayouts.clear();
-		other.m_descriptorSets.clear();
 	}
 	return *this;
 }
@@ -434,15 +445,19 @@ void Pipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer)
 	if (!cmdBuffer)
 		return;
 
-	BindAllEntry(cmdBuffer);
-	cmdBuffer->bindDescriptorSets(m_bindPoint, m_layout, 0, m_descriptorSets, {});
+	DescriptorSetGroupHolder setGroupHolder;
+	if (!m_descriptorSetLayouts->GetDescriptorSetGroup(setGroupHolder))
+		return;
+
+	BindAllEntry(cmdBuffer, setGroupHolder.data);
+	cmdBuffer->bindDescriptorSets(m_bindPoint, m_layout, 0, setGroupHolder.data->sets, {});
 }
 
 vk::Pipeline Pipeline::GetHandle() const { return m_pipeline; }
 
 vk::PipelineLayout Pipeline::GetLayout() const { return m_layout; }
 
-const std::vector<vk::DescriptorSetLayout>& Pipeline::GetDescriptorSetLayout() const { return m_descriptorSetLayouts; }
+const std::vector<vk::DescriptorSetLayout>& Pipeline::GetDescriptorSetLayout() const { return m_descriptorSetLayouts->setLayouts; }
 
 VKCore::VulkanDevice* Pipeline::GetDevice() const { return m_device; }
 
@@ -475,19 +490,11 @@ void Pipeline::Release()
 			m_device->GetHandle().destroyPipeline(m_pipeline);
 		if (m_layout)
 			m_device->GetHandle().destroyPipelineLayout(m_layout);
-		for (auto& desc : m_descriptorSetLayouts)
-		{
-			if (desc)
-				m_device->GetHandle().destroyDescriptorSetLayout(desc);
-		}
-		if (!m_descriptorSets.empty())
-			m_device->GetHandle().freeDescriptorSets(VKCONTEXT->GetDescriptorPool(), m_descriptorSets);
 	}
 	m_device = nullptr;
 	m_pipeline = VK_NULL_HANDLE;
 	m_layout = VK_NULL_HANDLE;
-	m_descriptorSetLayouts.clear();
-	m_descriptorSets.clear();
+	m_descriptorSetLayouts.reset();
 	m_bindingData.clear();
 }
 
@@ -712,68 +719,68 @@ void Pipeline::SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 	cmd->pushConstants(m_layout, flags, offset, size, data);
 }
 
-void Pipeline::BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer)
+void Pipeline::BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data)
 {
 	if (!cmdBuffer)
 		return;
 
 	for (auto& [bindingpoint, entry] : m_bindingData)
-		BindEntry(cmdBuffer, bindingpoint, entry);
+		BindEntry(cmdBuffer, data, bindingpoint, entry);
 }
 
-void Pipeline::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, const BindingPoint& point, BindingEntry& entry)
+void Pipeline::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, const BindingPoint& point, BindingEntry& entry)
 {
 	if (entry.type == BindingEntry::DataType::UniformBlock)
 	{
 		UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformBlock(*dataptr, point.binding, point.set);
+		BindUniformBlock(*dataptr, data, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageBlock)
 	{
 		StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageBlock(*dataptr, point.binding, point.set);
+		BindStorageBlock(*dataptr, data, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTex)
 	{
 		UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTexture(cmdBuffer, *dataptr, point.binding, point.set);
+		BindUniformTexture(cmdBuffer, data, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTexCube)
 	{
 		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTextureCube(cmdBuffer, *dataptr, point.binding, point.set);
+		BindUniformTextureCube(cmdBuffer, data, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTexArray)
 	{
 		UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTextureArray(cmdBuffer, *dataptr, point.binding, point.set);
+		BindUniformTextureArray(cmdBuffer, data, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImage)
 	{
 		StorageImageEntry* dataptr = std::get_if<StorageImageEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImage(cmdBuffer, *dataptr, point.binding, point.set);
+		BindStorageImage(cmdBuffer, data, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImageArray)
 	{
 		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImageArray(cmdBuffer, *dataptr, point.binding, point.set);
+		BindStorageImageArray(cmdBuffer, data, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
 	{
 		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
 		if (!dataptr) return;
-		BindAccelerationStructure(*dataptr, point.binding, point.set);
+		BindAccelerationStructure(*dataptr, data, point.binding, point.set);
 	}
 }
 
-void Pipeline::BindUniformBlock(UniformBlockEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
 {
 	if (entry.block)
 	{
@@ -793,7 +800,7 @@ void Pipeline::BindUniformBlock(UniformBlockEntry& entry, uint32_t binding, uint
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -802,7 +809,7 @@ void Pipeline::BindUniformBlock(UniformBlockEntry& entry, uint32_t binding, uint
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindStorageBlock(StorageBlockEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
 {
 	if (entry.block)
 	{
@@ -822,7 +829,7 @@ void Pipeline::BindStorageBlock(StorageBlockEntry& entry, uint32_t binding, uint
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eStorageBuffer)
@@ -831,7 +838,7 @@ void Pipeline::BindStorageBlock(StorageBlockEntry& entry, uint32_t binding, uint
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureEntry& entry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
 		return;
@@ -859,7 +866,7 @@ void Pipeline::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
@@ -868,7 +875,7 @@ void Pipeline::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
 		return;
@@ -896,7 +903,7 @@ void Pipeline::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
@@ -905,7 +912,7 @@ void Pipeline::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
 		return;
@@ -934,7 +941,7 @@ void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffe
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
@@ -943,7 +950,7 @@ void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffe
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageEntry& entry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
 		return;
@@ -972,7 +979,7 @@ void Pipeline::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eStorageImage)
@@ -981,7 +988,7 @@ void Pipeline::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set)
+void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
 		return;
@@ -1008,7 +1015,7 @@ void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eStorageImage)
@@ -1017,7 +1024,7 @@ void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void Pipeline::BindAccelerationStructure(AccelerationStructureEntry& entry, uint32_t binding, uint32_t set)
+void Pipeline::BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
 {
 	if (entry.handle == VK_NULL_HANDLE)
 		return;
@@ -1027,7 +1034,7 @@ void Pipeline::BindAccelerationStructure(AccelerationStructureEntry& entry, uint
 
 	vk::WriteDescriptorSet write;
 	write
-		.setDstSet(m_descriptorSets[set])
+		.setDstSet(data->sets[set])
 		.setDstBinding(binding)
 		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
 		.setDescriptorCount(1)
@@ -1088,16 +1095,18 @@ vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
 		offset += size;
 	}
 
-	std::vector<vk::DescriptorSetLayout> setLayouts;
-	if (auto result = CreateDescriptorSetLayout(bindings, bindingFlags, setLayouts); result != vk::Result::eSuccess)
-		return result;
+	{
+		std::vector<vk::DescriptorSetLayout> setLayouts;
+		if (auto result = CreateDescriptorSetLayout(bindings, bindingFlags, setLayouts); result != vk::Result::eSuccess)
+			return result;
+		m_descriptorSetLayouts = std::make_shared<DescriptorSetLayoutData>(m_device, VKCONTEXT->GetDescriptorPool(), std::move(setLayouts));
+	}
 
-	std::vector<vk::DescriptorSet> descriptorSets;
-	if (auto result = CreateDescriptorSets(setLayouts, bindingFlags, variableEntrys, descriptorSets); result != vk::Result::eSuccess)
+	if (auto result = CreateDescriptorSets(bindingFlags, variableEntrys); result != vk::Result::eSuccess)
 		return result;
 
 	vk::PipelineLayoutCreateInfo createInfo;
-	createInfo.setSetLayouts(setLayouts)
+	createInfo.setSetLayouts(m_descriptorSetLayouts->setLayouts)
 		.setPushConstantRanges(pushConstants);
 
 	auto [result, layout] = m_device->GetHandle().createPipelineLayout(createInfo);
@@ -1107,8 +1116,6 @@ vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
 		return result;
 	}
 
-	m_descriptorSetLayouts = setLayouts;
-	m_descriptorSets = descriptorSets;
 	m_layout = layout;
 	return vk::Result::eSuccess;
 }
@@ -1122,7 +1129,7 @@ vk::Result Pipeline::CreateDescriptorSetLayout(const std::vector<std::vector<vk:
 		auto& binding = bindings[i];
 		auto& flags = bindingFlags[i];
 
-		vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+		vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo;
 		bindingFlagsInfo.setBindingFlags(flags);
 
 		vk::DescriptorSetLayoutCreateInfo createInfo = {};
@@ -1142,35 +1149,164 @@ vk::Result Pipeline::CreateDescriptorSetLayout(const std::vector<std::vector<vk:
 }
 
 vk::Result Pipeline::CreateDescriptorSets(
-	const std::vector<vk::DescriptorSetLayout>& setLayouts,
 	const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags,
-	const std::vector<PipelineConfig::VariableEntry>& variableEntrys,
-	std::vector<vk::DescriptorSet>& outSets
+	const std::vector<PipelineConfig::VariableEntry>& variableEntrys
 )
 {
+	const std::vector<vk::DescriptorSetLayout>& setLayouts = m_descriptorSetLayouts->setLayouts;
+	vk::DescriptorSetAllocateInfo& allocInfo = m_descriptorSetLayouts->allocInfo;
+	vk::DescriptorSetVariableDescriptorCountAllocateInfo& variableCountInfo = m_descriptorSetLayouts->variableCountInfo;
+	std::vector<uint32_t>& variableCounts = m_descriptorSetLayouts->variableCounts;
+
+	bool isVariable = false;
+	variableCounts.resize(setLayouts.size(), 0);
 	for (uint32_t i = 0; i < setLayouts.size(); i++)
 	{
-		vk::DescriptorSetAllocateInfo allocInfo;
-		allocInfo
-			.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
-			.setSetLayouts(setLayouts[i]);
-
-		uint32_t variableCount = 0;
-		vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
 		if (variableEntrys[i].isVariable)
 		{
-			variableCount = variableEntrys[i].maxCount;
-			variableCountInfo.setDescriptorCounts(variableCount);
-			allocInfo.setPNext(&variableCountInfo);
+			variableCounts[i] = variableEntrys[i].maxCount;
+			isVariable = true;
 		}
+	}
 
+	variableCountInfo.setDescriptorCounts(variableCounts);
+	allocInfo
+		.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
+		.setSetLayouts(setLayouts);
+
+	//if (isVariable)
+		//allocInfo.setPNext(&variableCountInfo);
+
+	return vk::Result::eSuccess;
+}
+
+//vk::Result Pipeline::CreateDescriptorSets(
+//	const std::vector<vk::DescriptorSetLayout>& setLayouts,
+//	const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags,
+//	const std::vector<PipelineConfig::VariableEntry>& variableEntrys,
+//	std::vector<vk::DescriptorSet>& outSets
+//)
+//{
+//	for (uint32_t i = 0; i < setLayouts.size(); i++)
+//	{
+//		vk::DescriptorSetAllocateInfo allocInfo;
+//		allocInfo
+//			.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
+//			.setSetLayouts(setLayouts[i]);
+//
+//		uint32_t variableCount = 0;
+//		vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
+//		if (variableEntrys[i].isVariable)
+//		{
+//			variableCount = variableEntrys[i].maxCount;
+//			variableCountInfo.setDescriptorCounts(variableCount);
+//			allocInfo.setPNext(&variableCountInfo);
+//		}
+//
+//		auto [result, descriptorSets] = VKCONTEXT->GetDeviceHandle().allocateDescriptorSets(allocInfo);
+//		if (result != vk::Result::eSuccess) {
+//			std::cout << std::format("fail to create descriptorSets! error = {}\n", to_string(result));
+//			return result;
+//		}
+//
+//		outSets.push_back(descriptorSets[0]);
+//	}
+//	return vk::Result::eSuccess;
+//}
+
+Pipeline::DescriptorSetGroup::DescriptorSetGroup(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSet>& sets)
+	:device(device), pool(pool), sets(sets) {}
+
+Pipeline::DescriptorSetGroup::~DescriptorSetGroup() {
+	if (!sets.empty() && device && pool)
+		device->GetHandle().freeDescriptorSets(pool, sets);
+}
+
+Pipeline::DescriptorSetGroupPool::DescriptorSetGroupPool(uint32_t maxResNum) :_maxResNum(maxResNum) {}
+
+std::shared_ptr<Pipeline::DescriptorSetGroup> Pipeline::DescriptorSetGroupPool::Fetch()
+{
+	if (_iDleList.size() > 0) // 不为空，从中取一个
+	{
+		auto it = _iDleList.begin();
+		auto handle = *it;
+		_iDleList.erase(it);
+		return handle;
+	}
+	return nullptr;
+}
+
+bool Pipeline::DescriptorSetGroupPool::Recycle(std::shared_ptr<DescriptorSetGroup> handle)
+{
+	// 已持有的数据
+	auto it = _datas.find(handle);
+	if (it != _datas.end())
+	{
+		if (_iDleList.find(handle) == _iDleList.end())
+		{
+			_iDleList.insert(handle);
+			return true;
+		}
+		else
+		{
+			std::cerr << "DescriptorSetGroupPool::RecycleData double free!!!\n";
+			return true;
+		}
+	}
+	else // 外部数据，非池子持有的
+	{
+		if (_datas.size() < _maxResNum)
+		{
+			_datas.insert(handle);
+			_iDleList.insert(handle);
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+}
+
+void Pipeline::DescriptorSetGroupPool::Clear() {
+	_iDleList.clear();
+	_datas.clear();
+}
+
+Pipeline::DescriptorSetLayoutData::DescriptorSetLayoutData(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSetLayout>& setLayouts)
+	:device(device), pool(pool), setLayouts(setLayouts) {}
+
+Pipeline::DescriptorSetLayoutData::~DescriptorSetLayoutData() {
+	for (auto& desc : setLayouts)
+	{
+		if (desc) device->GetHandle().destroyDescriptorSetLayout(desc);
+	}
+}
+
+bool Pipeline::DescriptorSetLayoutData::GetDescriptorSetGroup(DescriptorSetGroupHolder& holder) {
+	auto setGroup = setGroupPool.Fetch();
+	if (!setGroup)
+	{
 		auto [result, descriptorSets] = VKCONTEXT->GetDeviceHandle().allocateDescriptorSets(allocInfo);
 		if (result != vk::Result::eSuccess) {
 			std::cout << std::format("fail to create descriptorSets! error = {}\n", to_string(result));
-			return result;
+			return false;
 		}
 
-		outSets.push_back(descriptorSets[0]);
+		setGroup = std::make_shared<DescriptorSetGroup>(device, pool, std::move(descriptorSets));
 	}
-	return vk::Result::eSuccess;
+
+	holder.parent = shared_from_this();
+	holder.data = std::move(setGroup);
+	return true;
+}
+
+Pipeline::DescriptorSetGroupHolder::DescriptorSetGroupHolder(std::weak_ptr<DescriptorSetLayoutData> parent, std::shared_ptr<DescriptorSetGroup> data)
+	:parent(parent), data(data) {}
+
+Pipeline::DescriptorSetGroupHolder::~DescriptorSetGroupHolder() {
+	if (data)
+		VKCONTEXT->Retire(new RestireSetGroupHolder(std::move(parent), std::move(data)));
+	parent.reset();
+	data.reset();
 }
