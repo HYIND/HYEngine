@@ -113,6 +113,58 @@ namespace GeneralBindingPoint
 
 class Pipeline
 {
+private:
+	struct DescriptorSetLayoutData;
+	struct DescriptorSetGroup;
+
+	class DescriptorSetGroupPool
+	{
+
+	public:
+		DescriptorSetGroupPool(uint32_t maxResNum = 50);
+		void Clear();
+		std::shared_ptr<DescriptorSetGroup> Fetch();
+		bool Recycle(std::shared_ptr<DescriptorSetGroup> setGroup);	// 回收
+
+	private:
+		std::unordered_set<std::shared_ptr<DescriptorSetGroup>> _iDleList;
+		std::unordered_set<std::shared_ptr<DescriptorSetGroup>> _datas;
+		uint32_t _maxResNum = 50;
+	};
+	struct DescriptorSetGroupHolder
+	{
+		std::weak_ptr<DescriptorSetLayoutData> parent;
+		std::shared_ptr<DescriptorSetGroup> data;
+		DescriptorSetGroupHolder() {}
+		DescriptorSetGroupHolder(std::weak_ptr<DescriptorSetLayoutData> parent, std::shared_ptr<DescriptorSetGroup> data);
+		~DescriptorSetGroupHolder();
+	};
+
+public:
+	struct DescriptorSetGroup {
+		VKCore::VulkanDevice* device;
+		vk::DescriptorPool pool;
+		std::vector<vk::DescriptorSet> sets;
+		DescriptorSetGroup(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSet>& sets);
+		~DescriptorSetGroup();
+	};
+
+	struct DescriptorSetLayoutData :public std::enable_shared_from_this<DescriptorSetLayoutData>
+	{
+		VKCore::VulkanDevice* device;
+		vk::DescriptorPool pool;
+		std::vector<vk::DescriptorSetLayout> setLayouts;
+		DescriptorSetGroupPool setGroupPool;
+
+		vk::DescriptorSetAllocateInfo allocInfo;
+		vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
+		std::vector<uint32_t> variableCounts;
+
+		DescriptorSetLayoutData(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSetLayout>& setLayouts);
+		~DescriptorSetLayoutData();
+		bool GetDescriptorSetGroup(DescriptorSetGroupHolder& holder);
+	};
+
 public:
 	struct UniformBlockEntry
 	{
@@ -247,31 +299,33 @@ public:
 	void SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset = 0);
 
 private:
-	void BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer);
-	void BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, const BindingPoint& point, BindingEntry& entry);
-	void BindUniformBlock(UniformBlockEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageBlock(StorageBlockEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindAccelerationStructure(AccelerationStructureEntry& entry, uint32_t binding, uint32_t set);
+	void BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data);
+	void BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, const BindingPoint& point, BindingEntry& entry);
+	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
+	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
+	void BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 
 protected:
 	// ---------- 工具函数 ----------
 	vk::Result CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule);
 	vk::Result CreatePipelineLayout(const PipelineConfig& config);
 	vk::Result CreateDescriptorSetLayout(const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& bindings, const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, std::vector<vk::DescriptorSetLayout>& outLayouts);
-	vk::Result CreateDescriptorSets(const std::vector<vk::DescriptorSetLayout>& setLayouts, const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, const std::vector<PipelineConfig::VariableEntry>& variableEntrys, std::vector<vk::DescriptorSet>& outSets);
+	vk::Result CreateDescriptorSets(const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, const std::vector<PipelineConfig::VariableEntry>& variableEntrys);
 
 protected:
 	// ---------- 成员变量 ----------
 	VKCore::VulkanDevice* m_device = nullptr;
 	vk::Pipeline m_pipeline = VK_NULL_HANDLE;
 	vk::PipelineLayout m_layout = VK_NULL_HANDLE;
-	std::vector<vk::DescriptorSetLayout> m_descriptorSetLayouts;
-	std::vector<vk::DescriptorSet> m_descriptorSets;
+	//std::vector<vk::DescriptorSetLayout> m_descriptorSetLayouts;
+	//std::vector<vk::DescriptorSet> m_descriptorSets;
+
+	std::shared_ptr<DescriptorSetLayoutData> m_descriptorSetLayouts;
 
 	vk::PipelineBindPoint m_bindPoint;
 	Texture2D::BindStage m_bindStage;
