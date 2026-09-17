@@ -1,7 +1,11 @@
 #pragma once
 
-#include "vkstdafx.h"
+#include <thread>
 #include "SafeStl.h"
+#include <vector>
+#include <condition_variable>
+#include <functional>
+#include <future>
 
 #include "PublicShareExportMacro.h"
 
