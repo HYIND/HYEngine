@@ -319,10 +319,10 @@ bool GraphicsPipeline::CreatePipeline(GraphicsPipelineConfig& config)
 	return true;
 }
 
-void GraphicsPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) {
+void GraphicsPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
 	if (!cmdBuffer)
 		return;
-	Pipeline::Bind(cmdBuffer);
+	Pipeline::Bind(cmdBuffer, bindingRecord);
 	cmdBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 }
 

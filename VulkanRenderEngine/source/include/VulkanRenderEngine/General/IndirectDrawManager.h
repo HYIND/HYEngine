@@ -20,6 +20,7 @@ inline constexpr BindlessIndex BindlessIndexNull = std::numeric_limits<BindlessI
 
 class BindlessTextureManager : public ITextureArrayProvider
 {
+	static std::shared_ptr<Texture2D> _placeholderTexture;
 
 public:
 	static std::shared_ptr<BindlessTextureManager> Instance();
@@ -33,17 +34,15 @@ public:
 
 	std::vector<TextureDescBindEntry> GetTextureDescBindEntrys() const;
 
-	void ClearDirtyTexture();
+	void ClearDirtyTexture(const Texture2D* tex);
 private:
 	BindlessTextureManager() {}
 
 private:
 	std::vector<TextureDescBindEntry> _entrys;
-
-	std::vector<const Texture2D*> _texturePtrs;
 	std::unordered_map<const Texture2D*, uint32_t> _textureEntrys;
 
-	std::vector<const Texture2D*> dirtyTexture;
+	std::queue<uint32_t> _idleSlot;
 
 	mutable CriticalSectionLock _mutex;
 };
@@ -54,19 +53,22 @@ public:
 	static std::shared_ptr<IndirectDrawManager> Instance();
 
 	// Mesh相关
-	void setupMesh(Mesh& mesh);
-	void deleteMesh(Mesh& mesh);
+	void SetupMesh(Mesh& mesh);
+	void RetireMesh(Mesh& mesh);
 	bool GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta);
 	std::shared_ptr<VertexBufferBlock> GetVertexBlock();
 	std::shared_ptr<IndexBufferBlock> GetIndexBlock();
 
 	// Material相关
-	void setupMaterial(Material& material);
-	void deleteMaterial(Material& material);
+	void SetupMaterial(Material& material);
+	void RetireMaterial(Material& material);
 	bool GetMaterialIndex(Material& material, uint64_t& index);
 	bool GetMaterialIndex(Material& material, uint32_t& index);
 	std::shared_ptr<StorageBlock> GetMaterialSSBO();
 
+public:
+	void DeleteMesh(const std::string& uuid);
+	void DeleteMaterial(const std::string& uuid);
 private:
 	IndirectDrawManager();
 

@@ -106,7 +106,6 @@
     <ClInclude Include="source\include\GeneralManager\RenderManager.h" />
     <ClInclude Include="source\include\GeneralManager\WindowHandleManager.h" />
     <ClInclude Include="source\include\Helper\AudioTool.h" />
-    <ClInclude Include="source\include\Helper\DynamicFpsController.h" />
     <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h" />
     <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h" />
     <ClInclude Include="source\include\RenderEngine\D2DTools.h" />
@@ -136,7 +135,6 @@
     <ClCompile Include="source\src\GeneralManager\RenderManager.cpp" />
     <ClCompile Include="source\src\GeneralManager\WindowHandleManager.cpp" />
     <ClCompile Include="source\src\Helper\AudioTool.cpp" />
-    <ClCompile Include="source\src\Helper\DynamicFpsController.cpp" />
     <ClCompile Include="source\src\Input\LocalInputSystem.cpp" />
     <ClCompile Include="source\src\RenderEngine\D2DTools.cpp" />
     <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp" />

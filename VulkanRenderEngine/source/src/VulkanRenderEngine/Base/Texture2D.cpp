@@ -259,30 +259,6 @@ void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::Pipel
 		*outDestStageFlag = dstStageMask;
 }
 
-void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
-{
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	BlitImageAsync(cmd, src, dstImage, dstWidth, dstHeight);
-	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-}
-
-bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
-{
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	bool result = CopyTextureAsync(cmd, src, dest, srcLevel, destLevel);
-	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-	return result;
-}
-
-bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
-{
-	if (!src || !dest)
-		return false;
-	return CopyTexture(*src, *dest, srcLevel, destLevel);
-}
-
 void Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
 {
 	vk::Image srcImage = src._image->GetHandle();
@@ -309,6 +285,74 @@ void Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	blitRegion.setDstOffsets(dstOffsets);
 
 	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eLinear);
+}
+
+void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+{
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	BlitImageAsync(cmd, src, dstImage, dstWidth, dstHeight);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+}
+
+bool Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest)
+{
+	vk::Image srcImage = src._image->GetHandle();
+	vk::Image dstImage = dest._image->GetHandle();
+	vk::ImageLayout srcLayout = src._image->GetCurrentLayout(0);
+	vk::ImageLayout dstLayout = dest._image->GetCurrentLayout(0);
+
+	if (srcLayout != vk::ImageLayout::eTransferSrcOptimal) {
+		src._image->TransitionLayout(
+			cmd,
+			vk::ImageLayout::eTransferSrcOptimal,
+			vk::PipelineStageFlagBits::eTransfer,
+			0,
+			1
+		);
+	}
+
+	if (dstLayout != vk::ImageLayout::eTransferDstOptimal) {
+		dest._image->TransitionLayout(
+			cmd,
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::PipelineStageFlagBits::eTransfer,
+			0,
+			1
+		);
+	}
+
+	std::array<vk::Offset3D, 2> srcOffsets = { vk::Offset3D{ 0, 0, 0 },vk::Offset3D{ (int)src.GetWidth(), (int)src.GetHeight(), 1 } };
+	std::array<vk::Offset3D, 2> dstOffsets = { vk::Offset3D{ 0, 0, 0 },vk::Offset3D{ (int)dest.GetWidth(), (int)dest.GetHeight(), 1} };
+
+	vk::ImageBlit blitRegion = {};
+	blitRegion.setSrcSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(0).setBaseArrayLayer(0).setLayerCount(1));
+	blitRegion.setSrcOffsets(srcOffsets);
+	blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(0).setBaseArrayLayer(0).setLayerCount(1));
+	blitRegion.setDstOffsets(dstOffsets);
+
+	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eNearest);
+	return true;
+}
+
+bool Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
+	if (!src || !dest)
+		return false;
+	return BlitImageAsync(cmd, *src, *dest);
+}
+
+bool Texture2D::BlitImage(Texture2D& src, Texture2D& dest) {
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	bool result = BlitImageAsync(cmd, src, dest);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	return result;
+}
+
+bool Texture2D::BlitImage(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
+	if (!src || !dest)
+		return false;
+	return BlitImage(*src, *dest);
 }
 
 bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
@@ -395,24 +439,6 @@ bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 		dstImage, vk::ImageLayout::eTransferDstOptimal,
 		region);
 
-	// 恢复源布局
-	if (srcOldLayout != vk::ImageLayout::eTransferSrcOptimal && srcOldLayout != vk::ImageLayout::eUndefined) {
-		src._image->TransitionLayout(
-			cmd,
-			srcOldLayout,
-			VmaImage::AccessMaskToStage(VmaImage::GetAccessMaskForLayout(srcOldLayout))
-		);
-	}
-
-	// 恢复目标布局
-	if (dstOldLayout != vk::ImageLayout::eTransferDstOptimal && dstOldLayout != vk::ImageLayout::eUndefined) {
-		dest._image->TransitionLayout(
-			cmd,
-			dstOldLayout,
-			VmaImage::AccessMaskToStage(VmaImage::GetAccessMaskForLayout(dstOldLayout))
-		);
-	}
-
 	return true;
 }
 
@@ -421,6 +447,22 @@ bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 	if (!src || !dest)
 		return false;
 	return CopyTextureAsync(cmd, *src, *dest, srcLevel, destLevel);
+}
+
+bool Texture2D::CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
+{
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	bool result = CopyTextureAsync(cmd, src, dest, srcLevel, destLevel);
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	return result;
+}
+
+bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
+{
+	if (!src || !dest)
+		return false;
+	return CopyTexture(*src, *dest, srcLevel, destLevel);
 }
 
 Texture2D::Texture2D(const std::string& filepath, const Texture2DConfig& config)

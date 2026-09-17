@@ -107,7 +107,6 @@
     <ClInclude Include="public\include\EndPointConfig.h" />
     <ClInclude Include="public\include\GameDataDef.h" />
     <ClInclude Include="public\include\LobbyDataDef.h" />
-    <ClInclude Include="public\include\Log.h" />
     <ClInclude Include="public\include\ServiceDiscoveryClient.h" />
     <ClInclude Include="public\include\ServiceRegistryData.h" />
     <ClInclude Include="resource.h" />
@@ -115,8 +114,6 @@
     <ClInclude Include="source\include\Factory\CharacterFactory.h" />
     <ClInclude Include="source\include\Factory\LightFactory.h" />
     <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h" />
-    <ClInclude Include="source\include\Helper\DynamicFpsController.h" />
-    <ClInclude Include="source\include\Helper\Log.h" />
     <ClInclude Include="source\include\Manager\BGMManager.h" />
     <ClInclude Include="source\include\Manager\GameWorldManager.h" />
     <ClInclude Include="source\include\Manager\LobbyManager.h" />
@@ -152,7 +149,6 @@
     <ClCompile Include="source\src\CharacterFactory.cpp" />
     <ClCompile Include="source\src\BGMManager.cpp" />
     <ClCompile Include="source\src\BusyLoaderDialog.cpp" />
-    <ClCompile Include="source\src\DynamicFpsController.cpp" />
     <ClCompile Include="source\src\GameWorldManager.cpp" />
     <ClCompile Include="source\src\LightFactory.cpp" />
     <ClCompile Include="source\src\LobbyManager.cpp" />

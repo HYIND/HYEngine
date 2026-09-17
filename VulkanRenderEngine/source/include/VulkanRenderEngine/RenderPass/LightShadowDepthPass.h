@@ -23,7 +23,7 @@ public:
 	virtual ~LightShadowDepthPass();
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
@@ -37,6 +37,8 @@ private:
 		RenderState& state,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 		std::shared_ptr<GraphicsPipeline>& shader_Skinned,
+		GraphicsBindingRecord& shader_StaticMesh_Binding,
+		GraphicsBindingRecord& shader_Skinned_Binding,
 		uint32_t count,
 		std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& meshes,
 		std::vector<VKRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& skinned,
@@ -52,21 +54,15 @@ private:
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthStaticMeshShader;
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthSkinnedShader;
 
+
+	GraphicsBindingRecord _dirLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord _dirLightShadowDepthSkinnedBinding;
+	GraphicsBindingRecord _pointLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord _pointLightShadowDepthSkinnedBinding;
+
 	bool useAMDViewportExt;
 
-	bool _shouldUpdateTexture;
-
-	int64_t _lastUpadteTime;
-	uint32_t updateFrameDelta = 1;		//每3帧更新一次
-
 	std::shared_ptr<AtlasMap> _atlas;
-
-	struct
-	{
-		std::vector<std::shared_ptr<DirLightInfo>> dirLightInfos;
-		std::vector<std::shared_ptr<PointLightInfo>> pointLightInfos;
-		std::vector<std::shared_ptr<SpotLightInfo>> spotLightInfos;
-	}_history;
 
 	std::shared_ptr<StorageBlock> _ssbo_ShadowMatrices;
 	std::shared_ptr<StorageBlock> _ssbo_LightProps;

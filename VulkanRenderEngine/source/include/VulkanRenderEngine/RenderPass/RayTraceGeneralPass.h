@@ -35,7 +35,7 @@ public:
 	~RayTraceGeneralPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	std::shared_ptr<RayTraceGeneralBuffer> GetGeneralBuffer();

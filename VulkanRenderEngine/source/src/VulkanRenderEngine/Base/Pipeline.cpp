@@ -440,7 +440,7 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
 	return *this;
 }
 
-void Pipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer)
+void Pipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord)
 {
 	if (!cmdBuffer)
 		return;
@@ -449,8 +449,29 @@ void Pipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer)
 	if (!m_descriptorSetLayouts->GetDescriptorSetGroup(setGroupHolder))
 		return;
 
-	BindAllEntry(cmdBuffer, setGroupHolder.data);
+	bindingRecord.BindAllEntry(cmdBuffer, setGroupHolder.data, m_bindStage);
 	cmdBuffer->bindDescriptorSets(m_bindPoint, m_layout, 0, setGroupHolder.data->sets);
+}
+
+void Pipeline::SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset)
+{
+	if (!cmd)
+		return;
+
+	vk::ShaderStageFlags flags;
+	if (m_bindStage == Texture2D::BindStage::Graphics)
+		flags = vk::ShaderStageFlagBits::eAllGraphics;
+	else if (m_bindStage == Texture2D::BindStage::Compute)
+		flags = vk::ShaderStageFlagBits::eCompute;
+	else if (m_bindStage == Texture2D::BindStage::RayTracing)
+		flags = vk::ShaderStageFlagBits::eRaygenKHR
+		| vk::ShaderStageFlagBits::eClosestHitKHR
+		| vk::ShaderStageFlagBits::eMissKHR
+		| vk::ShaderStageFlagBits::eAnyHitKHR
+		| vk::ShaderStageFlagBits::eIntersectionKHR
+		| vk::ShaderStageFlagBits::eCallableKHR;
+
+	cmd->pushConstants(m_layout, flags, offset, size, data);
 }
 
 vk::Pipeline Pipeline::GetHandle() const { return m_pipeline; }
@@ -495,583 +516,6 @@ void Pipeline::Release()
 	m_pipeline = VK_NULL_HANDLE;
 	m_layout = VK_NULL_HANDLE;
 	m_descriptorSetLayouts.reset();
-	m_bindingData.clear();
-}
-
-
-void Pipeline::SetUniformBlock(const std::shared_ptr<UniformBlock>& uniformBlock, uint32_t binding, uint32_t set)
-{
-	SetUniformBlock(uniformBlock, BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetStorageBlock(const std::shared_ptr<StorageBlock>& storageBlock, uint32_t binding, uint32_t set)
-{
-	SetStorageBlock(storageBlock, BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetUniformTexture(const std::shared_ptr<Texture2D>& uniformTex, uint32_t binding, uint32_t set)
-{
-	SetUniformTexture(uniformTex, BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetUniformTextureCube(const std::shared_ptr<TextureCube>& uniformTexCube, uint32_t binding, uint32_t set)
-{
-	SetUniformTextureCube(uniformTexCube, BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, uint32_t binding, uint32_t set)
-{
-	SetUniformTextureArray(provider, BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, uint32_t binding, uint32_t set)
-{
-	SetUniformTextureArray(array, BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<UniformBlock> Pipeline::GetUniformBlock(uint32_t binding, uint32_t set)
-{
-	return GetUniformBlock(BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<StorageBlock> Pipeline::GetStorageBlock(uint32_t binding, uint32_t set)
-{
-	return GetStorageBlock(BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<UniformBlock> Pipeline::FindUniformBlock(uint32_t binding, uint32_t set)
-{
-	return FindUniformBlock(BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<StorageBlock> Pipeline::FindStorageBlock(uint32_t binding, uint32_t set)
-{
-	return FindStorageBlock(BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<Texture2D> Pipeline::FindUniformTexture(uint32_t binding, uint32_t set)
-{
-	return FindUniformTexture(BindingPoint{ .binding = binding, .set = set });
-}
-
-std::shared_ptr<ITextureArrayProvider> Pipeline::FindUniformTextureArray(uint32_t binding, uint32_t set)
-{
-	return FindUniformTextureArray(BindingPoint{ .binding = binding, .set = set });
-}
-
-void Pipeline::SetUniformBlock(const std::shared_ptr<UniformBlock>& uniformBlock, const BindingPoint& bp)
-{
-	if (!uniformBlock)
-		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::UniformBlock, .data = UniformBlockEntry{.block = uniformBlock} };
-	m_bindingData[bp] = entry;
-}
-
-void Pipeline::SetStorageBlock(const std::shared_ptr<StorageBlock>& storageBlock, const BindingPoint& bp)
-{
-	if (!storageBlock)
-		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::StorageBlock, .data = StorageBlockEntry{.block = storageBlock} };
-	m_bindingData[bp] = entry;
-}
-
-void Pipeline::SetUniformTexture(const std::shared_ptr<Texture2D>& uniformTex, const BindingPoint& bp)
-{
-	if (!uniformTex)
-		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::UniformTex, .data = UniformTextureEntry{.texture = uniformTex} };
-	m_bindingData[bp] = entry;
-}
-
-void Pipeline::SetUniformTextureCube(const std::shared_ptr<TextureCube>& UniformTexCube, const BindingPoint& bp)
-{
-	if (!UniformTexCube)
-		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexCube, .data = UniformTextureCubeEntry{.texture = UniformTexCube} };
-	m_bindingData[bp] = entry;
-}
-
-void Pipeline::SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, const BindingPoint& bp)
-{
-	if (!provider)
-		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexArray, .data = UniformTextureArrayEntry{.provider = provider} };
-	m_bindingData[bp] = entry;
-}
-
-void Pipeline::SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, const BindingPoint& bp)
-{
-	if (array.empty())
-		return;
-	auto provider = BaseTextureArrayProvider::Create(array);
-	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexArray, .data = UniformTextureArrayEntry{.provider = provider} };
-	m_bindingData[bp] = entry;
-}
-
-std::shared_ptr<UniformBlock> Pipeline::GetUniformBlock(const BindingPoint& bp)
-{
-	auto data = FindUniformBlock(bp);
-	if (!data)
-	{
-		data = std::make_shared<UniformBlock>();
-		SetUniformBlock(data, bp);
-	}
-	return data;
-}
-
-std::shared_ptr<StorageBlock> Pipeline::GetStorageBlock(const BindingPoint& bp)
-{
-	auto data = FindStorageBlock(bp);
-	if (!data)
-	{
-		data = std::make_shared<StorageBlock>();
-		SetStorageBlock(data, bp);
-	}
-	return data;
-}
-
-std::shared_ptr<UniformBlock> Pipeline::FindUniformBlock(const BindingPoint& bp)
-{
-	auto it = m_bindingData.find(bp);
-	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformBlock)
-		return nullptr;
-
-	BindingEntry entry = it->second;
-	UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
-	if (!dataptr)
-		return nullptr;
-
-	return dataptr->block;
-}
-
-std::shared_ptr<StorageBlock> Pipeline::FindStorageBlock(const BindingPoint& bp)
-{
-	auto it = m_bindingData.find(bp);
-	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::StorageBlock)
-		return nullptr;
-
-	BindingEntry entry = it->second;
-	StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
-	if (!dataptr)
-		return nullptr;
-
-	return dataptr->block;
-}
-
-std::shared_ptr<Texture2D> Pipeline::FindUniformTexture(const BindingPoint& bp)
-{
-	auto it = m_bindingData.find(bp);
-	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformTex)
-		return nullptr;
-
-	BindingEntry entry = it->second;
-	UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
-	if (!dataptr)
-		return nullptr;
-
-	return dataptr->texture;
-}
-
-std::shared_ptr<ITextureArrayProvider> Pipeline::FindUniformTextureArray(const BindingPoint& bp)
-{
-	auto it = m_bindingData.find(bp);
-	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformTexArray)
-		return {};
-
-	BindingEntry entry = it->second;
-	UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
-	if (!dataptr)
-		return {};
-
-	return dataptr->provider;
-}
-
-void Pipeline::SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO)
-{
-	if (curCmaeraUBO) SetUniformBlock(curCmaeraUBO, GeneralBindingPoint::Camera_Cur);
-	if (prevCameraUBO) SetUniformBlock(prevCameraUBO, GeneralBindingPoint::Camera_Prev);
-}
-
-void Pipeline::SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures)
-{
-	if (materials) SetStorageBlock(materials, GeneralBindingPoint::Material_materials);
-	if (textures) SetUniformTextureArray(textures, GeneralBindingPoint::Material_textures);
-}
-
-void Pipeline::SetLightStorageData(
-	const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta,
-	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade,
-	const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
-	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta
-)
-{
-	if (_ssbo_dirLightMeta) SetStorageBlock(_ssbo_dirLightMeta, GeneralBindingPoint::Light_DirLightMetaData);
-	if (_ssbo_dirLightCascade) SetStorageBlock(_ssbo_dirLightCascade, GeneralBindingPoint::Light_DirLightCascadeData);
-	if (_ssbo_pointLightMeta) SetStorageBlock(_ssbo_pointLightMeta, GeneralBindingPoint::Light_PointLightMetaData);
-	if (_ssbo_spotLightMeta) SetStorageBlock(_ssbo_spotLightMeta, GeneralBindingPoint::Light_SpotLightMetaData);
-}
-
-void Pipeline::SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset)
-{
-	if (!cmd)
-		return;
-
-	vk::ShaderStageFlags flags;
-	if (m_bindStage == Texture2D::BindStage::Graphics)
-		flags = vk::ShaderStageFlagBits::eAllGraphics;
-	else if (m_bindStage == Texture2D::BindStage::Compute)
-		flags = vk::ShaderStageFlagBits::eCompute;
-	else if (m_bindStage == Texture2D::BindStage::RayTracing)
-		flags = vk::ShaderStageFlagBits::eRaygenKHR
-		| vk::ShaderStageFlagBits::eClosestHitKHR
-		| vk::ShaderStageFlagBits::eMissKHR
-		| vk::ShaderStageFlagBits::eAnyHitKHR
-		| vk::ShaderStageFlagBits::eIntersectionKHR
-		| vk::ShaderStageFlagBits::eCallableKHR;
-
-	cmd->pushConstants(m_layout, flags, offset, size, data);
-}
-
-void Pipeline::BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data)
-{
-	if (!cmdBuffer)
-		return;
-
-	uint32_t size = data->sets.size();
-	for (auto& [bindingpoint, entry] : m_bindingData)
-	{
-		if (bindingpoint.set < size && data->sets[bindingpoint.set] != VK_NULL_HANDLE)
-			BindEntry(cmdBuffer, data, bindingpoint, entry);
-	}
-}
-
-void Pipeline::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, const BindingPoint& point, BindingEntry& entry)
-{
-	if (entry.type == BindingEntry::DataType::UniformBlock)
-	{
-		UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
-		if (!dataptr) return;
-		BindUniformBlock(*dataptr, data, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::StorageBlock)
-	{
-		StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
-		if (!dataptr) return;
-		BindStorageBlock(*dataptr, data, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::UniformTex)
-	{
-		UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
-		if (!dataptr) return;
-		BindUniformTexture(cmdBuffer, data, *dataptr, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::UniformTexCube)
-	{
-		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
-		if (!dataptr) return;
-		BindUniformTextureCube(cmdBuffer, data, *dataptr, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::UniformTexArray)
-	{
-		UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
-		if (!dataptr) return;
-		BindUniformTextureArray(cmdBuffer, data, *dataptr, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::StorageImage)
-	{
-		StorageImageEntry* dataptr = std::get_if<StorageImageEntry>(&entry.data);
-		if (!dataptr) return;
-		BindStorageImage(cmdBuffer, data, *dataptr, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::StorageImageArray)
-	{
-		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
-		if (!dataptr) return;
-		BindStorageImageArray(cmdBuffer, data, *dataptr, point.binding, point.set);
-	}
-	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
-	{
-		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
-		if (!dataptr) return;
-		BindAccelerationStructure(*dataptr, data, point.binding, point.set);
-	}
-}
-
-void Pipeline::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
-{
-	if (entry.block)
-	{
-		auto buffer = entry.block->GetBuffer();
-		if (buffer)
-			entry.buffer = buffer;
-	}
-
-	if (!entry.buffer)
-		return;
-
-	vk::DescriptorBufferInfo bufferInfo;
-	bufferInfo
-		.setBuffer(entry.buffer->GetHandle())
-		.setOffset(0)
-		.setRange(entry.buffer->GetSize());
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-		.setBufferInfo(bufferInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
-{
-	if (entry.block)
-	{
-		auto buffer = entry.block->GetBuffer();
-		if (buffer)
-			entry.buffer = buffer;
-	}
-
-	if (!entry.buffer)
-		return;
-
-	vk::DescriptorBufferInfo bufferInfo;
-	bufferInfo
-		.setBuffer(entry.buffer->GetHandle())
-		.setOffset(0)
-		.setRange(entry.buffer->GetSize());
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-		.setBufferInfo(bufferInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureEntry& entry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-	if (entry.texture)
-	{
-		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
-			entry.descEntry = entry.texture->GetDescBindEntry();
-	}
-
-	auto& texrure = entry.texture;
-	auto& imageView = entry.descEntry.imageView;
-	auto& sampler = entry.descEntry.sampler;
-
-	if (!texrure || !imageView || !sampler)
-		return;
-
-	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, m_bindStage, Texture2D::BindUsage::Sample);
-
-	vk::DescriptorImageInfo imageInfo;
-	imageInfo.setImageView(imageView->GetHandle())
-		.setSampler(sampler->GetHandle())
-		.setImageLayout(imageLayout);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-	if (entry.texture)
-	{
-		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
-			entry.descEntry = entry.texture->GetDescBindEntry();
-	}
-
-	auto& texrure = entry.texture;
-	auto& imageView = entry.descEntry.imageView;
-	auto& sampler = entry.descEntry.sampler;
-
-	if (!texrure || !imageView || !sampler)
-		return;
-
-	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, (TextureCube::BindStage)m_bindStage, TextureCube::BindUsage::Sample);
-
-	vk::DescriptorImageInfo imageInfo;
-	imageInfo.setImageView(imageView->GetHandle())
-		.setSampler(sampler->GetHandle())
-		.setImageLayout(imageLayout);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-	if (entry.provider)
-		entry.descEntrys = entry.provider->GetTextureDescBindEntrys();
-
-	std::vector<vk::DescriptorImageInfo> imageInfos;
-	for (auto& desc : entry.descEntrys)
-	{
-		vk::ImageLayout imageLayout;
-		vk::PipelineStageFlags dstStageMask;
-		Texture2D::GetImageLayoutAndStageFlag(&imageLayout, &dstStageMask, desc.image->GetFormat(), m_bindStage, Texture2D::BindUsage::Sample);
-		desc.image->TransitionLayout(cmdBuffer, imageLayout, dstStageMask);
-
-		vk::DescriptorImageInfo imageInfo;
-		imageInfo.setImageView(desc.imageView->GetHandle())
-			.setSampler(desc.sampler->GetHandle())
-			.setImageLayout(imageLayout);
-
-		imageInfos.push_back(imageInfo);
-	}
-
-	if (imageInfos.empty())
-		return;
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfos);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageEntry& entry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-	if (entry.texture)
-	{
-		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
-			entry.descEntry = entry.texture->GetDescBindEntry(entry.baseLevel, entry.levelCount);
-	}
-
-	auto& texrure = entry.texture;
-	auto& imageView = entry.descEntry.imageView;
-	auto& sampler = entry.descEntry.sampler;
-	auto& usage = entry.usage;
-
-	if (!texrure || !imageView || !sampler)
-		return;
-
-	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, m_bindStage, usage);
-
-	vk::DescriptorImageInfo imageInfo;
-	imageInfo.setImageView(imageView->GetHandle())
-		.setSampler(sampler->GetHandle())
-		.setImageLayout(imageLayout);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-
-	std::vector<vk::DescriptorImageInfo> imageInfos;
-	for (auto& entry : arrayEntry.entrys)
-	{
-		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
-			entry.descEntry = entry.texture->GetDescBindEntry(entry.baseLevel, entry.levelCount);
-
-		vk::ImageLayout imageLayout;
-		vk::PipelineStageFlags dstStageMask;
-		Texture2D::GetImageLayoutAndStageFlag(&imageLayout, &dstStageMask, entry.descEntry.image->GetFormat(), m_bindStage, Texture2D::BindUsage::Sample);
-		entry.descEntry.image->TransitionLayout(cmdBuffer, imageLayout, dstStageMask, entry.baseLevel, entry.levelCount);
-
-		vk::DescriptorImageInfo imageInfo;
-		imageInfo.setImageView(entry.descEntry.imageView->GetHandle())
-			.setSampler(entry.descEntry.sampler->GetHandle())
-			.setImageLayout(imageLayout);
-
-		imageInfos.push_back(imageInfo);
-	}
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfos);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-void Pipeline::BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
-{
-	if (entry.handle == VK_NULL_HANDLE)
-		return;
-
-	vk::WriteDescriptorSetAccelerationStructureKHR asWrite;
-	asWrite.setAccelerationStructures(entry.handle);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-		.setDescriptorCount(1)
-		.setPNext(&asWrite);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
-vk::Result Pipeline::CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule) {
-	vk::ShaderModuleCreateInfo createInfo = {};
-	createInfo.setCode(code);
-
-	auto [result, module] = m_device->GetHandle().createShaderModule(createInfo);
-	if (result != vk::Result::eSuccess)
-	{
-		std::cout << std::format("fail to create ShaderModule! error = {}\n", to_string(result));
-		return result;
-	}
-	outModule = module;
-	return vk::Result::eSuccess;
 }
 
 vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
@@ -1116,7 +560,7 @@ vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
 		std::vector<vk::DescriptorSetLayout> setLayouts;
 		if (auto result = CreateDescriptorSetLayout(bindings, bindingFlags, setLayouts); result != vk::Result::eSuccess)
 			return result;
-		m_descriptorSetLayouts = std::make_shared<DescriptorSetLayoutData>(m_device, VKCONTEXT->GetDescriptorPool(), std::move(setLayouts));
+		m_descriptorSetLayouts = std::make_shared<DescriptorSetLayoutData>(m_device, std::move(setLayouts));
 	}
 
 	if (auto result = CreateDescriptorSets(bindingFlags, variableEntrys); result != vk::Result::eSuccess)
@@ -1216,18 +660,19 @@ vk::Result Pipeline::CreateDescriptorSets(
 //	return vk::Result::eSuccess;
 //}
 
-Pipeline::DescriptorSetGroup::DescriptorSetGroup(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSet>& sets)
-	:device(device), pool(pool), sets(sets) {}
+Pipeline::DescriptorSetGroup::DescriptorSetGroup(VKCore::VulkanDevice* device, const std::vector<vk::DescriptorSet>& sets)
+	:device(device), sets(sets) {}
 
 Pipeline::DescriptorSetGroup::~DescriptorSetGroup() {
-	if (!sets.empty() && device && pool)
-		device->GetHandle().freeDescriptorSets(pool, sets);
+	if (!sets.empty())
+		VKCONTEXT->FreeDescriptorSets(sets);
 }
 
 Pipeline::DescriptorSetGroupPool::DescriptorSetGroupPool(uint32_t maxResNum) :_maxResNum(maxResNum) {}
 
 std::shared_ptr<Pipeline::DescriptorSetGroup> Pipeline::DescriptorSetGroupPool::Fetch()
 {
+	LockGuard guard(_mutex);
 	if (_iDleList.size() > 0) // 不为空，从中取一个
 	{
 		auto it = _iDleList.begin();
@@ -1240,10 +685,11 @@ std::shared_ptr<Pipeline::DescriptorSetGroup> Pipeline::DescriptorSetGroupPool::
 
 bool Pipeline::DescriptorSetGroupPool::Recycle(std::shared_ptr<DescriptorSetGroup> handle)
 {
-	// 已持有的数据
+	LockGuard guard(_mutex);
 	auto it = _datas.find(handle);
 	if (it != _datas.end())
 	{
+		// 已持有的数据
 		if (_iDleList.find(handle) == _iDleList.end())
 		{
 			_iDleList.insert(handle);
@@ -1271,12 +717,13 @@ bool Pipeline::DescriptorSetGroupPool::Recycle(std::shared_ptr<DescriptorSetGrou
 }
 
 void Pipeline::DescriptorSetGroupPool::Clear() {
+	LockGuard guard(_mutex);
 	_iDleList.clear();
 	_datas.clear();
 }
 
-Pipeline::DescriptorSetLayoutData::DescriptorSetLayoutData(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSetLayout>& setLayouts)
-	:device(device), pool(pool), setLayouts(setLayouts) {}
+Pipeline::DescriptorSetLayoutData::DescriptorSetLayoutData(VKCore::VulkanDevice* device, const std::vector<vk::DescriptorSetLayout>& setLayouts)
+	:device(device), setLayouts(setLayouts) {}
 
 Pipeline::DescriptorSetLayoutData::~DescriptorSetLayoutData() {
 	for (auto& desc : setLayouts)
@@ -1301,7 +748,6 @@ bool Pipeline::DescriptorSetLayoutData::GetDescriptorSetGroup(DescriptorSetGroup
 
 			vk::DescriptorSetAllocateInfo allocInfo;
 			allocInfo
-				.setDescriptorPool(VKCONTEXT->GetDescriptorPool())
 				.setSetLayouts(setLayouts[i]);
 
 			vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
@@ -1311,7 +757,7 @@ bool Pipeline::DescriptorSetLayoutData::GetDescriptorSetGroup(DescriptorSetGroup
 				allocInfo.setPNext(&variableCountInfo);
 			}
 
-			auto [result, temp] = VKCONTEXT->GetDeviceHandle().allocateDescriptorSets(allocInfo);
+			auto [result, temp] = VKCONTEXT->AllocateDescriptorSets(allocInfo);
 			if (result != vk::Result::eSuccess) {
 				std::cout << std::format("fail to create descriptorSets! error = {}\n", to_string(result));
 				return false;
@@ -1320,7 +766,7 @@ bool Pipeline::DescriptorSetLayoutData::GetDescriptorSetGroup(DescriptorSetGroup
 			descriptorSets.push_back(temp[0]);
 		}
 
-		setGroup = std::make_shared<DescriptorSetGroup>(device, pool, std::move(descriptorSets));
+		setGroup = std::make_shared<DescriptorSetGroup>(device, std::move(descriptorSets));
 	}
 
 	holder.parent = shared_from_this();
@@ -1336,4 +782,558 @@ Pipeline::DescriptorSetGroupHolder::~DescriptorSetGroupHolder() {
 		VKCONTEXT->Retire(new RestireSetGroupHolder(std::move(parent), std::move(data)));
 	parent.reset();
 	data.reset();
+}
+
+void BindingRecord::SetUniformBlock(const std::shared_ptr<UniformBlock>& uniformBlock, uint32_t binding, uint32_t set)
+{
+	SetUniformBlock(uniformBlock, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetStorageBlock(const std::shared_ptr<StorageBlock>& storageBlock, uint32_t binding, uint32_t set)
+{
+	SetStorageBlock(storageBlock, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformTexture(const std::shared_ptr<Texture2D>& uniformTex, uint32_t binding, uint32_t set)
+{
+	SetUniformTexture(uniformTex, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformTextureCube(const std::shared_ptr<TextureCube>& uniformTexCube, uint32_t binding, uint32_t set)
+{
+	SetUniformTextureCube(uniformTexCube, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, uint32_t binding, uint32_t set)
+{
+	SetUniformTextureArray(provider, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, uint32_t binding, uint32_t set)
+{
+	SetUniformTextureArray(array, BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<UniformBlock> BindingRecord::GetUniformBlock(uint32_t binding, uint32_t set)
+{
+	return GetUniformBlock(BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<StorageBlock> BindingRecord::GetStorageBlock(uint32_t binding, uint32_t set)
+{
+	return GetStorageBlock(BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<UniformBlock> BindingRecord::FindUniformBlock(uint32_t binding, uint32_t set)
+{
+	return FindUniformBlock(BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<StorageBlock> BindingRecord::FindStorageBlock(uint32_t binding, uint32_t set)
+{
+	return FindStorageBlock(BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<Texture2D> BindingRecord::FindUniformTexture(uint32_t binding, uint32_t set)
+{
+	return FindUniformTexture(BindingPoint{ .binding = binding, .set = set });
+}
+
+std::shared_ptr<ITextureArrayProvider> BindingRecord::FindUniformTextureArray(uint32_t binding, uint32_t set)
+{
+	return FindUniformTextureArray(BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformBlock(const std::shared_ptr<UniformBlock>& uniformBlock, const BindingPoint& bp)
+{
+	if (!uniformBlock)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformBlock, .data = UniformBlockEntry{.block = uniformBlock} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetStorageBlock(const std::shared_ptr<StorageBlock>& storageBlock, const BindingPoint& bp)
+{
+	if (!storageBlock)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageBlock, .data = StorageBlockEntry{.block = storageBlock} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetUniformTexture(const std::shared_ptr<Texture2D>& uniformTex, const BindingPoint& bp)
+{
+	if (!uniformTex)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformTex, .data = UniformTextureEntry{.texture = uniformTex} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetUniformTextureCube(const std::shared_ptr<TextureCube>& UniformTexCube, const BindingPoint& bp)
+{
+	if (!UniformTexCube)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexCube, .data = UniformTextureCubeEntry{.texture = UniformTexCube} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, const BindingPoint& bp)
+{
+	if (!provider)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexArray, .data = UniformTextureArrayEntry{.provider = provider} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, const BindingPoint& bp)
+{
+	if (array.empty())
+		return;
+	auto provider = BaseTextureArrayProvider::Create(array);
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformTexArray, .data = UniformTextureArrayEntry{.provider = provider} };
+	m_bindingData[bp] = entry;
+}
+
+std::shared_ptr<UniformBlock> BindingRecord::GetUniformBlock(const BindingPoint& bp)
+{
+	auto data = FindUniformBlock(bp);
+	if (!data)
+	{
+		data = std::make_shared<UniformBlock>();
+		SetUniformBlock(data, bp);
+	}
+	return data;
+}
+
+std::shared_ptr<StorageBlock> BindingRecord::GetStorageBlock(const BindingPoint& bp)
+{
+	auto data = FindStorageBlock(bp);
+	if (!data)
+	{
+		data = std::make_shared<StorageBlock>();
+		SetStorageBlock(data, bp);
+	}
+	return data;
+}
+
+std::shared_ptr<UniformBlock> BindingRecord::FindUniformBlock(const BindingPoint& bp)
+{
+	auto it = m_bindingData.find(bp);
+	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformBlock)
+		return nullptr;
+
+	BindingEntry entry = it->second;
+	UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
+	if (!dataptr)
+		return nullptr;
+
+	return dataptr->block;
+}
+
+std::shared_ptr<StorageBlock> BindingRecord::FindStorageBlock(const BindingPoint& bp)
+{
+	auto it = m_bindingData.find(bp);
+	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::StorageBlock)
+		return nullptr;
+
+	BindingEntry entry = it->second;
+	StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
+	if (!dataptr)
+		return nullptr;
+
+	return dataptr->block;
+}
+
+std::shared_ptr<Texture2D> BindingRecord::FindUniformTexture(const BindingPoint& bp)
+{
+	auto it = m_bindingData.find(bp);
+	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformTex)
+		return nullptr;
+
+	BindingEntry entry = it->second;
+	UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
+	if (!dataptr)
+		return nullptr;
+
+	return dataptr->texture;
+}
+
+std::shared_ptr<ITextureArrayProvider> BindingRecord::FindUniformTextureArray(const BindingPoint& bp)
+{
+	auto it = m_bindingData.find(bp);
+	if (it == m_bindingData.end() || it->second.type != BindingEntry::DataType::UniformTexArray)
+		return {};
+
+	BindingEntry entry = it->second;
+	UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
+	if (!dataptr)
+		return {};
+
+	return dataptr->provider;
+}
+
+void BindingRecord::SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO)
+{
+	if (curCmaeraUBO) SetUniformBlock(curCmaeraUBO, GeneralBindingPoint::Camera_Cur);
+	if (prevCameraUBO) SetUniformBlock(prevCameraUBO, GeneralBindingPoint::Camera_Prev);
+}
+
+void BindingRecord::SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures)
+{
+	if (materials) SetStorageBlock(materials, GeneralBindingPoint::Material_materials);
+	if (textures) SetUniformTextureArray(textures, GeneralBindingPoint::Material_textures);
+}
+
+void BindingRecord::SetLightStorageData(
+	const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta,
+	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade,
+	const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
+	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta
+)
+{
+	if (_ssbo_dirLightMeta) SetStorageBlock(_ssbo_dirLightMeta, GeneralBindingPoint::Light_DirLightMetaData);
+	if (_ssbo_dirLightCascade) SetStorageBlock(_ssbo_dirLightCascade, GeneralBindingPoint::Light_DirLightCascadeData);
+	if (_ssbo_pointLightMeta) SetStorageBlock(_ssbo_pointLightMeta, GeneralBindingPoint::Light_PointLightMetaData);
+	if (_ssbo_spotLightMeta) SetStorageBlock(_ssbo_spotLightMeta, GeneralBindingPoint::Light_SpotLightMetaData);
+}
+
+void BindingRecord::BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage)
+{
+	if (!cmdBuffer)
+		return;
+
+	uint32_t size = data->sets.size();
+	for (auto& [bindingpoint, entry] : m_bindingData)
+	{
+		if (bindingpoint.set < size && data->sets[bindingpoint.set] != VK_NULL_HANDLE)
+			BindEntry(cmdBuffer, data, bindStage, bindingpoint, entry);
+	}
+}
+
+void BindingRecord::BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry)
+{
+	if (entry.type == BindingEntry::DataType::UniformBlock)
+	{
+		UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformBlock(*dataptr, data, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageBlock)
+	{
+		StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageBlock(*dataptr, data, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::UniformTex)
+	{
+		UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformTexture(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::UniformTexCube)
+	{
+		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformTextureCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::UniformTexArray)
+	{
+		UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformTextureArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageImage)
+	{
+		StorageImageEntry* dataptr = std::get_if<StorageImageEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageImage(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageImageArray)
+	{
+		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageImageArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
+	{
+		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
+		if (!dataptr) return;
+		BindAccelerationStructure(*dataptr, data, point.binding, point.set);
+	}
+}
+
+void BindingRecord::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+{
+	if (entry.block)
+	{
+		auto buffer = entry.block->GetBuffer();
+		if (buffer)
+			entry.buffer = buffer;
+	}
+
+	if (!entry.buffer)
+		return;
+
+	vk::DescriptorBufferInfo bufferInfo;
+	bufferInfo
+		.setBuffer(entry.buffer->GetHandle())
+		.setOffset(0)
+		.setRange(entry.buffer->GetSize());
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+		.setBufferInfo(bufferInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+{
+	if (entry.block)
+	{
+		auto buffer = entry.block->GetBuffer();
+		if (buffer)
+			entry.buffer = buffer;
+	}
+
+	if (!entry.buffer)
+		return;
+
+	vk::DescriptorBufferInfo bufferInfo;
+	bufferInfo
+		.setBuffer(entry.buffer->GetHandle())
+		.setOffset(0)
+		.setRange(entry.buffer->GetSize());
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+		.setBufferInfo(bufferInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry();
+	}
+
+	auto& texrure = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, Texture2D::BindUsage::Sample);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setImageInfo(imageInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry();
+	}
+
+	auto& texrure = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, (TextureCube::BindStage)bindStage, TextureCube::BindUsage::Sample);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setImageInfo(imageInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.provider)
+		entry.descEntrys = entry.provider->GetTextureDescBindEntrys();
+
+	std::vector<vk::DescriptorImageInfo> imageInfos;
+	for (auto& desc : entry.descEntrys)
+	{
+		vk::ImageLayout imageLayout;
+		vk::PipelineStageFlags dstStageMask;
+		Texture2D::GetImageLayoutAndStageFlag(&imageLayout, &dstStageMask, desc.image->GetFormat(), bindStage, Texture2D::BindUsage::Sample);
+		desc.image->TransitionLayout(cmdBuffer, imageLayout, dstStageMask);
+
+		vk::DescriptorImageInfo imageInfo;
+		imageInfo.setImageView(desc.imageView->GetHandle())
+			.setSampler(desc.sampler->GetHandle())
+			.setImageLayout(imageLayout);
+
+		imageInfos.push_back(imageInfo);
+	}
+
+	if (imageInfos.empty())
+		return;
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setImageInfo(imageInfos);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry(entry.baseLevel, entry.levelCount);
+	}
+
+	auto& texrure = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+	auto& usage = entry.usage;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, usage);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageImage)
+		.setImageInfo(imageInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+
+	std::vector<vk::DescriptorImageInfo> imageInfos;
+	for (auto& entry : arrayEntry.entrys)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry(entry.baseLevel, entry.levelCount);
+
+		vk::ImageLayout imageLayout;
+		vk::PipelineStageFlags dstStageMask;
+		Texture2D::GetImageLayoutAndStageFlag(&imageLayout, &dstStageMask, entry.descEntry.image->GetFormat(), bindStage, Texture2D::BindUsage::Sample);
+		entry.descEntry.image->TransitionLayout(cmdBuffer, imageLayout, dstStageMask, entry.baseLevel, entry.levelCount);
+
+		vk::DescriptorImageInfo imageInfo;
+		imageInfo.setImageView(entry.descEntry.imageView->GetHandle())
+			.setSampler(entry.descEntry.sampler->GetHandle())
+			.setImageLayout(imageLayout);
+
+		imageInfos.push_back(imageInfo);
+	}
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageImage)
+		.setImageInfo(imageInfos);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+{
+	if (entry.handle == VK_NULL_HANDLE)
+		return;
+
+	vk::WriteDescriptorSetAccelerationStructureKHR asWrite;
+	asWrite.setAccelerationStructures(entry.handle);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+		.setDescriptorCount(1)
+		.setPNext(&asWrite);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+vk::Result Pipeline::CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule) {
+	vk::ShaderModuleCreateInfo createInfo = {};
+	createInfo.setCode(code);
+
+	auto [result, module] = m_device->GetHandle().createShaderModule(createInfo);
+	if (result != vk::Result::eSuccess)
+	{
+		std::cout << std::format("fail to create ShaderModule! error = {}\n", to_string(result));
+		return result;
+	}
+	outModule = module;
+	return vk::Result::eSuccess;
 }

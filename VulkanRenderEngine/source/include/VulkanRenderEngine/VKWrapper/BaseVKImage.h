@@ -23,7 +23,7 @@ namespace VKWrapper {
 		static bool IsDepthFormat(vk::Format format);
 		static bool IsStencilFormat(vk::Format format);
 		static bool IsLinearFormat(vk::Format format);
-		static vk::AccessFlags GetAccessMaskForLayout(vk::ImageLayout layout);
+		static vk::AccessFlags GetAccessMaskForLayout(vk::ImageLayout layout, vk::PipelineStageFlags dstStageMask);
 		static vk::PipelineStageFlags AccessMaskToStage(vk::AccessFlags mask);
 		static vk::ImageAspectFlags GetAspectMask(vk::Format format);
 

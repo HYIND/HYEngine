@@ -92,7 +92,7 @@ Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>&
 
 Mesh::~Mesh()
 {
-	IndirectDrawManager::Instance()->deleteMesh(*this);
+	IndirectDrawManager::Instance()->RetireMesh(*this);
 }
 
 void Mesh::Draw(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)

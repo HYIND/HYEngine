@@ -265,7 +265,7 @@ bool RTCoreRayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& re
 	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
 }
 
-void RTCoreRayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void RTCoreRayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	//_fence->WaitAndReset();
 }

@@ -17,4 +17,7 @@ struct Sprite :public RenderBase2D
 		this->width = std::max(0, width);
 		this->height = std::max(0, height);
 	}
+	virtual void OnRemove(const Entity& e) {
+		bitmap = nullptr;
+	}
 };

@@ -33,4 +33,8 @@ struct GIFAnimator : public RenderBase2D
 
 		startTime = Tool::GetTimestampMilliseconds();
 	}
+
+	virtual void OnRemove(const Entity& e) {
+		gifInfo = nullptr;
+	}
 };

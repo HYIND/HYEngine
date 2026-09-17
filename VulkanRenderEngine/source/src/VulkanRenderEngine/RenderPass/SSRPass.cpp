@@ -106,9 +106,9 @@ SSRPass::SSRPass(
 	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
 	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
 
-	_ssrShader.SetUniformBlock(_SSRParamsUBO, 0);
-	_spatialDenoisingShader.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
-	_temporalDenoisingShader.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
+	_ssgiShaderBinding.SetUniformBlock(_SSRParamsUBO, 0);
+	_spatialDenoisingShaderBinding.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
+	_temporalDenoisingShaderBinding.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 bool SSRPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -118,7 +118,7 @@ bool SSRPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderStat
 	return true;
 }
 
-void SSRPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void SSRPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
@@ -225,17 +225,17 @@ bool SSRPass::DrawSSR(FrameRenderData& data, RenderState& state)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_ssrShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_ssrShader.SetStorageImage(target, 1);
-	_ssrShader.SetUniformTexture(data.gPosition, 2);
-	_ssrShader.SetUniformTexture(data.gNormal, 3);
-	_ssrShader.SetUniformTexture(data.gAlbedoOpacity, 4);
-	_ssrShader.SetUniformTexture(data.gMetallicRoughness, 5);
-	_ssrShader.SetUniformTexture(data.colorMap, 6);
-	_ssrShader.SetUniformTexture(data.depthMap, 7);
-	_ssrShader.SetUniformTexture(data.hzbDepthMap, 8);
+	_ssgiShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_ssgiShaderBinding.SetStorageImage(target, 1);
+	_ssgiShaderBinding.SetUniformTexture(data.gPosition, 2);
+	_ssgiShaderBinding.SetUniformTexture(data.gNormal, 3);
+	_ssgiShaderBinding.SetUniformTexture(data.gAlbedoOpacity, 4);
+	_ssgiShaderBinding.SetUniformTexture(data.gMetallicRoughness, 5);
+	_ssgiShaderBinding.SetUniformTexture(data.colorMap, 6);
+	_ssgiShaderBinding.SetUniformTexture(data.depthMap, 7);
+	_ssgiShaderBinding.SetUniformTexture(data.hzbDepthMap, 8);
 
-	_ssrShader.Bind(cmd);
+	_ssrShader.Bind(cmd, _ssgiShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -267,13 +267,13 @@ bool SSRPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_spatialDenoisingShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingShader.SetStorageImage(target, 1);
-	_spatialDenoisingShader.SetUniformTexture(data.gNormal, 2);
-	_spatialDenoisingShader.SetUniformTexture(data.depthMap, 3);
-	_spatialDenoisingShader.SetUniformTexture(source, 4);
+	_spatialDenoisingShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_spatialDenoisingShaderBinding.SetStorageImage(target, 1);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.gNormal, 2);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.depthMap, 3);
+	_spatialDenoisingShaderBinding.SetUniformTexture(source, 4);
 
-	_spatialDenoisingShader.Bind(cmd);
+	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -312,12 +312,12 @@ bool SSRPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_temporalDenoisingShader.SetStorageImage(target, 1);
-	_temporalDenoisingShader.SetUniformTexture(source, 2);
-	_temporalDenoisingShader.SetUniformTexture(data.historyColorTexture, 3);
-	_temporalDenoisingShader.SetUniformTexture(data.gMotionVector, 4);
+	_temporalDenoisingShaderBinding.SetStorageImage(target, 1);
+	_temporalDenoisingShaderBinding.SetUniformTexture(source, 2);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.historyColorTexture, 3);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.gMotionVector, 4);
 
-	_temporalDenoisingShader.Bind(cmd);
+	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

@@ -38,6 +38,16 @@ struct Particle :public Renderable
 	std::shared_ptr<BaseParticleProperties> properties;
 
 	void InitUpdater();
+
+	virtual void OnRemove(const Entity& e) {
+		opacityUpdater.reset();
+		baseColorUpdater.reset();
+		scaleUpdater.reset();
+		rotationUpdater.reset();
+		localAccelerationUpdater.reset();
+		worldAccelerationUpdater.reset();
+		properties.reset();
+	}
 };
 
 // Color生成器接口
@@ -540,6 +550,10 @@ struct ParticleEmitter :public IComponent
 	EmitterState emitterState;
 
 	ParticleEmitter() {};
+	virtual void OnRemove(const Entity& e) {
+		emitterParams = EmitterParams();
+		emitterState = EmitterState();
+	}
 };
 
 inline void Particle::InitUpdater()

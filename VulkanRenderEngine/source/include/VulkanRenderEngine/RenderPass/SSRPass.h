@@ -16,7 +16,7 @@ public:
 	);
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetEnable(bool enable) const;
@@ -52,6 +52,10 @@ private:
 	ComputePipeline _ssrShader;
 	ComputePipeline _spatialDenoisingShader;
 	ComputePipeline _temporalDenoisingShader;
+
+	ComputeBindingRecord _ssgiShaderBinding;
+	ComputeBindingRecord _spatialDenoisingShaderBinding;
+	ComputeBindingRecord _temporalDenoisingShaderBinding;
 
 	mutable bool _firstDrawTemporal;
 	mutable bool _enable;

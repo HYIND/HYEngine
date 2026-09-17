@@ -296,11 +296,11 @@ void RayTracingPipeline::Release()
 	Pipeline::Release();
 }
 
-void RayTracingPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) {
+void RayTracingPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
 	if (!cmdBuffer)
 		return;
 
-	Pipeline::Bind(cmdBuffer);
+	Pipeline::Bind(cmdBuffer, bindingRecord);
 	cmdBuffer->bindPipeline(m_bindPoint, m_pipeline);
 }
 
@@ -309,27 +309,27 @@ SBTRegionData RayTracingPipeline::GetSBTData() const
 	return _regions;
 }
 
-void RayTracingPipeline::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set)
+void RayTracingBindingRecord::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set)
 {
 	SetStorageImageArray(entrys, BindingPoint{ .binding = binding, .set = set });
 }
 
-void RayTracingPipeline::SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, uint32_t binding, uint32_t set)
+void RayTracingBindingRecord::SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, uint32_t binding, uint32_t set)
 {
 	SetAccelerationStructure(handle, BindingPoint{ .binding = binding, .set = set });
 }
 
-void RayTracingPipeline::SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set)
+void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set)
 {
 	SetStorageImage(texture, BindingPoint{ .binding = binding, .set = set });
 }
 
-void RayTracingPipeline::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set)
+void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set)
 {
 	SetStorageImageLevel(texture, baseLevel, levelCount, BindingPoint{ .binding = binding, .set = set });
 }
 
-void RayTracingPipeline::SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp)
+void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp)
 {
 	if (!texture)
 		return;
@@ -337,7 +337,7 @@ void RayTracingPipeline::SetStorageImage(const std::shared_ptr<Texture2D>& textu
 	m_bindingData[bp] = entry;
 }
 
-void RayTracingPipeline::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp)
+void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp)
 {
 	if (!texture)
 		return;
@@ -345,13 +345,13 @@ void RayTracingPipeline::SetStorageImageLevel(const std::shared_ptr<Texture2D>& 
 	m_bindingData[bp] = entry;
 }
 
-void RayTracingPipeline::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, const BindingPoint& bp)
+void RayTracingBindingRecord::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, const BindingPoint& bp)
 {
 	BindingEntry entry{ .type = BindingEntry::DataType::StorageImageArray, .data = StorageImageArrayEntry{.entrys = entrys } };
 	m_bindingData[bp] = entry;
 }
 
-void RayTracingPipeline::SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, const BindingPoint& bp)
+void RayTracingBindingRecord::SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, const BindingPoint& bp)
 {
 	if (handle == VK_NULL_HANDLE)
 		return;

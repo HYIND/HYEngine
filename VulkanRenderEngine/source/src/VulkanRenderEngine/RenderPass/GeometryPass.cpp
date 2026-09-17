@@ -76,9 +76,6 @@ GeometryPass::GeometryPass(
 		if (config.Validate())
 			_skinnedShader->Create(config);
 	}
-
-	_oneSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
-	_twoSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
 }
 
 GeometryPass::~GeometryPass()
@@ -119,7 +116,7 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 	return info;
 }
 
-void GeometryPass::EarlyExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto& models = state.objects.sceneRenderData.opaqueSkinnedModel;
 	auto& sorts = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;
@@ -145,10 +142,7 @@ void GeometryPass::EarlyExecute(RenderGraph::FrameDataRegistry& registry, Render
 	}
 }
 
-void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
-
-void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 
 	auto gPosition = ctx.GetOutput(0);
@@ -167,8 +161,8 @@ void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	RenderSceneGeometryPassStatic(cmd, state, renderInfo, viewPort);
-	RenderSceneGeometryPassSkinned(cmd, state, renderInfo, viewPort);
+	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
+	RenderSceneGeometryPassSkinned(registry, cmd, state, renderInfo, viewPort);
 
 	if (cmd->IsRecording())
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -179,7 +173,7 @@ void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderStat
 
 bool GeometryPass::SetupStaticBufferData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
-	std::shared_ptr<GraphicsPipeline>& shader,
+	GraphicsBindingRecord& binding,
 	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
 	VKRenderObjectData::RenderIndex& renderIndex,
 	std::vector<IndirectDrawCommand>& oneSideCommands,
@@ -196,9 +190,9 @@ bool GeometryPass::SetupStaticBufferData(
 	if (!materialssbo)
 		return false;
 
-	shader->SetBindlessMaterialTexture(indirectManager->GetMaterialSSBO(), binlessManager);
+	binding.SetBindlessMaterialTexture(indirectManager->GetMaterialSSBO(), binlessManager);
 
-	auto renderdata_ssbo = shader->GetStorageBlock(2);
+	auto renderdata_ssbo = binding.GetStorageBlock(2);
 	if (!renderdata_ssbo)
 		return false;
 
@@ -260,24 +254,36 @@ bool GeometryPass::SetupStaticBufferData(
 	return true;
 }
 
-void GeometryPass::RenderSceneGeometryPassStatic(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
+void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
 {
+
 	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
 	auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
-	auto& shader = _staticShader;
-
 	if (opaqueMeshes.empty() && renderIndex.oneSideIndex.empty() && renderIndex.twoSideIndex.empty())
 		return;
 
+	auto& shader = _staticShader;
+	GraphicsBindingRecord binding;
+
+	auto renderdata_ssbo = registry.GetStorageBlock("renderdata_ssbo");
+	binding.SetStorageBlock(renderdata_ssbo, 2);
+
 	std::vector<IndirectDrawCommand> oneSideCommands;
 	std::vector<IndirectDrawCommand> twoSideCommands;
-	if (!SetupStaticBufferData(cmd, shader, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
+	if (!SetupStaticBufferData(cmd, binding, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
 		return;
 
-	shader->SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	shader->SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 
-	shader->Bind(cmd);
+	auto oneSideCommandBuffer = registry.GetIndirectBlock("oneSideCommandBuffer");
+	auto twoSideCommandBuffer = registry.GetIndirectBlock("twoSideCommandBuffer");
+
+	if (!oneSideCommands.empty())
+		oneSideCommandBuffer->WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
+	if (!twoSideCommands.empty())
+		twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
+
+	shader->Bind(cmd, binding);
 
 	cmd->setDynamicViewport(viewPort);
 	cmd->beginRendering(renderInfo);
@@ -286,28 +292,26 @@ void GeometryPass::RenderSceneGeometryPassStatic(std::shared_ptr<VKWrapper::VKCo
 
 	if (!oneSideCommands.empty())
 	{
-		_oneSideCommandBuffer->WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
-		_oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+		oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eBack);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
-		cmd->drawIndexedIndirect(_oneSideCommandBuffer, oneSideCommands.size());
+		cmd->drawIndexedIndirect(oneSideCommandBuffer, oneSideCommands.size());
 	}
 
 	if (!twoSideCommands.empty())
 	{
-		_twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
-		_twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+		twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eNone);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
-		cmd->drawIndexedIndirect(_twoSideCommandBuffer, twoSideCommands.size());
+		cmd->drawIndexedIndirect(twoSideCommandBuffer, twoSideCommands.size());
 	}
 
 	cmd->endRendering();
 }
 
-void GeometryPass::RenderSceneGeometryPassSkinned(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
+void GeometryPass::RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
 {
 	//auto& opaqueSinnedModels = state.objects.sceneRenderData.opaqueSkinnedModel;
 	//auto& renderIndexArrays = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;

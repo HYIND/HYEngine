@@ -29,9 +29,8 @@ public:
 	void SetRender(std::shared_ptr<VulkanRenderer> renderer);
 	void InitWorld();
 
-	void RenderFrame();
 
-	std::shared_ptr<VulkanRenderer> GetOpenGLRener();
+	std::shared_ptr<VulkanRenderer> GetVulkanRener();
 	std::shared_ptr<World> GetWorld();
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> GetTriBuffer();
 
@@ -39,6 +38,9 @@ public:
 	void PauseWorld();
 	void ContinueWorld();
 	void StopWorld();
+
+	void RunPushFrame();
+	void StopPushFrame();
 
 	Entity PickObject(const glm::vec3& origin, const glm::vec3& direction);
 	RaycastHit RayCast(const glm::vec3& origin, const glm::vec3& direction);
@@ -51,7 +53,7 @@ public:
 	RenderOption GetOption() const;
 	void SetOption(RenderOption option);
 
-	bool ResizeOpenGL(uint32_t width, uint32_t height);
+	bool ResizeVulkan(uint32_t width, uint32_t height);
 
 public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);
@@ -59,16 +61,20 @@ public:
 
 private:
 	void WorldLoop();
+	void PushFrameLoop();
 
 private:
 	std::shared_ptr<World> _world;
 	std::shared_ptr<std::thread> _worldThread;
-	bool _stop = false;
+	bool _worldStop = true;
+
+	std::shared_ptr<std::thread> _framePushThread;
+	bool _framePushStop = true;
 
 	std::shared_ptr<VulkanRenderer> _renderer;
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> _triBuffer;
 
 	uint32_t pendingWidth = 0, pendingHeight = 0;
 	int64_t resizeTimeStamp = 0;
-	bool resizePending;
+	bool resizePending = false;
 };

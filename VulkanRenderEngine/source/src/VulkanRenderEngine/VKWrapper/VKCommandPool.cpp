@@ -70,6 +70,7 @@ SpinLock& VKWrapper::VKCommandPool::GetCommandPoolMutex() { return _commandPoolM
 
 vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer, vk::CommandBufferLevel level)
 {
+	LockGuard guard(_commandPoolMutex);
 	vk::CommandBuffer handle = _cmdResPool.FetchHandle();
 	if (handle == VK_NULL_HANDLE)
 	{
@@ -80,7 +81,6 @@ vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buff
 			.setCommandBufferCount(1);
 
 
-		LockGuard guard(_commandPoolMutex);
 		auto [res, hs] = _device->GetHandle().allocateCommandBuffers(allocateInfo);
 		if (res != vk::Result::eSuccess)
 		{

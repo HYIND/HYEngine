@@ -113,11 +113,17 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 
 	ImVec2 mousePos((float)mouseX + winX, (float)mouseY + winY);
 
+	if (count <= 0)
+		return;
+
 	for (int i = 0; i < count; i++)
 	{
 		std::string path = paths[i];
 		if (!fs::path(path).is_absolute())
 			continue;
+
+		LockGuard guard1(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+
 		if (fs::is_directory(fs::path(path)))
 			ImguiLayout::DropFolder(path, ProjectManager::Get(), mousePos);
 		if (fs::is_regular_file(fs::path(path)))
@@ -127,196 +133,6 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 
 static bool firstFrame = true;
 ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-//int OpenGLMain()
-//{
-//
-//	glfwSetErrorCallback(glfw_error_callback);
-//	if (!glfwInit())
-//		return 1;
-//
-//	const char* glsl_version = nullptr;
-//	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-//	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-//
-//
-//	float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
-//	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-//	int workAreaX, workAreaY, workAreaWidth, workAreaHeight;
-//	glfwGetMonitorWorkarea(monitor, &workAreaX, &workAreaY, &workAreaWidth, &workAreaHeight);
-//	GLFWwindow* window = glfwCreateWindow((int)(workAreaWidth * 0.8f * main_scale), (int)(workAreaHeight * 0.8f * main_scale), "Editor", nullptr, nullptr);
-//	if (window == nullptr)
-//		return 1;
-//
-//	glfwMakeContextCurrent(window);
-//
-//	glfwSwapInterval(0); // Disable vsync
-//
-//	glfwSetDropCallback(window, glfw_filedrop_callback);
-//
-//	glewExperimental = GL_TRUE;
-//	GLenum err = glewInit();
-//	if (err != GLEW_OK) {
-//		std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(err) << std::endl;
-//		return -1;
-//	}
-//
-//	// Setup Dear ImGui context
-//	IMGUI_CHECKVERSION();
-//	ImGui::CreateContext();
-//	ImGuiIO& io = ImGui::GetIO(); (void)io;
-//	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-//	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-//	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
-//	//io.ConfigViewportsNoAutoMerge = true;
-//	//io.ConfigViewportsNoTaskBarIcon = true;
-//
-//
-//	// 微软雅黑路径
-//	const char* fontPath = "C:/Windows/Fonts/msyh.ttc";
-//
-//	// 字体配置
-//	ImFontConfig fontConfig;
-//	fontConfig.OversampleH = 2;
-//	fontConfig.OversampleV = 2;
-//	fontConfig.PixelSnapH = true;
-//
-//	// 使用简体中文常用字范围
-//	static const ImWchar ranges[] = {
-//		0x0020, 0x00FF,  // 基本拉丁字母 + 标点
-//		0x4E00, 0x9FA5,  // 常用汉字（CJK统一表意文字）
-//		0
-//	};
-//
-//	// 尝试加载字体
-//	ImFont* font = io.Fonts->AddFontFromFileTTF(
-//		fontPath,
-//		18.0f * main_scale,  // 根据 DPI 缩放
-//		&fontConfig,
-//		ranges  // 或用 io.Fonts->GetGlyphRangesChineseSimplifiedCommon()
-//	);
-//
-//	if (font == nullptr) {
-//		io.Fonts->AddFontDefault();
-//		if (ShowConsole)
-//			std::cout << "警告：加载微软雅黑失败，使用默认字体\n";
-//	}
-//	else {
-//		io.FontDefault = font;
-//		if (ShowConsole)
-//			std::cout << "微软雅黑字体加载成功！\n";
-//	}
-//
-//	// Setup Dear ImGui style
-//	ImGui::StyleColorsDark();
-//	//ImGui::StyleColorsLight();
-//
-//	// Setup scaling
-//	ImGuiStyle& style = ImGui::GetStyle();
-//	style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
-//	style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
-//	io.ConfigDpiScaleFonts = true;          // [Experimental] Automatically overwrite style.FontScaleDpi in Begin() when Monitor DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
-//	io.ConfigDpiScaleViewports = true;      // [Experimental] Scale Dear ImGui and Platform Windows when Monitor DPI changes.
-//
-//	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-//	if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-//	{
-//		style.WindowRounding = 0.0f;
-//		style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-//	}
-//
-//	ImGui_ImplGlfw_InitForOpenGL(window, true);
-//	ImGui_ImplOpenGL3_Init(glsl_version);
-//
-//	ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
-//	ImGuizmo::Enable(true);
-//
-//	{
-//		auto hwnd = glfwGetWin32Window(window);
-//		auto hdc = wglGetCurrentDC();
-//		auto hglrc = wglGetCurrentContext();
-//
-//		WINDOWHANDLEMANAGER->SetHwnd(hwnd);
-//		WINDOWHANDLEMANAGER->SetHGLRC(hglrc);
-//
-//		{
-//			auto guard = THREADCONTEXT->GetBindGuard();
-//
-//			WorldManager::Instance()->InitWorld();
-//			WorldManager::Instance()->RunWorld();
-//			//WorldManager::Instance()->PauseWorld();
-//		}
-//
-//		wglMakeCurrent(hdc, hglrc);
-//	}
-//
-//
-//	while (!glfwWindowShouldClose(window))
-//	{
-//		glfwPollEvents();
-//		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
-//		{
-//			ImGui_ImplGlfw_Sleep(10);
-//			continue;
-//		}
-//
-//		// 开始 ImGui 帧
-//		ImGui_ImplOpenGL3_NewFrame();
-//		ImGui_ImplGlfw_NewFrame();
-//		ImGui::NewFrame();
-//
-//
-//		ImguiLayout::DrawMainMenu(window, ProjectManager::Get());
-//		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
-//		ImguiLayout::SetDockspace(firstFrame);
-//		if (firstFrame) firstFrame = false;
-//		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
-//		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());// 场景物体窗口 (左侧)
-//		ImguiLayout::DrawOptions(WorldManager::Instance());	// 场景物体窗口 (左侧)
-//		ImguiLayout::DrawObjectProperties();// 属性面板 (右侧)
-//		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());	// 资产管理 (底部)
-//		ImguiLayout::DrawStatusBar(WorldManager::Instance());// 底部状态栏
-//		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());// 场景视图 (中间)
-//
-//
-//		// ============ 渲染 ============
-//		ImGui::Render();
-//
-//		int display_w, display_h;
-//		glfwGetFramebufferSize(window, &display_w, &display_h);
-//		glViewport(0, 0, display_w, display_h);
-//		glClearColor(clear_color.x * clear_color.w,
-//			clear_color.y * clear_color.w,
-//			clear_color.z * clear_color.w,
-//			clear_color.w);
-//		glClear(GL_COLOR_BUFFER_BIT);
-//
-//		// 渲染 ImGui
-//		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-//
-//		// 更新多视口
-//		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-//		{
-//			GLFWwindow* backup_current_context = glfwGetCurrentContext();
-//			ImGui::UpdatePlatformWindows();
-//			ImGui::RenderPlatformWindowsDefault();
-//			glfwMakeContextCurrent(backup_current_context);
-//		}
-//
-//		glfwSwapBuffers(window);
-//	}
-//
-//	// Cleanup
-//	ImGui_ImplOpenGL3_Shutdown();
-//	ImGui_ImplGlfw_Shutdown();
-//	ImGui::DestroyContext();
-//
-//	glfwDestroyWindow(window);
-//	glfwTerminate();
-//
-//	return 0;
-//}
 
 #include "ImguiInit/VulkanInit.h"
 
@@ -359,7 +175,7 @@ int ImGuiMain()
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkResult err = glfwCreateWindowSurface((VkInstance)vulkanInstance->GetHandle(), window, g_Allocator, &surface);
 
-	auto vkRenderer = VulkanRenderer::CreateForOffScreen(vulkanInstance, workAreaWidth, workAreaHeight);
+	auto vkRenderer = VulkanRenderer::CreateOnlyDevice(vulkanInstance);
 
 	WorldManager::Instance()->SetRender(vkRenderer);
 
@@ -530,6 +346,8 @@ int ImGuiMain()
 		}
 
 		bool minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
+
+		LockGuard guard1(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
 
 		// 渲染主窗口
 		if (!minimized) {

@@ -1,9 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="source\src\DynamicFpsController.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\GameWorldManager.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -75,9 +72,6 @@
     <ClInclude Include="source\include\Tank_War.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Helper\Log.h">
-      <Filter>头文件\Helper</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\Manager\GameWorldManager.h">
       <Filter>头文件\Manager</Filter>
     </ClInclude>
@@ -117,9 +111,6 @@
     <ClInclude Include="source\include\Manager\LobbyManager.h">
       <Filter>头文件\Manager</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Helper\DynamicFpsController.h">
-      <Filter>头文件\public</Filter>
-    </ClInclude>
     <ClInclude Include="public\include\GameDataDef.h">
       <Filter>头文件\public</Filter>
     </ClInclude>
@@ -131,9 +122,6 @@
     </ClInclude>
     <ClInclude Include="source\include\Manager\BGMManager.h">
       <Filter>头文件\Manager</Filter>
-    </ClInclude>
-    <ClInclude Include="public\include\Log.h">
-      <Filter>头文件\public</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Factory\CharacterFactory.h">
       <Filter>头文件\Factory</Filter>
@@ -182,9 +170,6 @@
     </Filter>
     <Filter Include="头文件">
       <UniqueIdentifier>{6b924a41-7b84-4f3e-8d4d-57b9b7055268}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Helper">
-      <UniqueIdentifier>{ab76f02b-1fea-41d2-b589-db9cbb0a90b2}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\Manager">
       <UniqueIdentifier>{b7ac37c2-c829-4302-9db9-ea166d49fd3b}</UniqueIdentifier>

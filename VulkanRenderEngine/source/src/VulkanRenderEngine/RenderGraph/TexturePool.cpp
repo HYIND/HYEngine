@@ -5,12 +5,10 @@ using namespace RenderGraph;
 
 RenderGraph::TexturePool::TexturePool() :
 	_nextId(1)
-{
-}
+{}
 
 RenderGraph::TexturePool::~TexturePool()
-{
-}
+{}
 
 // 分配GPU内存
 TextureHandle TexturePool::AllocateTexture(const TextureDesc& desc)
@@ -51,8 +49,12 @@ void TexturePool::ReleaseTexture(const TextureHandle& handle) {
 
 TexKey TexturePool::GenerateKey(const TextureDesc& desc) const
 {
-	return std::format("{}_{}_{}_{}_{}_{}_{}_{}",
-		desc.width, desc.height, (uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, desc.maxLevel);
+	if (desc.isVariable)
+		return std::format("__Variable_{}_{}_{}_{}_{}_{}",
+			(uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, desc.maxLevel);
+	else
+		return std::format("{}_{}_{}_{}_{}_{}_{}_{}",
+			desc.width, desc.height, (uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, desc.maxLevel);
 }
 
 TextureHandle TexturePool::FetchIdleTexture(const TexKey& key)

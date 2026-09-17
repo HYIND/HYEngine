@@ -121,3 +121,33 @@ vk::Result VKTimelineSemaphore::Create(VKCore::VulkanDevice* device, const uint6
 	_handle = handle;
 	return result;
 }
+
+bool VKWrapper::VKTimelineSemaphore::Signal(uint64_t signalValue)
+{
+	vk::SemaphoreSignalInfo signalInfo;
+	signalInfo
+		.setSemaphore(_handle)
+		.setValue(signalValue);
+
+	vk::Result result = _device->GetHandle().signalSemaphore(signalInfo);
+	if (result != vk::Result::eSuccess) {
+		std::cerr << std::format("[ VKTimelineSemaphore ] Error when Signal Semaphore! Error : {}\n", to_string(result));
+		return false;
+	}
+	return true;
+}
+
+bool VKWrapper::VKTimelineSemaphore::Wait(uint64_t targetValue)
+{
+	vk::SemaphoreWaitInfo waitInfo;
+	waitInfo
+		.setSemaphores(_handle)
+		.setValues(targetValue);
+
+	vk::Result result = _device->GetHandle().waitSemaphores(waitInfo, UINT64_MAX);
+	if (result != vk::Result::eSuccess) {
+		std::cerr << std::format("[ VKTimelineSemaphore ] Error when Wait Semaphore! Error : {}\n", to_string(result));
+		return false;
+	}
+	return true;
+}

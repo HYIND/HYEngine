@@ -138,9 +138,9 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
 	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
 
-	_rayTraceShader.SetUniformBlock(_RayTraceParamsUBO, 5);
-	_spatialDenoisingShader.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
-	_temporalDenoisingShader.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
+	_rayTraceShaderBinding.SetUniformBlock(_RayTraceParamsUBO, 5);
+	_spatialDenoisingShaderBinding.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
+	_temporalDenoisingShaderBinding.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 RTCoreRayTraceGIPass::~RTCoreRayTraceGIPass()
@@ -153,7 +153,7 @@ bool RTCoreRayTraceGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registr
 	return true;
 }
 
-void RTCoreRayTraceGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void RTCoreRayTraceGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
@@ -256,28 +256,29 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& st
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
 	auto& rayTraceShader = _rayTraceShader;
-	if (!BindAccelerationStructure(rayTraceShader))
+	auto& binding = _rayTraceShaderBinding;
+	if (!BindAccelerationStructure(binding))
 		return false;
 
-	rayTraceShader.SetLightStorageData(
+	binding.SetLightStorageData(
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
 		state.lights.ssbo_spotLightMeta
 	);
 
-	rayTraceShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	rayTraceShader.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	rayTraceShader.SetStorageImage(target, 6);
-	rayTraceShader.SetUniformTexture(data.gPosition, 7);
-	rayTraceShader.SetUniformTexture(data.gNormal, 8);
-	rayTraceShader.SetUniformTexture(data.gAlbedoOpacity, 9);
-	rayTraceShader.SetUniformTexture(data.gMetallicRoughness, 10);
-	rayTraceShader.SetUniformTexture(data.sceneDepthBuffer, 11);
-	rayTraceShader.SetUniformTexture(data.atlasShadowMap, 12);
-	rayTraceShader.SetUniformTexture(data.ssaoMap, 13);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	binding.SetStorageImage(target, 6);
+	binding.SetUniformTexture(data.gPosition, 7);
+	binding.SetUniformTexture(data.gNormal, 8);
+	binding.SetUniformTexture(data.gAlbedoOpacity, 9);
+	binding.SetUniformTexture(data.gMetallicRoughness, 10);
+	binding.SetUniformTexture(data.sceneDepthBuffer, 11);
+	binding.SetUniformTexture(data.atlasShadowMap, 12);
+	binding.SetUniformTexture(data.ssaoMap, 13);
 
-	rayTraceShader.Bind(cmd);
+	rayTraceShader.Bind(cmd, binding);
 	auto regionData = rayTraceShader.GetSBTData();
 	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
 
@@ -310,13 +311,13 @@ bool RTCoreRayTraceGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderSta
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_spatialDenoisingShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingShader.SetStorageImage(target, 1);
-	_spatialDenoisingShader.SetUniformTexture(data.gNormal, 2);
-	_spatialDenoisingShader.SetUniformTexture(data.sceneDepthBuffer, 3);
-	_spatialDenoisingShader.SetUniformTexture(source, 4);
+	_spatialDenoisingShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_spatialDenoisingShaderBinding.SetStorageImage(target, 1);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.gNormal, 2);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.sceneDepthBuffer, 3);
+	_spatialDenoisingShaderBinding.SetUniformTexture(source, 4);
 
-	_spatialDenoisingShader.Bind(cmd);
+	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -355,12 +356,12 @@ bool RTCoreRayTraceGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderSt
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_temporalDenoisingShader.SetStorageImage(target, 1);
-	_temporalDenoisingShader.SetUniformTexture(source, 2);
-	_temporalDenoisingShader.SetUniformTexture(data.historyColorTexture, 3);
-	_temporalDenoisingShader.SetUniformTexture(data.gMotionVector, 4);
+	_temporalDenoisingShaderBinding.SetStorageImage(target, 1);
+	_temporalDenoisingShaderBinding.SetUniformTexture(source, 2);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.historyColorTexture, 3);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.gMotionVector, 4);
 
-	_temporalDenoisingShader.Bind(cmd);
+	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -422,16 +423,16 @@ void RTCoreRayTraceGIPass::SetEnable(bool enable) const
 		_firstDrawTemporal = true;
 }
 
-bool RTCoreRayTraceGIPass::BindAccelerationStructure(RayTracingPipeline& shader)
+bool RTCoreRayTraceGIPass::BindAccelerationStructure(RayTracingBindingRecord& binding)
 {
 	if (!_buffers)
 		return false;
 
-	shader.SetAccelerationStructure(_buffers->GetAccelerationStructure(), 0);
-	shader.SetStorageBlock(_buffers->GetInstancesInfosBlock(), 3);
+	binding.SetAccelerationStructure(_buffers->GetAccelerationStructure(), 0);
+	binding.SetStorageBlock(_buffers->GetInstancesInfosBlock(), 3);
 
-	shader.SetStorageBlock(IndirectDrawManager::Instance()->GetVertexBlock(), 1);
-	shader.SetStorageBlock(IndirectDrawManager::Instance()->GetIndexBlock(), 2);
+	binding.SetStorageBlock(IndirectDrawManager::Instance()->GetVertexBlock(), 1);
+	binding.SetStorageBlock(IndirectDrawManager::Instance()->GetIndexBlock(), 2);
 
 	return true;
 }

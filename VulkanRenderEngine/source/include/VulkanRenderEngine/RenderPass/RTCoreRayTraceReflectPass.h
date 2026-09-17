@@ -22,7 +22,7 @@ public:
 	~RTCoreRayTraceReflectPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGeneralBuffer> buffer);
@@ -56,13 +56,18 @@ private:
 
 	void SetEnable(bool enable) const;
 
-	bool BindAccelerationStructure(RayTracingPipeline& shader);
+	bool BindAccelerationStructure(RayTracingBindingRecord& binding);
 
 private:
 	RayTracingPipeline _rayTraceShader;
 	ComputePipeline _spatialDenoisingShader;
 	ComputePipeline _temporalDenoisingShader;
 	ComputePipeline _scaleShader;
+
+	RayTracingBindingRecord _rayTraceShaderBinding;
+	ComputeBindingRecord _spatialDenoisingShaderBinding;
+	ComputeBindingRecord _temporalDenoisingShaderBinding;
+	ComputeBindingRecord _scaleShaderBinding;
 
 	mutable bool _firstDrawTemporal; 
 	mutable bool _enable;

@@ -15,8 +15,7 @@ static void ExecuteCallbacks(std::vector<std::function<void()>>& callbacks)
 using namespace VKCore;
 
 VulkanSwapchain::~VulkanSwapchain()
-{
-}
+{}
 
 void VulkanSwapchain::Release()
 {
@@ -39,7 +38,6 @@ void VulkanSwapchain::Release()
 	m_swapchainCreateInfo = vk::SwapchainCreateInfoKHR();
 	m_swapchainImages.clear();
 	m_swapchainImageViews.clear();
-	m_currentImageIndex = 0;
 	m_callbacks_createSwapchain.clear();
 	m_callbacks_destroySwapchain.clear();
 }
@@ -48,6 +46,7 @@ vk::Result VulkanSwapchain::Create(
 	std::shared_ptr<VulkanDevice> device,
 	std::shared_ptr<VulkanSurface> surface,
 	const VkExtent2D& windowSize,
+	uint32_t targetImageCount,
 	bool limitFrameRate,
 	vk::SwapchainCreateFlagsKHR flags
 )
@@ -68,19 +67,15 @@ vk::Result VulkanSwapchain::Create(
 		return surfaceCapabilitiesResult;
 	}
 
-
-	// 在 min 和 max 之间，尽量取 min+1（实现三缓冲）
 	uint32_t minCount = surfaceCapabilities.minImageCount;
 	uint32_t maxCount = surfaceCapabilities.maxImageCount;
 
-	// 如果 maxCount == 0 表示无上限，否则取 min+1 和 maxCount 中较小的
-	uint32_t targetCount = minCount + 1;
-	if (maxCount > 0 && targetCount > maxCount) {
-		targetCount = maxCount;
-	}
+	if (maxCount == 0)
+		maxCount = std::max(minCount, targetImageCount);
 
+	targetImageCount = std::clamp(targetImageCount, minCount, maxCount);
 
-	m_swapchainCreateInfo.setMinImageCount(targetCount)
+	m_swapchainCreateInfo.setMinImageCount(targetImageCount)
 		.setImageExtent(
 			surfaceCapabilities.currentExtent.width == -1 ?
 			vk::Extent2D{
@@ -190,27 +185,25 @@ vk::ColorSpaceKHR VKCore::VulkanSwapchain::GetImageColorSpace() const
 	return m_swapchainCreateInfo.imageColorSpace;
 }
 
-uint32_t VulkanSwapchain::GetCurrentImageIndex() const { return m_currentImageIndex; }
-
 uint32_t VulkanSwapchain::GetSwapchainImageCount() const { return m_swapchainImages.size(); }
 
 const std::vector<vk::ImageView>& VulkanSwapchain::SwapchainImageView() const { return m_swapchainImageViews; }
 
 const std::vector<vk::Image>& VKCore::VulkanSwapchain::SwapchainImage() const { return m_swapchainImages; }
 
-vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& semaphore_imageIsAvailable)
+vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& semaphore_imageIsAvailable, uint32_t& outImageIndex)
 {
 	static VKWrapper::VKFence s_null_fence(nullptr);
-	return SwapImage(semaphore_imageIsAvailable, s_null_fence);
+	return SwapImage(semaphore_imageIsAvailable, s_null_fence, outImageIndex);
 }
 
-vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKFence& fence_imageIsAvailable)
+vk::Result VulkanSwapchain::SwapImage(const VKWrapper::VKFence& fence_imageIsAvailable, uint32_t& outImageIndex)
 {
 	static VKWrapper::VKBinarySemaphore s_null_seamphore(nullptr);
-	return SwapImage(s_null_seamphore, fence_imageIsAvailable);
+	return SwapImage(s_null_seamphore, fence_imageIsAvailable, outImageIndex);
 }
 
-vk::Result VKCore::VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& semaphore_imageIsAvailable, const VKWrapper::VKFence& fence_imageIsAvailable)
+vk::Result VKCore::VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& semaphore_imageIsAvailable, const VKWrapper::VKFence& fence_imageIsAvailable, uint32_t& outImageIndex)
 {
 	auto device = m_device.lock();
 	if (!device)
@@ -223,7 +216,7 @@ vk::Result VKCore::VulkanSwapchain::SwapImage(const VKWrapper::VKSemaphore& sema
 		m_swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 	}
 	//获取交换链图像索引
-	while (VkResult rawResult = vkAcquireNextImageKHR(device->GetHandle(), m_swapchain, UINT64_MAX, semaphore_imageIsAvailable.GetHandle(), fence_imageIsAvailable.GetHandle(), &m_currentImageIndex))
+	while (VkResult rawResult = vkAcquireNextImageKHR(device->GetHandle(), m_swapchain, UINT64_MAX, semaphore_imageIsAvailable.GetHandle(), fence_imageIsAvailable.GetHandle(), &outImageIndex))
 	{
 		auto result = vk::Result(rawResult);
 		switch (result) {
@@ -246,6 +239,7 @@ vk::Result VulkanSwapchain::PresentImage(vk::PresentInfoKHR& presentInfo)
 	if (!device)
 		return vk::Result::eErrorInitializationFailed;
 
+	LockGuard guard(device->GetPresentQueueMutex());
 	auto result = device->GetPresentQueue().presentKHR(presentInfo);
 
 	switch (result) {
@@ -261,12 +255,12 @@ vk::Result VulkanSwapchain::PresentImage(vk::PresentInfoKHR& presentInfo)
 }
 
 //该函数用于在渲染循环中呈现图像的常见情形
-vk::Result VulkanSwapchain::PresentImage(const VKWrapper::VKSemaphore& semaphore_renderingIsOver) {
+vk::Result VulkanSwapchain::PresentImage(const VKWrapper::VKSemaphore& semaphore_renderingIsOver, uint32_t imageIndex) {
 	vk::PresentInfoKHR presentInfo;
 	presentInfo
 		.setSwapchainCount(1)
 		.setSwapchains(m_swapchain)
-		.setImageIndices(m_currentImageIndex);
+		.setImageIndices(imageIndex);
 
 	auto handle = semaphore_renderingIsOver.GetHandle();
 	if (semaphore_renderingIsOver.GetHandle() != VK_NULL_HANDLE)

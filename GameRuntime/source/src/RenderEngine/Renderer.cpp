@@ -34,7 +34,7 @@ glm::vec2 MapPosToRenderPos(const glm::vec2& mapPos)
 	return renderPos;
 }
 
-void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state)
+void RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state)
 {
 	auto& contexts = framedata->GL_Contexts;
 
@@ -119,7 +119,7 @@ void OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<
 		state.skybox.cube = framedata->skybox;
 }
 
-void OpenGLRenderFrameDataAnalysisHelp::processSceneModel(
+void RenderFrameDataAnalysisHelp::processSceneModel(
 	RenderState& state,
 	VKRenderObjectData::SceneRenderData& renderData,
 	const std::shared_ptr<VKRenderContext::SceneModelRenderData>& data
@@ -217,7 +217,7 @@ void OpenGLRenderFrameDataAnalysisHelp::processSceneModel(
 	}
 }
 
-void OpenGLRenderFrameDataAnalysisHelp::processFirstPersonModel(
+void RenderFrameDataAnalysisHelp::processFirstPersonModel(
 	RenderState& state,
 	VKRenderObjectData::FirstPersonRenderData& renderData,
 	const std::shared_ptr<VKRenderContext::FirstPersonRenderData>& data)
@@ -303,15 +303,14 @@ void OpenGLRenderFrameDataAnalysisHelp::processFirstPersonModel(
 
 
 Renderer::Renderer(ID2D1DeviceContext* rt, RenderTripleBufferPtr buffers)
-	:_redBrush(nullptr), _optionChange(false), _isVulkanInit(false), _earlyThreadStop(true)
+	:_redBrush(nullptr), _optionChange(false), _isVulkanInit(false), _pushFrameStop(true)
 {
 	SetRenderTarget(rt);
 	SetBuffers(buffers);
 }
 
 Render::Renderer::~Renderer()
-{
-}
+{}
 
 void Renderer::SetRenderTarget(ID2D1DeviceContext* rt)
 {
@@ -323,9 +322,9 @@ void Renderer::SetBuffers(RenderTripleBufferPtr buffers)
 	_buffers = buffers;
 }
 
-void Render::Renderer::EarlyProcessLoop()
+void Render::Renderer::PushFrameLoop()
 {
-	while (!_earlyThreadStop)
+	while (!_pushFrameStop)
 	{
 		if (!_buffers)
 		{
@@ -349,7 +348,7 @@ void Render::Renderer::EarlyProcessLoop()
 				framedata->nearPlane, framedata->farPlane, framedata->fov)
 			.Build();
 
-		OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(framedata, data.state);
+		RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(framedata, *data.state);
 		if (_optionChange)
 		{
 			render->SetOption(_option);
@@ -358,7 +357,7 @@ void Render::Renderer::EarlyProcessLoop()
 
 		data.D2D_Contexts = std::move(framedata->D2D_Contexts);
 
-		render->EarlyProcess(data.state);
+		render->PushFrameState(data.state);
 
 		_earlyDataBuffers.submitWriteBuffer();
 	}
@@ -368,20 +367,20 @@ void Renderer::renderFrame()
 {
 	if (!_buffers)
 		return;
-	if (_earlyThreadStop || !_earlyProcessThread)
+	if (_pushFrameStop || !_pushFrameThread)
 	{
-		_earlyThreadStop = false;
-		_earlyProcessThread = std::make_shared<std::thread>(&Renderer::EarlyProcessLoop, this);
+		_pushFrameStop = false;
+		_pushFrameThread = std::make_shared<std::thread>(&Renderer::PushFrameLoop, this);
 	}
 
 	auto render = _vulkanRenderer;
 	if (!render)
 		return;
 
-	auto& data = _earlyDataBuffers.acquireReadBuffer();
+	auto data = _earlyDataBuffers.acquireReadBuffer();
 
 	if (_isVulkanInit)
-		renderOpenGLFrame(data.render, data.state);
+		renderOpenGLFrame();
 
 	renderD2DFrame(data.D2D_Contexts);
 
@@ -436,12 +435,22 @@ void Render::Renderer::renderD2DFrame(std::vector<std::shared_ptr<D2DRenderConte
 	_renderTarget->EndDraw();
 }
 
-void Render::Renderer::renderOpenGLFrame(std::shared_ptr<VulkanRenderer>& render, RenderState& state)
+void Render::Renderer::renderOpenGLFrame()
 {
-	if (!render || !_sharedTexture)
+	auto renderer = _vulkanRenderer;
+	if (!renderer || !_sharedTexture)
 		return;
 
-	render->Draw(state);
+	auto start = Tool::GetTimestampMircoseconds();
+	renderer->WaitImage([&](std::shared_ptr<Texture2D> tex) {
+		if (!tex || !_sharedTexture->vulkanTexture) return;
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		Texture2D::BlitImageAsync(cmd, tex, _sharedTexture->vulkanTexture);
+		_sharedTexture->vulkanTexture->TransitionLayout(cmd, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits::eTransfer);
+		if (cmd->IsRecording())
+			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		});
+
 
 	ID3D11Texture2D* pBackBuffer = nullptr;
 	auto hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
@@ -471,6 +480,7 @@ void Render::Renderer::renderOpenGLFrame(std::shared_ptr<VulkanRenderer>& render
 		}
 
 	}
+	std::cout << std::format("cost2 {}ms\n", (Tool::GetTimestampMircoseconds() - start) / 1000.f);
 }
 
 void Render::Renderer::InitVulkanRender(uint32_t scr_width, uint32_t scr_height)
@@ -478,23 +488,25 @@ void Render::Renderer::InitVulkanRender(uint32_t scr_width, uint32_t scr_height)
 	if (_vulkanRenderer)
 		return;
 
-	auto r = std::make_shared<VulkanRenderer>();
-
-	if (!_sharedTexture)
-		_sharedTexture = CreateSharedTexture(g_pD3DDevice, scr_width, scr_height, DXGI_FORMAT_B8G8R8A8_UNORM);
-
-	if (!_sharedTexture)
-		return;
+	auto renderer = std::make_shared<VulkanRenderer>();
 
 	std::vector<std::string> extensions;
 	extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 	extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 
 	auto vulkanInstance = VulkanRenderer::CreateInstance(extensions);
-	auto vkRenderer = VulkanRenderer::CreateForSharedTexture(vulkanInstance, _sharedTexture);
+	auto vkRenderer = VulkanRenderer::CreateForOffScreen(vulkanInstance, scr_width, scr_height);
 
 	if (vkRenderer != nullptr)
 	{
+		if (!_sharedTexture)
+			_sharedTexture = CreateSharedTexture(g_pD3DDevice, scr_width, scr_height, DXGI_FORMAT_B8G8R8A8_UNORM);
+		//_sharedTexture = CreateSharedTexture(g_pD3DDevice, scr_width, scr_height, DXGI_FORMAT_R8G8B8A8_UNORM);
+
+		if (!_sharedTexture)
+			return;
+
+		vkRenderer->Run();
 		_vulkanRenderer = vkRenderer;
 		_isVulkanInit = true;
 	}

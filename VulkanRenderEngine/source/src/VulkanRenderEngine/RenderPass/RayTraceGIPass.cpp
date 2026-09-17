@@ -72,7 +72,7 @@ RayTraceGIPass::RayTraceGIPass(
 			.AddUnifromTexture(13);                         // SSAOMap
 
 		if (config.Validate())
-			_rayTraceShader_useGbuffer.Create(config);
+			_rayTraceShader.Create(config);
 	}
 
 	{
@@ -130,9 +130,9 @@ RayTraceGIPass::RayTraceGIPass(
 	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
 	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
 
-	_rayTraceShader_useGbuffer.SetUniformBlock(_RayTraceParamsUBO, 5);
-	_spatialDenoisingShader.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
-	_temporalDenoisingShader.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
+	_rayTraceBinding.SetUniformBlock(_RayTraceParamsUBO, 5);
+	_spatialDenoisingBinding.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
+	_temporalDenoisingBinding.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 RayTraceGIPass::~RayTraceGIPass()
@@ -145,7 +145,7 @@ bool RayTraceGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, Ren
 	return true;
 }
 
-void RayTraceGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void RayTraceGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
@@ -247,29 +247,30 @@ bool RayTraceGIPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	auto& rayTraceShader = _rayTraceShader_useGbuffer;
-	if (!BindGeneralData(rayTraceShader))
+	auto& rayTraceShader = _rayTraceShader;
+	auto& binding = _rayTraceBinding;
+	if (!BindGeneralData(binding))
 		return false;
 
-	rayTraceShader.SetLightStorageData(
+	binding.SetLightStorageData(
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
 		state.lights.ssbo_spotLightMeta
 	);
 
-	rayTraceShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	rayTraceShader.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	rayTraceShader.SetStorageImage(target, 6);
-	rayTraceShader.SetUniformTexture(data.gPosition, 7);
-	rayTraceShader.SetUniformTexture(data.gNormal, 8);
-	rayTraceShader.SetUniformTexture(data.gAlbedoOpacity, 9);
-	rayTraceShader.SetUniformTexture(data.gMetallicRoughness, 10);
-	rayTraceShader.SetUniformTexture(data.sceneDepthBuffer, 11);
-	rayTraceShader.SetUniformTexture(data.atlasShadowMap, 12);
-	rayTraceShader.SetUniformTexture(data.ssaoMap, 13);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	binding.SetStorageImage(target, 6);
+	binding.SetUniformTexture(data.gPosition, 7);
+	binding.SetUniformTexture(data.gNormal, 8);
+	binding.SetUniformTexture(data.gAlbedoOpacity, 9);
+	binding.SetUniformTexture(data.gMetallicRoughness, 10);
+	binding.SetUniformTexture(data.sceneDepthBuffer, 11);
+	binding.SetUniformTexture(data.atlasShadowMap, 12);
+	binding.SetUniformTexture(data.ssaoMap, 13);
 
-	rayTraceShader.Bind(cmd);
+	rayTraceShader.Bind(cmd, binding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -301,13 +302,13 @@ bool RayTraceGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& st
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_spatialDenoisingShader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingShader.SetStorageImage(target, 1);
-	_spatialDenoisingShader.SetUniformTexture(data.gNormal, 2);
-	_spatialDenoisingShader.SetUniformTexture(data.sceneDepthBuffer, 3);
-	_spatialDenoisingShader.SetUniformTexture(source, 4);
+	_spatialDenoisingBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_spatialDenoisingBinding.SetStorageImage(target, 1);
+	_spatialDenoisingBinding.SetUniformTexture(data.gNormal, 2);
+	_spatialDenoisingBinding.SetUniformTexture(data.sceneDepthBuffer, 3);
+	_spatialDenoisingBinding.SetUniformTexture(source, 4);
 
-	_spatialDenoisingShader.Bind(cmd);
+	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -346,12 +347,12 @@ bool RayTraceGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& s
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_temporalDenoisingShader.SetStorageImage(target, 1);
-	_temporalDenoisingShader.SetUniformTexture(source, 2);
-	_temporalDenoisingShader.SetUniformTexture(data.historyColorTexture, 3);
-	_temporalDenoisingShader.SetUniformTexture(data.gMotionVector, 4);
+	_temporalDenoisingBinding.SetStorageImage(target, 1);
+	_temporalDenoisingBinding.SetUniformTexture(source, 2);
+	_temporalDenoisingBinding.SetUniformTexture(data.historyColorTexture, 3);
+	_temporalDenoisingBinding.SetUniformTexture(data.gMotionVector, 4);
 
-	_temporalDenoisingShader.Bind(cmd);
+	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
@@ -413,15 +414,15 @@ void RayTraceGIPass::SetEnable(bool enable) const
 		_firstDrawTemporal = true;
 }
 
-bool RayTraceGIPass::BindGeneralData(ComputePipeline& shader)
+bool RayTraceGIPass::BindGeneralData(ComputeBindingRecord& binding)
 {
 	if (!_buffers)
 		return false;
 
-	auto bindSSBO = [&shader](const BindingPoint& bp, const std::shared_ptr<StorageBlock>& ssbo) -> bool {
+	auto bindSSBO = [&binding](const BindingPoint& bp, const std::shared_ptr<StorageBlock>& ssbo) -> bool {
 		if (!ssbo)
 			return false;
-		shader.SetStorageBlock(ssbo, bp);
+		binding.SetStorageBlock(ssbo, bp);
 		};
 
 	return bindSSBO(BindingPoint{ .binding = 0,.set = 0 }, _buffers->GetTraiangles())

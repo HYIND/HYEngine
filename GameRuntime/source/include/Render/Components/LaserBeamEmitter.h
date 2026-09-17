@@ -17,4 +17,8 @@ struct LaserBeamEmitter :public Renderable
 		properties->white_width = 0.05f;
 		properties->color_width = 0.05f;
 	}
+
+	virtual void OnRemove(const Entity& e) {
+		properties.reset();
+	}
 };

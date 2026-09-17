@@ -132,8 +132,10 @@
     <ClInclude Include="source\include\ECSCore\View.h" />
     <ClInclude Include="source\include\ECSCore\World.h" />
     <ClInclude Include="source\include\Helper\DoubleBuffer.h" />
+    <ClInclude Include="source\include\Helper\DynamicFpsController.h" />
     <ClInclude Include="source\include\Helper\DynamicPacker.h" />
     <ClInclude Include="source\include\Helper\FileIO.h" />
+    <ClInclude Include="source\include\Helper\Log.h" />
     <ClInclude Include="source\include\Helper\Tools.h" />
     <ClInclude Include="source\include\Helper\TripleBuffer.h" />
     <ClInclude Include="source\include\Systems\DestroySystem.h" />
@@ -148,6 +150,7 @@
     <ClCompile Include="source\src\ECSCore\System.cpp" />
     <ClCompile Include="source\src\ECSCore\SystemManager.cpp" />
     <ClCompile Include="source\src\ECSCore\World.cpp" />
+    <ClCompile Include="source\src\Helper\DynamicFpsController.cpp" />
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp" />
     <ClCompile Include="source\src\Helper\FileIO.cpp" />
     <ClCompile Include="source\src\Helper\Tools.cpp" />

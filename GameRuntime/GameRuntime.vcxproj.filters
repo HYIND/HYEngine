@@ -129,9 +129,6 @@
     <ClInclude Include="source\include\Helper\AudioTool.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Helper\DynamicFpsController.h">
-      <Filter>头文件\Helper</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h">
       <Filter>头文件\RenderEngine</Filter>
     </ClInclude>
@@ -208,9 +205,6 @@
     </ClCompile>
     <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp">
       <Filter>源文件\RenderEngine</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Helper\DynamicFpsController.cpp">
-      <Filter>源文件\Helper</Filter>
     </ClCompile>
     <ClCompile Include="source\src\GeneralManager\RenderManager.cpp">
       <Filter>源文件\GeneralManager</Filter>

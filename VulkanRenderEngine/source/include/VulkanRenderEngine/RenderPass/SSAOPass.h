@@ -20,11 +20,14 @@ public:
 		const std::string& ssaoBlurComputeShaderPath
 	);
 	virtual ~SSAOPass();
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
 	ComputePipeline _ssaoShader;
 	ComputePipeline _ssaoBlurShader;
+
+	ComputeBindingRecord _ssaoBinding;
+	ComputeBindingRecord _ssaoBlurBinding;
 
 	std::shared_ptr<Texture2D> _noiseTexture;
 	std::shared_ptr<UniformBlock> _ssaoParams;

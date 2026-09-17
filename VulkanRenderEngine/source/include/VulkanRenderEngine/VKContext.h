@@ -4,6 +4,7 @@
 
 #include "VulkanRenderEngine\VKCore\CoreGeneral.h"
 #include "VulkanRenderEngine\VKWrapper\WrapperGeneral.h"
+#include "VulkanRenderEngine\GlobalConfig.h"
 
 #include "CriticalSectionLock.h"
 #include "SpinLock.h"
@@ -58,10 +59,12 @@ public:
 	vk::DescriptorPool GetDescriptorPool();
 
 	std::shared_ptr<VKWrapper::VKCommandBuffer> GetCommandBuffer();
+	vk::ResultValue<std::vector<vk::DescriptorSet>> AllocateDescriptorSets(vk::DescriptorSetAllocateInfo& allocInfo);
+	vk::Result FreeDescriptorSets(const std::vector<vk::DescriptorSet>& sets);
 
 public:
 	void Retire(VKWrapper::IVKResource* res);
-	void ProcessRetire();
+	void ProcessRetireAndPushFrameIndex();
 
 public:
 	void SubmitCommandBufferToPendingQueue(std::shared_ptr<VKWrapper::VKCommandBuffer> buffer, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
@@ -89,19 +92,27 @@ private:
 		std::shared_ptr<VKWrapper::VKFence> signalFence;
 	};
 
+	struct PendingResource
+	{
+		VKWrapper::IVKResource* res = nullptr;
+		uint32_t frameIndex = 0;
+	};
+
 private:
 	std::shared_ptr<VKCore::VulkanInstance> _instance;
 	std::shared_ptr<VKCore::VulkanDevice> _device;
-	vk::DescriptorPool _descriptorPool;
 
 	std::vector<SubmitCMDData> _pendingCommandBuffers;
 	SpinLock _pendingCommandBufferMutex;
 	SpinLock _submitQueueMutex;
 
+	vk::DescriptorPool _descriptorPool;
 	SpinLock _descriptorPoolCreateMutex;
+	SpinLock _descriptorPoolRequestMutex;
 
-	std::queue<VKWrapper::IVKResource*> _pendingDestoryResource;
+	std::list<PendingResource> _pendingDestoryResource;
 	SpinLock _pendingDestoryResourceMutex;
+	std::atomic<uint32_t> _frameIndex = 0;
 };
 
 #define VKCONTEXT VKContext::Instance()

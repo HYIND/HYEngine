@@ -19,7 +19,7 @@ namespace MapBoundary
 
 namespace Render
 {
-	class OpenGLRenderFrameDataAnalysisHelp
+	class RenderFrameDataAnalysisHelp
 	{
 
 	public:
@@ -42,7 +42,7 @@ namespace Render
 		struct EarlyProcessData
 		{
 			std::shared_ptr<VulkanRenderer> render;
-			RenderState state;
+			std::shared_ptr<RenderState> state;
 			std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
 		};
 
@@ -56,10 +56,10 @@ namespace Render
 		void SetRenderTarget(ID2D1DeviceContext* rt);
 		void SetBuffers(RenderTripleBufferPtr buffers);
 
-		void EarlyProcessLoop();
+		void PushFrameLoop();
 		void renderFrame();
 		void renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts);
-		void renderOpenGLFrame(std::shared_ptr<VulkanRenderer>& render, RenderState& state);
+		void renderOpenGLFrame();
 
 		void InitVulkanRender(uint32_t scr_width, uint32_t scr_height);
 
@@ -92,8 +92,10 @@ namespace Render
 
 		bool _isVulkanInit;
 
-		bool _earlyThreadStop;
-		std::shared_ptr<std::thread> _earlyProcessThread;
+		bool _pushFrameStop;
+		std::shared_ptr<std::thread> _pushFrameThread;
 		DoubleBuffer<EarlyProcessData> _earlyDataBuffers;
+
+		std::shared_ptr<Texture2D> sharedTexture;
 	};
 }

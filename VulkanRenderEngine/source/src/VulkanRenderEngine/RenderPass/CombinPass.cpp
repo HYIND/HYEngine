@@ -42,13 +42,14 @@ void CombinPass::Draw(std::shared_ptr<Texture2D>& destColorTexture, std::shared_
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_shader.SetStorageImage(destColorTexture, 0);
-	_shader.SetStorageImage(destBrightTexture, 1);
-	_shader.SetUniformTextureArray(colorBuffers, 2);
+	ComputeBindingRecord _binding;
+	_binding.SetStorageImage(destColorTexture, 0);
+	_binding.SetStorageImage(destBrightTexture, 1);
+	_binding.SetUniformTextureArray(colorBuffers, 2);
 
 	uint32_t count = std::min(Max_Color_Buffer_Count, (uint32_t)colorBuffers.size());
 
-	_shader.Bind(cmd);
+	_shader.Bind(cmd, _binding);
 	_shader.SetPushConstants(cmd, &count, sizeof(count));
 
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
