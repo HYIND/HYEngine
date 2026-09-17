@@ -188,24 +188,6 @@ void TerminateWindow() {
 	glfwTerminate();
 }
 
-void TitleFps() {
-	static double time0 = glfwGetTime();
-	static double time1;
-	static double dt;
-	static int dframe = -1;
-	static std::stringstream info;
-	time1 = glfwGetTime();
-	dframe++;
-	if ((dt = time1 - time0) >= 1) {
-		info.precision(1);
-		info << windowTitle << "    " << std::fixed << dframe / dt << " FPS";
-		glfwSetWindowTitle(pWindow, info.str().c_str());
-		info.str(""); //别忘了在设置完窗口标题后清空所用的stringstream
-		time0 = time1;
-		dframe = 0;
-	}
-}
-
 struct OrbitParams {
 	float angle = 0.0f;
 	float radius = 5.0f;
@@ -247,6 +229,8 @@ int VulkanMain()
 	camera.SetDirection(glm::vec3(0, 0, -1));
 	camera.SetFarPlane(150);
 
+	vkRenderer->Run();
+
 	while (!glfwWindowShouldClose(pWindow))
 	{
 		while (glfwGetWindowAttrib(pWindow, GLFW_ICONIFIED))
@@ -254,24 +238,24 @@ int VulkanMain()
 
 		UpdateOrbitCamera(camera, glfwGetTime());
 
-		RenderState state;
-		state.camera.projection = camera.GetPerspectiveProjectionMatrix(windowSize.x, windowSize.y);
-		state.camera.view = camera.GetViewMatrix();
-		state.camera.position = camera.GetPosition();
-		state.camera.direction = camera.GetDirection();
-		state.camera.directionUp = camera.GetDirectionUp();
-		state.camera.directionRight = camera.GetDirectionRight();
-		state.camera.nearPlane = camera.GetNearPlane();
-		state.camera.farPlane = camera.GetFarPlane();
-		state.camera.fov = camera.GetFOV();
-		state.camera.frustum = Frustum(state.camera.projection * state.camera.view);
+		auto state = std::make_shared<RenderState>();
+		state->camera.projection = camera.GetPerspectiveProjectionMatrix(windowSize.x, windowSize.y);
+		state->camera.view = camera.GetViewMatrix();
+		state->camera.position = camera.GetPosition();
+		state->camera.direction = camera.GetDirection();
+		state->camera.directionUp = camera.GetDirectionUp();
+		state->camera.directionRight = camera.GetDirectionRight();
+		state->camera.nearPlane = camera.GetNearPlane();
+		state->camera.farPlane = camera.GetFarPlane();
+		state->camera.fov = camera.GetFOV();
+		state->camera.frustum = Frustum(state->camera.projection * state->camera.view);
 
 		for (auto& info : keqing_model->getMeshInfos())
 		{
 			VKRenderObjectData::SceneRenderData::OpaqueMeshItem item;
 			item.meshinfo = info;
 			item.transform = item.prevTransform = glm::mat4(1.f);
-			state.objects.sceneRenderData.opaqueMesh.push_back(item);
+			state->objects.sceneRenderData.opaqueMesh.push_back(item);
 		}
 
 
@@ -283,15 +267,13 @@ int VulkanMain()
 		pointInfo->light = std::make_shared<PointLight>(glm::vec3(2, 2, 6));
 		pointInfo->light->setIntensity(50);
 
-		state.lights.dirLightInfos.push_back(dirInfo);
-		state.lights.pointLightInfos.push_back(pointInfo);
+		state->lights.dirLightInfos.push_back(dirInfo);
+		state->lights.pointLightInfos.push_back(pointInfo);
 
 		VKCONTEXT->ProcessPendingCommandAndWait();
-		vkRenderer->EarlyProcess(state);
-		vkRenderer->Draw(state);
+		vkRenderer->PushFrameState(state);
 
 		glfwPollEvents();
-		TitleFps();
 	}
 
 	TerminateWindow();

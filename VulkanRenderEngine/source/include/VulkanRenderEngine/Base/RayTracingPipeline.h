@@ -64,20 +64,9 @@ public:
 	);
 
 	virtual void Release() override;
-	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) override;
+	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
 
 	SBTRegionData GetSBTData() const;
-
-	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set = 0);
-	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
-	void SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set = 0);
-	void SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, uint32_t binding, uint32_t set = 0);
-
-
-	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp);
-	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
-	void SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, const BindingPoint& bp);
-	void SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, const BindingPoint& bp);
 
 private:
 	bool CreatePipeline(const RayTracingPipelineConfig& config);
@@ -96,4 +85,22 @@ private:
 
 	std::shared_ptr<SBTBufferBlock> _sbtBufferBlock;
 	SBTRegionData _regions;
+};
+
+class RayTracingBindingRecord :public BindingRecord
+{
+public:
+	RayTracingBindingRecord() = default;
+
+	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set = 0);
+	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
+	void SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set = 0);
+	void SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, uint32_t binding, uint32_t set = 0);
+
+
+	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp);
+	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
+	void SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, const BindingPoint& bp);
+	void SetAccelerationStructure(const vk::AccelerationStructureKHR& handle, const BindingPoint& bp);
+
 };

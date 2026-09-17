@@ -120,7 +120,7 @@ public:
 	);
 
 	virtual void Release() override;
-	void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer) override;
+	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
 
 	vk::RenderPass GetRenderPass() const;
 	vk::ShaderModule GetVertexModule() const;
@@ -141,4 +141,11 @@ private:
 
 	// 着色器阶段（临时存储，创建管线时使用）
 	std::vector<vk::PipelineShaderStageCreateInfo> m_shaderStages;
+};
+
+class GraphicsBindingRecord :public BindingRecord
+{
+public:
+	GraphicsBindingRecord() = default;
+
 };

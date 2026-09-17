@@ -34,6 +34,9 @@ class StaticMeshAsset : public AssetObject
 {
 public:
 	StaticMeshAsset();
+	virtual ~StaticMeshAsset() {
+		_meshes.clear();
+	}
 	virtual std::vector<std::shared_ptr<Mesh>> AsStaticMesh() override;
 
 private:
@@ -46,6 +49,9 @@ class TextureAsset : public AssetObject
 {
 public:
 	TextureAsset();
+	virtual ~TextureAsset() {
+		_texture.reset();
+	}
 	virtual std::shared_ptr<Texture2D> AsTexture() override;
 
 private:
@@ -58,6 +64,7 @@ class AudioAsset : public AssetObject
 {
 public:
 	AudioAsset();
+	virtual ~AudioAsset() = default;
 	virtual std::shared_ptr<AudioInfo> AsAudio() override;
 
 private:
@@ -70,6 +77,7 @@ class MaterialAsset : public AssetObject
 {
 public:
 	MaterialAsset();
+	virtual ~MaterialAsset() = default;
 	virtual std::shared_ptr<Material> AsMaterial() override;
 
 private:
@@ -83,6 +91,7 @@ class ModelAsset : public AssetObject
 {
 public:
 	ModelAsset();
+	virtual ~ModelAsset() = default;
 	virtual std::shared_ptr<Model> AsModel() override;
 
 private:
@@ -96,6 +105,7 @@ class SceneAsset : public AssetObject
 {
 public:
 	SceneAsset();
+	virtual ~SceneAsset() = default;
 	virtual std::shared_ptr<Scene> AsScene() override;
 
 private:

@@ -160,8 +160,8 @@ public:
 	RenderStateBuilder& SetCamera(const glm::mat4& proj, const glm::mat4& view,
 		const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& dirUp, const glm::vec3& dirRight,
 		float nearP, float farP, float fov);
-	RenderState Build();
+	std::shared_ptr<RenderState> Build();
 
 private:
-	RenderState context;
+	std::shared_ptr<RenderState> context;
 };

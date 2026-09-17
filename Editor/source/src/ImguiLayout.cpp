@@ -924,32 +924,66 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 	{
 		ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 
-		static VkDescriptorSet textureID;
+		static std::unordered_map<VkImageView, VkDescriptorSet> imguiRegisterTexture;
 
-		if (worldManager->ResizeOpenGL(viewportSize.x, viewportSize.y))
+		if (
+			(worldManager->GetVulkanRener()->GetWidth() == 0 || worldManager->GetVulkanRener()->GetHeight() == 0)
+			&& (viewportSize.x != 0 && viewportSize.y != 0)
+			)
 		{
-			if (textureID != VK_NULL_HANDLE)
+			auto render = worldManager->GetVulkanRener();
+			VulkanRenderer::CreateForOffScreen_Target(render, viewportSize.x, viewportSize.y);
+			render->Run();
+			worldManager->RunPushFrame();
+		}
+
+		if (worldManager->GetVulkanRener()->GetWidth() != 0 && worldManager->GetVulkanRener()->GetHeight() != 0)
+		{
+
+			if (worldManager->ResizeVulkan(viewportSize.x, viewportSize.y))
 			{
-				ImGui_ImplVulkan_RemoveTexture(textureID);
-				textureID = VK_NULL_HANDLE;
+				for (auto& [view, textureId] : imguiRegisterTexture)
+				{
+					if (textureId != VK_NULL_HANDLE)
+						ImGui_ImplVulkan_RemoveTexture(textureId);
+				}
+				imguiRegisterTexture.clear();
 			}
-		}
-		worldManager->RenderFrame();
 
-		if (textureID == VK_NULL_HANDLE)
-		{
-			textureID = ImGui_ImplVulkan_AddTexture(
-				worldManager->GetOpenGLRener()->GetColorBuffer()->GetImageView(),
-				VK_IMAGE_LAYOUT_GENERAL
-			);
+			worldManager->GetVulkanRener()->WaitImage([&](std::shared_ptr<Texture2D> tex) {
+				if (!tex) return;
+
+				VkImageView view = tex->GetImageView();
+				if (view == VK_NULL_HANDLE)
+					return;
+
+				VkDescriptorSet texureId;
+				auto it = imguiRegisterTexture.find(view);
+				if (it == imguiRegisterTexture.end())
+				{
+					texureId =
+						ImGui_ImplVulkan_AddTexture(
+							view,
+							VK_IMAGE_LAYOUT_GENERAL
+						);
+
+					imguiRegisterTexture[view] = texureId;
+				}
+				else
+				{
+					texureId = it->second;
+				}
+
+				ImGui::Image(
+					(ImTextureID)texureId,
+					viewportSize,
+					ImVec2(0, 0),
+					ImVec2(1, 1)
+				);
+
+				});
 		}
 
-		ImGui::Image(
-			(ImTextureID)textureID,
-			viewportSize,
-			ImVec2(0, 0),
-			ImVec2(1, 1)
-		);
 
 		if (ImGui::BeginDragDropTarget())
 		{

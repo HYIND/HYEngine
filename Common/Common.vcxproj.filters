@@ -165,6 +165,12 @@
     <ClInclude Include="source\include\Helper\DoubleBuffer.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Helper\DynamicFpsController.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\Log.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp">
@@ -205,6 +211,9 @@
     </ClCompile>
     <ClCompile Include="source\src\Systems\PhysicsSystem.cpp">
       <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Helper\DynamicFpsController.cpp">
+      <Filter>源文件\Helper</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

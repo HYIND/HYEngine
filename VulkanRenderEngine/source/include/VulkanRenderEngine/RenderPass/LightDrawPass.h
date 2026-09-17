@@ -14,10 +14,12 @@ public:
 	virtual ~LightDrawPass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);;
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
 	GraphicsPipeline _shader;
+	GraphicsBindingRecord _binding;
+
 	std::shared_ptr<StorageBlock> _transformAndColors_ssbo;
 
 	std::shared_ptr<VertexBufferBlock> _vertexBuffer;

@@ -25,6 +25,10 @@ struct SkeletonAnimatorGroup :public IComponent
 
 	SkeletonAnimatorGroup() {}
 
+	virtual void OnRemove(const Entity& e) {
+		animatorDatas.clear();
+	}
+
 	bool AddAnimator(const std::string& name, std::shared_ptr<Animation> ani, std::shared_ptr<Skeleton> skeleton, bool enable = false)
 	{
 		if (!ani || !skeleton)

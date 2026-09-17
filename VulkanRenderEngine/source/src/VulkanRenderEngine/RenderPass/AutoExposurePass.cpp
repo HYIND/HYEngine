@@ -28,7 +28,7 @@ AutoExposurePass::AutoExposurePass(const std::string& computeShaderPath)
 		_shader.Create(config);
 
 	_paramsSSBO = std::make_shared<StorageBlock>(sizeof(HistogramSSBOParams));
-	_shader.SetStorageBlock(_paramsSSBO, 0);
+	_binding.SetStorageBlock(_paramsSSBO, 0);
 }
 
 bool AutoExposurePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -48,16 +48,16 @@ void AutoExposurePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Rend
 	_paramsSSBO->WriteData(&params, sizeof(HistogramSSBOParams));
 }
 
-void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 
 	auto sceneColorBuffer = ctx.GetExternal(0);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_shader.SetStorageImage(sceneColorBuffer, 1);
+	_binding.SetStorageImage(sceneColorBuffer, 1);
 
-	_shader.Bind(cmd);
+	_shader.Bind(cmd, _binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 	_paramsSSBO->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
 

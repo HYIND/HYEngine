@@ -51,11 +51,12 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer)
 		DrawImage->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 		SampleImage->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Sample);
 
-		_bloomBlurShader.SetStorageImage(DrawImage, 0);
-		_bloomBlurShader.SetUniformTexture(SampleImage, 1);
+		ComputeBindingRecord bloomBlurBinding;
+		bloomBlurBinding.SetStorageImage(DrawImage, 0);
+		bloomBlurBinding.SetUniformTexture(SampleImage, 1);
 		_bloomBlurShader.SetPushConstants(cmd, &params, sizeof(params));
 
-		_bloomBlurShader.Bind(cmd);
+		_bloomBlurShader.Bind(cmd, bloomBlurBinding);
 		cmd->dispatch((_width + work_size_x - 1) / work_size_x, (_height + work_size_y - 1) / work_size_y, 1);
 
 		_outPutTarget = DrawImage;

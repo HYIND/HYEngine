@@ -13,12 +13,8 @@ public:
 	PreCalculatePass();
 	~PreCalculatePass();
 
-	virtual void EarlyExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);;
-
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& stat);
-
-
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& stat);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:

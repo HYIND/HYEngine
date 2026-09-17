@@ -69,17 +69,10 @@ namespace RenderGraph
 		const std::unordered_set<PassNode*>& GetAfters() const;
 		const std::unordered_set<PassNode*>& GetBefores() const;
 
-		void EarlyExecute(int frameIndex, RenderState& state);
-
-		bool ShouldExecute(int frameIndex, RenderState& state);
-		void Execute(int frameIndex, const PassContext& ctx, RenderState& state);
-
-		void FrameBegin(int frameIndex, RenderState& state);
-		void FrameEnd(int frameIndex, RenderState& state);
-
-	public:
-		bool IsDone();
-		void SetDone(bool done);
+		void FrameBegin(FrameDataRegistry& registry, RenderState& state);
+		bool ShouldExecute(FrameDataRegistry& registry, RenderState& state);
+		void Execute(FrameDataRegistry& registry, const PassFrameContext& ctx, RenderState& state);
+		void FrameEnd(FrameDataRegistry& registry, RenderState& state);
 
 	private:
 		std::string _name;
@@ -102,10 +95,6 @@ namespace RenderGraph
 		int _batch = -1;
 
 		bool _enable;
-
-		bool _isDone;
-
-		std::array<FrameDataRegistry, 2> _registrys;
 	};
 
 }

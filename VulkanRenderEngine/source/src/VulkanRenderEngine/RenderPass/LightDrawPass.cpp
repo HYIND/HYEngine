@@ -75,7 +75,7 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 	_vertexBuffer->WriteData(vertex.data(), vertex.size() * sizeof(glm::vec3));
 	_indexBuffer->WriteData(indices.data(), indices.size() * sizeof(unsigned int));
 
-	_shader.SetStorageBlock(_transformAndColors_ssbo, 0);
+	_binding.SetStorageBlock(_transformAndColors_ssbo, 0);
 }
 
 bool LightDrawPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state) {
@@ -167,7 +167,7 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 	}
 }
 
-void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (_commands.empty())
 		return;
@@ -190,8 +190,8 @@ void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rend
 	cmd->beginRendering(info);
 	cmd->setDynamicViewport(viewport);
 
-	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_shader.Bind(cmd);
+	_binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_shader.Bind(cmd, _binding);
 
 	cmd->bindVertexBuffers(_vertexBuffer);
 	cmd->bindIndexBuffer(_indexBuffer);

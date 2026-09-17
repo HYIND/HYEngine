@@ -27,6 +27,9 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceReflectPass.h"
 
+const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
+const std::string Ext_RenderTargetDepthBuffer_Name = "renderTargetDepthBuffer";
+
 static void NeedVulkanBaseInitlized()
 {
 	static std::once_flag flag;
@@ -51,6 +54,7 @@ std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::Vul
 	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
 	vulkanDevice->AddDeviceExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
 	vulkanDevice->AddDeviceExtension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+	//vulkanDevice->AddDeviceExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 
 	if (GlobalConfig::RTCoreEnable)
 	{
@@ -116,7 +120,9 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForWindow(std::shared_ptr<
 
 	auto vulkanSwapchain = std::make_shared<VKCore::VulkanSwapchain>();
 
-	if (auto result = vulkanSwapchain->Create(vulkanDevice, vulkanSurface, { width, height }, limitFrameRate); result != vk::Result::eSuccess)
+	// 除了MaxFramesInFlight之外，交换链需要预留一张图处于呈现状态
+	// 故目标图像数量为MaxFramesInFlight + 1
+	if (auto result = vulkanSwapchain->Create(vulkanDevice, vulkanSurface, { width, height }, GlobalConfig::MaxFramesInFlight + 1, limitFrameRate); result != vk::Result::eSuccess)
 		return nullptr;
 
 	auto renderer = std::make_shared<VulkanRenderer>();
@@ -124,37 +130,8 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForWindow(std::shared_ptr<
 	renderer->_vulkanSurface = vulkanSurface;
 	renderer->_vulkanDevice = vulkanDevice;
 	renderer->_vulkanSwapchain = vulkanSwapchain;
+	renderer->_maxFramesInFlight = std::max(1u, std::min(GlobalConfig::MaxFramesInFlight, vulkanSwapchain->GetSwapchainImageCount() - 1));
 	renderer->InitForWindow(width, height);
-
-	return renderer;
-}
-
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForSharedTexture(std::shared_ptr<VKCore::VulkanInstance> instance, std::shared_ptr<SharedTexture> sharedTexture)
-{
-	if (!instance || !sharedTexture || !sharedTexture->d3dTexture) return nullptr;
-
-	uint32_t width = sharedTexture->width;
-	uint32_t height = sharedTexture->height;
-
-	VKCONTEXT->SetInstance(instance);
-
-	VKCore::VulkanPhysicalDeviceInfo info;
-	if (!instance->GetSuitablePhysicalDevice(info, true, true))
-	{
-		std::cout << std::format("[ CreateForOffscreen ] ERROR\nFailed to get suitable physical device\n");
-		return nullptr;
-	}
-
-	auto vulkanDevice = CreateVKDevice(instance, info);
-	if (!vulkanDevice)
-		return nullptr;
-
-	VKCONTEXT->SetDevice(vulkanDevice);
-
-	auto renderer = std::make_shared<VulkanRenderer>();
-	renderer->_vulkanInstance = instance;
-	renderer->_vulkanDevice = vulkanDevice;
-	renderer->InitForSharedTexture(sharedTexture);
 
 	return renderer;
 }
@@ -181,15 +158,91 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForOffScreen(std::shared_p
 	auto renderer = std::make_shared<VulkanRenderer>();
 	renderer->_vulkanInstance = instance;
 	renderer->_vulkanDevice = vulkanDevice;
+	renderer->_maxFramesInFlight = std::max(1u, GlobalConfig::MaxFramesInFlight);
 	renderer->InitForOffSceen(width, height);
 
 	return renderer;
 }
 
+std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface)
+{
+	if (!instance) return nullptr;
+
+	VKCONTEXT->SetInstance(instance);
+
+	VKCore::VulkanPhysicalDeviceInfo info;
+	if (!instance->GetSuitablePhysicalDevice(info, true, true, true, surface))
+	{
+		std::cout << std::format("[ CreateForWindow ] ERROR\nFailed to get suitable physical device\n");
+		return nullptr;
+	}
+
+	auto vulkanSurface = std::make_shared<VKCore::VulkanSurface>(instance, surface);
+
+	auto vulkanDevice = CreateVKDevice(instance, info);
+	if (!vulkanDevice)
+		return nullptr;
+
+	VKCONTEXT->SetDevice(vulkanDevice);
+
+	auto renderer = std::make_shared<VulkanRenderer>();
+	renderer->_vulkanInstance = instance;
+	renderer->_vulkanSurface = vulkanSurface;
+	renderer->_vulkanDevice = vulkanDevice;
+
+	return renderer;
+}
+
+std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance)
+{
+	if (!instance) return nullptr;
+
+	VKCONTEXT->SetInstance(instance);
+
+	VKCore::VulkanPhysicalDeviceInfo info;
+	if (!instance->GetSuitablePhysicalDevice(info, true, true))
+	{
+		std::cout << std::format("[ CreateForOffscreen ] ERROR\nFailed to get suitable physical device\n");
+		return nullptr;
+	}
+
+	auto vulkanDevice = CreateVKDevice(instance, info);
+	if (!vulkanDevice)
+		return nullptr;
+
+	VKCONTEXT->SetDevice(vulkanDevice);
+
+	auto renderer = std::make_shared<VulkanRenderer>();
+	renderer->_vulkanInstance = instance;
+	renderer->_vulkanDevice = vulkanDevice;
+
+	return renderer;
+}
+
+bool VulkanRenderer::CreateForWindow_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height, bool limitFrameRate)
+{
+	auto vulkanSwapchain = std::make_shared<VKCore::VulkanSwapchain>();
+
+	if (auto result = vulkanSwapchain->Create(renderer->_vulkanDevice, renderer->_vulkanSurface, { width, height }, std::max(2u, GlobalConfig::MaxFramesInFlight + 1), limitFrameRate); result != vk::Result::eSuccess)
+		return false;
+
+	renderer->_vulkanSwapchain = vulkanSwapchain;
+	renderer->_maxFramesInFlight = std::max(1u, std::min(GlobalConfig::MaxFramesInFlight, vulkanSwapchain->GetSwapchainImageCount() - 1));
+	renderer->InitForWindow(width, height);
+	return true;
+}
+
+bool VulkanRenderer::CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height)
+{
+	renderer->_maxFramesInFlight = std::max(1u, GlobalConfig::MaxFramesInFlight);
+	renderer->InitForOffSceen(width, height);
+	return true;
+}
+
 VulkanRenderer::VulkanRenderer()
 {
-	scr_width = 1;
-	scr_height = 1;
+	scr_width = 0;
+	scr_height = 0;
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -207,55 +260,13 @@ void VulkanRenderer::InitForWindow(uint32_t width, uint32_t height)
 
 	Init_Internal();
 
-	const Texture2DConfig config
-	{
-		.minFilter = vk::Filter::eLinear,
-		.magFilter = vk::Filter::eLinear,
-		.wrapU = vk::SamplerAddressMode::eClampToEdge,
-		.wrapV = vk::SamplerAddressMode::eClampToEdge,
-		.anisotropy = false,
-		.gammaCorrection = false
-	};
-	_renderTarget.finalColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR8G8B8A8Unorm, config);
-
-
-	auto imageCount = _vulkanSwapchain->GetSwapchainImageCount();
-
-	_depthImages.clear();
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	cmd->Begin();
-	for (size_t i = 0; i < imageCount; i++) {
-		auto depthTex = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint);
-		depthTex->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-		_depthImages.push_back(depthTex);
-	}
-	cmd->End();
-	VKCONTEXT->SubmitCommandBufferToPendingQueue(cmd);
-
-	_fence = std::make_shared<VKWrapper::VKFence>(_vulkanDevice.get());
-
-	for (int i = 0; i < imageCount; i++)
+	_imageAcquiredSemaphores.clear();
+	_renderFinishedSemaphores.clear();
+	for (int i = 0; i < _vulkanSwapchain->GetSwapchainImageCount(); i++)
 	{
 		_imageAcquiredSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
 		_renderFinishedSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
 	}
-
-	InitRenderGraph();
-}
-
-void VulkanRenderer::InitForSharedTexture(std::shared_ptr<SharedTexture> sharedTexture)
-{
-	if (!sharedTexture)
-		return;
-
-	scr_width = sharedTexture->width;
-	scr_height = sharedTexture->height;
-
-	_mode = RenderMode::SharedTexture;
-
-	Init_Internal();
-
-	_renderTarget.finalColorBuffer = std::make_shared<Texture2D>(sharedTexture);
 
 	InitRenderGraph();
 }
@@ -269,17 +280,6 @@ void VulkanRenderer::InitForOffSceen(uint32_t width, uint32_t height)
 
 	Init_Internal();
 
-	const Texture2DConfig config
-	{
-		.minFilter = vk::Filter::eLinear,
-		.magFilter = vk::Filter::eLinear,
-		.wrapU = vk::SamplerAddressMode::eClampToEdge,
-		.wrapV = vk::SamplerAddressMode::eClampToEdge,
-		.anisotropy = false,
-		.gammaCorrection = false
-	};
-	_renderTarget.finalColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR8G8B8A8Unorm, config);
-
 	InitRenderGraph();
 }
 
@@ -292,13 +292,12 @@ void VulkanRenderer::Init_Internal()
 	_globalPostProcessPass = std::make_unique<GlobalPostProcessPass>("shader/postprocess/globalpostprocess.comp");
 
 	InitRenderTarget();
-
-	_cameraCache.curUBO = std::make_shared<UniformBlock>(sizeof(comp_camera));
-	_cameraCache.prevUBO = std::make_shared<UniformBlock>(sizeof(comp_camera));
 }
 
 void VulkanRenderer::InitRenderTarget()
 {
+	_renderTargets.clear();
+
 	const Texture2DConfig config
 	{
 		.minFilter = vk::Filter::eLinear,
@@ -309,19 +308,27 @@ void VulkanRenderer::InitRenderTarget()
 		.gammaCorrection = false
 	};
 
-	_renderTarget.sceneColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-	_renderTarget.sceneDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
-
-	_renderTarget.firstPersonColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-	_renderTarget.firstPersonDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
-
-	_renderTarget.combinColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-	_renderTarget.combinBrightColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	cmd->Begin();
-	_renderTarget.sceneColorBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	cmd->End();
+	for (uint32_t i = 0; i < _maxFramesInFlight * 2; i++)
+	{
+		auto renderTarget = std::make_shared<RenderTargetData>();
+
+		renderTarget->sceneColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
+		renderTarget->sceneDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
+
+		renderTarget->firstPersonColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
+		renderTarget->firstPersonDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
+
+		renderTarget->combinColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
+		renderTarget->combinBrightColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
+
+		renderTarget->finalColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR8G8B8A8Unorm, config);
+
+		renderTarget->sceneColorBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
+
+		_renderTargets.push_back(std::move(renderTarget));
+	}
+
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }
 
@@ -341,60 +348,12 @@ std::shared_ptr<VKCore::VulkanSwapchain> VulkanRenderer::GetVulkanSwapchain() co
 	return _vulkanSwapchain;
 }
 
-//void VulkanRenderer::Draw(RenderState& state)
-//{
-//	SetupRenderState(state);
-//	//SetupIndirectDrawData(state);
-//
-//	_sceneRenderGraph->Execute(state);
-//	//_firstPersonRenderGraph->Execute(state);
-//
-//
-//	//RenderFirstPersonLayer(state);
-//
-//	static bool draw = false;
-//	if (draw)
-//		DrawTexture(_renderTarget.sceneColorBuffer, "temp/color.png");
-//
-//	_combinPass->Draw(_renderTarget.combinFbo, { _renderTarget.sceneColorBuffer->GetID() ,_renderTarget.firstPersonColorBuffer->GetID() });
-//
-//	auto& option = state.option;
-//	if (option.flags.bloomOn) _globalBloomPass->Draw(_renderTarget.combinBrightColorBuffer->GetID());
-//	_globalPostProcessPass->Draw(
-//		_renderTarget.finalFbo, _renderTarget.combinColorBuffer->GetID(), _globalBloomPass->GetBloomBlurMap(),
-//		option.flags.bloomOn, option.flags.gammaOn, needFlipFinalFboY,
-//		pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
-//	);
-//	FinishRendering(state);
-//}
-
-struct MatrixUBOData {
-	glm::mat4 model = glm::mat4(1.0f);
-	glm::mat4 projection;
-	glm::mat4 view;
-};
-
-void VulkanRenderer::Draw(RenderState& state)
-{
-	if (_mode == RenderMode::Present)
-		DrawPresent(state);
-	else if (_mode == RenderMode::SharedTexture)
-		DrawSharedTexture(state);
-	else if (_mode == RenderMode::Offscreen)
-		DrawOffScreen(state);
-}
-
-std::shared_ptr<Texture2D> VulkanRenderer::GetColorBuffer() const
-{
-	return _renderTarget.finalColorBuffer;
-}
-
-int VulkanRenderer::GetWidth() const
+uint32_t VulkanRenderer::GetWidth() const
 {
 	return scr_width;
 }
 
-int VulkanRenderer::GetHeight() const
+uint32_t VulkanRenderer::GetHeight() const
 {
 	return scr_height;
 }
@@ -411,23 +370,38 @@ void VulkanRenderer::SetOption(RenderOption option)
 
 void VulkanRenderer::Resize(uint32_t width, uint32_t height)
 {
+	bool needRestartup = !_stop;
+	if (needRestartup)
+		Stop();
+
 	width = std::max(1u, width);
 	height = std::max(1u, height);
 	if (scr_width == width && scr_height == height)
 		return;
 
+	while (!_runningFrames.empty())
+		_runningFrames.pop();
+	while (!_doneFrames.empty())
+		_doneFrames.pop();
+
 	if (_mode == RenderMode::Offscreen)
 	{
 		scr_width = width;
 		scr_height = height;
-		InitForOffSceen(scr_width, scr_height);
+		if (_mode == RenderMode::Offscreen)
+			InitForOffSceen(scr_width, scr_height);
+		else if (_mode == RenderMode::Present)
+			InitForWindow(scr_width, scr_height);
 	}
+
+	if (needRestartup)
+		Run();
 }
 
 void VulkanRenderer::InitRenderGraph()
 {
 	InitSceneRenderGraph();
-	InitFirstPersonRenderGraph();
+	//InitCombinRenderGraph();
 }
 
 // RenderGraphResource生成器，输入描述信息或者参照物（如其他res，已有的Texture2D），获取资源声明
@@ -458,6 +432,9 @@ public:
 	RenderGraph::ExternalResource CreateExternalTxture(const RenderGraph::ResourceName& name) {
 		return _graph->CreateExternalTexture(name);
 	}
+	RenderGraph::RenderGraphResource CreateVariableTexture(vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap, const RenderGraph::ResourceName& name, uint32_t maxLevel = 1) {
+		return _graph->CreateTexture(RenderGraph::TextureDesc{ 1 ,1, format, filter, filter, wrap, wrap, std::max(1u,maxLevel) , true }, name);
+	}
 
 private:
 	std::unique_ptr<RenderGraph::Graph>& _graph;
@@ -471,8 +448,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 	_sceneRenderGraph = std::make_unique<RenderGraph::Graph>("SceneRenderGraph");
 
 	// 注入RenderTarget
-	auto Ext_RenderTargetColorBuffer = _sceneRenderGraph->InjectExternalTexture("renderTargetColorBuffer", _renderTarget.sceneColorBuffer);
-	auto Ext_RenderTargetDepthBuffer = _sceneRenderGraph->InjectExternalTexture("renderTargetDepthBuffer", _renderTarget.sceneDepthBuffer);
+
+	auto& sceneColorBuffer = _renderTargets[0]->sceneColorBuffer;
+	auto& sceneDepthBuffer = _renderTargets[0]->sceneDepthBuffer;
+
+	auto Ext_RenderTargetColorBuffer = _sceneRenderGraph->CreateExternalTexture(Ext_RenderTargetColorBuffer_Name);
+	auto Ext_RenderTargetDepthBuffer = _sceneRenderGraph->CreateExternalTexture(Ext_RenderTargetDepthBuffer_Name);
 
 	ResourceBuilder resbuilder(_sceneRenderGraph);
 
@@ -482,13 +463,13 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto gMetallicRoughnessMap = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMetallicRoughnessMap");
 	auto gMotionVectorMap = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMotionVectorMap");
 	auto gEmission = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
-	auto gDepthStencilMap = resbuilder.CreateTexture(_renderTarget.sceneDepthBuffer, "geometryPass_TempDepthStencilMap");
+	auto gDepthStencilMap = resbuilder.CreateTexture(sceneDepthBuffer, "geometryPass_TempDepthStencilMap");
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
 	auto rayTraceReflect_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
 	auto rayTraceGI_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
 	auto ssr_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
-	auto atlasShadowMap = resbuilder.CreateTexture(1024, 1024, vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadowMap");
+	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadowMap");
 
 	// 不透明物体
 	auto preCalculatePass = _sceneRenderGraph->AddPass("preCalculatePass");
@@ -546,7 +527,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		"shader/lighting/AMDViewport_Pointlightshadow_Skinned.vs",
 		"shader/lighting/AMDViewport_Pointlightshadow.fs"
 	))
-		.Persistent(atlasShadowMap)
+		.Output(atlasShadowMap)
 		.After(preCalculatePass)
 		.Before(lightingPass);
 
@@ -572,7 +553,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.After(lightingShadowDepthPass, ssaoPass)
 		.Before(opaqueFence);
 
-	copyDepthPass->SetRenderPass(MakeLambdaPass([](const RenderGraph::PassContext& ctx, RenderState& state)-> void
+	copyDepthPass->SetRenderPass(MakeLambdaPass([](const RenderGraph::PassFrameContext& ctx, RenderState& state)-> void
 		{
 			auto geometryDepthStencil = ctx.GetInput(0);
 			auto renderTargetDepthBuffer = ctx.GetExternal(0);
@@ -696,7 +677,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 		combinIndirectLightingPass->SetRenderPass(MakeLambdaPass(
 			[_shader = makeCombinShader("shader/postprocess/combin.comp"), work_size_x = work_size_x, work_size_y = work_size_y]
-			(const RenderGraph::PassContext& ctx, RenderState& state) mutable -> void
+			(const RenderGraph::PassFrameContext& ctx, RenderState& state) mutable -> void
 			{
 				if (!_shader)
 					return;
@@ -726,12 +707,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 				uint32_t width = sceneColorBuffer->GetWidth();
 				uint32_t height = sceneColorBuffer->GetHeight();
 
-				_shader->SetStorageImage(sceneColorBuffer, 0);
-				_shader->SetUniformTextureArray(all_tex, 2);
+				ComputeBindingRecord binding;
+
+				binding.SetStorageImage(sceneColorBuffer, 0);
+				binding.SetUniformTextureArray(all_tex, 2);
 
 				uint32_t count = (uint32_t)all_tex.size();
 
-				_shader->Bind(cmd);
+				_shader->Bind(cmd, binding);
 				_shader->SetPushConstants(cmd, &count, sizeof(count));
 
 				cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
@@ -740,7 +723,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			}))
 			.InputOption(rayTraceReflect_Output, rayTraceGI_Output, ssr_Output, ssgi_Output)
 			.External(Ext_RenderTargetColorBuffer)
-			.Temp(resbuilder.CreateTexture(_renderTarget.sceneColorBuffer, "combinIndirectLightingPass_temp1"))
+			.Temp(resbuilder.CreateTexture(sceneColorBuffer, "combinIndirectLightingPass_temp1"))
 			.After(rayTraceReflectPass, ssrPass, ssgiPass)
 			.Before(opaqueFence);
 	}
@@ -762,7 +745,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	depthFogPass->SetRenderPass(std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp"))
 		.After(opaqueFence, transprantFence)
 		.External(Ext_RenderTargetColorBuffer, Ext_RenderTargetDepthBuffer)
-		.Temp(resbuilder.CreateTexture(_renderTarget.sceneColorBuffer, "depthFogPass_TempColor"))
+		.Temp(resbuilder.CreateTexture(sceneColorBuffer, "depthFogPass_TempColor"))
 		.Before(postProcessFence);
 
 	autoExposurePass->SetRenderPass(std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp"))
@@ -772,249 +755,201 @@ void VulkanRenderer::InitSceneRenderGraph()
 	_sceneRenderGraph->Compile();
 }
 
-void VulkanRenderer::InitFirstPersonRenderGraph()
+void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 {
-	uint32_t width = scr_width;
-	uint32_t height = scr_height;
+	if (!data)
+		return;
 
-	_firstPersonRenderGraph = std::make_unique<RenderGraph::Graph>("FirstPersonRenderGraph");
+	auto& state = data->state;
+	auto& sync = data->sync;
 
+	if (!state || !sync)
+		return;
+
+	{
+		auto guard = sync->MakeProgressGuard();
+		VKCONTEXT->ProcessRetireAndPushFrameIndex();
+	}
+
+	{
+		auto guard = sync->MakeProgressGuard();
+		SetupRenderState(state);
+		SetupIndirectDrawData(state);
+	}
+
+	{
+		auto guard = sync->MakeProgressGuard();
+		std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
+			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer },
+			{ Ext_RenderTargetDepthBuffer_Name, data->renderTarget->sceneDepthBuffer }
+		};
+		_sceneRenderGraph->Execute(state, sync, externalResources);
+	}
+
+	{
+		auto guard = sync->MakeProgressGuard();
+
+		auto& renderTarget = data->renderTarget;
+		_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+
+		auto& option = state->option;
+		if (option.flags.bloomOn) _globalBloomPass->Draw(renderTarget->combinBrightColorBuffer);
+		_globalPostProcessPass->Draw(
+			renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, _globalBloomPass->GetBloomBlurMap(),
+			option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
+			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
+		);
+
+		FinishRendering(state);
+	}
 }
 
-void VulkanRenderer::Draw_Internal(RenderState& state)
+void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
 {
-	VKCONTEXT->ProcessRetire();
+	auto& state = data->state;
+	auto& renderTarget = data->renderTarget;
 
-	SetupRenderState(state);
-	SetupIndirectDrawData(state);
-
-	_sceneRenderGraph->Execute(state);
-	_firstPersonRenderGraph->Execute(state);
-	//static bool draw = false;
-	//if (draw)
-	//	DrawTexture(_renderTarget.sceneColorBuffer, "temp/color.png");
-
-	_combinPass->Draw(_renderTarget.combinColorBuffer, _renderTarget.combinBrightColorBuffer, { _renderTarget.sceneColorBuffer ,_renderTarget.firstPersonColorBuffer });
-
-	auto& option = state.option;
-	if (option.flags.bloomOn) _globalBloomPass->Draw(_renderTarget.combinBrightColorBuffer);
-	_globalPostProcessPass->Draw(
-		_renderTarget.finalColorBuffer, _renderTarget.combinColorBuffer, _globalBloomPass->GetBloomBlurMap(),
-		option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
-		pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
-	);
-
-	FinishRendering(state);
-}
-
-void VulkanRenderer::DrawPresent(RenderState& state)
-{
-	uint32_t semaphoreIndex = state.renderRecord.frameIndex % _vulkanSwapchain->GetSwapchainImageCount();
+	uint32_t semaphoreIndex = state->renderRecord.frameIndex % _vulkanSwapchain->GetSwapchainImageCount();
 	auto& imageAcquiredSemaphore = _imageAcquiredSemaphores[semaphoreIndex];
 	auto& renderFinishedSemaphore = _renderFinishedSemaphores[semaphoreIndex];
 
 	//获取交换链图像索引
-	_vulkanSwapchain->SwapImage(*imageAcquiredSemaphore);
-	auto imageIndex = _vulkanSwapchain->GetCurrentImageIndex();
-
-	static MatrixUBOData matrixData;
-	matrixData.view = state.camera.view;
-	matrixData.projection = state.camera.projection;
-	auto matrixBlock = std::make_shared<UniformBlock>(sizeof(MatrixUBOData));
-	matrixBlock->WriteData(&matrixData, sizeof(MatrixUBOData), 0);
+	uint32_t imageIndex = 0;
+	_vulkanSwapchain->SwapImage(*imageAcquiredSemaphore, imageIndex);
+	auto swapchainImage = _vulkanSwapchain->SwapchainImage()[imageIndex];
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	auto colorAttachmentImage = _vulkanSwapchain->SwapchainImage()[imageIndex];
+	vk::ImageMemoryBarrier barrier;
+	barrier
+		.setOldLayout(vk::ImageLayout::eUndefined)
+		.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+		.setImage(swapchainImage)
+		.setSubresourceRange(vk::ImageSubresourceRange()
+			.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseMipLevel(0)
+			.setLevelCount(1)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1));
 
-	auto colorAttachmentImageView = _vulkanSwapchain->SwapchainImageView()[imageIndex];
-	auto depthStencilAttachmentImageView = _depthImages[imageIndex]->GetImageView();
+	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
 
-	{
-		cmd->Begin();
-		vk::ImageMemoryBarrier barrier;
-		barrier
-			.setOldLayout(vk::ImageLayout::eUndefined)
-			.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-			.setImage(colorAttachmentImage)
-			.setSubresourceRange(vk::ImageSubresourceRange()
-				.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setBaseMipLevel(0)
-				.setLevelCount(1)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1));
+	Texture2D::BlitImageAsync(cmd, *renderTarget->finalColorBuffer, swapchainImage, scr_width, scr_height);
 
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput, barrier, vk::DependencyFlagBits::eByRegion);
-		cmd->End();
-		CmdSyncSeamphore data{ .waitSemaphores = {{imageAcquiredSemaphore}} };
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd, data);
-	}
+	vk::ImageMemoryBarrier presentBarrier;
+	presentBarrier
+		.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+		.setNewLayout(vk::ImageLayout::ePresentSrcKHR)
+		.setImage(swapchainImage)
+		.setSubresourceRange(vk::ImageSubresourceRange()
+			.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseMipLevel(0)
+			.setLevelCount(1)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1));
 
-	{
-		Draw_Internal(state);
-	}
+	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, presentBarrier, vk::DependencyFlagBits::eByRegion);
 
-	{
-		cmd->Begin();
+	auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
+	CmdSyncSeamphore syncData{ .waitSemaphores = {{imageAcquiredSemaphore}}, .signalSemaphores = {SignalSemaphoreData{.semaphore = renderFinishedSemaphore}} };
+	VKCONTEXT->SubmitCommandImmediately(cmd, syncData, fence);
+	_vulkanSwapchain->PresentImage(*renderFinishedSemaphore, imageIndex);
+	fence->Wait();
 
-		_renderTarget.finalColorBuffer->TransitionLayout(cmd, nullptr);
-
-		Texture2D::BlitImageAsync(cmd, *_renderTarget.finalColorBuffer, _vulkanSwapchain->SwapchainImage()[imageIndex], scr_width, scr_height);
-
-		vk::ImageMemoryBarrier presentBarrier;
-		presentBarrier
-			.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-			.setNewLayout(vk::ImageLayout::ePresentSrcKHR)
-			.setImage(_vulkanSwapchain->SwapchainImage()[imageIndex])
-			.setSubresourceRange(vk::ImageSubresourceRange()
-				.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setBaseMipLevel(0)
-				.setLevelCount(1)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1));
-
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eBottomOfPipe, presentBarrier, vk::DependencyFlagBits::eByRegion);
-
-		cmd->End();
-		CmdSyncSeamphore data{ .signalSemaphores = {SignalSemaphoreData{.semaphore = renderFinishedSemaphore}} };
-		VKCONTEXT->SubmitCommandImmediately(cmd, data, _fence);
-		_vulkanSwapchain->PresentImage(*renderFinishedSemaphore);
-		_fence->WaitAndReset();
-	}
 }
 
-void VulkanRenderer::DrawSharedTexture(RenderState& state)
+void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
 {
-	Draw_Internal(state);
+	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
+	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	_renderTarget.finalColorBuffer->TransitionLayout(cmd, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits::eBottomOfPipe);
+	state->camera.prevUBO->WriteData(&_cameraCache, sizeof(camera_compData));
 
-	//vk::ClearColorValue clearColor = { 1.0f, 1.0f, 0.0f, 1.0f };
-	//vk::ImageSubresourceRange range;
-	//range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-	//	.setBaseArrayLayer(0)
-	//	.setLayerCount(1)
-	//	.setBaseMipLevel(0)
-	//	.setLevelCount(1);
-	//cmd->clearColorImage(_renderTarget.finalColorBuffer->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+	camera_compData cameraData;
+	cameraData.projection = state->camera.projection;
+	cameraData.view = state->camera.view;
+	cameraData.projView = cameraData.projection * cameraData.view;
+	cameraData.invProjection = glm::inverse(state->camera.projection);
+	cameraData.invView = glm::inverse(state->camera.view);
+	cameraData.invProjView = glm::inverse(cameraData.projView);
+	glm::mat4 invTrans = glm::mat3(glm::transpose(cameraData.invView));
+	cameraData.invTransViewRow1 = invTrans[0];
+	cameraData.invTransViewRow2 = invTrans[1];
+	cameraData.invTransViewRow3 = invTrans[2];
+	cameraData.position = state->camera.position;
+	cameraData.direction = state->camera.direction;
+	cameraData.directionUp = state->camera.directionUp;
+	cameraData.directionRight = state->camera.directionRight;
+	cameraData.nearPlane = state->camera.nearPlane;
+	cameraData.farPlane = state->camera.farPlane;
+	cameraData.fov = state->camera.fov;
+	_cameraCache = cameraData;
 
-	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	state->camera.curUBO->WriteData(&cameraData, sizeof(camera_compData));
 
-}
+	state->framebuffer.width = scr_width;
+	state->framebuffer.height = scr_height;
 
-void VulkanRenderer::DrawOffScreen(RenderState& state)
-{
-	Draw_Internal(state);
-}
-
-void VulkanRenderer::EarlyProcess(RenderState& state)
-{
-	state.renderRecord.frameIndex = _record.frameIndex++;
-	state.option = _option;
-
-	_sceneRenderGraph->EarlyExecute(state);
-	_firstPersonRenderGraph->EarlyExecute(state);
-}
-
-void VulkanRenderer::SetupRenderState(RenderState& state)
-{
-	//glBindFramebuffer(GL_FRAMEBUFFER, _renderTarget.sceneFbo);
-	//glViewport(0, 0, scr_width, scr_height);
-	//glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-	_cameraCache.prevUBO->WriteData(&_cameraCache.data, sizeof(comp_camera));
-
-	_cameraCache.data.projection = state.camera.projection;
-	_cameraCache.data.view = state.camera.view;
-	_cameraCache.data.projView = _cameraCache.data.projection * _cameraCache.data.view;
-	_cameraCache.data.invProjection = glm::inverse(state.camera.projection);
-	_cameraCache.data.invView = glm::inverse(state.camera.view);
-	_cameraCache.data.invProjView = glm::inverse(_cameraCache.data.projView);
-	glm::mat4 invTrans = glm::mat3(glm::transpose(_cameraCache.data.invView));
-	_cameraCache.data.invTransViewRow1 = invTrans[0];
-	_cameraCache.data.invTransViewRow2 = invTrans[1];
-	_cameraCache.data.invTransViewRow3 = invTrans[2];
-	_cameraCache.data.position = state.camera.position;
-	_cameraCache.data.direction = state.camera.direction;
-	_cameraCache.data.directionUp = state.camera.directionUp;
-	_cameraCache.data.directionRight = state.camera.directionRight;
-	_cameraCache.data.nearPlane = state.camera.nearPlane;
-	_cameraCache.data.farPlane = state.camera.farPlane;
-	_cameraCache.data.fov = state.camera.fov;
-	_cameraCache.curUBO->WriteData(&_cameraCache.data, sizeof(comp_camera));
-
-	state.camera.prevUBO = _cameraCache.prevUBO;
-	state.camera.curUBO = _cameraCache.curUBO;
-
-	state.framebuffer.width = scr_width;
-	state.framebuffer.height = scr_height;
-
-	state.renderRecord.prevEV100 = _record.prevEV100;
-	state.renderRecord.prevRenderMicroTimeStamp = _record.prevRenderMicroTimeStamp;
-	state.renderRecord.currentRenderMicroTimeStamp = Tool::GetTimestampMircoseconds();
+	state->renderRecord.prevEV100 = _record.prevEV100;
+	state->renderRecord.prevRenderMicroTimeStamp = _record.prevRenderMicroTimeStamp;
+	state->renderRecord.currentRenderMicroTimeStamp = Tool::GetTimestampMircoseconds();
 
 }
 
-void VulkanRenderer::SetupIndirectDrawData(RenderState& state)
+void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 {
 
 	auto bindlessTextureManager = BindlessTextureManager::Instance();
 	auto indirectManager = IndirectDrawManager::Instance();
 
 	{
-		auto& items = state.objects.sceneRenderData.opaqueMesh;
+		auto& items = state->objects.sceneRenderData.opaqueMesh;
 		for (auto& item : items)
 		{
 			auto& material = item.meshinfo.material;
-			for (auto& [type, tex] : material->GetTextures())
-				bindlessTextureManager->RegisterOrUpdateTexture(tex);
-			indirectManager->setupMaterial(*material);
+			if (material->GetNeedUpdateIndirectDraw())
+				indirectManager->SetupMaterial(*material);
 
 			auto& mesh = item.meshinfo.mesh;
 			if (mesh->GetNeedUpdateIndricetDraw())
 			{
-				indirectManager->setupMesh(*mesh);
+				indirectManager->SetupMesh(*mesh);
 				mesh->SetNeedUpdateIndirectDraw(false);
 			}
 		}
 	}
 
 	{
-		auto& items = state.objects.sceneRenderData.transparentMesh;
+		auto& items = state->objects.sceneRenderData.transparentMesh;
 		for (auto& item : items)
 		{
 			auto& material = item.meshinfo.material;
-			for (auto& [type, tex] : material->GetTextures())
-				bindlessTextureManager->RegisterOrUpdateTexture(tex);
-			indirectManager->setupMaterial(*material);
+			if (material->GetNeedUpdateIndirectDraw())
+				indirectManager->SetupMaterial(*material);
 
 			auto& mesh = item.meshinfo.mesh;
 			if (mesh->GetNeedUpdateIndricetDraw())
 			{
-				indirectManager->setupMesh(*mesh);
+				indirectManager->SetupMesh(*mesh);
 				mesh->SetNeedUpdateIndirectDraw(false);
 			}
 		}
 	}
 
 	{
-		auto& items = state.objects.sceneRenderData.opaqueSkinnedModel;
+		auto& items = state->objects.sceneRenderData.opaqueSkinnedModel;
 		for (auto& item : items)
 		{
 			for (auto& info : item.models)
 			{
 				auto& material = info.material;
-				for (auto& [type, tex] : material->GetTextures())
-					bindlessTextureManager->RegisterOrUpdateTexture(tex);
-				indirectManager->setupMaterial(*material);
+				if (material->GetNeedUpdateIndirectDraw())
+					indirectManager->SetupMaterial(*material);
 
 				auto& mesh = info.mesh;
 				if (mesh->GetNeedUpdateIndricetDraw())
 				{
-					indirectManager->setupMesh(*mesh);
+					indirectManager->SetupMesh(*mesh);
 					mesh->SetNeedUpdateIndirectDraw(false);
 				}
 			}
@@ -1022,31 +957,152 @@ void VulkanRenderer::SetupIndirectDrawData(RenderState& state)
 	}
 
 	{
-		auto& items = state.objects.sceneRenderData.transparentSkinnedMesh;
+		auto& items = state->objects.sceneRenderData.transparentSkinnedMesh;
 		for (auto& item : items)
 		{
 			auto& material = item.meshinfo.material;
-			for (auto& [type, tex] : material->GetTextures())
-				bindlessTextureManager->RegisterOrUpdateTexture(tex);
-			indirectManager->setupMaterial(*material);
+			if (material->GetNeedUpdateIndirectDraw())
+				indirectManager->SetupMaterial(*material);
 
 			auto& mesh = item.meshinfo.mesh;
 			if (mesh->GetNeedUpdateIndricetDraw())
 			{
-				indirectManager->setupMesh(*mesh);
+				indirectManager->SetupMesh(*mesh);
 				mesh->SetNeedUpdateIndirectDraw(false);
 			}
 		}
 	}
 }
 
-void VulkanRenderer::FinishRendering(RenderState& state)
+void VulkanRenderer::FinishRendering(std::shared_ptr<RenderState>& state)
 {
-	_record.prevEV100 = state.option.postProcessParams.EV100;
-	_record.prevRenderMicroTimeStamp = state.renderRecord.currentRenderMicroTimeStamp;
+	_record.prevEV100 = state->option.postProcessParams.EV100;
+	_record.prevRenderMicroTimeStamp = state->renderRecord.currentRenderMicroTimeStamp;
 }
-//
-//void VulkanRenderer::RenderFirstPersonLayer(RenderState& state)
-//{
-//	_firstPersonPass->Draw(state);
-//}
+
+void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
+{
+	if (!state)
+		return;
+	LockGuard guard(_candidateFrameStatesMutex);
+	if (_candidateFrameStates.size() >= _maxFramesInFlight)
+		_candidateFrameStates.pop();
+	_candidateFrameStates.push(state);
+}
+
+void VulkanRenderer::WaitImage(std::function<void(std::shared_ptr<Texture2D>)> callback)
+{
+	while (!FetchImage(callback)) {
+		std::this_thread::yield();
+	}
+}
+bool VulkanRenderer::FetchImage(std::function<void(std::shared_ptr<Texture2D>)> callback)
+{
+	if (_doneFrames.empty())
+		return false;
+
+	{
+		LockGuard guard(_doneFramesMutex);
+		if (!_doneFrames.empty())
+		{
+			if (callback
+				&& _doneFrames.front()
+				&& _doneFrames.front()->renderTarget
+				&& _doneFrames.front()->renderTarget->finalColorBuffer
+				)
+				callback(_doneFrames.front()->renderTarget->finalColorBuffer);
+			_doneFrames.pop();
+			return true;
+		}
+		return false;
+	}
+}
+
+void VulkanRenderer::Run()
+{
+	if (!_stop)
+		return;
+
+	_frameTaskPool.start();
+	_stop = false;
+	_loopThread = std::make_shared<std::thread>(&VulkanRenderer::ExecuteLoop, this);
+}
+
+void VulkanRenderer::Stop()
+{
+	if (_stop)
+		return;
+
+	_stop = true;
+	_frameTaskPool.stop();
+	if (_loopThread)
+	{
+		if (_loopThread->joinable())
+			_loopThread->join();
+		_loopThread.reset();
+	}
+}
+
+void VulkanRenderer::ExecuteLoop()
+{
+	while (!_stop)
+	{
+		//auto time = Tool::GetTimestampSecond();
+		//if (time - _lastCleanupTimeAccumulator > _CleanupThresold)
+		//{
+		//	if (_lastCleanupTimeAccumulator != 0)
+		//		_resManager.CleanupIdleResource();
+		//	_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
+		//}
+
+
+		//if (_needsCompile)
+		//{
+		//	Compile();
+		//}
+
+		bool emptyLoop = true;
+
+		{
+			LockGuard guard(_candidateFrameStatesMutex);
+			while (!_candidateFrameStates.empty() && (_runningFrames.size() < _maxFramesInFlight))
+			{
+				auto sync = std::make_shared<RenderGraph::Graph::FilghtSync>();
+				sync->curframeTimeLine = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
+				sync->preFrameTimeLine = !_runningFrames.empty() ? _runningFrames.back()->sync->curframeTimeLine : nullptr;
+
+				auto data = std::make_shared<FrameData>();
+				data->sync = std::move(sync);
+				data->state = std::move(_candidateFrameStates.front());
+				data->state->renderRecord.frameIndex = _record.frameIndex++;
+				data->state->option = _option;
+				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
+				data->handle = _frameTaskPool.submit([&, weakData = std::weak_ptr(data)]()->void
+					{
+						if (auto data = weakData.lock())
+							DrawOffScreen(data);
+					});
+				_candidateFrameStates.pop();
+				_runningFrames.push(std::move(data));
+				emptyLoop = false;
+			}
+		}
+
+		while (!_runningFrames.empty() && _runningFrames.front()->handle->is_ready())
+		{
+			auto data = std::move(_runningFrames.front());
+			_runningFrames.pop();
+			if (_mode == RenderMode::Present)
+				PresentImage(data);
+
+			LockGuard guard(_doneFramesMutex);
+			if (_doneFrames.size() >= _maxFramesInFlight)
+				_doneFrames.pop();
+			_doneFrames.push(std::move(data));
+			emptyLoop = false;
+		}
+
+		if (emptyLoop)
+			std::this_thread::yield();
+	}
+}

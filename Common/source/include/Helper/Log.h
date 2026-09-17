@@ -1,4 +1,10 @@
 ﻿#pragma once
+
+
+#if defined(__cpp_lib_format) && __cpp_lib_format >= 201907L
+#define SPDLOG_USE_STD_FORMAT
+#endif
+
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 

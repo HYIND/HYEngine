@@ -56,7 +56,7 @@ namespace VKCore
 		void AddCallback_CreateDevice(std::function<void()> func);
 		void AddCallback_DestroyDevice(std::function<void()> func);
 
-		VkResult WaitIdle() const;
+		vk::Result WaitIdle() const;
 
 	private:
 		std::weak_ptr<VulkanInstance> m_instance;
@@ -74,9 +74,9 @@ namespace VKCore
 		std::vector<std::function<void()>> m_callbacks_createDevice;
 		std::vector<std::function<void()>> m_callbacks_destroyDevice;
 
-		SpinLock m_queue_graphics_mutex;
-		SpinLock m_queue_presentation_mutex;
-		SpinLock m_queue_compute_mutex;
+		std::shared_ptr<SpinLock> m_queue_graphics_mutex;
+		std::shared_ptr<SpinLock> m_queue_presentation_mutex;
+		std::shared_ptr<SpinLock> m_queue_compute_mutex;
 	};
 
 }

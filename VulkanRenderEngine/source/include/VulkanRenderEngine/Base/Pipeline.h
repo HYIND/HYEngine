@@ -111,6 +111,8 @@ namespace GeneralBindingPoint
 	static const BindingPoint Animation_PrevMatData = BindingPoint{ .binding = 3, .set = 4 };
 }
 
+class BindingRecord;
+
 class Pipeline
 {
 private:
@@ -130,6 +132,7 @@ private:
 		std::unordered_set<std::shared_ptr<DescriptorSetGroup>> _iDleList;
 		std::unordered_set<std::shared_ptr<DescriptorSetGroup>> _datas;
 		uint32_t _maxResNum = 50;
+		SpinLock _mutex;
 	};
 	struct DescriptorSetGroupHolder
 	{
@@ -143,16 +146,14 @@ private:
 public:
 	struct DescriptorSetGroup {
 		VKCore::VulkanDevice* device;
-		vk::DescriptorPool pool;
 		std::vector<vk::DescriptorSet> sets;
-		DescriptorSetGroup(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSet>& sets);
+		DescriptorSetGroup(VKCore::VulkanDevice* device, const std::vector<vk::DescriptorSet>& sets);
 		~DescriptorSetGroup();
 	};
 
 	struct DescriptorSetLayoutData :public std::enable_shared_from_this<DescriptorSetLayoutData>
 	{
 		VKCore::VulkanDevice* device;
-		vk::DescriptorPool pool;
 		std::vector<vk::DescriptorSetLayout> setLayouts;
 		DescriptorSetGroupPool setGroupPool;
 
@@ -163,10 +164,61 @@ public:
 		};
 		std::vector<SetLayoutInfo> setLayoutInfos;
 
-		DescriptorSetLayoutData(VKCore::VulkanDevice* device, vk::DescriptorPool pool, const std::vector<vk::DescriptorSetLayout>& setLayouts);
+		DescriptorSetLayoutData(VKCore::VulkanDevice* device, const std::vector<vk::DescriptorSetLayout>& setLayouts);
 		~DescriptorSetLayoutData();
 		bool GetDescriptorSetGroup(DescriptorSetGroupHolder& holder);
 	};
+
+public:
+	Pipeline() = default;
+	virtual ~Pipeline();
+
+	// 禁止拷贝，允许移动
+	Pipeline(const Pipeline&) = delete;
+	Pipeline& operator=(const Pipeline&) = delete;
+	Pipeline(Pipeline&& other) noexcept;
+	Pipeline& operator=(Pipeline&& other) noexcept;
+
+	// ---------- 绑定 ----------
+	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord);
+
+	// ---------- Getter ----------
+	vk::Pipeline GetHandle() const;
+	vk::PipelineLayout GetLayout() const;
+	const std::vector<vk::DescriptorSetLayout>& GetDescriptorSetLayout() const;
+	VKCore::VulkanDevice* GetDevice() const;
+	bool IsValid() const;
+
+	static std::vector<uint32_t> ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {});
+	static std::vector<uint32_t> ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines = {});
+	static std::vector<uint32_t> ReadSPIRVBinaryPath(const std::string& path);
+
+	virtual void Release();
+
+public:
+	// 推送常量
+	void SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset = 0);
+
+protected:
+	// ---------- 工具函数 ----------
+	vk::Result CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule);
+	vk::Result CreatePipelineLayout(const PipelineConfig& config);
+	vk::Result CreateDescriptorSetLayout(const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& bindings, const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, std::vector<vk::DescriptorSetLayout>& outLayouts);
+	vk::Result CreateDescriptorSets(const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, const std::vector<PipelineConfig::VariableEntry>& variableEntrys);
+
+protected:
+	// ---------- 成员变量 ----------
+	VKCore::VulkanDevice* m_device = nullptr;
+	vk::Pipeline m_pipeline = VK_NULL_HANDLE;
+	vk::PipelineLayout m_layout = VK_NULL_HANDLE;
+	std::shared_ptr<DescriptorSetLayoutData> m_descriptorSetLayouts;
+	vk::PipelineBindPoint m_bindPoint;
+	Texture2D::BindStage m_bindStage;
+	std::string m_debugName;
+};
+
+class BindingRecord
+{
 
 public:
 	struct UniformBlockEntry
@@ -231,30 +283,7 @@ public:
 	};
 
 public:
-	Pipeline() = default;
-	virtual ~Pipeline();
-
-	// 禁止拷贝，允许移动
-	Pipeline(const Pipeline&) = delete;
-	Pipeline& operator=(const Pipeline&) = delete;
-	Pipeline(Pipeline&& other) noexcept;
-	Pipeline& operator=(Pipeline&& other) noexcept;
-
-	// ---------- 绑定 ----------
-	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer> cmdBuffer);
-
-	// ---------- Getter ----------
-	vk::Pipeline GetHandle() const;
-	vk::PipelineLayout GetLayout() const;
-	const std::vector<vk::DescriptorSetLayout>& GetDescriptorSetLayout() const;
-	VKCore::VulkanDevice* GetDevice() const;
-	bool IsValid() const;
-
-	static std::vector<uint32_t> ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {});
-	static std::vector<uint32_t> ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines = {});
-	static std::vector<uint32_t> ReadSPIRVBinaryPath(const std::string& path);
-
-	virtual void Release();
+	BindingRecord() = default;
 
 public:
 	// UBO、SSBO关联，以下方法仅记录绑定关系，不执行cmd，需调用Bind生效最新的配置
@@ -298,44 +327,20 @@ public:
 	void SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
 	void SetLightStorageData(const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta);
 
-public:
-	// 推送常量
-	void SetPushConstants(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, const void* data, uint32_t size, uint32_t offset = 0);
-
 private:
-	void BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data);
-	void BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, const BindingPoint& point, BindingEntry& entry);
-	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
-	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
-	void BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<DescriptorSetGroup>& data, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
-
-protected:
-	// ---------- 工具函数 ----------
-	vk::Result CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule);
-	vk::Result CreatePipelineLayout(const PipelineConfig& config);
-	vk::Result CreateDescriptorSetLayout(const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& bindings, const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, std::vector<vk::DescriptorSetLayout>& outLayouts);
-	vk::Result CreateDescriptorSets(const std::vector<std::vector<vk::DescriptorBindingFlags>>& bindingFlags, const std::vector<PipelineConfig::VariableEntry>& variableEntrys);
-
-protected:
-	// ---------- 成员变量 ----------
-	VKCore::VulkanDevice* m_device = nullptr;
-	vk::Pipeline m_pipeline = VK_NULL_HANDLE;
-	vk::PipelineLayout m_layout = VK_NULL_HANDLE;
-	//std::vector<vk::DescriptorSetLayout> m_descriptorSetLayouts;
-	//std::vector<vk::DescriptorSet> m_descriptorSets;
-
-	std::shared_ptr<DescriptorSetLayoutData> m_descriptorSetLayouts;
-
-	vk::PipelineBindPoint m_bindPoint;
-	Texture2D::BindStage m_bindStage;
-
-	std::string m_debugName;
+	void BindAllEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage);
+	void BindEntry(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry);
+	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
+	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
+	void BindUniformTexture(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTextureCube(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTextureArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImage(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImageArray(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, Texture2D::BindStage& bindStage, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 
 protected:
 	std::unordered_map<BindingPoint, BindingEntry> m_bindingData;
+
+	friend Pipeline;
 };

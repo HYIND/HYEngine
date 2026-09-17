@@ -31,7 +31,7 @@ DepthFogPass::DepthFogPass(const std::string& computeShaderPath)
 		_shader.Create(config);
 
 	_paramsUBO = std::make_shared<UniformBlock>(sizeof(DepthFogParams));
-	_shader.SetUniformBlock(_paramsUBO, 0);
+	_binding.SetUniformBlock(_paramsUBO, 0);
 }
 
 bool DepthFogPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -55,7 +55,7 @@ void DepthFogPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 	_paramsUBO->WriteData(&params, sizeof(DepthFogParams));
 }
 
-void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto sceneColorBuffer = ctx.GetExternal(0);
 	auto sceneDepthBuffer = ctx.GetExternal(1);
@@ -79,12 +79,12 @@ void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	uint32_t height = sceneColorBuffer->GetHeight();
 
 
-	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_shader.SetStorageImage(sceneColorBuffer, 1);
-	_shader.SetUniformTexture(tempColor, 2);
-	_shader.SetUniformTexture(sceneDepthBuffer, 3);
+	_binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	_binding.SetStorageImage(sceneColorBuffer, 1);
+	_binding.SetUniformTexture(tempColor, 2);
+	_binding.SetUniformTexture(sceneDepthBuffer, 3);
 
-	_shader.Bind(cmd);
+	_shader.Bind(cmd, _binding);
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

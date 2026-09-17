@@ -52,7 +52,7 @@ bool RayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry
 	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
 }
 
-void RayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void RayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	//_fence->WaitAndReset();
 }

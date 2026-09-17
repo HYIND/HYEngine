@@ -1,5 +1,6 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine\VKCore\VulkanDevice.h"
+#include "CriticalSectionLock.h"
 
 static void ExecuteCallbacks(std::vector<std::function<void()>>& callbacks)
 {
@@ -51,6 +52,9 @@ VulkanDevice::VulkanDevice(VulkanDevice&& other) noexcept
 	m_deviceExtensions = other.m_deviceExtensions;;
 	m_callbacks_createDevice = other.m_callbacks_createDevice;;
 	m_callbacks_destroyDevice = other.m_callbacks_destroyDevice;;
+	m_queue_graphics_mutex = std::move(other.m_queue_graphics_mutex);
+	m_queue_presentation_mutex = std::move(other.m_queue_presentation_mutex);
+	m_queue_compute_mutex = std::move(other.m_queue_compute_mutex);
 
 	other.m_instance.reset();
 	other.m_physicalDeviceInfo = {};
@@ -79,6 +83,9 @@ VulkanDevice& VulkanDevice::operator=(VulkanDevice&& other) noexcept
 	m_deviceExtensions = other.m_deviceExtensions;;
 	m_callbacks_createDevice = other.m_callbacks_createDevice;;
 	m_callbacks_destroyDevice = other.m_callbacks_destroyDevice;;
+	m_queue_graphics_mutex = std::move(other.m_queue_graphics_mutex);
+	m_queue_presentation_mutex = std::move(other.m_queue_presentation_mutex);
+	m_queue_compute_mutex = std::move(other.m_queue_compute_mutex);
 
 	other.m_instance.reset();
 	other.m_physicalDeviceInfo = {};
@@ -116,6 +123,9 @@ void VulkanDevice::Release()
 		m_queue_compute = VK_NULL_HANDLE;
 		m_callbacks_createDevice.clear();
 		m_callbacks_destroyDevice.clear();
+		m_queue_graphics_mutex.reset();
+		m_queue_presentation_mutex.reset();
+		m_queue_compute_mutex.reset();
 	}
 
 }
@@ -164,9 +174,9 @@ vk::Result VulkanDevice::Create(
 		deviceExtensions.push_back(e.c_str());
 
 	using ChainType = vk::StructureChain<
-		vk::PhysicalDeviceFeatures2, 
-		vk::PhysicalDeviceVulkan11Features, 
-		vk::PhysicalDeviceVulkan12Features, 
+		vk::PhysicalDeviceFeatures2,
+		vk::PhysicalDeviceVulkan11Features,
+		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDeviceVulkan14Features,
 		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
@@ -177,8 +187,8 @@ vk::Result VulkanDevice::Create(
 	ChainType chain =
 		info.physicalDevice.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
-		vk::PhysicalDeviceVulkan11Features, 
-		vk::PhysicalDeviceVulkan12Features, 
+		vk::PhysicalDeviceVulkan11Features,
+		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDeviceVulkan14Features,
 		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
@@ -241,6 +251,17 @@ vk::Result VulkanDevice::Create(
 	if (info.computeQueueFamily != VK_QUEUE_FAMILY_IGNORED)
 		m_queue_compute = m_device.getQueue(info.computeQueueFamily, 0);
 
+	m_queue_graphics_mutex = std::make_shared<SpinLock>();
+
+	if (m_queue_presentation == m_queue_graphics)
+		m_queue_presentation_mutex = m_queue_graphics_mutex;
+	else
+		m_queue_presentation_mutex = std::make_shared<SpinLock>();
+
+	if (m_queue_compute == m_queue_graphics) m_queue_compute_mutex = m_queue_graphics_mutex;
+	else if (m_queue_compute == m_queue_presentation) m_queue_compute_mutex = m_queue_presentation_mutex;
+	else m_queue_compute_mutex = std::make_shared<SpinLock>();
+
 	m_instance = instance;
 
 	VmaAllocatorCreateInfo allocatorInfo = {};
@@ -293,17 +314,17 @@ vk::Queue VulkanDevice::GetComputeQueue() const { return m_queue_compute; }
 
 SpinLock& VKCore::VulkanDevice::GetGraphicsQueueMutex()
 {
-	return m_queue_graphics_mutex;
+	return *m_queue_graphics_mutex;
 }
 
 SpinLock& VKCore::VulkanDevice::GetPresentQueueMutex()
 {
-	return m_queue_presentation_mutex;
+	return *m_queue_presentation_mutex;
 }
 
 SpinLock& VKCore::VulkanDevice::GetComputeQueueMutex()
 {
-	return m_queue_compute_mutex;
+	return *m_queue_compute_mutex;
 }
 
 const std::vector<std::string>& VulkanDevice::GetDeviceExtensions() const { return m_deviceExtensions; }
@@ -318,11 +339,13 @@ void VulkanDevice::AddCallback_DestroyDevice(std::function<void()> func) {
 	m_callbacks_destroyDevice.push_back(func);
 }
 
-VkResult VulkanDevice::WaitIdle() const
+vk::Result VulkanDevice::WaitIdle() const
 {
-	VkResult result = vkDeviceWaitIdle(m_device);
-	if (result)
-		std::cout << std::format("[ graphicsBase ] ERROR\nFailed to wait for the device to be idle!\nError code: {}\n", string_VkResult(result));
+	LockGuard guard1(*m_queue_graphics_mutex);
+
+	vk::Result result = m_device.waitIdle();
+	if (result != vk::Result::eSuccess)
+		std::cout << std::format("[ graphicsBase ] ERROR\nFailed to wait for the device to be idle!\nError code: {}\n", to_string(result));
 	return result;
 }
 

@@ -9,4 +9,7 @@ struct SkyBox :public Renderable
 
 	SkyBox() {}
 	SkyBox(std::shared_ptr<TextureCube> cube) : cube(cube) {}
+	virtual void OnRemove(const Entity& e) {
+		cube.reset();
+	}
 };

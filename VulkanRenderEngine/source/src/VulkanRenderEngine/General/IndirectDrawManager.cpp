@@ -1,13 +1,60 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
+namespace ReitreRes
+{
+	class RetireMesh :public VKWrapper::IVKResource
+	{
+	public:
+		RetireMesh(const std::string& uuid)
+			:uuid(uuid)
+		{}
+		virtual void Destroy() {
+			IndirectDrawManager::Instance()->DeleteMesh(uuid);
+		}
+
+	public:
+		std::string uuid;
+	};
+
+	class RetireMaterial :public VKWrapper::IVKResource
+	{
+	public:
+		RetireMaterial(const std::string& uuid)
+			:uuid(uuid)
+		{}
+		virtual void Destroy() {
+			IndirectDrawManager::Instance()->DeleteMaterial(uuid);
+		}
+
+	public:
+		std::string uuid;
+	};
+
+	class RetireBindlessTexture :public VKWrapper::IVKResource
+	{
+	public:
+		RetireBindlessTexture(const Texture2D* tex)
+			:tex(tex)
+		{}
+		virtual void Destroy() {
+			BindlessTextureManager::Instance()->ClearDirtyTexture(tex);
+		}
+
+	public:
+		const Texture2D* tex = nullptr;
+	};
+}
+
+std::shared_ptr<Texture2D> BindlessTextureManager::_placeholderTexture;
+
 std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 {
 	static std::shared_ptr<IndirectDrawManager> instance = std::shared_ptr<IndirectDrawManager>(new IndirectDrawManager());
 	return instance;
 }
 
-void IndirectDrawManager::setupMesh(Mesh& mesh)
+void IndirectDrawManager::SetupMesh(Mesh& mesh)
 {
 	auto guard = LockGuard(_meshMutex);
 	auto uuid = mesh.GetUUID();
@@ -32,11 +79,9 @@ void IndirectDrawManager::setupMesh(Mesh& mesh)
 	}
 }
 
-void IndirectDrawManager::deleteMesh(Mesh& mesh)
+void IndirectDrawManager::RetireMesh(Mesh& mesh)
 {
-	auto guard = LockGuard(_meshMutex);
-	_VertexManager.RemoveSegment(mesh.GetUUID());
-	_IndexManager.RemoveSegment(mesh.GetUUID());
+	VKCONTEXT->Retire(new ReitreRes::RetireMesh(mesh.GetUUID()));
 }
 
 bool IndirectDrawManager::GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta)
@@ -61,9 +106,12 @@ std::shared_ptr<IndexBufferBlock> IndirectDrawManager::GetIndexBlock() {
 	return _IndexManager.GetBuffer()->GetBlock();
 }
 
-void IndirectDrawManager::setupMaterial(Material& material)
+void IndirectDrawManager::SetupMaterial(Material& material)
 {
 	auto guard = LockGuard(_materialMutex);
+
+	for (auto& [type, tex] : material.GetTextures())
+		BindlessTextureManager::Instance()->RegisterOrUpdateTexture(tex);
 
 	auto uuid = material.GetUUID();
 	auto version = material.GetVersion();
@@ -73,12 +121,12 @@ void IndirectDrawManager::setupMaterial(Material& material)
 		auto data = material.GetMaterialCompData();
 		_MaterialManager.SetSegment(uuid, (void*)version, &data, sizeof(data));
 	}
+
 }
 
-void IndirectDrawManager::deleteMaterial(Material& material)
+void IndirectDrawManager::RetireMaterial(Material& material)
 {
-	auto guard = LockGuard(_materialMutex);
-	_MaterialManager.RemoveSegment(material.GetUUID());
+	VKCONTEXT->Retire(new ReitreRes::RetireMaterial(material.GetUUID()));
 }
 
 bool IndirectDrawManager::GetMaterialIndex(Material& material, uint64_t& index)
@@ -130,27 +178,37 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 	LockGuard guard(_mutex);
 	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
 	{
-		auto [tex, index] = *it;
+		auto [storedTex, index] = *it;
 		TextureDescBindEntry& entry = _entrys[index];
-		if (_entrys[index].version != tex->GetDescBindEntryVersion())
+		if (_entrys[index].version != storedTex->GetDescBindEntryVersion())
 		{
-			entry = std::move(tex->GetDescBindEntry());
+			entry = std::move(storedTex->GetDescBindEntry());
 		}
 		return index;
 	}
 	else
 	{
-		BindlessIndex newIndex = _entrys.size();
 		TextureDescBindEntry entry = tex->GetDescBindEntry();
 		if (!entry.image || !entry.imageView || !entry.sampler)
 			return BindlessIndexNull;
 
-		_entrys.push_back(std::move(entry));
+		if (_idleSlot.empty())
+		{
+			BindlessIndex newIndex = _entrys.size();
 
-		_texturePtrs.push_back(tex);
-		_textureEntrys[tex] = newIndex;
+			_entrys.push_back(std::move(entry));
+			_textureEntrys[tex] = newIndex;
+			return newIndex;
+		}
+		else
+		{
+			BindlessIndex idleIndex = _idleSlot.front();
+			_idleSlot.pop();
 
-		return newIndex;
+			_entrys[idleIndex] = std::move(entry);
+			_textureEntrys[tex] = idleIndex;
+			return idleIndex;
+		}
 	}
 }
 
@@ -189,7 +247,7 @@ void BindlessTextureManager::UnregisterTexture(const Texture2D* tex)
 	if (auto it = _textureEntrys.find(tex); it == _textureEntrys.end())
 		return;
 
-	dirtyTexture.push_back(tex);
+	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(tex));
 }
 
 std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntrys() const
@@ -198,36 +256,31 @@ std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntr
 	return _entrys;
 }
 
-void BindlessTextureManager::ClearDirtyTexture()
+void BindlessTextureManager::ClearDirtyTexture(const Texture2D* tex)
 {
-	if (dirtyTexture.empty())
-		return;
-
 	LockGuard guard(_mutex);
-	if (dirtyTexture.empty())
+	auto it = _textureEntrys.find(tex);
+	if (it == _textureEntrys.end())
 		return;
 
-	for (auto& tex : dirtyTexture)
-	{
-		auto it = _textureEntrys.find(tex);
-		if (it == _textureEntrys.end())
-			continue;
+	if (!_placeholderTexture)
+		_placeholderTexture = std::make_shared<Texture2D>(1, 1);
 
-		uint32_t index = it->second;
-		_textureEntrys.erase(it);
+	uint32_t index = it->second;
+	_idleSlot.push(index);
+	_entrys[index] = _placeholderTexture->GetDescBindEntry();
+	_textureEntrys.erase(it);
+}
 
-		uint32_t tailIndex = _texturePtrs.size() - 1;
-		if (index != tailIndex)
-		{
-			const Texture2D* lastPtr = _texturePtrs[tailIndex];
-			_textureEntrys[lastPtr] = index;
-			std::swap(_entrys[index], _entrys[tailIndex]);
-			std::swap(_texturePtrs[index], _texturePtrs[tailIndex]);
-		}
+void IndirectDrawManager::DeleteMesh(const std::string& uuid)
+{
+	auto guard = LockGuard(_meshMutex);
+	_VertexManager.RemoveSegment(uuid);
+	_IndexManager.RemoveSegment(uuid);
+}
 
-		_texturePtrs.pop_back();
-		_entrys.pop_back();
-	}
-
-	dirtyTexture.clear();
+void IndirectDrawManager::DeleteMaterial(const std::string& uuid)
+{
+	auto guard = LockGuard(_materialMutex);
+	_MaterialManager.RemoveSegment(uuid);
 }

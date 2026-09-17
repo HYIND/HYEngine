@@ -1,5 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/SharedTexture.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
 
 std::shared_ptr<SharedTexture> CreateSharedTexture(
 	ID3D11Device* pD3DDevice,
@@ -89,6 +90,7 @@ std::shared_ptr<SharedTexture> CreateSharedTexture(
 	sharedTex->width = width;
 	sharedTex->height = height;
 	sharedTex->format = format;
+	sharedTex->vulkanTexture = std::make_shared<Texture2D>(sharedTex);
 
 	return sharedTex;
 }

@@ -113,12 +113,21 @@ bool BaseVKImage::IsLinearFormat(vk::Format format)
 	}
 }
 
-vk::AccessFlags BaseVKImage::GetAccessMaskForLayout(vk::ImageLayout layout) {
+vk::AccessFlags BaseVKImage::GetAccessMaskForLayout(vk::ImageLayout layout, vk::PipelineStageFlags dstStageMask) {
 	switch (layout) {
 	case vk::ImageLayout::eUndefined:
 		return vk::AccessFlagBits::eNone;
 
 	case vk::ImageLayout::eGeneral:
+		if (dstStageMask & vk::PipelineStageFlagBits::eTransfer)
+			return vk::AccessFlagBits::eTransferRead | vk::AccessFlagBits::eTransferWrite;
+		if (dstStageMask &
+			(vk::PipelineStageFlagBits::eComputeShader
+				| vk::PipelineStageFlagBits::eVertexShader
+				| vk::PipelineStageFlagBits::eFragmentShader
+				| vk::PipelineStageFlagBits::eAllGraphics)
+			)
+			return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
 		return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
 
 	case vk::ImageLayout::eColorAttachmentOptimal:
@@ -149,7 +158,7 @@ vk::AccessFlags BaseVKImage::GetAccessMaskForLayout(vk::ImageLayout layout) {
 		return vk::AccessFlagBits::eHostWrite;
 
 	case vk::ImageLayout::ePresentSrcKHR:
-		return vk::AccessFlagBits::eNone;  // 显示引擎不需要 AccessMask
+		return vk::AccessFlagBits::eNone;
 
 	case vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal:
 		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
@@ -338,7 +347,7 @@ void BaseVKImage::TransitionLayout(
 ) {
 	if (!cmd || !m_image) return;
 
-	vk::AccessFlags newAccessMask = GetAccessMaskForLayout(newLayout);
+	vk::AccessFlags newAccessMask = GetAccessMaskForLayout(newLayout, dstStageMask);
 
 	for (uint32_t level = baseMipLevel; level < std::min(m_mipLevels, baseMipLevel + levelCount); ++level)
 	{

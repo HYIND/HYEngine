@@ -325,28 +325,50 @@ void WorldManager::RunWorld()
 	_world->setLogicDeltaTime(1000.f / 165.f);
 	_world->setFixedDeltaTime(1000.f / 60.f);
 	_world->start();
-	_stop = false;
+	_worldStop = false;
 	_worldThread = std::make_shared<std::thread>(&WorldManager::WorldLoop, this);
 }
 
-void WorldManager::RenderFrame()
+void WorldManager::RunPushFrame()
 {
-	auto framedata = _triBuffer->acquireReadBuffer();
-	if (!framedata)
+	if (!_framePushStop)
 		return;
 
-	if (auto r = _renderer)
+	_framePushStop = false;
+	_framePushThread = std::make_shared<std::thread>(&WorldManager::PushFrameLoop, this);
+}
+
+void WorldManager::StopPushFrame()
+{
+	_framePushStop = true;
+	if (_framePushThread)
 	{
-		RenderState state = RenderStateBuilder()
-			.SetCamera(framedata->projection, framedata->view,
-				framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
-				framedata->nearPlane, framedata->farPlane, framedata->fov)
-			.Build();
+		if (_framePushThread->joinable())
+			_framePushThread->join();
+		_framePushThread.reset();
+	}
+}
 
-		Render::OpenGLRenderFrameDataAnalysisHelp::AnalysisRenderFrameData(framedata, state);
+void WorldManager::PushFrameLoop()
+{
+	while (!_framePushStop)
+	{
+		auto framedata = _triBuffer->acquireReadBuffer();
+		if (!framedata)
+			return;
 
-		r->EarlyProcess(state);
-		r->Draw(state);
+		if (auto r = _renderer)
+		{
+			auto state = RenderStateBuilder()
+				.SetCamera(framedata->projection, framedata->view,
+					framedata->position, framedata->direction, framedata->directionUp, framedata->directionRight,
+					framedata->nearPlane, framedata->farPlane, framedata->fov)
+				.Build();
+
+			Render::RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(framedata, *state);
+
+			r->PushFrameState(state);
+		}
 	}
 }
 
@@ -357,7 +379,7 @@ void WorldManager::WorldLoop()
 	fpscontroller.reset();
 
 	// 主循环
-	while (!_stop)
+	while (!_worldStop)
 	{
 		float dt = fpscontroller.getTimeDiffMS();
 
@@ -399,7 +421,7 @@ void WorldManager::ContinueWorld()
 
 void WorldManager::StopWorld()
 {
-	_stop = true;
+	_worldStop = true;
 	if (_worldThread)
 	{
 		if (_worldThread->joinable())
@@ -489,7 +511,7 @@ void WorldManager::SetOption(RenderOption option)
 	_renderer->SetOption(option);
 }
 
-bool WorldManager::ResizeOpenGL(uint32_t width, uint32_t height)
+bool WorldManager::ResizeVulkan(uint32_t width, uint32_t height)
 {
 	if (pendingWidth != width || pendingHeight != height)
 	{
@@ -564,7 +586,7 @@ bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
 	return isSuccess && newEntity;
 }
 
-std::shared_ptr<VulkanRenderer> WorldManager::GetOpenGLRener()
+std::shared_ptr<VulkanRenderer> WorldManager::GetVulkanRener()
 {
 	return _renderer;
 }

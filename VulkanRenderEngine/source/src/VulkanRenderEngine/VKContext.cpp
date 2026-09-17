@@ -94,31 +94,57 @@ std::shared_ptr<VKWrapper::VKCommandBuffer> VKContext::GetCommandBuffer()
 	return tls_context.GetCommandBuffer();
 }
 
-void VKContext::Retire(VKWrapper::IVKResource* res) {
-	LockGuard guard(_pendingDestoryResourceMutex);
-	_pendingDestoryResource.push(res);
+vk::ResultValue<std::vector<vk::DescriptorSet>> VKContext::AllocateDescriptorSets(vk::DescriptorSetAllocateInfo& allocInfo) {
+	allocInfo.setDescriptorPool(GetDescriptorPool());
+	LockGuard guard(_descriptorPoolRequestMutex);
+	return _device->GetHandle().allocateDescriptorSets(allocInfo);
 }
 
-void VKContext::ProcessRetire() {
+vk::Result VKContext::FreeDescriptorSets(const std::vector<vk::DescriptorSet>& sets) {
+	LockGuard guard(_descriptorPoolRequestMutex);
+	return _device->GetHandle().freeDescriptorSets(GetDescriptorPool(), sets);
+}
+
+void VKContext::Retire(VKWrapper::IVKResource* res) {
+	if (!res) return;
+	LockGuard guard(_pendingDestoryResourceMutex);
+	_pendingDestoryResource.push_back(PendingResource{ res, _frameIndex.load() });
+}
+
+void VKContext::ProcessRetireAndPushFrameIndex() {
 	if (_pendingDestoryResource.empty())
 		return;
 
-	std::queue<VKWrapper::IVKResource*> temp;
+	std::list<PendingResource> temp;
+	uint32_t curFrame;
 
 	{
 		LockGuard guard(_pendingDestoryResourceMutex);
-		temp.swap(_pendingDestoryResource);
+		curFrame = _frameIndex++;
+
+		if (curFrame < GlobalConfig::MaxFramesInFlight)
+			return;
+
+		uint32_t safeFrame = curFrame - GlobalConfig::MaxFramesInFlight;
+
+		// 找到第一个 frameIndex > safeFrame 的节点
+		auto it = _pendingDestoryResource.begin();
+		while (it != _pendingDestoryResource.end() && it->frameIndex <= safeFrame)
+			++it;
+
+		// 把 [begin, it) 切到 temp
+		if (it != _pendingDestoryResource.begin()) {
+			temp.splice(temp.begin(), _pendingDestoryResource,
+				_pendingDestoryResource.begin(), it);
+		}
 	}
 
-	while (!temp.empty())
-	{
-		auto res = temp.front();
-		if (res)
+	for (auto& p : temp) {
+		if (p.res)
 		{
-			res->Destroy();
-			delete res;
+			p.res->Destroy();
+			delete p.res;
 		}
-		temp.pop();
 	}
 }
 

@@ -20,10 +20,8 @@ public:
 
 	~HZBPass();
 
-	virtual void EarlyExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);;
-
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	uint32_t GetMaxLevel();
@@ -38,6 +36,10 @@ private:
 	std::shared_ptr<ComputePipeline> _HZBShader;
 	std::shared_ptr<ComputePipeline> _occlusionCullShader;
 	uint32_t _maxLevel = 7;
+
+	GraphicsBindingRecord _depthShaderBinding;
+	ComputeBindingRecord _HZBShaderBinding;
+	ComputeBindingRecord _occlusionCullShaderBinding;
 
 	std::vector<IndirectDrawCommand> _commands;
 	std::shared_ptr<IndirectBufferBlock> _indirectCommandBuffer;

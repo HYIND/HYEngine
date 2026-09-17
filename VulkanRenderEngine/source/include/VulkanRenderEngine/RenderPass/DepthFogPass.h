@@ -14,9 +14,10 @@ public:
 	virtual ~DepthFogPass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
 	ComputePipeline _shader;
+	ComputeBindingRecord _binding;
 	std::shared_ptr<UniformBlock> _paramsUBO;
 };

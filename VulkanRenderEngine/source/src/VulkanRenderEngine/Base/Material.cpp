@@ -32,7 +32,7 @@ Material::Material(const MaterialProperties& props)
 
 Material::~Material()
 {
-	IndirectDrawManager::Instance()->deleteMaterial(*this);
+	IndirectDrawManager::Instance()->RetireMaterial(*this);
 }
 
 void Material::SetTexture(TextureType type, std::shared_ptr<Texture2D> texture)

@@ -25,6 +25,11 @@ struct RenderModel : public Renderable
 	RenderModel(std::shared_ptr<Model> model
 	) : model(model) {
 	}
+
+	virtual void OnAdd(const Entity& e) {}
+	virtual void OnRemove(const Entity& e) {
+		model.reset();
+	}
 };
 
 struct FirstPersonRenderModel : public Renderable
@@ -35,5 +40,8 @@ struct FirstPersonRenderModel : public Renderable
 	FirstPersonRenderModel() {}
 	FirstPersonRenderModel(std::shared_ptr<Model> model
 	) : model(model) {
+	}
+	virtual void OnRemove(const Entity& e) {
+		model.reset();
 	}
 };

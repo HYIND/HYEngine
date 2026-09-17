@@ -13,24 +13,49 @@ namespace RenderGraph
 	class Graph
 	{
 	public:
+		struct FilghtSync
+		{
+			std::shared_ptr<VKWrapper::VKTimelineSemaphore> preFrameTimeLine;
+			std::shared_ptr<VKWrapper::VKTimelineSemaphore> curframeTimeLine;
+			uint32_t curProgress = 0;
+
+			void WaitForNextProgress() {
+				if (preFrameTimeLine)
+					preFrameTimeLine->Wait(curProgress + 1);
+				curProgress++;
+			}
+			void SignalDoneProgress() {
+				curframeTimeLine->Signal(curProgress);
+			}
+			//void WaitUntil(uint32_t targetProgress) { preFrameTimeLine->Wait(targetProgress); }
+
+			struct FilghtSyncProgressGuard
+			{
+				FilghtSync& sync;
+				FilghtSyncProgressGuard(FilghtSync& sync) :sync(sync) { sync.WaitForNextProgress(); }
+				~FilghtSyncProgressGuard() { sync.SignalDoneProgress(); }
+			};
+			auto MakeProgressGuard() {
+				return FilghtSyncProgressGuard(*this);
+			}
+		};
+
+	public:
 		Graph(const std::string& name = "");
 		~Graph();
 
-
 		RenderGraphResource CreateTexture(const TextureDesc& desc, const ResourceName& name);					// 获取资源声明
-
-		ExternalResource CreateExternalTexture(const ResourceName& name);										// 获取外部资源声明	
-		ExternalResource InjectExternalTexture(const ResourceName& name, std::shared_ptr<Texture2D> texture);	// 注入外部资源
-		std::shared_ptr<Texture2D> GetExternalTexture(const ResourceName& name) const;
-
-		void RemoveExternalTexture(const ResourceName& name);
+		ExternalResource CreateExternalTexture(const ResourceName& name);										// 获取外部资源声明
 
 		PassNode* AddPass(const std::string& name);		// 添加Pass
 		PassNode* AddFence(const std::string& name);	// 添加栅栏
 
-		void Compile();							// 编译（分析依赖和生命周期）
-		void EarlyExecute(RenderState& state);	// 早期提前执行，该函数应提前于Execute执行
-		void Execute(RenderState& state);		// 执行
+		void Compile();									// 编译（分析依赖和生命周期）
+		void Execute(
+			std::shared_ptr<RenderState>& state,
+			std::shared_ptr<FilghtSync>& sync,
+			const std::unordered_map<std::string, std::shared_ptr<Texture2D>>& externalResources = {}
+		);		// 执行
 
 		void Clear();// 清空
 
@@ -39,7 +64,19 @@ namespace RenderGraph
 
 		void SetRenderTargetFBO(std::shared_ptr<VKWrapper::VKFrameBuffer> fbo);
 
+		void Run();
+		void ExecuteLoop();
+
 	private:
+
+		struct PassExecuteContext
+		{
+			PassNode* node = nullptr;
+			FrameDataRegistry registry;
+			bool enable;
+			bool isDone = false;
+		};
+
 		struct BatchData
 		{
 			struct PassData
@@ -55,9 +92,20 @@ namespace RenderGraph
 		};
 
 		bool GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex);
-		void FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles, BatchData& batchdata, RenderState& state, uint32_t frameIndex);
-		void ExcutePass(PassNode* node, RenderState& state, uint32_t frameIndex);
-		void EndPass(PassNode* node, BatchData& batchdata);;
+		void FindReadyNodeAndExcute(
+			std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles,
+			BatchData& batchdata, std::vector<PassExecuteContext>& passCtxs,
+			RenderState& state,
+			const std::string& resPrefix,
+			ExternalResourceManager& externalResManager
+		);
+		void ExcutePass(
+			PassNode* node, 
+			FrameDataRegistry& registry,
+			RenderState& state, 
+			const std::string& resPrefix,
+			ExternalResourceManager& externalResManager
+		);
 
 	private:
 		std::string _name;
@@ -75,15 +123,10 @@ namespace RenderGraph
 
 		std::shared_ptr<VKWrapper::VKFrameBuffer> _renderTargetFBO;
 
-		ThreadPool _earlyParallelPool;
 		ThreadPool _executeParallelPool;
 		ThreadPool _frameParallelPool;
 
 		int64_t _lastCleanupTimeAccumulator;
 		int64_t _CleanupThresold = 10;
-
-		std::atomic<uint32_t> _earlyFrameIndex{ 0 };
-		std::atomic<uint32_t> _executeFrameIndex{ 0 };
-		uint32_t _maxFramesInFlight = 1;  // 最大超前帧数
 	};
 }

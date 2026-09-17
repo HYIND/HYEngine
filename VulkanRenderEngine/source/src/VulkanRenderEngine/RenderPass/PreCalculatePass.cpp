@@ -14,10 +14,7 @@ PreCalculatePass::PreCalculatePass()
 PreCalculatePass::~PreCalculatePass()
 {}
 
-void PreCalculatePass::EarlyExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
-
-void PreCalculatePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void PreCalculatePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	//auto start = Tool::GetTimestampMircoseconds();
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;

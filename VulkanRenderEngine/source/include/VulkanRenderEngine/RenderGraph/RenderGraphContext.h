@@ -3,6 +3,7 @@
 #include "vkstdafx.h"
 #include "../Base/Texture2D.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
+#include "VulkanRenderEngine/Base/DynamicBlock.h"
 
 
 namespace RenderGraph
@@ -19,6 +20,7 @@ namespace RenderGraph
 		vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eClampToEdge;
 
 		uint32_t maxLevel = 1;
+		bool isVariable = false;
 	};
 
 	class TextureHandle
@@ -37,7 +39,7 @@ namespace RenderGraph
 		TextureDesc _desc;
 	};
 
-	struct PassContext
+	struct PassFrameContext
 	{
 		std::string passName;
 
@@ -126,6 +128,39 @@ namespace RenderGraph
 
 		void Clear() {
 			data.clear();
+		}
+
+		template<typename T>
+		std::shared_ptr<T> Get(const std::string& name) {
+			if (auto ptr = TryLoad<std::shared_ptr<T>>(name); ptr && *ptr)
+				return *ptr;
+			auto res = std::make_shared<T>();
+			Store(name, res);
+			return res;
+		}
+
+		std::shared_ptr<UniformBlock> GetUniformBlock(const std::string& name) {
+			return Get<UniformBlock>(name);
+		}
+
+		std::shared_ptr<StorageBlock> GetStorageBlock(const std::string& name) {
+			return Get<StorageBlock>(name);
+		}
+
+		std::shared_ptr<VertexBufferBlock> GetVertexBlock(const std::string& name) {
+			return Get<VertexBufferBlock>(name);
+		}
+
+		std::shared_ptr<IndexBufferBlock> GetIndexBlock(const std::string& name) {
+			return Get<IndexBufferBlock>(name);
+		}
+
+		std::shared_ptr<IndirectBufferBlock> GetIndirectBlock(const std::string& name) {
+			return Get<IndirectBufferBlock>(name);
+		}
+
+		std::shared_ptr<SBTBufferBlock> GetSBTBlock(const std::string& name) {
+			return Get<SBTBufferBlock>(name);
 		}
 
 	private:

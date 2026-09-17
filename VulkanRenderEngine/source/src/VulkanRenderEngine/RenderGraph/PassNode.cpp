@@ -4,8 +4,7 @@
 using namespace RenderGraph;
 
 PassNode::PassNode(const std::string& name)
-	: _name(name), _enable(true) {
-}
+	: _name(name), _enable(true) {}
 
 PassNode& PassNode::Input(const RenderGraphResource& resource) {
 	_inputs.push_back(resource);
@@ -60,41 +59,27 @@ PassNode& PassNode::SetRenderPass(std::unique_ptr<RenderPassBase>&& pass)
 	_render = std::move(pass);
 	return *this;
 }
-
-void PassNode::EarlyExecute(int frameIndex, RenderState& state)
-{
-	if (!_render || !_enable) return;
-	_render->EarlyExecute(_registrys[frameIndex % 2], state);
-}
-
-void PassNode::Execute(int frameIndex, const PassContext& ctx, RenderState& state)
-{
-	if (!_render || !_enable) return;
-	_render->Execute(_registrys[frameIndex % 2], ctx, state);
-}
-
-void PassNode::FrameBegin(int frameIndex, RenderState& state)
+void PassNode::FrameBegin(FrameDataRegistry& registry, RenderState& state)
 {
 	if (!_render) return;
-	_render->FrameBegin(_registrys[frameIndex % 2], state);
+	_render->FrameBegin(registry, state);
 }
 
-void PassNode::FrameEnd(int frameIndex, RenderState& state)
+bool PassNode::ShouldExecute(FrameDataRegistry& registry, RenderState& state) 
+{
+	return _enable && _render && _render->ShouldExecute(registry, state);
+}
+
+void PassNode::Execute(FrameDataRegistry& registry, const PassFrameContext& ctx, RenderState& state)
+{
+	if (!_render || !_enable) return;
+	_render->Execute(registry, ctx, state);
+}
+
+void PassNode::FrameEnd(FrameDataRegistry& registry, RenderState& state)
 {
 	if (!_render) return;
-	auto registry = _registrys[frameIndex % 2];
 	_render->FrameEnd(registry, state);
-	registry.Clear();
-}
-
-bool RenderGraph::PassNode::IsDone()
-{
-	return _isDone;
-}
-
-void RenderGraph::PassNode::SetDone(bool done)
-{
-	_isDone = done;
 }
 
 const std::string& PassNode::GetName() const { return _name; }
@@ -122,10 +107,6 @@ int PassNode::GetIndex() const { return _index; }
 int PassNode::GetBatch() const { return _batch; }
 
 bool PassNode::GetEnable() const { return _enable; }
-
-bool PassNode::ShouldExecute(int frameIndex, RenderState& state) {
-	return _enable && _render && _render->ShouldExecute(_registrys[frameIndex % 2], state);
-}
 
 void PassNode::SetIndex(int index) { _index = index; }
 

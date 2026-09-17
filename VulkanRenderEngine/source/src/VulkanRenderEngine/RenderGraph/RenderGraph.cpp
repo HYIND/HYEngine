@@ -8,7 +8,6 @@ Graph::Graph(const std::string& name)
 {
 	_frameParallelPool.start();
 	_executeParallelPool.start();
-	_earlyParallelPool.start();
 }
 
 Graph::~Graph()
@@ -32,23 +31,6 @@ ExternalResource Graph::CreateExternalTexture(const ResourceName& name)
 	res.name = name;
 	res.type = ResourceType::Texture;
 	return res;
-}
-
-// 注入外部资源
-ExternalResource Graph::InjectExternalTexture(const ResourceName& name, std::shared_ptr<Texture2D> texture)
-{
-	_resManager.RegisterExternalTexture(name, texture);
-	_needsCompile = true;
-	return CreateExternalTexture(name);
-}
-
-void Graph::RemoveExternalTexture(const ResourceName& name) {
-	_resManager.UnregisterExternalTexture(name);
-	_needsCompile = true;
-}
-
-std::shared_ptr<Texture2D> Graph::GetExternalTexture(const ResourceName& name) const {
-	return _resManager.GetExternalTexture(name);
 }
 
 // Pass管理
@@ -86,40 +68,6 @@ void Graph::Compile() {
 	_compiledVersion++;
 }
 
-void Graph::EarlyExecute(RenderState& state)
-{
-	if (_needsCompile)
-		Compile();
-
-	uint32_t executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
-	uint32_t earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
-
-	while (earlyIdx - executeIdx > _maxFramesInFlight)
-	{
-		std::this_thread::yield();
-		executeIdx = _executeFrameIndex.load(std::memory_order_acquire);
-		earlyIdx = _earlyFrameIndex.load(std::memory_order_acquire);
-	}
-
-	uint32_t frameIndex = _earlyFrameIndex.fetch_add(1);
-
-	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EarlyHandles;
-	for (auto& pass : _sortedPasses)
-	{
-		EarlyHandles.push_back(std::move(_earlyParallelPool.submit(
-			[pass = pass, &state, &frameIndex]()->void
-			{
-				pass->EarlyExecute(frameIndex, state);
-			})
-		));
-	}
-
-	for (auto& handle : EarlyHandles)
-		handle->get();
-
-	//std::cout << std::format("Early done {}\n", frameIndex);
-}
-
 bool Graph::GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex)
 {
 	if (startIndex >= _sortedPasses.size())
@@ -142,32 +90,29 @@ bool Graph::GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, 
 	return !passes.empty();
 };
 
-void Graph::FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles, BatchData& batchdata, RenderState& state, uint32_t frameIndex)
+void Graph::FindReadyNodeAndExcute(
+	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>>& BeginHandles,
+	BatchData& batchdata,
+	std::vector<PassExecuteContext>& passCtxs,
+	RenderState& state,
+	const std::string& resPrefix,
+	ExternalResourceManager& externalResManager
+)
 {
 
-	static auto canExcute = [](PassNode* node)-> bool {
-		for (auto& pass : node->GetAfters())
+	static auto canExcute = [](PassNode* node, std::vector<PassExecuteContext>& passCtxs)-> bool {
+		for (auto& node : node->GetAfters())
 		{
-			if (!pass->IsDone())
-				return false;
+			for (auto& ctx : passCtxs)
+			{
+				if (ctx.node != node)
+					continue;
+				if (!ctx.isDone)
+					return false;
+			}
 		}
 		return true;
 		};
-
-	//for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
-	//{
-	//	int idx = *it;
-	//	auto& handle = BeginHandles[idx];
-	//	auto* node = _sortedPasses[idx];
-	//	if (handle->is_ready() && canExcute(_sortedPasses[idx]))
-	//	{
-	//		ExcutePass(node, state, frameIndex);
-	//		EndPass(node, batchdata);
-	//		it = batchdata.passes.erase(it);
-	//		continue;
-	//	}
-	//	++it;
-	//}
 
 	for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
 	{
@@ -178,19 +123,27 @@ void Graph::FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::Submi
 		auto& handle = BeginHandles[idx];
 		if (!executeHandle)
 		{
-			if (handle->is_ready() && canExcute(_sortedPasses[idx]))
+			auto* node = passCtxs[idx].node;
+			if (handle->is_ready() && canExcute(node, passCtxs))
 			{
-				auto* node = _sortedPasses[idx];
-				executeHandle = _executeParallelPool.submit([&, frameIndex = frameIndex, node = node]()->void { ExcutePass(node, state, frameIndex); });
-				//executeHandle = _executeParallelPool.submit_to(0, [&, frameIndex = frameIndex, node = node]()->void { ExcutePass(node, state, frameIndex); });
+				executeHandle = _executeParallelPool.submit(
+					[&, idx = idx, node = node]()->void {
+						ExcutePass(node, passCtxs[idx].registry, state, resPrefix, externalResManager);
+					});
+				executeHandle.get();
 			}
 		}
 		else
 		{
 			if (executeHandle->is_ready())
 			{
-				auto* node = _sortedPasses[idx];
-				EndPass(node, batchdata);
+				passCtxs[idx].isDone = true;
+				auto* node = passCtxs[idx].node;
+				auto& passLifeTimeResource = node->GetLifeCycleResource();
+				batchdata.batchLifeCycleResource.insert(
+					batchdata.batchLifeCycleResource.end(),
+					passLifeTimeResource.begin(),
+					passLifeTimeResource.end());
 				it = batchdata.passes.erase(it);
 				continue;
 			}
@@ -202,51 +155,48 @@ void Graph::FindReadyNodeAndExcute(std::vector<std::shared_ptr<ThreadPool::Submi
 		batchdata.isEnd = true;
 }
 
-void RenderGraph::Graph::EndPass(PassNode* node, BatchData& batchdata) {
-	node->SetDone(true);
-	auto& passLifeTimeResource = node->GetLifeCycleResource();
-	batchdata.batchLifeCycleResource.insert(
-		batchdata.batchLifeCycleResource.end(),
-		passLifeTimeResource.begin(),
-		passLifeTimeResource.end());
-}
-
-void Graph::ExcutePass(PassNode* node, RenderState& state, uint32_t frameIndex)
+void Graph::ExcutePass(
+	PassNode* node,
+	FrameDataRegistry& registry,
+	RenderState& state,
+	const std::string& resPrefix,
+	ExternalResourceManager& externalResManager
+)
 {
 	//auto start = Tool::GetTimestampMircoseconds();
 	//std::cout << std::format("ExcutePass {}\n", pass->GetName());
 
-	if (node->ShouldExecute(frameIndex, state))
+	if (node->ShouldExecute(registry, state))
 	{
-		PassContext ctx;
+		PassFrameContext ctx;
 		ctx.passName = node->GetName();
 
 		for (const auto& input : node->GetInputs()) {
-			ctx.inputTextures.push_back(_resManager.GetTexture(input));
+			ctx.inputTextures.push_back(_resManager.GetTexture(input, resPrefix));
 		}
 
 		for (const auto& input : node->GetInputOptions()) {
-			ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input));
+			ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input, resPrefix));
 		}
 
 		for (const auto& output : node->GetOutputs()) {
-			ctx.outputTextures.push_back(_resManager.GetTexture(output));
+			ctx.outputTextures.push_back(_resManager.GetTexture(output, resPrefix));
 		}
 
 		for (const auto& temp : node->GetTemps()) {
-			ctx.tempTextures.push_back(_resManager.GetTexture(temp));
+			ctx.tempTextures.push_back(_resManager.GetTexture(temp, resPrefix));
 		}
 
 		for (const auto& persitent : node->GetPersistents()) {
-			ctx.persitentTextures.push_back(_resManager.GetTexture(persitent));
+			ctx.persitentTextures.push_back(_resManager.GetTexture(persitent, ""));
 		}
 
 		for (const auto& external : node->GetExternals()) {
 			if (external.type == ResourceType::Texture)
-				ctx.externalTextures.push_back(_resManager.GetExternalTexture(external.name));
+				ctx.externalTextures.push_back(externalResManager.GetExternalTexture(external.name));
 		}
 
-		node->Execute(frameIndex, ctx, state);
+		node->Execute(registry, ctx, state);
 		//std::cout << std::format("ExcutePass {}\n ", pass->GetName());
 	}
 
@@ -255,36 +205,38 @@ void Graph::ExcutePass(PassNode* node, RenderState& state, uint32_t frameIndex)
 ;
 
 // 执行
-void Graph::Execute(RenderState& state)
+void Graph::Execute(
+	std::shared_ptr<RenderState>& state,
+	std::shared_ptr<FilghtSync>& sync,
+	const std::unordered_map<std::string, std::shared_ptr<Texture2D>>& externalResources
+)
 {
-	auto time = Tool::GetTimestampSecond();
-	if (time - _lastCleanupTimeAccumulator > _CleanupThresold)
+	if (!state)
+		return;
+
+	std::vector<PassExecuteContext> passExeContext;
+	passExeContext.resize(_sortedPasses.size());
+	for (size_t i = 0; i < _sortedPasses.size(); i++)
 	{
-		if (_lastCleanupTimeAccumulator != 0)
-			_resManager.CleanupIdleResource();
-		_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
+		passExeContext[i].node = _sortedPasses[i];
+		passExeContext[i].enable = _sortedPasses[i]->GetEnable();
 	}
 
-	if (_needsCompile)
-		Compile();
-
-	uint32_t frameIndex = _executeFrameIndex.load();
-
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
-	BeginHandles.reserve(_sortedPasses.size());
-	for (auto& pass : _sortedPasses)
+	BeginHandles.reserve(passExeContext.size());
+	for (auto& passCtx : passExeContext)
 	{
-		pass->SetDone(false);
 		BeginHandles.push_back(std::move(_frameParallelPool.submit(
-			[pass = pass, &state, &frameIndex]()->void
+			[node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
 			{
-				//auto guard = THREADCONTEXT->GetBindGuard();
-				//GPUTimer timer;
-				pass->FrameBegin(frameIndex, state);
-				//std::cout << std::format("Excute FrameBegin {} ,cost {}ms\n", pass->GetName(), timer.End());
+				node->FrameBegin(*registryPtr, *state);
 			})
 		));
 	}
+
+
+	auto resPrefix = Tool::GenerateSimpleUuid();
+	ExternalResourceManager externalResManager(externalResources);
 
 	std::vector<BatchData> running_batchs;
 	running_batchs.reserve(_sortedPasses.size());
@@ -325,7 +277,7 @@ void Graph::Execute(RenderState& state)
 							auto& lifecycle = it->second;
 							if (lifecycle.lastBatch <= batch.batchIndex)
 							{
-								_resManager.ReleaseTexture(res);
+								_resManager.ReleaseTexture(res, resPrefix);
 								//std::cout << std::format("release res [{}]\n", res.name);
 							}
 						}
@@ -342,18 +294,22 @@ void Graph::Execute(RenderState& state)
 			{
 				int index = it.first;
 				if (index == (endPassClearIndex + 1))
+				{
 					endPassClearIndex = index;
+					//sync->SignalDoneProgress();
+				}
 			}
 			ClearBatch();
 		};
 
 	while (!running_batchs.empty())
 	{
+		//sync->WaitForNextProgress();
 		for (auto it = running_batchs.begin(); it != running_batchs.end(); )
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, state, frameIndex);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager);
 
 			if (batch.isEnd)
 			{
@@ -374,21 +330,27 @@ void Graph::Execute(RenderState& state)
 	//std::cout << "===========================\n";
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> EndHandles;
-	EndHandles.reserve(_sortedPasses.size());
-	for (auto& pass : _sortedPasses)
-		EndHandles.push_back(std::move(_frameParallelPool.submit([pass = pass, &state, &frameIndex]()->void {pass->FrameEnd(frameIndex, state); })));
+	EndHandles.reserve(passExeContext.size());
+	for (auto& passCtx : passExeContext)
+	{
+		BeginHandles.push_back(std::move(_frameParallelPool.submit(
+			[node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
+			{
+				node->FrameEnd(*registryPtr, *state);
+			})
+		));
+	}
 	for (auto& handle : EndHandles)
 		handle->get();
 
 	//std::cout << std::format("Execute done {}\n", frameIndex);
-	_executeFrameIndex.fetch_add(1);
 }
 
 // 清空
 void Graph::Clear() {
 	_passes.clear();
-	_ownedPasses.clear();
 	_sortedPasses.clear();
+	_ownedPasses.clear();
 	_lifecycles.clear();
 	_needsCompile = true;
 	_compiledVersion++;

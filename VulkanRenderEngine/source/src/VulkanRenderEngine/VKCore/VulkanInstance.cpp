@@ -4,6 +4,14 @@
 
 using namespace VKCore;
 
+static PFN_vkDebugUtilsMessengerCallbackEXT DebugUtilsMessengerCallback = [](
+	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void* pUserData)->VkBool32 {
+		std::cout << std::format("{}\n\n", pCallbackData->pMessage);
+		return VK_FALSE;
+	};
 
 static void NeedInstanceProc(VkInstance instance) {
 	static bool loaded = false;
@@ -157,14 +165,6 @@ vk::Result VulkanInstance::CreateInstance(vk::InstanceCreateFlags flags)
 
 vk::Result VulkanInstance::CreateDebugMessenger()
 {
-	static PFN_vkDebugUtilsMessengerCallbackEXT DebugUtilsMessengerCallback = [](
-		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-		VkDebugUtilsMessageTypeFlagsEXT messageTypes,
-		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-		void* pUserData)->VkBool32 {
-			std::cout << std::format("{}\n\n", pCallbackData->pMessage);
-			return VK_FALSE;
-		};
 
 	vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfo;
 	debugUtilsMessengerCreateInfo.setMessageSeverity(vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)

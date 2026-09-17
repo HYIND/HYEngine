@@ -4,14 +4,12 @@
 Plane::Plane(const glm::vec3& pointOnPlane, const glm::vec3& n)
 	: normal(glm::normalize(n))
 	, distance(-glm::dot(normal, pointOnPlane))
-{
-}
+{}
 
 Plane::Plane(const glm::vec3& n, float d)
 	: normal(glm::normalize(n))
 	, distance(d)
-{
-}
+{}
 
 float Plane::getSignedDistanceToPlane(const glm::vec3& point) const {
 	return glm::dot(normal, point) + distance;
@@ -138,18 +136,25 @@ bool Frustum::IsIntersectsFrustum(Frustum& other)
 
 RenderStateBuilder& RenderStateBuilder::SetCamera(const glm::mat4& proj, const glm::mat4& view, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& dirUp, const glm::vec3& dirRight, float nearP, float farP, float fov)
 {
-	context.camera.projection = proj;
-	context.camera.view = view;
-	context.camera.position = pos;
-	context.camera.direction = dir;
-	context.camera.directionUp = dirUp;
-	context.camera.directionRight = dirRight;
-	context.camera.nearPlane = nearP;
-	context.camera.farPlane = farP;
-	context.camera.fov = fov;
-	context.camera.frustum = Frustum(proj * view);
+	if (!context)
+		context = std::make_shared<RenderState>();
+
+	context->camera.projection = proj;
+	context->camera.view = view;
+	context->camera.position = pos;
+	context->camera.direction = dir;
+	context->camera.directionUp = dirUp;
+	context->camera.directionRight = dirRight;
+	context->camera.nearPlane = nearP;
+	context->camera.farPlane = farP;
+	context->camera.fov = fov;
+	context->camera.frustum = Frustum(proj * view);
 	return *this;
 }
 
-RenderState RenderStateBuilder::Build() { return std::move(context); }
+std::shared_ptr<RenderState> RenderStateBuilder::Build() {
+	if (!context)
+		context = std::make_shared<RenderState>();
+	return std::move(context);
+}
 

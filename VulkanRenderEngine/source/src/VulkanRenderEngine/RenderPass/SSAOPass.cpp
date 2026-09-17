@@ -97,10 +97,9 @@ SSAOPass::SSAOPass(
 }
 
 SSAOPass::~SSAOPass()
-{
-}
+{}
 
-void SSAOPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void SSAOPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	int width = state.framebuffer.width;
 	int height = state.framebuffer.height;
@@ -111,27 +110,27 @@ void SSAOPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGra
 	auto ssaoBlurColorMap = ctx.GetOutput(0);
 
 
-	_ssaoShader.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	_ssaoShader.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
-	_ssaoShader.SetStorageImage(ssaoColorMap, 0);
-	_ssaoShader.SetUniformTexture(gPosition, 1);
-	_ssaoShader.SetUniformTexture(gNormal, 2);
-	_ssaoShader.SetUniformTexture(_noiseTexture, 3);
-	_ssaoShader.SetUniformBlock(_ssaoParams, 4);
+	_ssaoBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
+	_ssaoBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	_ssaoBinding.SetStorageImage(ssaoColorMap, 0);
+	_ssaoBinding.SetUniformTexture(gPosition, 1);
+	_ssaoBinding.SetUniformTexture(gNormal, 2);
+	_ssaoBinding.SetUniformTexture(_noiseTexture, 3);
+	_ssaoBinding.SetUniformBlock(_ssaoParams, 4);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	ssaoColorMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 
-	_ssaoShader.Bind(cmd);
+	_ssaoShader.Bind(cmd, _ssaoBinding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	ssaoColorMap->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Sample);
 
-	_ssaoBlurShader.SetStorageImage(ssaoBlurColorMap, 0);
-	_ssaoBlurShader.SetUniformTexture(ssaoColorMap, 1);
+	_ssaoBlurBinding.SetStorageImage(ssaoBlurColorMap, 0);
+	_ssaoBlurBinding.SetUniformTexture(ssaoColorMap, 1);
 
-	_ssaoBlurShader.Bind(cmd);
+	_ssaoBlurShader.Bind(cmd, _ssaoBlurBinding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

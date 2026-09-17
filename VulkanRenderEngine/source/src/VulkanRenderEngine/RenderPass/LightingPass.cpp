@@ -35,7 +35,7 @@ LightingPass::~LightingPass() {}
 void LightingPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
 
-void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassContext& ctx, RenderState& state)
+void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto gPosition = ctx.GetInput(0);
 	auto gNormal = ctx.GetInput(1);
@@ -48,19 +48,21 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 
 	auto target = ctx.GetExternal(0);
 
-	_shader.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	ComputeBindingRecord binding;
 
-	_shader.SetStorageImage(target, 0);
-	_shader.SetUniformTexture(gPosition, 1);
-	_shader.SetUniformTexture(gNormal, 2);
-	_shader.SetUniformTexture(gAlbedoOpacity, 3);
-	_shader.SetUniformTexture(gMetallicRoughness, 4);
-	_shader.SetUniformTexture(gEmission, 5);
-	_shader.SetUniformTexture(ssao, 6);
-	_shader.SetUniformTexture(atlasShadowMap, 7);
-	_shader.SetUniformTexture(gDepthStencilMap, 8);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 
-	_shader.SetLightStorageData(
+	binding.SetStorageImage(target, 0);
+	binding.SetUniformTexture(gPosition, 1);
+	binding.SetUniformTexture(gNormal, 2);
+	binding.SetUniformTexture(gAlbedoOpacity, 3);
+	binding.SetUniformTexture(gMetallicRoughness, 4);
+	binding.SetUniformTexture(gEmission, 5);
+	binding.SetUniformTexture(ssao, 6);
+	binding.SetUniformTexture(atlasShadowMap, 7);
+	binding.SetUniformTexture(gDepthStencilMap, 8);
+
+	binding.SetLightStorageData(
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
@@ -68,7 +70,7 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	_shader.Bind(cmd);
+	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

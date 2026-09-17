@@ -61,17 +61,12 @@ public:
 
 
 	DataType& acquireReadBuffer() {// 获取可读的缓冲区
-		if (!_dataReady)
-			return _datas[_readIndex];
-
 		LockGuard guard(_mutex);
-		if (!_dataReady)
-			return _datas[_readIndex];
-
-		clearData(_datas[_readIndex]);
-		std::swap(_readyIndex, _readIndex);
-		_dataReady = false;
-
+		if (_dataReady)
+		{
+			std::swap(_readyIndex, _readIndex);
+			_dataReady = false;
+		}
 		return _datas[_readIndex];
 	}
 
