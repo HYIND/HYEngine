@@ -48,30 +48,27 @@ float AABB::DistancePointToAABBSqrt(const glm::vec3& point) {
 
 void AABB::MakeTransform(const glm::mat4& mat)
 {
-	std::array<glm::vec3, 8> corners = {
-		glm::vec3(min.x, min.y, min.z),
-		glm::vec3(max.x, min.y, min.z),
-		glm::vec3(min.x, max.y, min.z),
-		glm::vec3(max.x, max.y, min.z),
-		glm::vec3(min.x, min.y, max.z),
-		glm::vec3(max.x, min.y, max.z),
-		glm::vec3(min.x, max.y, max.z),
-		glm::vec3(max.x, max.y, max.z)
-	};
+	const glm::vec3 center = (min + max) * 0.5f;
+	const glm::vec3 extent = (max - min) * 0.5f;
 
-	// 初始化世界空间AABB
-	glm::vec3 transformMin = glm::vec3(FLT_MAX);
-	glm::vec3 transformMax = glm::vec3(-FLT_MAX);
+	const glm::vec3 newCenter = glm::vec3(mat * glm::vec4(center, 1.0f));
+	const glm::vec3 newExtent =
+		glm::vec3(
+			glm::abs(mat[0].x) * extent.x +
+			glm::abs(mat[1].x) * extent.y +
+			glm::abs(mat[2].x) * extent.z,
 
-	// 变换所有顶点并更新AABB
-	for (const auto& corner : corners) {
-		glm::vec4 worldCorner = mat * glm::vec4(corner, 1.0f);
-		transformMin = glm::min(transformMin, glm::vec3(worldCorner));
-		transformMax = glm::max(transformMax, glm::vec3(worldCorner));
-	}
+			glm::abs(mat[0].y) * extent.x +
+			glm::abs(mat[1].y) * extent.y +
+			glm::abs(mat[2].y) * extent.z,
 
-	min = transformMin;
-	max = transformMax;
+			glm::abs(mat[0].z) * extent.x +
+			glm::abs(mat[1].z) * extent.y +
+			glm::abs(mat[2].z) * extent.z
+		);
+
+	min = newCenter - newExtent;
+	max = newCenter + newExtent;
 }
 
 glm::vec3 AABB::GetCenter() const
