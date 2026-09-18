@@ -950,7 +950,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				imguiRegisterTexture.clear();
 			}
 
-			worldManager->GetVulkanRener()->WaitImage([&](std::shared_ptr<Texture2D> tex) {
+			worldManager->WaitImage([&](std::shared_ptr<Texture2D> tex) {
 				if (!tex) return;
 
 				VkImageView view = tex->GetImageView();

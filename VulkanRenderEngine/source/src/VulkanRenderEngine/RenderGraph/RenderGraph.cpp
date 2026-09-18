@@ -1,7 +1,18 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderGraph/RenderGraph.h"
+#include "CriticalSectionLock.h"
 
 using namespace RenderGraph;
+
+Graph::PassExecuteContext::PassExecuteContext() : dependency(0) {}
+
+RenderGraph::Graph::PassExecuteContext::PassExecuteContext(PassExecuteContext&& other) noexcept
+	: node(other.node)
+	, registry(std::move(other.registry))
+	, enable(other.enable)
+	, dependency(other.dependency.load(std::memory_order_relaxed))
+	, nextIndexs(std::move(other.nextIndexs))
+{}
 
 Graph::Graph(const std::string& name)
 	:_name(name)
@@ -60,6 +71,28 @@ void Graph::Compile() {
 	_sortedPasses = DependencySolver::SortPasses(_passes);
 	DependencySolver::PrintPasses(_name, _sortedPasses);
 
+	std::unordered_map<PassNode*, int> nodeToIndex;
+	for (int i = 0; i < _sortedPasses.size(); i++)
+	{
+		auto& node = _sortedPasses[i];
+		node->_dependency = 0;
+		node->_nextIndexs.clear();
+		nodeToIndex[node] = i;
+	}
+
+	for (auto pass : _sortedPasses)
+	{
+		auto it = nodeToIndex.find(pass);
+		if (it != nodeToIndex.end())
+		{
+			for (auto prev : pass->_afters)
+			{
+				prev->_nextIndexs.push_back(it->second);
+				pass->_dependency++;
+			}
+		}
+	}
+
 	// 计算生命周期
 	_lifecycles = DependencySolver::CalculateLifetimes(_sortedPasses);
 	DependencySolver::PrintLifecycles(_name, _lifecycles);
@@ -96,63 +129,53 @@ void Graph::FindReadyNodeAndExcute(
 	std::vector<PassExecuteContext>& passCtxs,
 	RenderState& state,
 	const std::string& resPrefix,
-	ExternalResourceManager& externalResManager
+	ExternalResourceManager& externalResManager,
+	std::atomic<uint32_t>& doneCounter
 )
 {
-
-	static auto canExcute = [](PassNode* node, std::vector<PassExecuteContext>& passCtxs)-> bool {
-		for (auto& node : node->GetAfters())
-		{
-			for (auto& ctx : passCtxs)
-			{
-				if (ctx.node != node)
-					continue;
-				if (!ctx.isDone)
-					return false;
-			}
-		}
-		return true;
-		};
-
-	for (auto it = batchdata.passes.begin(); it != batchdata.passes.end(); )
+	for (auto& passData : batchdata.passes)
 	{
-		auto& passData = *it;
-		int idx = passData.passIndex;
 		auto& executeHandle = passData.executeHandle;
-
-		auto& handle = BeginHandles[idx];
 		if (!executeHandle)
 		{
-			auto* node = passCtxs[idx].node;
-			if (handle->is_ready() && canExcute(node, passCtxs))
+			int idx = passData.passIndex;
+			auto& handle = BeginHandles[idx];
+			auto& ctx = passCtxs[idx];
+			if (handle->is_ready() && ctx.dependency.load() <= 0)
 			{
 				executeHandle = _executeParallelPool.submit(
-					[&, idx = idx, node = node]()->void {
-						ExcutePass(node, passCtxs[idx].registry, state, resPrefix, externalResManager);
+					[&, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
+						ExcutePass(ctx.node, ctx.registry, state, resPrefix, externalResManager);
+						for (auto& next : ctx.nextIndexs)
+							--passCtxs[next].dependency;
+						doneCounter++;
 					});
-				executeHandle.get();
 			}
 		}
-		else
+	}
+
+	for (auto it = batchdata.passes.begin(); it != batchdata.passes.end();)
+	{
+		auto& passData = *it;
+		auto& executeHandle = passData.executeHandle;
+		if (executeHandle && executeHandle->is_ready())
 		{
-			if (executeHandle->is_ready())
-			{
-				passCtxs[idx].isDone = true;
-				auto* node = passCtxs[idx].node;
-				auto& passLifeTimeResource = node->GetLifeCycleResource();
-				batchdata.batchLifeCycleResource.insert(
-					batchdata.batchLifeCycleResource.end(),
-					passLifeTimeResource.begin(),
-					passLifeTimeResource.end());
-				it = batchdata.passes.erase(it);
-				continue;
-			}
+			int idx = passData.passIndex;
+			auto& ctx = passCtxs[idx];
+			auto& passLifeTimeResource = ctx.node->GetLifeCycleResource();
+			batchdata.batchLifeCycleResource.insert(
+				batchdata.batchLifeCycleResource.end(),
+				passLifeTimeResource.begin(),
+				passLifeTimeResource.end());
+			it = batchdata.passes.erase(it);
+			continue;
 		}
 		++it;
 	}
 
 	if (batchdata.passes.empty())
 		batchdata.isEnd = true;
+
 }
 
 void Graph::ExcutePass(
@@ -201,8 +224,11 @@ void Graph::ExcutePass(
 	}
 
 	//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
+
+	//LockGuard guard(notifyData->doneMutex);
+	//notifyData->doneCV.NotifyOne();
 }
-;
+
 
 // 执行
 void Graph::Execute(
@@ -214,12 +240,21 @@ void Graph::Execute(
 	if (!state)
 		return;
 
+	std::atomic<uint32_t> doneCounter(0u);
+	std::atomic<uint32_t> beginCounter(0u);
+
 	std::vector<PassExecuteContext> passExeContext;
-	passExeContext.resize(_sortedPasses.size());
-	for (size_t i = 0; i < _sortedPasses.size(); i++)
+	passExeContext.reserve(_sortedPasses.size());
+	for (auto node : _sortedPasses)
 	{
-		passExeContext[i].node = _sortedPasses[i];
-		passExeContext[i].enable = _sortedPasses[i]->GetEnable();
+		passExeContext.emplace_back();
+		auto& ctx = passExeContext.back();
+		ctx.node = node;
+		ctx.enable = node->GetEnable();
+		ctx.dependency.store(
+			node->_dependency,
+			std::memory_order_relaxed);
+		ctx.nextIndexs = node->_nextIndexs;
 	}
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
@@ -227,9 +262,10 @@ void Graph::Execute(
 	for (auto& passCtx : passExeContext)
 	{
 		BeginHandles.push_back(std::move(_frameParallelPool.submit(
-			[node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
+			[&beginCounter, node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
 			{
 				node->FrameBegin(*registryPtr, *state);
+				beginCounter++;
 			})
 		));
 	}
@@ -302,14 +338,31 @@ void Graph::Execute(
 			ClearBatch();
 		};
 
+	uint32_t targetDoneCounter = passExeContext.size();
+	uint32_t lastBeginCounter = std::numeric_limits<uint32_t>::max();
+	uint32_t lastDoneCounter = std::numeric_limits<uint32_t>::max();
 	while (!running_batchs.empty())
 	{
 		//sync->WaitForNextProgress();
+		auto curBeginCounter = beginCounter.load(std::memory_order_acquire);
+		auto curDoneCounter = doneCounter.load(std::memory_order_acquire);
+		if (
+			(curDoneCounter == lastDoneCounter && curDoneCounter < targetDoneCounter)
+			&& (curBeginCounter == lastBeginCounter && curBeginCounter < targetDoneCounter)
+			)
+		{
+			std::this_thread::yield();
+			continue;
+		}
+
+		lastDoneCounter = curDoneCounter;
+		lastBeginCounter = curBeginCounter;
+
 		for (auto it = running_batchs.begin(); it != running_batchs.end(); )
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager, doneCounter);
 
 			if (batch.isEnd)
 			{
@@ -319,6 +372,7 @@ void Graph::Execute(
 			else
 				it++;
 		}
+
 	}
 
 	if (!end_batchs_map.empty())
@@ -333,7 +387,7 @@ void Graph::Execute(
 	EndHandles.reserve(passExeContext.size());
 	for (auto& passCtx : passExeContext)
 	{
-		BeginHandles.push_back(std::move(_frameParallelPool.submit(
+		EndHandles.push_back(std::move(_frameParallelPool.submit(
 			[node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
 			{
 				node->FrameEnd(*registryPtr, *state);
@@ -379,3 +433,4 @@ void Graph::SetRenderTargetFBO(std::shared_ptr<VKWrapper::VKFrameBuffer> fbo)
 {
 	_renderTargetFBO = fbo;
 }
+

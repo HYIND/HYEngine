@@ -87,7 +87,7 @@ SegmentData SegmentBufferManager<BufferImpl, SegmentID>::SetSegment(const Segmen
 }
 
 template<typename BufferImpl, typename SegmentID>
-bool SegmentBufferManager<BufferImpl, SegmentID>::FindSegment(const SegmentID& id, SegmentData& data)
+bool SegmentBufferManager<BufferImpl, SegmentID>::FindSegment(const SegmentID& id, SegmentData& data) const
 {
 	{
 		auto it = _usingSegment.find(id);

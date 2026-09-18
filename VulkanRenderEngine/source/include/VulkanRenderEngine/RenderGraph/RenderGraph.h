@@ -74,7 +74,10 @@ namespace RenderGraph
 			PassNode* node = nullptr;
 			FrameDataRegistry registry;
 			bool enable;
-			bool isDone = false;
+			std::atomic<uint32_t> dependency;
+			std::vector<uint32_t> nextIndexs;
+			PassExecuteContext();
+			PassExecuteContext(PassExecuteContext&& other) noexcept;
 		};
 
 		struct BatchData
@@ -97,12 +100,13 @@ namespace RenderGraph
 			BatchData& batchdata, std::vector<PassExecuteContext>& passCtxs,
 			RenderState& state,
 			const std::string& resPrefix,
-			ExternalResourceManager& externalResManager
+			ExternalResourceManager& externalResManager,
+			std::atomic<uint32_t>& doneCounter
 		);
 		void ExcutePass(
-			PassNode* node, 
+			PassNode* node,
 			FrameDataRegistry& registry,
-			RenderState& state, 
+			RenderState& state,
 			const std::string& resPrefix,
 			ExternalResourceManager& externalResManager
 		);

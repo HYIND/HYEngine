@@ -4,11 +4,10 @@
 #include "VulkanRenderEngine/VulkanRenderer.h"
 #include "RenderEngine/RenderFrameManager.h"
 #include "CommonSystems.h"
-
+#include "Helper/DynamicFpsController.h"
 
 struct EditorPick :public IComponent
-{
-};
+{};
 
 struct NameTag :public IComponent
 {
@@ -42,6 +41,8 @@ public:
 	void RunPushFrame();
 	void StopPushFrame();
 
+	void WaitImage(const std::function<void(std::shared_ptr<Texture2D>)>& callback);
+
 	Entity PickObject(const glm::vec3& origin, const glm::vec3& direction);
 	RaycastHit RayCast(const glm::vec3& origin, const glm::vec3& direction);
 
@@ -58,6 +59,10 @@ public:
 public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);
 	bool DuplicateEntity(Entity oriEntity, Entity& newEntity);
+
+public:
+	DynamicFpsController controller;
+	DynamicFpsEstimate estimate;
 
 private:
 	void WorldLoop();

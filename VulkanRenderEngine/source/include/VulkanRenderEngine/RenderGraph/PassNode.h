@@ -89,12 +89,17 @@ namespace RenderGraph
 		std::unordered_set<PassNode*> _afters;			//顺序依赖
 		std::unordered_set<PassNode*> _befores;			//顺序依赖
 
+		uint32_t _dependency = 0;
+		std::vector<uint32_t> _nextIndexs;
+
 		std::unique_ptr<RenderPassBase> _render;
 
 		int _index = -1;
 		int _batch = -1;
 
 		bool _enable;
+
+		friend class Graph;
 	};
 
 }

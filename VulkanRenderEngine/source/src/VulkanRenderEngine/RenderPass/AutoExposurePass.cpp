@@ -149,7 +149,8 @@ void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const R
 	float targetEV = log2(targetExposure);
 
 	float currentEV;
-	float deltaSecond = float(state.renderRecord.currentRenderMicroTimeStamp - state.renderRecord.prevRenderMicroTimeStamp) / 1000000.f;
+	//float deltaSecond = float(state.renderRecord.currentRenderMicroTimeStamp - state.renderRecord.prevRenderMicroTimeStamp) / 1000000.f;
+	float deltaSecond = 1.0f;
 	if (deltaSecond < 0.f)
 	{
 		currentEV = targetEV;

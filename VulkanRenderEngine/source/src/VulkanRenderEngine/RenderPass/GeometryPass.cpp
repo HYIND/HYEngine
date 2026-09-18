@@ -213,7 +213,7 @@ bool GeometryPass::SetupStaticBufferData(
 
 		commands.resize(indices.size());
 
-		std::for_each(std::execution::par, indices.begin(), indices.end(),
+		std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
 			[&](const size_t& meshIndex)-> void
 			{
 				size_t inedx = &meshIndex - indices.data();

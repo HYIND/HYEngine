@@ -324,6 +324,8 @@ void Renderer::SetBuffers(RenderTripleBufferPtr buffers)
 
 void Render::Renderer::PushFrameLoop()
 {
+	controller.reset();
+
 	while (!_pushFrameStop)
 	{
 		if (!_buffers)
@@ -360,6 +362,8 @@ void Render::Renderer::PushFrameLoop()
 		render->PushFrameState(data.state);
 
 		_earlyDataBuffers.submitWriteBuffer();
+
+		controller.run();
 	}
 }
 
@@ -378,10 +382,10 @@ void Renderer::renderFrame()
 		return;
 
 	auto data = std::move(_earlyDataBuffers.acquireReadBuffer());
-	_earlyDataBuffers.ReleaseReadBuffer();
+	//_earlyDataBuffers.ReleaseReadBuffer();
 
 	if (_isVulkanInit)
-		renderOpenGLFrame();
+		renderVulkanFrame();
 
 	renderD2DFrame(data.D2D_Contexts);
 
@@ -435,13 +439,17 @@ void Render::Renderer::renderD2DFrame(std::vector<std::shared_ptr<D2DRenderConte
 	_renderTarget->EndDraw();
 }
 
-void Render::Renderer::renderOpenGLFrame()
+void Render::Renderer::renderVulkanFrame()
 {
 	auto renderer = _vulkanRenderer;
 	if (!renderer || !_sharedTexture)
 		return;
 
-	renderer->WaitImage([&](std::shared_ptr<Texture2D> tex) {
+	renderer->WaitImage([&](std::shared_ptr<Texture2D> tex, std::shared_ptr<RenderState> state) {
+		float timeDiff = (state->renderRecord.frameEndMicroTimeStamp - state->renderRecord.frameStartMicroTimeStamp) / 1000.f;
+		estimate.run(timeDiff / renderer->GetMaxFramesInFlight());
+		controller.setCurTargetFps(estimate.getCurTargetFps());
+
 		if (!tex || !_sharedTexture->vulkanTexture) return;
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 		Texture2D::BlitImageAsync(cmd, tex, _sharedTexture->vulkanTexture);

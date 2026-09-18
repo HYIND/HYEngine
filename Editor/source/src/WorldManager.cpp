@@ -257,7 +257,8 @@ WorldManager* WorldManager::Instance() {
 	return instance;
 }
 
-WorldManager::WorldManager() {
+WorldManager::WorldManager()
+{
 	_triBuffer = std::make_shared<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>>();
 	for (int i = 0; i < 3; i++)
 		_triBuffer->setInitialValue(i, std::make_shared<Render::RenderFrameData>());
@@ -349,8 +350,19 @@ void WorldManager::StopPushFrame()
 	}
 }
 
+void WorldManager::WaitImage(const std::function<void(std::shared_ptr<Texture2D>)>& callback) {
+	_renderer->WaitImage([&](std::shared_ptr<Texture2D> tex, std::shared_ptr<RenderState> state) {
+		float timeDiff = (state->renderRecord.frameEndMicroTimeStamp - state->renderRecord.frameStartMicroTimeStamp) / 1000.f;
+		estimate.run(timeDiff / _renderer->GetMaxFramesInFlight());
+		controller.setCurTargetFps(estimate.getCurTargetFps());
+		callback(tex);
+		});
+}
+
 void WorldManager::PushFrameLoop()
 {
+	controller.reset();
+
 	while (!_framePushStop)
 	{
 		auto framedata = _triBuffer->acquireReadBuffer();
@@ -369,6 +381,8 @@ void WorldManager::PushFrameLoop()
 
 			r->PushFrameState(state);
 		}
+
+		controller.run();
 	}
 }
 

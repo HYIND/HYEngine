@@ -174,7 +174,7 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 		frustumCullResult.resize(opaqueMeshes.size(), false);
 		frustumObjectMeshaabbs.resize(opaqueMeshes.size());
 
-		std::for_each(std::execution::par, opaqueMeshes.begin(), opaqueMeshes.end(),
+		std::for_each(std::execution::par_unseq, opaqueMeshes.begin(), opaqueMeshes.end(),
 			[&](VKRenderObjectData::SceneRenderData::OpaqueMeshItem& item)
 			{
 				uint32_t meshIndex = &item - opaqueMeshes.data();
@@ -210,7 +210,7 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 
 	auto indirectManager = IndirectDrawManager::Instance();
 	commands.resize(frustumObjectIndex.size());
-	std::for_each(std::execution::par, frustumObjectIndex.begin(), frustumObjectIndex.end(),
+	std::for_each(std::execution::par_unseq, frustumObjectIndex.begin(), frustumObjectIndex.end(),
 		[&](uint32_t& meshIndex)-> void
 		{
 			size_t inedx = &meshIndex - frustumObjectIndex.data();

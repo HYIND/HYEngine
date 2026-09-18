@@ -72,14 +72,16 @@ public:
 	void Resize(uint32_t width, uint32_t height);
 
 
-	bool PushFrameState(std::shared_ptr<RenderState>& state);
+	void PushFrameState(std::shared_ptr<RenderState>& state);
 
-	void WaitImage(std::function<void(std::shared_ptr<Texture2D>)> callback);
-	bool FetchImage(std::function<void(std::shared_ptr<Texture2D>)> callback);
+	void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
+	bool FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
 
 	void Run();
 	void Stop();
 	void ExecuteLoop();
+
+	uint32_t GetMaxFramesInFlight() const;
 
 public:
 	std::shared_ptr<VKCore::VulkanInstance> GetVulkanInstance() const;
@@ -155,7 +157,6 @@ private:
 	struct {
 		uint32_t frameIndex = 0;
 		float prevEV100 = 1.0f;
-		int64_t prevRenderMicroTimeStamp = 0;
 	}_record;
 
 	bool needFlipFinalY = false;
@@ -170,12 +171,17 @@ private:
 	std::queue<std::shared_ptr<RenderState>> _candidateFrameStates;
 	SpinLock _candidateFrameStatesMutex;
 
+	SpinLock _executeMutex;
+	ConditionVariable _executeCV;
 	std::queue<std::shared_ptr<FrameData>> _runningFrames;
 
-	SpinLock _doneFramesMutex;
+	RecursiveSpinLock _doneFramesMutex;
+	ConditionVariable _doneFramesCV;
 	std::queue<std::shared_ptr<FrameData>> _doneFrames;
 
 	ThreadPool _frameTaskPool;
 	bool _stop = true;
-	std::shared_ptr<std::thread> _loopThread;
+	std::shared_ptr<std::thread> _exeLoopThread;
+
+
 };

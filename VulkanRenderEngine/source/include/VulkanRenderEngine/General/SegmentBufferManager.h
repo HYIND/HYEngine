@@ -31,7 +31,7 @@ public:
 
 	bool AddSegment(const SegmentID& id, void* userData, const void* mem, size_t length, SegmentData& data);	// 检查id，重复时添加失败
 	SegmentData SetSegment(const SegmentID& id, void* userData, const void* mem, size_t length);				// 不检查id重复，重复则覆盖原有数据
-	bool FindSegment(const SegmentID& id, SegmentData& data);													// 查找并获取段
+	bool FindSegment(const SegmentID& id, SegmentData& data) const;												// 查找并获取段
 	bool IsSegmentExist(const SegmentID& id);																	// 仅检查是否存在
 	bool RemoveSegment(const SegmentID& id, SegmentData& data);													// 移除段
 	bool RemoveSegment(const SegmentID& id);																	// 移除段
