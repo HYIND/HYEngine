@@ -147,8 +147,8 @@ struct RenderState
 	struct RenderRecord {
 		uint32_t frameIndex = 0;
 		float prevEV100 = 0.0f;
-		int64_t prevRenderMicroTimeStamp = 0.f;		//上次渲染启动时间
-		int64_t currentRenderMicroTimeStamp = 0.f;	//本次渲染启动时间
+		int64_t frameStartMicroTimeStamp = 0;		//帧启动时间
+		int64_t frameEndMicroTimeStamp = 0;			//帧完成时间
 	} renderRecord;
 
 	RenderOption option;

@@ -2,6 +2,7 @@
 
 #ifdef __linux__
 #include <pthread.h>
+#include <shared_mutex>
 #elif defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -41,16 +42,50 @@ private:
 #endif
 };
 
-template<typename T>
-concept TryLockable = requires(T & lock) {
-	lock.lock();
-	lock.unlock();
-	{ lock.try_lock() } -> std::convertible_to<bool>;
+class PUBLICSHARE_API SharedLock
+{
+public:
+	SharedLock();
+	~SharedLock();
+	bool try_lock() noexcept;
+	void lock() noexcept;
+	void unlock() noexcept;
+	bool try_lock_shared() noexcept;
+	void lock_shared() noexcept;
+	void unlock_shared() noexcept;
+
+private:
+#ifdef __linux__
+	std::shared_mutex _mutex;
+#elif defined(_WIN32)
+	SRWLOCK _srwlock;
+#endif
 };
+
 template<typename T>
-concept Lockable = requires(T & lock) {
-	lock.lock();
-	lock.unlock();
+concept TryLockable = requires(T & mutex) {
+	mutex.lock();
+	mutex.unlock();
+	{ mutex.try_lock() } -> std::convertible_to<bool>;
+};
+
+template<typename T>
+concept Lockable = requires(T & mutex) {
+	mutex.lock();
+	mutex.unlock();
+};
+
+template<typename T>
+concept TrySharedLockable = requires(T & mutex) {
+	mutex.lock_shared();
+	mutex.unlock_shared();
+	{ mutex.try_lock_shared() } -> std::convertible_to<bool>;
+};
+
+template<typename T>
+concept SharedLockable = requires(T & mutex) {
+	mutex.lock_shared();
+	mutex.unlock_shared();
 };
 
 template<TryLockable T>
@@ -101,6 +136,53 @@ private:
 template<TryLockable T>
 LockGuard(T&, bool) -> LockGuard<T>;
 
+template<TrySharedLockable T>
+class SharedLockGuard
+{
+public:
+	SharedLockGuard(T& mutex, bool istrylock = false)
+		: _mutex(mutex), _isownlock(false)
+	{
+		if (istrylock)
+			_isownlock = _mutex.try_lock_shared();
+		else
+			lock();
+	}
+
+	~SharedLockGuard() {
+		unlock();
+	}
+
+	bool isownlock() const { return _isownlock; }
+
+	void lock()
+	{
+		if (!_isownlock)
+		{
+			_mutex.lock_shared();
+			_isownlock = true;
+		}
+	}
+
+	void unlock() {
+		if (_isownlock) {
+			_mutex.unlock_shared();
+			_isownlock = false;
+		}
+	}
+
+	SharedLockGuard(const SharedLockGuard&) = delete;
+	SharedLockGuard& operator=(const SharedLockGuard&) = delete;
+	SharedLockGuard(SharedLockGuard&&) = delete;
+	SharedLockGuard& operator=(SharedLockGuard&&) = delete;
+
+private:
+	T& _mutex;
+	bool _isownlock;
+};
+
+template<TrySharedLockable T>
+SharedLockGuard(T&, bool) -> SharedLockGuard<T>;
 
 class PUBLICSHARE_API ConditionVariable
 {

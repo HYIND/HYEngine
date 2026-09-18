@@ -38,7 +38,7 @@ namespace ReitreRes
 			:tex(tex)
 		{}
 		virtual void Destroy() {
-			BindlessTextureManager::Instance()->ClearDirtyTexture(tex);
+			BindlessTextureManager::Instance()->DeleteTexture(tex);
 		}
 
 	public:
@@ -56,10 +56,10 @@ std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 
 void IndirectDrawManager::SetupMesh(Mesh& mesh)
 {
-	auto guard = LockGuard(_meshMutex);
 	auto uuid = mesh.GetUUID();
 	auto version = mesh.GetVerticesIndicesVsrsion();
 
+	auto guard = LockGuard(_meshMutex);
 	{
 		SegmentData segmentData;
 		if (!_VertexManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
@@ -88,8 +88,12 @@ bool IndirectDrawManager::GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta
 {
 	auto uuid = mesh.GetUUID();
 	SegmentData vbodata, ebodata;
-	if (!_VertexManager.FindSegment(uuid, vbodata) || !_IndexManager.FindSegment(uuid, ebodata))
-		return false;
+
+	{
+		auto guard = SharedLockGuard(_meshMutex);
+		if (!_VertexManager.FindSegment(uuid, vbodata) || !_IndexManager.FindSegment(uuid, ebodata))
+			return false;
+	}
 
 	meta.indexCount = ebodata.count / sizeof(unsigned int);
 	meta.firstIndex = ebodata.first / sizeof(unsigned int);
@@ -98,11 +102,11 @@ bool IndirectDrawManager::GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta
 	return true;
 }
 
-std::shared_ptr<VertexBufferBlock> IndirectDrawManager::GetVertexBlock() {
+std::shared_ptr<VertexBufferBlock> IndirectDrawManager::GetVertexBlock() const {
 	return _VertexManager.GetBuffer()->GetBlock();
 }
 
-std::shared_ptr<IndexBufferBlock> IndirectDrawManager::GetIndexBlock() {
+std::shared_ptr<IndexBufferBlock> IndirectDrawManager::GetIndexBlock() const {
 	return _IndexManager.GetBuffer()->GetBlock();
 }
 
@@ -129,22 +133,20 @@ void IndirectDrawManager::RetireMaterial(Material& material)
 	VKCONTEXT->Retire(new ReitreRes::RetireMaterial(material.GetUUID()));
 }
 
-bool IndirectDrawManager::GetMaterialIndex(Material& material, uint64_t& index)
+bool IndirectDrawManager::GetMaterialIndex(Material& material, uint64_t& index) const
 {
-	auto guard = LockGuard(_materialMutex);
-
 	SegmentData materialdata;
+	auto guard = SharedLockGuard(_materialMutex);
 	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
 		return false;
 	index = materialdata.first / sizeof(MaterialData);
 	return true;
 }
 
-bool IndirectDrawManager::GetMaterialIndex(Material& material, uint32_t& index)
+bool IndirectDrawManager::GetMaterialIndex(Material& material, uint32_t& index) const
 {
-	auto guard = LockGuard(_materialMutex);
-
 	SegmentData materialdata;
+	auto guard = SharedLockGuard(_materialMutex);
 	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
 		return false;
 	index = uint32_t(materialdata.first / sizeof(MaterialData));
@@ -256,7 +258,7 @@ std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntr
 	return _entrys;
 }
 
-void BindlessTextureManager::ClearDirtyTexture(const Texture2D* tex)
+void BindlessTextureManager::DeleteTexture(const Texture2D* tex)
 {
 	LockGuard guard(_mutex);
 	auto it = _textureEntrys.find(tex);

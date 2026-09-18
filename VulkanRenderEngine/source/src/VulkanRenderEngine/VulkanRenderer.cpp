@@ -897,8 +897,6 @@ void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
 	state->framebuffer.height = scr_height;
 
 	state->renderRecord.prevEV100 = _record.prevEV100;
-	state->renderRecord.prevRenderMicroTimeStamp = _record.prevRenderMicroTimeStamp;
-	state->renderRecord.currentRenderMicroTimeStamp = Tool::GetTimestampMircoseconds();
 }
 
 void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
@@ -982,45 +980,58 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 void VulkanRenderer::FinishRendering(std::shared_ptr<RenderState>& state)
 {
 	_record.prevEV100 = state->option.postProcessParams.EV100;
-	_record.prevRenderMicroTimeStamp = state->renderRecord.currentRenderMicroTimeStamp;
+	state->renderRecord.frameEndMicroTimeStamp = Tool::GetTimestampMircoseconds();
 }
 
-bool VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
+void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
 {
 	if (!state)
 		return;
-	LockGuard guard(_candidateFrameStatesMutex);
-	if (_candidateFrameStates.size() >= _maxFramesInFlight)
-		_candidateFrameStates.pop();
-	_candidateFrameStates.push(state);
+
+	{
+		LockGuard guard(_candidateFrameStatesMutex);
+		if (_candidateFrameStates.size() >= _maxFramesInFlight)
+			_candidateFrameStates.pop();
+		_candidateFrameStates.push(state);
+	}
+
+	LockGuard guard(_executeMutex);
+	_executeCV.NotifyOne();
 }
 
-void VulkanRenderer::WaitImage(std::function<void(std::shared_ptr<Texture2D>)> callback)
+void VulkanRenderer::WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
 {
-	while (!FetchImage(callback)) {
-		std::this_thread::yield();
-	}
+	do
+	{
+		LockGuard guard(_doneFramesMutex);
+		if (FetchImage(callback))
+			return;
+
+		_doneFramesCV.Wait(guard);
+		if (_stop)
+			return;
+		if (FetchImage(callback))
+			return;
+	} while (true);
 }
-bool VulkanRenderer::FetchImage(std::function<void(std::shared_ptr<Texture2D>)> callback)
+
+bool VulkanRenderer::FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
 {
+	LockGuard guard(_doneFramesMutex);
 	if (_doneFrames.empty())
 		return false;
 
+	if (callback
+		&& _doneFrames.front()
+		&& _doneFrames.front()->renderTarget
+		&& _doneFrames.front()->renderTarget->finalColorBuffer
+		)
 	{
-		LockGuard guard(_doneFramesMutex);
-		if (!_doneFrames.empty())
-		{
-			if (callback
-				&& _doneFrames.front()
-				&& _doneFrames.front()->renderTarget
-				&& _doneFrames.front()->renderTarget->finalColorBuffer
-				)
-				callback(_doneFrames.front()->renderTarget->finalColorBuffer);
-			_doneFrames.pop();
-			return true;
-		}
-		return false;
+		auto& framedata = _doneFrames.front();
+		callback(framedata->renderTarget->finalColorBuffer, framedata->state);
 	}
+	_doneFrames.pop();
+	return true;
 }
 
 void VulkanRenderer::Run()
@@ -1030,7 +1041,7 @@ void VulkanRenderer::Run()
 
 	_frameTaskPool.start();
 	_stop = false;
-	_loopThread = std::make_shared<std::thread>(&VulkanRenderer::ExecuteLoop, this);
+	_exeLoopThread = std::make_shared<std::thread>(&VulkanRenderer::ExecuteLoop, this);
 }
 
 void VulkanRenderer::Stop()
@@ -1040,11 +1051,22 @@ void VulkanRenderer::Stop()
 
 	_stop = true;
 	_frameTaskPool.stop();
-	if (_loopThread)
+
 	{
-		if (_loopThread->joinable())
-			_loopThread->join();
-		_loopThread.reset();
+		LockGuard guard(_doneFramesMutex);
+		_doneFramesCV.NotifyAll();
+	}
+
+	{
+		LockGuard guard(_executeMutex);
+		_executeCV.NotifyAll();
+	}
+
+	if (_exeLoopThread)
+	{
+		if (_exeLoopThread->joinable())
+			_exeLoopThread->join();
+		_exeLoopThread.reset();
 	}
 }
 
@@ -1066,7 +1088,7 @@ void VulkanRenderer::ExecuteLoop()
 		//	Compile();
 		//}
 
-		bool emptyLoop = true;
+		bool didWork = false;
 
 		{
 			LockGuard guard(_candidateFrameStatesMutex);
@@ -1080,16 +1102,20 @@ void VulkanRenderer::ExecuteLoop()
 				data->sync = std::move(sync);
 				data->state = std::move(_candidateFrameStates.front());
 				data->state->renderRecord.frameIndex = _record.frameIndex++;
+				data->state->renderRecord.frameStartMicroTimeStamp = Tool::GetTimestampMircoseconds();
 				data->state->option = _option;
 				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
 				data->handle = _frameTaskPool.submit([&, weakData = std::weak_ptr(data)]()->void
 					{
 						if (auto data = weakData.lock())
 							DrawOffScreen(data);
+
+						LockGuard guard(_executeMutex);
+						_executeCV.NotifyOne();
 					});
 				_candidateFrameStates.pop();
 				_runningFrames.push(std::move(data));
-				emptyLoop = false;
+				didWork = true;
 			}
 		}
 
@@ -1100,14 +1126,27 @@ void VulkanRenderer::ExecuteLoop()
 			if (_mode == RenderMode::Present)
 				PresentImage(data);
 
-			LockGuard guard(_doneFramesMutex);
-			if (_doneFrames.size() >= _maxFramesInFlight)
-				_doneFrames.pop();
-			_doneFrames.push(std::move(data));
-			emptyLoop = false;
+			{
+				LockGuard guard(_doneFramesMutex);
+				if (_doneFrames.size() >= _maxFramesInFlight)
+					_doneFrames.pop();
+				_doneFrames.push(std::move(data));
+				_doneFramesCV.NotifyAll();
+			}
+
+			didWork = true;
 		}
 
-		if (emptyLoop)
-			std::this_thread::yield();
+
+		if (!didWork)
+		{
+			LockGuard guard(_executeMutex);
+			_executeCV.WaitFor(guard, std::chrono::milliseconds(20));
+		}
+
 	}
+}
+
+uint32_t VulkanRenderer::GetMaxFramesInFlight() const {
+	return _maxFramesInFlight;
 }

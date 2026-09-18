@@ -73,7 +73,7 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 		commands.resize(sideIndex.size());
 
-		std::for_each(std::execution::par, sideIndex.begin(), sideIndex.end(),
+		std::for_each(std::execution::par_unseq, sideIndex.begin(), sideIndex.end(),
 			[&](const size_t& meshIndex)-> void
 			{
 				size_t index = &meshIndex - sideIndex.data();

@@ -34,9 +34,11 @@ public:
 
 	std::vector<TextureDescBindEntry> GetTextureDescBindEntrys() const;
 
-	void ClearDirtyTexture(const Texture2D* tex);
+public:
+	void DeleteTexture(const Texture2D* tex);
+
 private:
-	BindlessTextureManager() {}
+	BindlessTextureManager() = default;
 
 private:
 	std::vector<TextureDescBindEntry> _entrys;
@@ -44,7 +46,7 @@ private:
 
 	std::queue<uint32_t> _idleSlot;
 
-	mutable CriticalSectionLock _mutex;
+	mutable SharedLock _mutex;
 };
 
 class IndirectDrawManager
@@ -56,14 +58,14 @@ public:
 	void SetupMesh(Mesh& mesh);
 	void RetireMesh(Mesh& mesh);
 	bool GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta);
-	std::shared_ptr<VertexBufferBlock> GetVertexBlock();
-	std::shared_ptr<IndexBufferBlock> GetIndexBlock();
+	std::shared_ptr<VertexBufferBlock> GetVertexBlock() const;
+	std::shared_ptr<IndexBufferBlock> GetIndexBlock() const;
 
 	// Material相关
 	void SetupMaterial(Material& material);
 	void RetireMaterial(Material& material);
-	bool GetMaterialIndex(Material& material, uint64_t& index);
-	bool GetMaterialIndex(Material& material, uint32_t& index);
+	bool GetMaterialIndex(Material& material, uint64_t& index) const;
+	bool GetMaterialIndex(Material& material, uint32_t& index) const;
 	std::shared_ptr<StorageBlock> GetMaterialSSBO();
 
 public:
@@ -75,12 +77,12 @@ private:
 private:
 	SegmentBufferManager<VertexBufferSegmentBuffer, std::string> _VertexManager;
 	SegmentBufferManager<IndexBufferSegmentBuffer, std::string> _IndexManager;
-	CriticalSectionLock _meshMutex;
+	mutable SharedLock _meshMutex;
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _MaterialManager;
-	CriticalSectionLock _materialMutex;
+	mutable SharedLock _materialMutex;
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _AnimatorManager;
-	CriticalSectionLock _animatorMutex;
+	mutable SharedLock _animatorMutex;
 };
 

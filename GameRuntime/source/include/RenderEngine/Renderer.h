@@ -4,10 +4,12 @@
 #include "RenderEngine/RenderFrameManager.h"
 #include "Helper/TripleBuffer.h"
 #include "Helper/DoubleBuffer.h"
+#include "Helper/DynamicFpsController.h"
 
 #include "VulkanRenderEngine/VulkanRenderer.h"
 #include "VulkanRenderEngine/General/RenderState.h"
 #include "VulkanRenderEngine/SharedTexture.h"
+
 
 namespace MapBoundary
 {
@@ -59,7 +61,7 @@ namespace Render
 		void PushFrameLoop();
 		void renderFrame();
 		void renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts);
-		void renderOpenGLFrame();
+		void renderVulkanFrame();
 
 		void InitVulkanRender(uint32_t scr_width, uint32_t scr_height);
 
@@ -94,8 +96,11 @@ namespace Render
 
 		bool _pushFrameStop;
 		std::shared_ptr<std::thread> _pushFrameThread;
-		DoubleBuffer<EarlyProcessData> _earlyDataBuffers;
+		TripleBuffer<EarlyProcessData> _earlyDataBuffers;
 
 		std::shared_ptr<Texture2D> sharedTexture;
+
+		DynamicFpsController controller;
+		DynamicFpsEstimate estimate;
 	};
 }
