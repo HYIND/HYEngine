@@ -7,12 +7,6 @@
 
 class SSAOPass :public RenderPassBase
 {
-	struct alignas(16) Params {
-		std::array<glm::vec4, 64> samples;
-		uint32_t kernelSize;
-		float radius;
-		float bias;
-	};
 
 public:
 	SSAOPass(
@@ -25,9 +19,6 @@ public:
 private:
 	ComputePipeline _ssaoShader;
 	ComputePipeline _ssaoBlurShader;
-
-	ComputeBindingRecord _ssaoBinding;
-	ComputeBindingRecord _ssaoBlurBinding;
 
 	std::shared_ptr<Texture2D> _noiseTexture;
 	std::shared_ptr<UniformBlock> _ssaoParams;

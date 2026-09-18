@@ -2,6 +2,8 @@
 #include "VulkanRenderEngine/RenderPass/LightShadowDepthPass.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
+constexpr uint32_t batch_max = 16;
+
 constexpr uint32_t maxUpdateDeltaMs = 25;
 constexpr float maxUpdateDeltaTime = maxUpdateDeltaMs * 1000.f;
 
@@ -80,7 +82,7 @@ static inline void writePaddingCount(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	ssbo->WriteDataAsync(cmd, &padding, sizeof(padding), 0);
 };
 
-void SetupDirLightData(
+static void SetupDirLightData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<StorageBlock>& meta_ssbo,
 	std::shared_ptr<StorageBlock>& cascade_ssbo,
@@ -156,7 +158,7 @@ void SetupDirLightData(
 	cascade_ssbo->WriteDataAsync(cmd, dirLightCascadeInfos.data(), dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo), 16);
 }
 
-void SetupPointLightData(
+static void SetupPointLightData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<StorageBlock>& meta_ssbo,
 	const std::vector<std::shared_ptr<PointLightInfo>>& pointLights,
@@ -194,7 +196,7 @@ void SetupPointLightData(
 	meta_ssbo->WriteDataAsync(cmd, pointLightMetaInfos.data(), pointLightMetaInfos.size() * sizeof(PointLightMetaInfo), 16);
 }
 
-void SetupSpotLightData(
+static void SetupSpotLightData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<StorageBlock>& meta_ssbo,
 	const std::vector<std::shared_ptr<SpotLightInfo>>& spotLights,
@@ -280,8 +282,6 @@ static std::vector<CascadeSplit> CalculateCascadeSplit(
 	return splits;
 }
 
-constexpr int batch_max = 16;
-
 struct alignas(16) LightProp
 {
 	glm::vec3 lightPos;
@@ -297,11 +297,6 @@ LightShadowDepthPass::LightShadowDepthPass(
 	const std::string& pointLightShadowFragmentShaderPath
 )
 {
-	_ssbo_LightProps = std::make_shared<StorageBlock>(batch_max * sizeof(LightProp));
-	_ssbo_ShadowMatrices = std::make_shared<StorageBlock>(batch_max * sizeof(glm::mat4));
-
-	_oneSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
-	_twoSideCommandBuffer = std::make_shared<IndirectBufferBlock>();
 
 	{
 		_dirLightShadowDepthStaticMeshShader = std::make_shared<GraphicsPipeline>();
@@ -403,23 +398,6 @@ LightShadowDepthPass::LightShadowDepthPass(
 			_pointLightShadowDepthSkinnedShader->Create(config);
 	}
 
-	_dirLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	_pointLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-
-	_dirLightShadowDepthStaticMeshBinding.SetStorageBlock(_ssbo_ShadowMatrices, 4);
-	_dirLightShadowDepthSkinnedBinding.SetStorageBlock(_ssbo_ShadowMatrices, 4);
-	_pointLightShadowDepthStaticMeshBinding.SetStorageBlock(_ssbo_ShadowMatrices, 4);
-	_pointLightShadowDepthSkinnedBinding.SetStorageBlock(_ssbo_ShadowMatrices, 4);
-
-	_pointLightShadowDepthStaticMeshBinding.SetStorageBlock(_ssbo_LightProps, 6);
-	_pointLightShadowDepthSkinnedBinding.SetStorageBlock(_ssbo_LightProps, 6);
-
-	_ssbo_dirLightMeta = std::make_shared<StorageBlock>();
-	_ssbo_dirLightCascade = std::make_shared<StorageBlock>();
-	_ssbo_pointLightMeta = std::make_shared<StorageBlock>();
-	_ssbo_spotLightMeta = std::make_shared<StorageBlock>();
-
-	_atlas = std::make_shared<AtlasMap>(2000, 2000, 32768);
 }
 
 LightShadowDepthPass::~LightShadowDepthPass()
@@ -432,16 +410,19 @@ bool LightShadowDepthPass::ShouldExecute(RenderGraph::FrameDataRegistry& registr
 
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	CalculateShadowAtlas(state);
+	auto selfctx = registry.Get<SelfContext>("context");
+	state.lights.shadowAtlas = selfctx->atlas;
+
+	CalculateShadowAtlas(state, *selfctx->atlas);
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	SetupLightingData(cmd, state);
+	SetupLightingData(*selfctx, cmd, state);
 	if (cmd->IsRecording())
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
-	state.lights.ssbo_dirLightMeta = _ssbo_dirLightMeta;
-	state.lights.ssbo_dirLightCascade = _ssbo_dirLightCascade;
-	state.lights.ssbo_pointLightMeta = _ssbo_pointLightMeta;
-	state.lights.ssbo_spotLightMeta = _ssbo_spotLightMeta;
+	state.lights.ssbo_dirLightMeta = selfctx->ssbo_dirLightMeta;
+	state.lights.ssbo_dirLightCascade = selfctx->ssbo_dirLightCascade;
+	state.lights.ssbo_pointLightMeta = selfctx->ssbo_pointLightMeta;
+	state.lights.ssbo_spotLightMeta = selfctx->ssbo_spotLightMeta;
 }
 
 void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -453,14 +434,14 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 	if (state.lights.dirLightInfos.empty() && state.lights.spotLightInfos.empty() && state.lights.pointLightInfos.empty())
 		return;
 
-	_staticMesh_OneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
-	_staticMesh_TwoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
+	auto selfctx = registry.Get<SelfContext>("context");
 
-	glm::u32vec2 size = glm::max(_atlas->GetSize(), glm::u32vec2(16, 16));
+	selfctx->staticMesh_OneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
+	selfctx->staticMesh_TwoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
+
+	glm::u32vec2 size = glm::max(selfctx->atlas->GetSize(), glm::u32vec2(16, 16));
 	shadowAtlas->Resize(size.x, size.y);
 
-	_dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
-	_pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
 
 	{
 		auto cmd = VKCONTEXT->GetCommandBuffer();
@@ -476,8 +457,8 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 
 	auto semaphore = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
 	uint64_t cmdcount = 0;
-	processDirAndSpotLight(semaphore, cmdcount, state, renderInfo);
-	processPointLight(semaphore, cmdcount, state, renderInfo);
+	processDirAndSpotLight(*selfctx, semaphore, cmdcount, state, renderInfo);
+	processPointLight(*selfctx, semaphore, cmdcount, state, renderInfo);
 
 	if (cmdcount > 0)
 		semaphore->Wait(cmdcount);
@@ -486,12 +467,8 @@ void LightShadowDepthPass::Execute(RenderGraph::FrameDataRegistry& registry, con
 void LightShadowDepthPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
 
-void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
+void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& atlas)
 {
-
-	state.lights.shadowAtlas = _atlas;
-	_atlas->ReleaseSpace();
-
 	auto& dirLightInfos = state.lights.dirLightInfos;
 	auto& spotLightInfos = state.lights.spotLightInfos;
 	auto& pointLightInfos = state.lights.pointLightInfos;
@@ -503,7 +480,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 		for (int i = 0; i < light->getCascadeLevel(); i++)
 		{
 			uint32_t id;
-			if (_atlas->AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
+			if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
 				info->cascades.push_back({ id ,0 });
 			else
 				break;
@@ -524,7 +501,7 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 		if (!info || !info->light || !info->light->getCastShadow())continue;
 		auto& light = info->light;
 		uint32_t id;
-		if (_atlas->AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
+		if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
 		{
 			info->atlas = std::make_shared<SpotLightInfo::Atlas>();
 			info->atlas->id = id;
@@ -540,17 +517,29 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state)
 		info->atlas = std::make_shared<PointLightInfo::Atlas>();
 		for (int i = 0; i < 6; i++)
 		{
-			if (_atlas->AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), info->atlas->ids[i]))
+			if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), info->atlas->ids[i]))
 				info->atlas->enable[i] = true;
 		}
 	}
 
 }
 
-void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& dirLightsInfo = state.lights.dirLightInfos;
 	auto& spotLightsInfo = state.lights.spotLightInfos;
+
+	if (dirLightsInfo.empty() && spotLightsInfo.empty())
+		return;
+
+	GraphicsBindingRecord dirLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord dirLightShadowDepthSkinnedBinding;
+
+	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
+	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
+	dirLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+
+	dirLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
 
 	std::vector<glm::mat4> shadowMatrices;
 	shadowMatrices.reserve(batch_max);
@@ -561,22 +550,23 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKT
 
 	auto render = [&]()->void {
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
-		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+		ctx.ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
+		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 		RenderSceneLightShadowPassSceneInstance(
+			ctx,
 			cmd,
 			state,
 			_dirLightShadowDepthStaticMeshShader,
 			_dirLightShadowDepthSkinnedShader,
-			_dirLightShadowDepthStaticMeshBinding,
-			_dirLightShadowDepthSkinnedBinding,
+			dirLightShadowDepthStaticMeshBinding,
+			dirLightShadowDepthSkinnedBinding,
 			count,
 			state.objects.sceneRenderData.opaqueMesh,
 			state.objects.sceneRenderData.opaqueSkinnedModel,
 			renderInfo,
 			viewPorts
 		);
-		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
+		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
 		if (cmd->IsRecording())
 		{
 			CmdSyncSeamphore sync;
@@ -597,7 +587,7 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKT
 		for (auto& cascade : info->cascades)
 		{
 			AtlasMap::AtlasRect rect;
-			if (!_atlas->GetSpace(cascade.id, rect))
+			if (!ctx.atlas->GetSpace(cascade.id, rect))
 				continue;
 
 			int level = info->light->getCascadeLevel();
@@ -627,7 +617,7 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKT
 			continue;
 
 		AtlasMap::AtlasRect rect;
-		if (!_atlas->GetSpace(info->atlas->id, rect))
+		if (!ctx.atlas->GetSpace(info->atlas->id, rect))
 			continue;
 
 		shadowMatrices.push_back(mat);
@@ -642,9 +632,23 @@ void LightShadowDepthPass::processDirAndSpotLight(std::shared_ptr<VKWrapper::VKT
 		render();
 }
 
-void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::processPointLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo)
 {
 	auto& pointLightsInfo = state.lights.pointLightInfos;
+
+	if (pointLightsInfo.empty())
+		return;
+
+	GraphicsBindingRecord pointLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord pointLightShadowDepthSkinnedBinding;
+
+	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
+	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
+	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_LightProps, 6);
+	pointLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+
+	pointLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
+	pointLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_LightProps, 6);
 
 	std::vector<glm::mat4> shadowMatrices;
 	shadowMatrices.reserve(batch_max);
@@ -657,25 +661,26 @@ void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKTimeli
 
 	auto render = [&]()->void {
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		_ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
-		_ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
-		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
-		_ssbo_LightProps->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+		ctx.ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
+		ctx.ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
+		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+		ctx.ssbo_LightProps->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 		RenderSceneLightShadowPassSceneInstance(
+			ctx,
 			cmd,
 			state,
 			_pointLightShadowDepthStaticMeshShader,
 			_pointLightShadowDepthSkinnedShader,
-			_pointLightShadowDepthStaticMeshBinding,
-			_pointLightShadowDepthSkinnedBinding,
+			pointLightShadowDepthStaticMeshBinding,
+			pointLightShadowDepthSkinnedBinding,
 			count,
 			state.objects.sceneRenderData.opaqueMesh,
 			state.objects.sceneRenderData.opaqueSkinnedModel,
 			renderInfo,
 			viewPorts
 		);
-		_ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
-		_ssbo_LightProps->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
+		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
+		ctx.ssbo_LightProps->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
 		if (cmd->IsRecording())
 		{
 			CmdSyncSeamphore sync;
@@ -695,7 +700,7 @@ void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKTimeli
 			continue;
 
 		std::array<DynamicViewport, 6> viewports;
-		if (!GetCubeViewPorts(viewports, info, *_atlas))
+		if (!GetCubeViewPorts(viewports, info, *ctx.atlas))
 			continue;
 
 		auto light = info->light;
@@ -747,6 +752,7 @@ void LightShadowDepthPass::processPointLight(std::shared_ptr<VKWrapper::VKTimeli
 }
 
 void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
+	SelfContext& ctx,
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	RenderState& state,
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
@@ -764,8 +770,8 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 
 	if (!opaqueMeshes.empty())
 	{
-		auto& oneSideCommands = _staticMesh_OneSideCommands;
-		auto& twoSideCommands = _staticMesh_TwoSideCommands;
+		auto& oneSideCommands = ctx.staticMesh_OneSideCommands;
+		auto& twoSideCommands = ctx.staticMesh_TwoSideCommands;
 
 		if (!oneSideCommands.empty() || !twoSideCommands.empty())
 		{
@@ -781,8 +787,8 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 							command.instanceCount = count;
 					}
 				);
-				_oneSideCommandBuffer->WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
-				_oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+				ctx.oneSideCommandBuffer.WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
+				ctx.oneSideCommandBuffer.Barrier(cmd, BufferUsage::TransferWrite);
 			}
 
 			if (!twoSideCommands.empty())
@@ -793,8 +799,8 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 							command.instanceCount = count;
 					}
 				);
-				_twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
-				_twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+				ctx.twoSideCommandBuffer.WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
+				ctx.twoSideCommandBuffer.Barrier(cmd, BufferUsage::TransferWrite);
 			}
 
 			cmd->setDynamicViewports(viewPorts);
@@ -809,14 +815,14 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 
 			if (!oneSideCommands.empty())
 			{
-				cmd->drawIndexedIndirect(_oneSideCommandBuffer, oneSideCommands.size());
-				_oneSideCommandBuffer->Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
+				cmd->drawIndexedIndirect(ctx.oneSideCommandBuffer, oneSideCommands.size());
+				ctx.oneSideCommandBuffer.Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
 			}
 
 			if (!twoSideCommands.empty())
 			{
-				cmd->drawIndexedIndirect(_twoSideCommandBuffer, twoSideCommands.size());
-				_twoSideCommandBuffer->Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
+				cmd->drawIndexedIndirect(ctx.twoSideCommandBuffer, twoSideCommands.size());
+				ctx.twoSideCommandBuffer.Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
 			}
 
 			cmd->endRendering();
@@ -854,9 +860,9 @@ void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
 	//}
 }
 
-void LightShadowDepthPass::SetupLightingData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
+void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
 {
-	SetupDirLightData(cmd, _ssbo_dirLightMeta, _ssbo_dirLightCascade, state.lights.dirLightInfos, _atlas);
-	SetupPointLightData(cmd, _ssbo_pointLightMeta, state.lights.pointLightInfos, _atlas);
-	SetupSpotLightData(cmd, _ssbo_spotLightMeta, state.lights.spotLightInfos, _atlas);
+	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, state.lights.dirLightInfos, ctx.atlas);
+	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
+	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
 }

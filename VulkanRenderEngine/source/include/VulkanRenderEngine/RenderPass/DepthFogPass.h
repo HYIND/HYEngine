@@ -18,6 +18,4 @@ public:
 
 private:
 	ComputePipeline _shader;
-	ComputeBindingRecord _binding;
-	std::shared_ptr<UniformBlock> _paramsUBO;
 };

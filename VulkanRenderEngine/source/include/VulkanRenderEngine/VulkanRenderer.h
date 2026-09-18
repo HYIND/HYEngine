@@ -72,7 +72,7 @@ public:
 	void Resize(uint32_t width, uint32_t height);
 
 
-	void PushFrameState(std::shared_ptr<RenderState>& state);
+	bool PushFrameState(std::shared_ptr<RenderState>& state);
 
 	void WaitImage(std::function<void(std::shared_ptr<Texture2D>)> callback);
 	bool FetchImage(std::function<void(std::shared_ptr<Texture2D>)> callback);

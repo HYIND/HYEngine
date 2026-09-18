@@ -67,15 +67,12 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 	indices.append_range(cubeMesh->GetIndices());
 	indices.append_range(sphereMesh->GetIndices());
 
-	_transformAndColors_ssbo = std::make_shared<StorageBlock>();
 	_vertexBuffer = std::make_shared<VertexBufferBlock>();
 	_indexBuffer = std::make_shared<IndexBufferBlock>();
-	_indirectBuffer = std::make_shared<IndirectBufferBlock>();
 
 	_vertexBuffer->WriteData(vertex.data(), vertex.size() * sizeof(glm::vec3));
 	_indexBuffer->WriteData(indices.data(), indices.size() * sizeof(unsigned int));
 
-	_binding.SetStorageBlock(_transformAndColors_ssbo, 0);
 }
 
 bool LightDrawPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state) {
@@ -90,8 +87,9 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 	if (!ShouldExecute(registry, state))
 		return;
 
-	_commands.clear();
-	_commands.reserve(
+	std::vector<IndirectDrawCommand>& commands = *registry.Get<std::vector<IndirectDrawCommand>>("commands");
+
+	commands.reserve(
 		state.lights.dirLightInfos.size()
 		+ state.lights.pointLightInfos.size()
 		+ state.lights.spotLightInfos.size()
@@ -107,13 +105,13 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 	auto addCubeCommand = [&](uint32_t index)-> void {
 		auto cmd = _cubeCommandTemplate;
 		cmd.firstInstance = index;
-		_commands.push_back(cmd);
+		commands.push_back(cmd);
 		};
 
 	auto addSphereCommand = [&](uint32_t index)-> void {
 		auto cmd = _sphereCommandTemplate;
 		cmd.firstInstance = index;
-		_commands.push_back(cmd);
+		commands.push_back(cmd);
 		};
 
 	uint32_t index = 0;
@@ -158,18 +156,22 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		addCubeCommand(index++);
 	}
 
-	if (!_commands.empty() || !transAndColors.empty())
+	std::shared_ptr<StorageBlock> transformAndColors_ssbo = registry.GetStorageBlock("transformAndColors_ssbo");
+	std::shared_ptr<IndirectBufferBlock> indirectBuffer = registry.GetIndirectBlock("indirectBuffer");
+
+	if (!commands.empty() || !transAndColors.empty())
 	{
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		_indirectBuffer->WriteDataAsync(cmd, _commands.data(), _commands.size() * sizeof(IndirectDrawCommand));
-		_transformAndColors_ssbo->WriteDataAsync(cmd, transAndColors.data(), transAndColors.size() * sizeof(TransformAndColor));
+		transformAndColors_ssbo->WriteDataAsync(cmd, transAndColors.data(), transAndColors.size() * sizeof(TransformAndColor));
+		indirectBuffer->WriteDataAsync(cmd, commands.data(), commands.size() * sizeof(IndirectDrawCommand));
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 	}
 }
 
 void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	if (_commands.empty())
+	auto& commands = *registry.Get<std::vector<IndirectDrawCommand>>("commands");
+	if (commands.empty())
 		return;
 
 	auto targetColorBuffer = ctx.GetExternal(0);
@@ -190,12 +192,18 @@ void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rend
 	cmd->beginRendering(info);
 	cmd->setDynamicViewport(viewport);
 
-	_binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_shader.Bind(cmd, _binding);
+	std::shared_ptr<StorageBlock> transformAndColors_ssbo = registry.GetStorageBlock("transformAndColors_ssbo");
+	std::shared_ptr<IndirectBufferBlock> indirectBuffer = registry.GetIndirectBlock("indirectBuffer");
+
+	GraphicsBindingRecord binding;
+	binding.SetStorageBlock(transformAndColors_ssbo, 0);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+
+	_shader.Bind(cmd, binding);
 
 	cmd->bindVertexBuffers(_vertexBuffer);
 	cmd->bindIndexBuffer(_indexBuffer);
-	cmd->drawIndexedIndirect(_indirectBuffer, _commands.size());
+	cmd->drawIndexedIndirect(indirectBuffer, commands.size());
 
 	cmd->endRendering();
 

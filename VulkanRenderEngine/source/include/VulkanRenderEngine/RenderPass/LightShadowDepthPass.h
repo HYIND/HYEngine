@@ -11,6 +11,26 @@
 
 class LightShadowDepthPass :public RenderPassBase
 {
+private:
+	struct SelfContext {
+		std::shared_ptr<AtlasMap> atlas = std::make_shared<AtlasMap>();
+
+		std::shared_ptr<StorageBlock> ssbo_ShadowMatrices = std::make_shared<StorageBlock>();
+		std::shared_ptr<StorageBlock> ssbo_LightProps = std::make_shared<StorageBlock>();
+
+		std::vector<IndirectDrawCommand> staticMesh_OneSideCommands;
+		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommands;
+
+		IndirectBufferBlock oneSideCommandBuffer;
+		IndirectBufferBlock twoSideCommandBuffer;
+
+		std::shared_ptr<StorageBlock> ssbo_dirLightMeta = std::make_shared<StorageBlock>();
+		std::shared_ptr<StorageBlock> ssbo_dirLightCascade = std::make_shared<StorageBlock>();
+		std::shared_ptr<StorageBlock> ssbo_pointLightMeta = std::make_shared<StorageBlock>();
+		std::shared_ptr<StorageBlock> ssbo_spotLightMeta = std::make_shared<StorageBlock>();
+	};
+
+
 public:
 	LightShadowDepthPass(
 		const std::string& dirLightShadowStaticMeshVertexShaderPath,
@@ -27,12 +47,13 @@ public:
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
-	void CalculateShadowAtlas(RenderState& state);
+	void CalculateShadowAtlas(RenderState& state, AtlasMap& atlas);
 
-	void processDirAndSpotLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
-	void processPointLight(std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processDirAndSpotLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processPointLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
 
 	void RenderSceneLightShadowPassSceneInstance(
+		SelfContext& ctx,
 		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		RenderState& state,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
@@ -46,35 +67,11 @@ private:
 		std::vector<DynamicViewport>& viewPorts
 	);
 
-	void SetupLightingData(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state);
+	void SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthStaticMeshShader;
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthSkinnedShader;
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthStaticMeshShader;
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthSkinnedShader;
-
-
-	GraphicsBindingRecord _dirLightShadowDepthStaticMeshBinding;
-	GraphicsBindingRecord _dirLightShadowDepthSkinnedBinding;
-	GraphicsBindingRecord _pointLightShadowDepthStaticMeshBinding;
-	GraphicsBindingRecord _pointLightShadowDepthSkinnedBinding;
-
-	bool useAMDViewportExt;
-
-	std::shared_ptr<AtlasMap> _atlas;
-
-	std::shared_ptr<StorageBlock> _ssbo_ShadowMatrices;
-	std::shared_ptr<StorageBlock> _ssbo_LightProps;
-
-	std::vector<IndirectDrawCommand> _staticMesh_OneSideCommands;
-	std::vector<IndirectDrawCommand> _staticMesh_TwoSideCommands;
-
-	std::shared_ptr<IndirectBufferBlock> _oneSideCommandBuffer;
-	std::shared_ptr<IndirectBufferBlock> _twoSideCommandBuffer;
-
-	std::shared_ptr<StorageBlock> _ssbo_dirLightMeta;
-	std::shared_ptr<StorageBlock> _ssbo_dirLightCascade;
-	std::shared_ptr<StorageBlock> _ssbo_pointLightMeta;
-	std::shared_ptr<StorageBlock> _ssbo_spotLightMeta;
 };

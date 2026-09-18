@@ -20,11 +20,8 @@ void PreCalculatePass::Execute(RenderGraph::FrameDataRegistry& registry, const R
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
 	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices);
 
-	if (!_ssbo_StaticMesh_TransformAndMaterialIndices)
-		_ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
-
 	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
-		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = _ssbo_StaticMesh_TransformAndMaterialIndices;
+		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
 	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteData(staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
 
 	//std::cout << std::format("cost {}us\n", Tool::GetTimestampMircoseconds() - start);

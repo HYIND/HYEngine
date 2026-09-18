@@ -16,6 +16,4 @@ public:
 
 private:
 	ComputePipeline _shader;
-	ComputeBindingRecord _binding;
-	std::shared_ptr<StorageBlock> _paramsSSBO;
 };

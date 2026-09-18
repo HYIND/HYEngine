@@ -20,6 +20,4 @@ public:
 private:
 	void AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices);
 
-private:
-	std::shared_ptr<StorageBlock> _ssbo_StaticMesh_TransformAndMaterialIndices;
 };
