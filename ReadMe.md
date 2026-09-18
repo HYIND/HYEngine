@@ -46,6 +46,6 @@
 - `Game/` – 游戏本体exe（资源管理、win32窗口事件等）
 - `GameRuntime/` – 多媒体运行时系统（音频、输入、渲染）
 - `GamePlay/` – 游戏玩法系统（运动、交互等玩法逻辑）
-- `OpenGLRenderEngine/` – 渲染引擎（渲染图、渲染管线）
+- `Vulkan/OpenGL RenderEngine/` – 渲染引擎（渲染图、渲染管线）
 - `ThirdParty/` – 第三方依赖头文件（[Libs](https://github.com/HYIND/Libs)、Assimp、Bullet、GLFW、GLM等）
 - `libs/` – 依赖lib
