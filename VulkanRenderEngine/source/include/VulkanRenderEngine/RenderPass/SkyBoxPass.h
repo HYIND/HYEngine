@@ -16,5 +16,4 @@ public:
 
 private:
 	ComputePipeline _shader;
-	ComputeBindingRecord _binding;
 };

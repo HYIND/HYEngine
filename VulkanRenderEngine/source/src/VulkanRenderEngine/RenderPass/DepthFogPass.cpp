@@ -30,8 +30,6 @@ DepthFogPass::DepthFogPass(const std::string& computeShaderPath)
 	if (config.Validate())
 		_shader.Create(config);
 
-	_paramsUBO = std::make_shared<UniformBlock>(sizeof(DepthFogParams));
-	_binding.SetUniformBlock(_paramsUBO, 0);
 }
 
 bool DepthFogPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -44,6 +42,9 @@ void DepthFogPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 	if (!ShouldExecute(registry, state))
 		return;
 
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(DepthFogParams));
+
 	DepthFogParams params
 	{
 		.fogColor = state.option.depthFogParams.fogColor,
@@ -52,7 +53,8 @@ void DepthFogPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 		.fogHeightFalloff = state.option.depthFogParams.fogHeightFalloff
 	};
 
-	_paramsUBO->WriteData(&params, sizeof(DepthFogParams));
+	paramsUBO->WriteData(&params, sizeof(DepthFogParams));
+	binding.SetUniformBlock(paramsUBO, 0);
 }
 
 void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -79,12 +81,14 @@ void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	uint32_t height = sceneColorBuffer->GetHeight();
 
 
-	_binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_binding.SetStorageImage(sceneColorBuffer, 1);
-	_binding.SetUniformTexture(tempColor, 2);
-	_binding.SetUniformTexture(sceneDepthBuffer, 3);
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
 
-	_shader.Bind(cmd, _binding);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetStorageImage(sceneColorBuffer, 1);
+	binding.SetUniformTexture(tempColor, 2);
+	binding.SetUniformTexture(sceneDepthBuffer, 3);
+
+	_shader.Bind(cmd, binding);
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

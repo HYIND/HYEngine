@@ -24,7 +24,7 @@ public:
 	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
-	uint32_t GetMaxLevel();
+	uint32_t GetMaxLevel() const;
 
 private:
 	void DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state);
@@ -36,11 +36,4 @@ private:
 	std::shared_ptr<ComputePipeline> _HZBShader;
 	std::shared_ptr<ComputePipeline> _occlusionCullShader;
 	uint32_t _maxLevel = 7;
-
-	GraphicsBindingRecord _depthShaderBinding;
-	ComputeBindingRecord _HZBShaderBinding;
-	ComputeBindingRecord _occlusionCullShaderBinding;
-
-	std::vector<IndirectDrawCommand> _commands;
-	std::shared_ptr<IndirectBufferBlock> _indirectCommandBuffer;
 };

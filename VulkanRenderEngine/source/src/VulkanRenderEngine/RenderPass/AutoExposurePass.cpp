@@ -26,9 +26,6 @@ AutoExposurePass::AutoExposurePass(const std::string& computeShaderPath)
 
 	if (config.Validate())
 		_shader.Create(config);
-
-	_paramsSSBO = std::make_shared<StorageBlock>(sizeof(HistogramSSBOParams));
-	_binding.SetStorageBlock(_paramsSSBO, 0);
 }
 
 bool AutoExposurePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -41,11 +38,15 @@ void AutoExposurePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Rend
 	if (!ShouldExecute(registry, state))
 		return;
 
+	ComputeBindingRecord& binding = *registry.Get<ComputeBindingRecord>("binding");
+	std::shared_ptr<StorageBlock> paramsSSBO = registry.GetStorageBlock("paramsSSBO");
+
 	HistogramSSBOParams params
 	{
 		.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height)
 	};
-	_paramsSSBO->WriteData(&params, sizeof(HistogramSSBOParams));
+	paramsSSBO->WriteData(&params, sizeof(HistogramSSBOParams));
+	binding.SetStorageBlock(paramsSSBO, 0);
 }
 
 void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -55,15 +56,18 @@ void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const R
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_binding.SetStorageImage(sceneColorBuffer, 1);
+	ComputeBindingRecord& binding = *registry.Get<ComputeBindingRecord>("binding");
+	std::shared_ptr<StorageBlock> paramsSSBO = registry.GetStorageBlock("paramsSSBO");
 
-	_shader.Bind(cmd, _binding);
+	binding.SetStorageImage(sceneColorBuffer, 1);
+
+	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
-	_paramsSSBO->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
+	paramsSSBO->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
 
 	std::vector<uint32_t> bins;
 	bins.resize(256, 0);
-	if (!_paramsSSBO->GetBuffer()->Readback(cmd, bins.data(), bins.size() * sizeof(uint32_t), sizeof(glm::ivec2)))
+	if (!paramsSSBO->GetBuffer()->Readback(cmd, bins.data(), bins.size() * sizeof(uint32_t), sizeof(glm::ivec2)))
 		return;
 
 	static std::once_flag onceFlag;

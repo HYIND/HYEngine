@@ -5,6 +5,13 @@
 constexpr uint32_t work_size_x = 16;
 constexpr uint32_t work_size_y = 16;
 
+struct alignas(16) Params {
+	std::array<glm::vec4, 64> samples;
+	uint32_t kernelSize;
+	float radius;
+	float bias;
+};
+
 static float Lerp(float a, float b, float f)
 {
 	return a + f * (b - a);
@@ -58,8 +65,8 @@ SSAOPass::SSAOPass(
 		_noiseTexture = std::make_shared<Texture2D>(4, 4, vk::Format::eR32G32B32A32Sfloat, config);
 		_noiseTexture->UpdateTextureData(&ssaoNoise[0]);
 
-		_ssaoParams = std::make_shared<UniformBlock>(sizeof(SSAOPass::Params));
-		_ssaoParams->WriteData(&params, sizeof(SSAOPass::Params));
+		_ssaoParams = std::make_shared<UniformBlock>(sizeof(Params));
+		_ssaoParams->WriteData(&params, sizeof(Params));
 	}
 
 	{
@@ -109,28 +116,29 @@ void SSAOPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGra
 	auto ssaoColorMap = ctx.GetTemp(0);
 	auto ssaoBlurColorMap = ctx.GetOutput(0);
 
-
-	_ssaoBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	_ssaoBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
-	_ssaoBinding.SetStorageImage(ssaoColorMap, 0);
-	_ssaoBinding.SetUniformTexture(gPosition, 1);
-	_ssaoBinding.SetUniformTexture(gNormal, 2);
-	_ssaoBinding.SetUniformTexture(_noiseTexture, 3);
-	_ssaoBinding.SetUniformBlock(_ssaoParams, 4);
+	ComputeBindingRecord ssaoBinding;
+	ssaoBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
+	ssaoBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	ssaoBinding.SetStorageImage(ssaoColorMap, 0);
+	ssaoBinding.SetUniformTexture(gPosition, 1);
+	ssaoBinding.SetUniformTexture(gNormal, 2);
+	ssaoBinding.SetUniformTexture(_noiseTexture, 3);
+	ssaoBinding.SetUniformBlock(_ssaoParams, 4);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	ssaoColorMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
 
-	_ssaoShader.Bind(cmd, _ssaoBinding);
+	_ssaoShader.Bind(cmd, ssaoBinding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	ssaoColorMap->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Sample);
 
-	_ssaoBlurBinding.SetStorageImage(ssaoBlurColorMap, 0);
-	_ssaoBlurBinding.SetUniformTexture(ssaoColorMap, 1);
+	ComputeBindingRecord ssaoBlurBinding;
+	ssaoBlurBinding.SetStorageImage(ssaoBlurColorMap, 0);
+	ssaoBlurBinding.SetUniformTexture(ssaoColorMap, 1);
 
-	_ssaoBlurShader.Bind(cmd, _ssaoBlurBinding);
+	_ssaoBlurShader.Bind(cmd, ssaoBlurBinding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

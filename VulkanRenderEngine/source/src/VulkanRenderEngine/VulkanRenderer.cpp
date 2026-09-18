@@ -240,6 +240,7 @@ bool VulkanRenderer::CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& 
 }
 
 VulkanRenderer::VulkanRenderer()
+	:_frameTaskPool(std::max(std::max(1u, GlobalConfig::MaxFramesInFlight), std::thread::hardware_concurrency()))
 {
 	scr_width = 0;
 	scr_height = 0;
@@ -370,14 +371,14 @@ void VulkanRenderer::SetOption(RenderOption option)
 
 void VulkanRenderer::Resize(uint32_t width, uint32_t height)
 {
-	bool needRestartup = !_stop;
-	if (needRestartup)
-		Stop();
-
 	width = std::max(1u, width);
 	height = std::max(1u, height);
 	if (scr_width == width && scr_height == height)
 		return;
+
+	bool needRestartup = !_stop;
+	if (needRestartup)
+		Stop();
 
 	while (!_runningFrames.empty())
 		_runningFrames.pop();
@@ -774,24 +775,27 @@ void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 	{
 		auto guard = sync->MakeProgressGuard();
 		SetupRenderState(state);
+	}
+
+	{
+		auto guard = sync->MakeProgressGuard();
 		SetupIndirectDrawData(state);
 	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
 		std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
 			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer },
 			{ Ext_RenderTargetDepthBuffer_Name, data->renderTarget->sceneDepthBuffer }
 		};
+		auto guard = sync->MakeProgressGuard();
 		_sceneRenderGraph->Execute(state, sync, externalResources);
 	}
 
+	auto& renderTarget = data->renderTarget;
+	_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+
 	{
 		auto guard = sync->MakeProgressGuard();
-
-		auto& renderTarget = data->renderTarget;
-		_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
-
 		auto& option = state->option;
 		if (option.flags.bloomOn) _globalBloomPass->Draw(renderTarget->combinBrightColorBuffer);
 		_globalPostProcessPass->Draw(
@@ -799,7 +803,6 @@ void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 			option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
 			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
 		);
-
 		FinishRendering(state);
 	}
 }
@@ -860,10 +863,12 @@ void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
 
 void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
 {
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
 	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 
-	state->camera.prevUBO->WriteData(&_cameraCache, sizeof(camera_compData));
+	state->camera.prevUBO->WriteDataAsync(cmd, &_cameraCache, sizeof(camera_compData));
 
 	camera_compData cameraData;
 	cameraData.projection = state->camera.projection;
@@ -885,7 +890,8 @@ void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
 	cameraData.fov = state->camera.fov;
 	_cameraCache = cameraData;
 
-	state->camera.curUBO->WriteData(&cameraData, sizeof(camera_compData));
+	state->camera.curUBO->WriteDataAsync(cmd, &cameraData, sizeof(camera_compData));
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	state->framebuffer.width = scr_width;
 	state->framebuffer.height = scr_height;
@@ -893,7 +899,6 @@ void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
 	state->renderRecord.prevEV100 = _record.prevEV100;
 	state->renderRecord.prevRenderMicroTimeStamp = _record.prevRenderMicroTimeStamp;
 	state->renderRecord.currentRenderMicroTimeStamp = Tool::GetTimestampMircoseconds();
-
 }
 
 void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
@@ -980,7 +985,7 @@ void VulkanRenderer::FinishRendering(std::shared_ptr<RenderState>& state)
 	_record.prevRenderMicroTimeStamp = state->renderRecord.currentRenderMicroTimeStamp;
 }
 
-void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
+bool VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
 {
 	if (!state)
 		return;

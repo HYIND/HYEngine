@@ -119,7 +119,6 @@ HZBPass::HZBPass(
 			_occlusionCullShader->Create(config);
 	}
 
-	_indirectCommandBuffer = std::make_shared<IndirectBufferBlock>();
 }
 
 HZBPass::~HZBPass() {}
@@ -206,13 +205,16 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 	frustumOcclusionCullResult.resize(writePos, 0);
 	frustumObjectMeshaabbs.resize(writePos);
 
+	auto commandPtrs = registry.Get<std::vector<IndirectDrawCommand>>("commands");
+	auto& commands = *commandPtrs;
+
 	auto indirectManager = IndirectDrawManager::Instance();
-	_commands.resize(frustumObjectIndex.size());
+	commands.resize(frustumObjectIndex.size());
 	std::for_each(std::execution::par, frustumObjectIndex.begin(), frustumObjectIndex.end(),
 		[&](uint32_t& meshIndex)-> void
 		{
 			size_t inedx = &meshIndex - frustumObjectIndex.data();
-			IndirectDrawCommand& command = _commands[inedx];
+			IndirectDrawCommand& command = commands[inedx];
 
 			auto& item = opaqueMeshes[meshIndex];
 
@@ -239,10 +241,9 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 
 void HZBPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	_commands.clear();
 }
 
-uint32_t HZBPass::GetMaxLevel()
+uint32_t HZBPass::GetMaxLevel() const
 {
 	return _maxLevel;
 }
@@ -252,12 +253,19 @@ void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Ren
 	auto& frustumObjectTransforms = registry.Load<std::vector<glm::mat4>>("frustumObjectTransforms");
 	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
 
-	auto transform_ssbo = _depthShaderBinding.GetStorageBlock(2);
+	GraphicsBindingRecord depthShaderBinding;
+
+	auto commandPtrs = registry.Get<std::vector<IndirectDrawCommand>>("commands");
+	auto& commands = *commandPtrs;
+
+	auto transform_ssbo = depthShaderBinding.GetStorageBlock(2);
 	transform_ssbo->WriteDataAsync(cmd, frustumObjectTransforms.data(), frustumObjectTransforms.size() * sizeof(glm::mat4));
-	_indirectCommandBuffer->WriteDataAsync(cmd, _commands.data(), _commands.size() * sizeof(IndirectDrawCommand));
+
+	auto indirectCommandBuffer = registry.GetIndirectBlock("indirectCommandBuffer");
+	indirectCommandBuffer->WriteDataAsync(cmd, commands.data(), commands.size() * sizeof(IndirectDrawCommand));
 
 	transform_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
-	_indirectCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
+	indirectCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 
 	{
 		vk::BufferMemoryBarrier bufferBarrier{};
@@ -273,7 +281,7 @@ void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Ren
 	{
 		vk::BufferMemoryBarrier bufferBarrier{};
 		bufferBarrier
-			.setBuffer(_indirectCommandBuffer->GetBuffer()->GetHandle())
+			.setBuffer(indirectCommandBuffer->GetBuffer()->GetHandle())
 			.setOffset(0)
 			.setSize(vk::WholeSize)
 			.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
@@ -292,15 +300,15 @@ void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Ren
 		.AddDepthAttachment(depthMap->GetImageView());
 	cmd->beginRendering(renderingInfo);
 
-	_depthShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	depthShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 
-	_depthShader->Bind(cmd, _depthShaderBinding);
+	_depthShader->Bind(cmd, depthShaderBinding);
 
 	auto manager = IndirectDrawManager::Instance();
 
 	cmd->bindVertexBuffers(manager->GetVertexBlock());
 	cmd->bindIndexBuffer(manager->GetIndexBlock());
-	cmd->drawIndexedIndirect(_indirectCommandBuffer, _commands.size());
+	cmd->drawIndexedIndirect(indirectCommandBuffer, commands.size());
 
 	cmd->endRendering();
 }
@@ -318,8 +326,10 @@ void HZBPass::DrawHZB(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGr
 
 	LevelData data;
 
-	_HZBShaderBinding.SetStorageImageArray(entrys, 0);
-	_HZBShader->Bind(cmd, _HZBShaderBinding);
+	ComputeBindingRecord HZBShaderBinding;
+
+	HZBShaderBinding.SetStorageImageArray(entrys, 0);
+	_HZBShader->Bind(cmd, HZBShaderBinding);
 
 	for (uint32_t level = 1; level < _maxLevel; level++) {
 		uint32_t prevW = std::max(1u, width >> (level - 1));
@@ -361,11 +371,12 @@ void HZBPass::GetOcclusionCulling(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 		.maxLevel = int(HZBMap->GetMaxLevel())
 	};
 
-	_occlusionCullShaderBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	_occlusionCullShaderBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
-	auto aabb_ssbo = _occlusionCullShaderBinding.GetStorageBlock(2);
-	auto result_ssbo = _occlusionCullShaderBinding.GetStorageBlock(3);
-	auto occDataBlock = _occlusionCullShaderBinding.GetUniformBlock(4);
+	ComputeBindingRecord occlusionCullShaderBinding;
+	occlusionCullShaderBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
+	occlusionCullShaderBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	auto aabb_ssbo = occlusionCullShaderBinding.GetStorageBlock(2);
+	auto result_ssbo = occlusionCullShaderBinding.GetStorageBlock(3);
+	auto occDataBlock = occlusionCullShaderBinding.GetUniformBlock(4);
 
 	if (uint64_t size = frustumObjectMeshaabbs.size() * sizeof(AABB); aabb_ssbo->GetSize() < size)
 		aabb_ssbo->SetSizeAsync(cmd, size * 1.2);
@@ -378,9 +389,9 @@ void HZBPass::GetOcclusionCulling(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 	aabb_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 	occDataBlock->Barrier(cmd, BufferUsage::TransferWrite);
 
-	_occlusionCullShaderBinding.SetUniformTexture(HZBMap, 5);
+	occlusionCullShaderBinding.SetUniformTexture(HZBMap, 5);
 
-	_occlusionCullShader->Bind(cmd, _occlusionCullShaderBinding);
+	_occlusionCullShader->Bind(cmd, occlusionCullShaderBinding);
 	cmd->dispatch((frustumObjectIndex.size() + occ_work_size_x - 1) / occ_work_size_x, 1, 1);
 
 	// 内含隐式Submit

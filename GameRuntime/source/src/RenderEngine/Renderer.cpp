@@ -377,14 +377,14 @@ void Renderer::renderFrame()
 	if (!render)
 		return;
 
-	auto data = _earlyDataBuffers.acquireReadBuffer();
+	auto data = std::move(_earlyDataBuffers.acquireReadBuffer());
+	_earlyDataBuffers.ReleaseReadBuffer();
 
 	if (_isVulkanInit)
 		renderOpenGLFrame();
 
 	renderD2DFrame(data.D2D_Contexts);
 
-	_earlyDataBuffers.ReleaseReadBuffer();
 }
 
 void Render::Renderer::renderD2DFrame(std::vector<std::shared_ptr<D2DRenderContext::RenderContext>>& D2DContexts)
@@ -441,7 +441,6 @@ void Render::Renderer::renderOpenGLFrame()
 	if (!renderer || !_sharedTexture)
 		return;
 
-	auto start = Tool::GetTimestampMircoseconds();
 	renderer->WaitImage([&](std::shared_ptr<Texture2D> tex) {
 		if (!tex || !_sharedTexture->vulkanTexture) return;
 		auto cmd = VKCONTEXT->GetCommandBuffer();
@@ -480,7 +479,6 @@ void Render::Renderer::renderOpenGLFrame()
 		}
 
 	}
-	std::cout << std::format("cost2 {}ms\n", (Tool::GetTimestampMircoseconds() - start) / 1000.f);
 }
 
 void Render::Renderer::InitVulkanRender(uint32_t scr_width, uint32_t scr_height)

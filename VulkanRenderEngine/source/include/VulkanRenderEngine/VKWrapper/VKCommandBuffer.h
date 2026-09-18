@@ -114,7 +114,9 @@ namespace VKWrapper
 		void drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
 		void drawIndirect(vk::Buffer buffer, vk::DeviceSize offset, uint32_t drawCount, uint32_t stride);
 		void drawIndexedIndirect(vk::Buffer buffer, uint32_t drawCount, uint32_t stride = sizeof(IndirectDrawCommand), vk::DeviceSize offset = 0ULL);
+		void drawIndexedIndirect(const IndirectBufferBlock& block, uint32_t drawCount, uint32_t stride = sizeof(IndirectDrawCommand), vk::DeviceSize offset = 0ULL);
 		void drawIndexedIndirect(const std::shared_ptr<IndirectBufferBlock>& block, uint32_t drawCount, uint32_t stride = sizeof(IndirectDrawCommand), vk::DeviceSize offset = 0ULL);
+
 
 		// 计算命令
 		void dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ = 1);

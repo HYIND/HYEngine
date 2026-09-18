@@ -167,6 +167,11 @@ void VKWrapper::VKCommandBuffer::drawIndexedIndirect(const std::shared_ptr<Indir
 	_handle.drawIndexedIndirect(block->GetBuffer()->GetHandle(), offset, drawCount, stride);
 }
 
+void VKWrapper::VKCommandBuffer::drawIndexedIndirect(const IndirectBufferBlock& block, uint32_t drawCount, uint32_t stride, vk::DeviceSize offset) {
+	Need();
+	_handle.drawIndexedIndirect(block.GetBuffer()->GetHandle(), offset, drawCount, stride);
+}
+
 // 计算命令
 void VKWrapper::VKCommandBuffer::dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {
 	Need();

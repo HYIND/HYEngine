@@ -42,12 +42,13 @@ void SkyBoxPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderG
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	_binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_binding.SetStorageImage(colorBuffer, 0);
-	_binding.SetUniformTexture(depthBuffer, 1);
-	_binding.SetUniformTextureCube(state.skybox.cube, 2);
+	ComputeBindingRecord binding;
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetStorageImage(colorBuffer, 0);
+	binding.SetUniformTexture(depthBuffer, 1);
+	binding.SetUniformTextureCube(state.skybox.cube, 2);
 
-	_shader.Bind(cmd, _binding);
+	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

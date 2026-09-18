@@ -18,15 +18,9 @@ public:
 
 private:
 	GraphicsPipeline _shader;
-	GraphicsBindingRecord _binding;
-
-	std::shared_ptr<StorageBlock> _transformAndColors_ssbo;
 
 	std::shared_ptr<VertexBufferBlock> _vertexBuffer;
 	std::shared_ptr<IndexBufferBlock> _indexBuffer;
-	std::shared_ptr<IndirectBufferBlock> _indirectBuffer;
-
-	std::vector<IndirectDrawCommand> _commands;
 
 	IndirectDrawCommand _cubeCommandTemplate;
 	IndirectDrawCommand _sphereCommandTemplate;
