@@ -135,22 +135,14 @@ void IndirectDrawManager::RetireMaterial(Material& material)
 
 bool IndirectDrawManager::GetMaterialIndex(Material& material, uint64_t& index) const
 {
-	SegmentData materialdata;
 	auto guard = SharedLockGuard(_materialMutex);
-	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
-		return false;
-	index = materialdata.first / sizeof(MaterialData);
-	return true;
+	return GetMaterialIndex_LockFree(material, index);
 }
 
 bool IndirectDrawManager::GetMaterialIndex(Material& material, uint32_t& index) const
 {
-	SegmentData materialdata;
 	auto guard = SharedLockGuard(_materialMutex);
-	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
-		return false;
-	index = uint32_t(materialdata.first / sizeof(MaterialData));
-	return true;
+	return GetMaterialIndex_LockFree(material, index);
 }
 
 std::shared_ptr<StorageBlock> IndirectDrawManager::GetMaterialSSBO() {
@@ -272,6 +264,61 @@ void BindlessTextureManager::DeleteTexture(const Texture2D* tex)
 	_idleSlot.push(index);
 	_entrys[index] = _placeholderTexture->GetDescBindEntry();
 	_textureEntrys.erase(it);
+}
+
+void IndirectDrawManager::WithMeshSharedLock(const std::function<void()>& call)
+{
+	SharedLockGuard guard(_meshMutex);
+	if (call)
+		call();
+}
+
+void IndirectDrawManager::WithMaterialSharedLock(const std::function<void()>& call)
+{
+	SharedLockGuard guard(_materialMutex);
+	if (call)
+		call();
+}
+
+void IndirectDrawManager::WithMeshMaterialSharedLock(const std::function<void()>& call)
+{
+	SharedLockGuard guard1(_meshMutex);
+	SharedLockGuard guard2(_materialMutex);
+	if (call)
+		call();
+}
+
+bool IndirectDrawManager::GetMaterialIndex_LockFree(Material& material, uint64_t& index) const
+{
+	SegmentData materialdata;
+	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
+		return false;
+	index = materialdata.first / sizeof(MaterialData);
+	return true;
+}
+
+bool IndirectDrawManager::GetMaterialIndex_LockFree(Material& material, uint32_t& index) const
+{
+	uint64_t temp;
+	bool result = GetMaterialIndex_LockFree(material, temp);
+	if (result)
+		index = temp;
+	return result;
+}
+
+bool IndirectDrawManager::GetIndirectDrawMeta_LockFree(Mesh& mesh, IndirectDrawMeta& meta)
+{
+	auto uuid = mesh.GetUUID();
+	SegmentData vbodata, ebodata;
+
+	if (!_VertexManager.FindSegment(uuid, vbodata) || !_IndexManager.FindSegment(uuid, ebodata))
+		return false;
+
+	meta.indexCount = ebodata.count / sizeof(unsigned int);
+	meta.firstIndex = ebodata.first / sizeof(unsigned int);
+	meta.vertexOffset = vbodata.first / sizeof(Vertex);
+
+	return true;
 }
 
 void IndirectDrawManager::DeleteMesh(const std::string& uuid)

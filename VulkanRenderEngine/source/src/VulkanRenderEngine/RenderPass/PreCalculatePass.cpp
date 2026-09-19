@@ -73,37 +73,39 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 		commands.resize(sideIndex.size());
 
-		std::for_each(std::execution::par_unseq, sideIndex.begin(), sideIndex.end(),
-			[&](const size_t& meshIndex)-> void
-			{
-				size_t index = &meshIndex - sideIndex.data();
-
-				auto& item = items[meshIndex];
-				auto& material = item.meshinfo.material;
-				auto& mesh = item.meshinfo.mesh;
-
-				IndirectDrawCommand& command = commands[index];
-
-				auto& data = staticMesh_TransformAndMaterialIndices[startInedx + index];
-				data.model = item.transform;
-
-				indirectManager->GetMaterialIndex(*material, data.materialIndex);
-
-				IndirectDrawMeta meta;
-				if (!indirectManager->GetIndirectDrawMeta(*mesh, meta))
+		indirectManager->WithMeshMaterialSharedLock([&]() {
+			std::for_each(std::execution::par_unseq, sideIndex.begin(), sideIndex.end(),
+				[&](const size_t& meshIndex)-> void
 				{
-					command.instanceCount = 0;
-					LockGuard guard(mutex_zeroIndices);
-					zeroIndices.push_back(index);
-				}
-				else
-				{
-					command.indexCount = meta.indexCount;
-					command.firstIndex = meta.firstIndex;
-					command.vertexOffset = meta.vertexOffset;
-					command.instanceCount = 1;
-					command.firstInstance = startInedx + index;
-				}
+					size_t index = &meshIndex - sideIndex.data();
+
+					auto& item = items[meshIndex];
+					auto& material = item.meshinfo.material;
+					auto& mesh = item.meshinfo.mesh;
+
+					IndirectDrawCommand& command = commands[index];
+
+					auto& data = staticMesh_TransformAndMaterialIndices[startInedx + index];
+					data.model = item.transform;
+
+					indirectManager->GetMaterialIndex_LockFree(*material, data.materialIndex);
+
+					IndirectDrawMeta meta;
+					if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta))
+					{
+						command.instanceCount = 0;
+						LockGuard guard(mutex_zeroIndices);
+						zeroIndices.push_back(index);
+					}
+					else
+					{
+						command.indexCount = meta.indexCount;
+						command.firstIndex = meta.firstIndex;
+						command.vertexOffset = meta.vertexOffset;
+						command.instanceCount = 1;
+						command.firstInstance = startInedx + index;
+					}
+				});
 			});
 
 		startInedx += sideIndex.size();

@@ -109,20 +109,34 @@ bool BlasHandleManager::UpdateBlasData(
 
 	auto addToCreate = [&](std::vector<std::shared_ptr<Mesh>>& toCreateMeshs) -> void
 		{
-			for (auto& mesh : toCreateMeshs)
+
+			std::vector<IndirectDrawMeta> indirectDrawMetas;
+			indirectDrawMetas.resize(toCreateMeshs.size());
+			indirectManager->WithMeshSharedLock([&]() {
+				for (size_t i = 0; i < toCreateMeshs.size(); i++)
+				{
+					auto& mesh = toCreateMeshs[i];
+					auto& meta = indirectDrawMetas[i];
+
+					indirectDrawMetas[i].vertexOffset = -1;
+					indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
+				}
+				});
+
+			for (size_t i = 0; i < toCreateMeshs.size(); i++)
 			{
+				auto& mesh = toCreateMeshs[i];
 				if (ctxs.find(mesh) != ctxs.end())
 					continue;
 
-				auto ctx = std::make_shared<BlasContext>(mesh);
+				auto& meta = indirectDrawMetas[i];
+				if (meta.vertexOffset < 0)
+					continue;
 
 				auto& vertices = mesh->GetVertices();
 				auto& indices = mesh->GetIndices();
 
-				IndirectDrawMeta meta;
-				if (!indirectManager->GetIndirectDrawMeta(*mesh, meta))
-					continue;
-
+				auto ctx = std::make_shared<BlasContext>(mesh);
 				ctx->indicesOffset = meta.firstIndex;
 				ctx->vertexOffset = meta.vertexOffset;
 
@@ -355,8 +369,34 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 	auto blasBlock = _buffers->_blasManager._blasBufferManager.GetBuffer()->GetBlock();
 	auto blasBlockAddress = blasBlock->GetDeviceAddress();
 
+	std::vector<IndirectDrawMeta> indirectDrawMetas;
+	std::vector<uint32_t> materialIndexs;
+	indirectDrawMetas.resize(matches.size());
+	materialIndexs.resize(matches.size(), std::numeric_limits<uint32_t>::max());
+
+	indirectManager->WithMeshMaterialSharedLock([&]() {
+		std::for_each(std::execution::par_unseq, matches.begin(), matches.end(),
+			[&](auto& itemptr) {
+				size_t index = &itemptr - matches.data();
+
+				auto& item = *itemptr;
+				auto& meshInfo = item.meshinfo;
+				auto& mesh = meshInfo.mesh;
+				auto& material = meshInfo.material;
+
+				auto& meta = indirectDrawMetas[index];
+				uint32_t& materialIndex = materialIndexs[index];
+
+				indirectDrawMetas[index].vertexOffset = -1;
+				indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
+				indirectManager->GetMaterialIndex_LockFree(*material, materialIndex);
+			});
+		});
+
 	for (auto& itemptr : matches)
 	{
+		size_t index = &itemptr - matches.data();
+
 		auto& item = *itemptr;
 		auto& meshInfo = item.meshinfo;
 
@@ -373,9 +413,9 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		auto meshVersion = mesh->GetVerticesIndicesVsrsion();
 		auto meshuuid = mesh->GetUUID();
 
-		IndirectDrawMeta meta;
-		uint32_t materialIndex;
-		if (!indirectManager->GetIndirectDrawMeta(*mesh, meta) || !indirectManager->GetMaterialIndex(*material, materialIndex))
+		auto& meta = indirectDrawMetas[index];
+		uint32_t& materialIndex = materialIndexs[index];
+		if (meta.vertexOffset < 0 || materialIndex == std::numeric_limits<uint32_t>::max())
 			continue;
 
 		info.materialIndex = materialIndex;
