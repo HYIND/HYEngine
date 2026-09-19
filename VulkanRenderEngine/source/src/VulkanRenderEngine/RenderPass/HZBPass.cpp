@@ -210,26 +210,29 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 
 	auto indirectManager = IndirectDrawManager::Instance();
 	commands.resize(frustumObjectIndex.size());
-	std::for_each(std::execution::par_unseq, frustumObjectIndex.begin(), frustumObjectIndex.end(),
-		[&](uint32_t& meshIndex)-> void
-		{
-			size_t inedx = &meshIndex - frustumObjectIndex.data();
-			IndirectDrawCommand& command = commands[inedx];
 
-			auto& item = opaqueMeshes[meshIndex];
-
-			IndirectDrawMeta meta;
-			if (!indirectManager->GetIndirectDrawMeta(*(item.meshinfo.mesh), meta))
+	indirectManager->WithMeshSharedLock([&]() {
+		std::for_each(std::execution::par_unseq, frustumObjectIndex.begin(), frustumObjectIndex.end(),
+			[&](uint32_t& meshIndex)-> void
 			{
-				command.instanceCount = 0;
-				return;
-			}
+				size_t inedx = &meshIndex - frustumObjectIndex.data();
+				IndirectDrawCommand& command = commands[inedx];
 
-			command.indexCount = meta.indexCount;
-			command.firstIndex = meta.firstIndex;
-			command.vertexOffset = meta.vertexOffset;
-			command.instanceCount = 1;
-			command.firstInstance = inedx;
+				auto& item = opaqueMeshes[meshIndex];
+
+				IndirectDrawMeta meta;
+				if (!indirectManager->GetIndirectDrawMeta_LockFree(*(item.meshinfo.mesh), meta))
+				{
+					command.instanceCount = 0;
+					return;
+				}
+
+				command.indexCount = meta.indexCount;
+				command.firstIndex = meta.firstIndex;
+				command.vertexOffset = meta.vertexOffset;
+				command.instanceCount = 1;
+				command.firstInstance = inedx;
+			});
 		});
 
 	registry.Store("frustumCullResult", std::move(frustumCullResult));

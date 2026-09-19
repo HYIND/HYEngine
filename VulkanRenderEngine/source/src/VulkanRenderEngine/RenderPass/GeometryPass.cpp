@@ -213,39 +213,41 @@ bool GeometryPass::SetupStaticBufferData(
 
 		commands.resize(indices.size());
 
-		std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
-			[&](const size_t& meshIndex)-> void
-			{
-				size_t inedx = &meshIndex - indices.data();
-
-				auto& item = items[meshIndex];
-				auto& material = item.meshinfo.material;
-				auto& mesh = item.meshinfo.mesh;
-
-				IndirectDrawCommand& command = commands[inedx];
-				RenderData& data = renderData[startInedx + inedx];
-
-				data.curTransform = item.transform;
-				data.prevTransform = item.prevTransform;
-
-				uint64_t materialIndex;
-				if (indirectManager->GetMaterialIndex(*material, materialIndex))
-					data.materialIndex = materialIndex;
-
-				IndirectDrawMeta meta;
-				if (!indirectManager->GetIndirectDrawMeta(*mesh, meta))
-					command.instanceCount = 0;
-				else
+		indirectManager->WithMeshMaterialSharedLock([&]() {
+			std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
+				[&](const size_t& meshIndex)-> void
 				{
-					command.indexCount = meta.indexCount;
-					command.firstIndex = meta.firstIndex;
-					command.vertexOffset = meta.vertexOffset;
-					command.instanceCount = 1;
-					command.firstInstance = startInedx + inedx;
-				}
+					size_t inedx = &meshIndex - indices.data();
+
+					auto& item = items[meshIndex];
+					auto& material = item.meshinfo.material;
+					auto& mesh = item.meshinfo.mesh;
+
+					IndirectDrawCommand& command = commands[inedx];
+					RenderData& data = renderData[startInedx + inedx];
+
+					data.curTransform = item.transform;
+					data.prevTransform = item.prevTransform;
+
+					uint64_t materialIndex;
+					if (indirectManager->GetMaterialIndex_LockFree(*material, materialIndex))
+						data.materialIndex = materialIndex;
+
+					IndirectDrawMeta meta;
+					if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta))
+						command.instanceCount = 0;
+					else
+					{
+						command.indexCount = meta.indexCount;
+						command.firstIndex = meta.firstIndex;
+						command.vertexOffset = meta.vertexOffset;
+						command.instanceCount = 1;
+						command.firstInstance = startInedx + inedx;
+					}
+				});
 			});
 
-		startInedx += indices.size();
+			startInedx += indices.size();
 	}
 
 	renderdata_ssbo->WriteDataAsync(cmd, renderData.data(), renderData.size() * sizeof(RenderData));

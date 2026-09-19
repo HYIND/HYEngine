@@ -69,6 +69,15 @@ public:
 	std::shared_ptr<StorageBlock> GetMaterialSSBO();
 
 public:
+	void WithMeshSharedLock(const std::function<void()>& call);
+	void WithMaterialSharedLock(const std::function<void()>& call);
+	void WithMeshMaterialSharedLock(const std::function<void()>& call);
+
+	bool GetMaterialIndex_LockFree(Material& material, uint64_t& index) const;
+	bool GetMaterialIndex_LockFree(Material& material, uint32_t& index) const;
+	bool GetIndirectDrawMeta_LockFree(Mesh& mesh, IndirectDrawMeta& meta);
+
+public:
 	void DeleteMesh(const std::string& uuid);
 	void DeleteMaterial(const std::string& uuid);
 private:
