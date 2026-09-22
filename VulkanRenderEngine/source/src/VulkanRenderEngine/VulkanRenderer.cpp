@@ -22,6 +22,7 @@
 #include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/AtomspherePass.h"
 
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
@@ -614,6 +615,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
+	auto atomspherePass = std::make_unique<AtomspherePass>("shader/Atomsphere/Atomsphere.comp");
+
 	auto depthFogPass = std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
@@ -668,6 +671,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	// 后处理
 	auto depthFogNode = _sceneRenderGraph->AddNode("depthFogNode");
+	auto atomsphereNode = _sceneRenderGraph->AddNode("atomsphereNode");
 	auto postProcessFence = _sceneRenderGraph->AddFence("postProcessFence");
 	postProcessFence->After(transprantFence);
 
@@ -841,8 +845,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.After(opaqueFence, effectPass)
 	//	.Before(transprantFence);
 
-	depthFogNode->SetRenderPass(std::move(depthFogPass))
+	atomsphereNode->SetRenderPass(std::move(atomspherePass))
 		.After(opaqueFence, transprantFence)
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
+		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atomsphereNode_TempColor"), {} })
+		.Before(postProcessFence);
+
+	depthFogNode->SetRenderPass(std::move(depthFogPass))
+		.After(atomsphereNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "depthFogPass_TempColor"), {} })
 		.Before(postProcessFence);

@@ -33,7 +33,7 @@ vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
 {
     vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
     
-    vec4 viewPos = inverse(camera.projection) * ndcPos;
+    vec4 viewPos = camera.invProjection * ndcPos;
     viewPos /= viewPos.w; // 透视除法
     
     // 逆视图变换到世界空间

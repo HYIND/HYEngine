@@ -336,6 +336,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtomspherePass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -556,6 +559,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtomspherePass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

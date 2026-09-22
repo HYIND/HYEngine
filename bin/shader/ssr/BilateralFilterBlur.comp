@@ -54,7 +54,7 @@ void main()
     vec3 centerNormal;
     float centerDepth, centerLinearDepth;
     GetDepthNormal(uvCenter, centerDepth, centerLinearDepth, centerNormal);
-    if (centerDepth >= 0.99999)
+    if (centerDepth >= 0.99994)
         return;
     
     vec4 total = vec4(0.0);
@@ -75,7 +75,7 @@ void main()
             vec3 sampleNormal;
             float sampleDepth, sampleLinearDepth;
             GetDepthNormal(sampleUV, sampleDepth, sampleLinearDepth, sampleNormal);
-            if (sampleDepth >= 0.99999) continue;
+            if (sampleDepth >= 0.99994) continue;
 
             float depthDiff = abs(centerLinearDepth - sampleLinearDepth);
             float depthWeight = exp(-blurDepthWeight * depthDiff * depthDiff);

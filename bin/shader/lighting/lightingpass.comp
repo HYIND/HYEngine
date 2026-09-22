@@ -38,7 +38,7 @@ void main()
 		return;
 
 	float depth = texture(depthMap, TexCoords).r;
-    if (depth > 0.9999)
+    if (depth > 0.99994)
         return;
 
 	vec3 fragPos = texture(gPosition, TexCoords).rgb;

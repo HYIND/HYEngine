@@ -32,7 +32,7 @@ void main()
     vec2 uv = pixelCenter / screenSize;
 
     float centerDepth = texture(depthMap, uv).r;
-    if (centerDepth >= 0.99999)
+    if (centerDepth >= 0.99994)
         return;
 
     vec3 centerNormal = texture(gNormal, uv).rgb;
@@ -51,7 +51,7 @@ void main()
             // ---- 关键防护措施（双边滤波权重） ----
             vec3 sampleNormal = texture(gNormal, sampleUV).rgb;
             float sampleDepth = texture(depthMap, sampleUV).r;
-            if (sampleDepth >= 0.99999) continue;
+            if (sampleDepth >= 0.99994) continue;
 
             float sampleLinearDepth = DepthBufferConvertToViewDepth(sampleDepth);
             

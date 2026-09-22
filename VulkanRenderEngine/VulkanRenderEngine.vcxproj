@@ -138,6 +138,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\TexturePool.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderOption.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtomspherePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AutoExposurePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\BloomPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CombinPass.h" />
@@ -224,6 +225,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtomspherePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CombinPass.cpp" />
