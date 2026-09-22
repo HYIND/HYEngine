@@ -14,7 +14,7 @@ public:
 	EffectPass(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
 	virtual ~EffectPass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
 	void DrawParticle(std::shared_ptr<BaseParticleProperties> baseProperties, RenderState& state);

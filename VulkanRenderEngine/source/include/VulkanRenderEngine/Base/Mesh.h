@@ -54,7 +54,7 @@ public:
 
 public:
 	void SetNeedUpdateIndirectDraw(bool value);
-	bool GetNeedUpdateIndricetDraw() const;
+	bool GetNeedUpdateIndirectDraw() const;
 
 private:
 	VKCore::VulkanDevice* _device;

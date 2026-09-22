@@ -22,7 +22,7 @@ public:
 	~RTCoreRayTraceReflectPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGeneralBuffer> buffer);
@@ -49,10 +49,10 @@ private:
 		std::shared_ptr<Texture2D> historyColorTexture;
 	};
 
-	bool DrawRayTraceGI(FrameRenderData& data, RenderState& state);
-	bool DrawSpatialDenoising(FrameRenderData& data, RenderState& state);
-	bool DrawTemporalDenoising(FrameRenderData& data, RenderState& state);
-	bool DrawScale(FrameRenderData& data, RenderState& state);
+	bool DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 	void SetEnable(bool enable) const;
 

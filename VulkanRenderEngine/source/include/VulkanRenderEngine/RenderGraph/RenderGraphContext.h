@@ -60,6 +60,7 @@ namespace RenderGraph
 	};
 
 	using ResourceName = std::string;
+
 	enum class ResourceType { Texture };
 	struct RenderGraphResource
 	{
@@ -80,6 +81,16 @@ namespace RenderGraph
 		bool operator!=(const ExternalResource& other) const { return name != other.name || type != other.type; }
 	};
 
+	struct TextureLayout
+	{
+		ImageLayout::BindStage stage;
+		ImageLayout::BindUsage usage;
+	};
+
+	struct RenderGraphResourceLayout
+	{
+		std::variant<TextureLayout> data;
+	};
 
 	class FrameDataRegistry
 	{
@@ -164,10 +175,71 @@ namespace RenderGraph
 		}
 
 	private:
-		// 每帧一个注册表，存任意类型
 		std::unordered_map<std::string, std::any> data;
 	};
 
+
+	class PassFrameCmdContext;
+	class PassFrameCmd :public VKWrapper::VKCommandBuffer
+	{
+	public:
+		PassFrameCmd(PassFrameCmdContext* ctx);
+		PassFrameCmd(PassFrameCmd&& other);
+		virtual ~PassFrameCmd() = default;
+
+		virtual void SubmitToQueue(const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		virtual void SubmitNow(const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		virtual void SubmitNowAndWait(const CmdSyncSeamphore& syncSeamphore = {});
+
+	private:
+		PassFrameCmdContext* _ctx = nullptr;
+	};
+
+	class PassFrameCmdContext
+	{
+	private:
+		struct TexLayoutData {
+			std::shared_ptr<Texture2D> tex;
+			RenderGraphResourceLayout layout;
+		};
+
+	public:
+		PassFrameCmdContext(const std::shared_ptr<CriticalSectionLock>& mutex);
+		~PassFrameCmdContext();
+
+		std::shared_ptr<PassFrameCmd> GetCmd();
+
+		void SubmitToQueue(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		void SubmitNow(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		void SubmitNowAndWait(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore = {});
+
+		void PushTexWithLayout(const std::shared_ptr<Texture2D>& tex, const RenderGraphResourceLayout& layout);
+
+	public:
+		void Start();
+		void End();
+
+	private:
+		void StartupCmd();
+		void Need();
+
+	private:
+		struct PassFrameSubmitCMDData
+		{
+			std::shared_ptr<VKWrapper::VKCommandBuffer> cmd;
+			CmdSyncSeamphore syncSeamphore;
+			std::shared_ptr<VKWrapper::VKFence> signalFence;
+		};
+
+	private:
+		bool _isEnd;
+		bool _immediatelySubmit;
+		uint32_t cmdcount = 0;
+		std::queue<PassFrameSubmitCMDData> _submitcmds;
+		std::shared_ptr<VKWrapper::VKTimelineSemaphore> _timeLine;
+		std::shared_ptr<CriticalSectionLock> _mutex;
+		std::vector<TexLayoutData> _texDatas;
+	};
 }
 
 namespace std {

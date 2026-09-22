@@ -5,16 +5,6 @@
 
 MaterialData::MaterialData()
 {
-	//static auto emptytex = std::make_shared<Texture2D>(1, 1);
-	//texture_albedo = emptytex->GetBindlessID();
-	//texture_metallic = emptytex->GetBindlessID();
-	//texture_roughness = emptytex->GetBindlessID();
-	//texture_ao = emptytex->GetBindlessID();
-	//texture_normal = emptytex->GetBindlessID();
-	//texture_emissive = emptytex->GetBindlessID();
-	//texture_metallicroughness = emptytex->GetBindlessID();
-	//texture_height = emptytex->GetBindlessID();
-	//texture_opacity = emptytex->GetBindlessID();
 }
 
 Material::Material()

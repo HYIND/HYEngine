@@ -6,22 +6,40 @@
 #include "RenderGraphResourceManager.h"
 #include "../RenderPass/RenderPassBase.h"
 
+class RenderPassBase;
+
 namespace RenderGraph
 {
 
 	class PassNode
 	{
 	public:
+		static std::string GetCurThreadPassName();
+
+	public:
+		struct ResourceData
+		{
+			RenderGraphResource resource;
+			RenderGraphResourceLayout layout;
+		};
+
+		struct ExternalResourceData
+		{
+			ExternalResource resource;
+			RenderGraphResourceLayout layout;
+		};
+
+	public:
 
 		PassNode(const std::string& name);
 
 		// 资源依赖声明
-		PassNode& Input(const RenderGraphResource& resource);
-		PassNode& InputOption(const RenderGraphResource& resource);
-		PassNode& Output(const RenderGraphResource& resource);
-		PassNode& Temp(const RenderGraphResource& resource);
-		PassNode& Persistent(const RenderGraphResource& resource);
-		PassNode& External(const ExternalResource& resource);
+		PassNode& Input(const ResourceData& resource);
+		PassNode& InputOption(const ResourceData& resource);
+		PassNode& Output(const ResourceData& resource);
+		PassNode& Temp(const ResourceData& resource);
+		PassNode& Persistent(const ResourceData& resource);
+		PassNode& External(const ExternalResourceData& resource);
 
 		// 顺序依赖声明
 		PassNode& After(PassNode* node);
@@ -59,30 +77,30 @@ namespace RenderGraph
 		void SetIndex(int index);
 		void SetBatch(int batch);
 
-		const std::vector<RenderGraphResource>& GetInputs() const;
-		const std::vector<RenderGraphResource>& GetInputOptions() const;
-		const std::vector<RenderGraphResource>& GetOutputs() const;
-		const std::vector<RenderGraphResource>& GetTemps() const;
-		const std::vector<RenderGraphResource>& GetPersistents() const;
-		const std::vector<ExternalResource>& GetExternals() const;
+		const std::vector<ResourceData>& GetInputs() const;
+		const std::vector<ResourceData>& GetInputOptions() const;
+		const std::vector<ResourceData>& GetOutputs() const;
+		const std::vector<ResourceData>& GetTemps() const;
+		const std::vector<ResourceData>& GetPersistents() const;
+		const std::vector<ExternalResourceData>& GetExternals() const;
 		const std::vector<RenderGraphResource>& GetLifeCycleResource() const;
 		const std::unordered_set<PassNode*>& GetAfters() const;
 		const std::unordered_set<PassNode*>& GetBefores() const;
 
 		void FrameBegin(FrameDataRegistry& registry, RenderState& state);
 		bool ShouldExecute(FrameDataRegistry& registry, RenderState& state);
-		void Execute(FrameDataRegistry& registry, const PassFrameContext& ctx, RenderState& state);
+		void Execute(PassFrameCmdContext& cmdCtx, FrameDataRegistry& registry, const PassFrameContext& ctx, RenderState& state);
 		void FrameEnd(FrameDataRegistry& registry, RenderState& state);
 
 	private:
 		std::string _name;
 
-		std::vector<RenderGraphResource> _inputs;				//输入
-		std::vector<RenderGraphResource> _inputOptions;			//可选输入
-		std::vector<RenderGraphResource> _outputs;				//输出
-		std::vector<RenderGraphResource> _temps;				//临时资源
-		std::vector<RenderGraphResource> _persistents;			//持久资源
-		std::vector<ExternalResource> _externals;				//外部资源
+		std::vector<ResourceData> _inputs;				//输入
+		std::vector<ResourceData> _inputOptions;		//可选输入
+		std::vector<ResourceData> _outputs;				//输出
+		std::vector<ResourceData> _temps;				//临时资源
+		std::vector<ResourceData> _persistents;			//持久资源
+		std::vector<ExternalResourceData> _externals;				//外部资源
 
 		std::vector<RenderGraphResource> _lifeCycleResource;	//记录需要控制生命周期的资源
 

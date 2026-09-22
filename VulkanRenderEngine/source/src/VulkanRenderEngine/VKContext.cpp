@@ -94,6 +94,11 @@ std::shared_ptr<VKWrapper::VKCommandBuffer> VKContext::GetCommandBuffer()
 	return tls_context.GetCommandBuffer();
 }
 
+bool VKContext::GetCommandBuffer(std::shared_ptr<VKWrapper::VKCommandBuffer> existedCmdInstance)
+{
+	return tls_context.GetCommandBuffer(existedCmdInstance);
+}
+
 vk::ResultValue<std::vector<vk::DescriptorSet>> VKContext::AllocateDescriptorSets(vk::DescriptorSetAllocateInfo& allocInfo) {
 	allocInfo.setDescriptorPool(GetDescriptorPool());
 	LockGuard guard(_descriptorPoolRequestMutex);
@@ -122,10 +127,12 @@ void VKContext::ProcessRetireAndPushFrameIndex() {
 		LockGuard guard(_pendingDestoryResourceMutex);
 		curFrame = _frameIndex++;
 
-		if (curFrame < GlobalConfig::MaxFramesInFlight)
+		constexpr uint32_t clearGap = std::max(1u, GlobalConfig::MaxFramesInFlight) * 2;
+
+		if (curFrame < clearGap)
 			return;
 
-		uint32_t safeFrame = curFrame - GlobalConfig::MaxFramesInFlight;
+		uint32_t safeFrame = curFrame - clearGap;
 
 		// 找到第一个 frameIndex > safeFrame 的节点
 		auto it = _pendingDestoryResource.begin();
@@ -158,6 +165,20 @@ std::shared_ptr<VKWrapper::VKCommandBuffer> VKThreadContext::GetCommandBuffer()
 			return commandBuffer;
 	}
 	return std::shared_ptr<VKWrapper::VKCommandBuffer>();
+}
+
+bool VKThreadContext::GetCommandBuffer(std::shared_ptr<VKWrapper::VKCommandBuffer> existedCmdInstance)
+{
+	if (!existedCmdInstance)
+		return false;
+
+	NeedCommandPool();
+	if (auto commandPool = _commandPool)
+	{
+		if (commandPool->AllocateBuffers(existedCmdInstance) == vk::Result::eSuccess)
+			return true;
+	}
+	return false;
 }
 
 std::shared_ptr<VKWrapper::VKCommandPool> VKThreadContext::GetCommandPool()

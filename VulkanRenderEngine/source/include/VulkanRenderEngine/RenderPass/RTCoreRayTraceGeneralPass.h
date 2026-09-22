@@ -67,7 +67,7 @@ public:
 	~RTCoreRayTraceGeneralPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> GetGeneralBuffer();
@@ -77,6 +77,5 @@ private:
 
 private:
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> _buffers;
-	std::shared_ptr<VKWrapper::VKFence> _fence;
 	std::shared_ptr<StorageBlock> _scratchBlock;	//暂存临时缓冲区
 };

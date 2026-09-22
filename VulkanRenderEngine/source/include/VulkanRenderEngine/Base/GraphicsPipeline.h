@@ -120,7 +120,7 @@ public:
 	);
 
 	virtual void Release() override;
-	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
+	virtual void Bind(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
 
 	vk::RenderPass GetRenderPass() const;
 	vk::ShaderModule GetVertexModule() const;

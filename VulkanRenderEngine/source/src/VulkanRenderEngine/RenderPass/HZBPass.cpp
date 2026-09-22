@@ -123,14 +123,14 @@ HZBPass::HZBPass(
 
 HZBPass::~HZBPass() {}
 
-void HZBPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto depthMap = ctx.GetTemp(0);
 	auto HZBMap = ctx.GetOutput(0);
 
 	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 
 	DrawDepthMap(cmd, registry, depthMap, state);
 	DrawHZB(cmd, registry, depthMap, HZBMap, state);
@@ -243,15 +243,14 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 }
 
 void HZBPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
-}
+{}
 
 uint32_t HZBPass::GetMaxLevel() const
 {
 	return _maxLevel;
 }
 
-void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state)
+void HZBPass::DrawDepthMap(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state)
 {
 	auto& frustumObjectTransforms = registry.Load<std::vector<glm::mat4>>("frustumObjectTransforms");
 	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
@@ -295,12 +294,12 @@ void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Ren
 
 	cmd->setDynamicViewport(depthMap->GetWidth(), depthMap->GetHeight());
 
-	depthMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
+	depthMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 
 	DynamicRenderInfo renderingInfo;
 	renderingInfo
 		.SetRenderArea(state.framebuffer.width, state.framebuffer.height)
-		.AddDepthAttachment(depthMap->GetImageView());
+		.AddDepthAttachment(depthMap->GetImageView(vk::ImageAspectFlagBits::eDepth));
 	cmd->beginRendering(renderingInfo);
 
 	depthShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
@@ -316,7 +315,7 @@ void HZBPass::DrawDepthMap(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Ren
 	cmd->endRendering();
 }
 
-void HZBPass::DrawHZB(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
+void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
 {
 	Texture2D::CopyTextureAsync(cmd, depthMap, HZBMap);
 
@@ -324,8 +323,9 @@ void HZBPass::DrawHZB(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGr
 	auto height = depthMap->GetHeight();
 
 	std::vector<BindingRecord::StorageImageEntry> entrys;
+	entrys.reserve(_maxLevel);
 	for (uint32_t level = 0; level < _maxLevel; level++)
-		entrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMap, .usage = Texture2D::BindUsage::Sample, .baseLevel = level ,.levelCount = 1 });
+		entrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
 
 	LevelData data;
 
@@ -347,14 +347,14 @@ void HZBPass::DrawHZB(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGr
 		cmd->dispatch((currW + work_size_x - 1) / work_size_x, (currH + work_size_y - 1) / work_size_y, 1);
 
 		if (level < _maxLevel - 1)
-			HZBMap->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Sample);
+			HZBMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
 
 	//for (uint32_t level = 0; level < _maxLevel; level++)
 	//	DrawTexture(HZBMap, std::format("temp/HZBMap{}.png", level), level);
 }
 
-void HZBPass::GetOcclusionCulling(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
+void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
 {
 
 	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
@@ -392,14 +392,13 @@ void HZBPass::GetOcclusionCulling(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 	aabb_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 	occDataBlock->Barrier(cmd, BufferUsage::TransferWrite);
 
-	occlusionCullShaderBinding.SetUniformTexture(HZBMap, 5);
+	occlusionCullShaderBinding.SetUniformTexture(HZBMap, vk::ImageAspectFlagBits::eDepth, 5);
 
 	_occlusionCullShader->Bind(cmd, occlusionCullShaderBinding);
 	cmd->dispatch((frustumObjectIndex.size() + occ_work_size_x - 1) / occ_work_size_x, 1, 1);
 
 	// 内含隐式Submit
 	result_ssbo->GetBuffer()->Readback(cmd, frustumOcclusionCullResult.data(), frustumOcclusionCullResult.size() * sizeof(int));
-	//VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	auto& items = state.objects.sceneRenderData.opaqueMesh;
 	auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;

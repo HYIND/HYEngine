@@ -53,7 +53,7 @@ bool RayTracingPipelineConfig::Validate() const
 
 RayTracingPipeline::RayTracingPipeline() {
 	m_bindPoint = vk::PipelineBindPoint::eRayTracingKHR;
-	m_bindStage = Texture2D::BindStage::RayTracing;
+	m_bindStage = ImageLayout::BindStage::RayTracing;
 	_sbtBufferBlock = std::make_shared<SBTBufferBlock>();
 }
 
@@ -296,7 +296,7 @@ void RayTracingPipeline::Release()
 	Pipeline::Release();
 }
 
-void RayTracingPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
+void RayTracingPipeline::Bind(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
 	if (!cmdBuffer)
 		return;
 
@@ -309,6 +309,16 @@ SBTRegionData RayTracingPipeline::GetSBTData() const
 	return _regions;
 }
 
+void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set)
+{
+	SetStorageImage(texture, aspect, BindingPoint{ .binding = binding, .set = set });
+}
+
+void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set)
+{
+	SetStorageImageLevel(texture, aspect, baseLevel, levelCount, BindingPoint{ .binding = binding, .set = set });
+}
+
 void RayTracingBindingRecord::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set)
 {
 	SetStorageImageArray(entrys, BindingPoint{ .binding = binding, .set = set });
@@ -319,29 +329,19 @@ void RayTracingBindingRecord::SetAccelerationStructure(const vk::AccelerationStr
 	SetAccelerationStructure(handle, BindingPoint{ .binding = binding, .set = set });
 }
 
-void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set)
-{
-	SetStorageImage(texture, BindingPoint{ .binding = binding, .set = set });
-}
-
-void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set)
-{
-	SetStorageImageLevel(texture, baseLevel, levelCount, BindingPoint{ .binding = binding, .set = set });
-}
-
-void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp)
+void RayTracingBindingRecord::SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, const BindingPoint& bp)
 {
 	if (!texture)
 		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage, .data = StorageImageEntry{.texture = texture,.usage = Texture2D::BindUsage::Sample, .baseLevel = 0, .levelCount = UINT32_MAX } };
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage, .data = StorageImageEntry{.texture = texture, .aspect = aspect, .baseLevel = 0, .levelCount = UINT32_MAX } };
 	m_bindingData[bp] = entry;
 }
 
-void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp)
+void RayTracingBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp)
 {
 	if (!texture)
 		return;
-	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage, .data = StorageImageEntry{.texture = texture,.usage = Texture2D::BindUsage::Sample, .baseLevel = baseLevel, .levelCount = levelCount } };
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage, .data = StorageImageEntry{.texture = texture, .aspect = aspect, .baseLevel = baseLevel, .levelCount = levelCount } };
 	m_bindingData[bp] = entry;
 }
 

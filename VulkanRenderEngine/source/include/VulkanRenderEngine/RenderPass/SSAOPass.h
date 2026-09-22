@@ -14,7 +14,7 @@ public:
 		const std::string& ssaoBlurComputeShaderPath
 	);
 	virtual ~SSAOPass();
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
 	ComputePipeline _ssaoShader;

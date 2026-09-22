@@ -164,11 +164,11 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 		transformAndColors_ssbo->WriteDataAsync(cmd, transAndColors.data(), transAndColors.size() * sizeof(TransformAndColor));
 		indirectBuffer->WriteDataAsync(cmd, commands.data(), commands.size() * sizeof(IndirectDrawCommand));
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		cmd->SubmitNowAndWait();
 	}
 }
 
-void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void LightDrawPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto& commands = *registry.Get<std::vector<IndirectDrawCommand>>("commands");
 	if (commands.empty())
@@ -177,14 +177,14 @@ void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rend
 	auto targetColorBuffer = ctx.GetExternal(0);
 	auto targetDepthBuffer = ctx.GetExternal(1);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 
-	targetColorBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	targetDepthBuffer->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
+	targetColorBuffer->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	targetDepthBuffer->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 
 	DynamicRenderInfo info;
-	info.AddColorAttachment(targetColorBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
-		.AddDepthStencilAttachment(targetDepthBuffer->GetImageView(), vk::AttachmentLoadOp::eLoad)
+	info.AddColorAttachment(targetColorBuffer->GetImageView(vk::ImageAspectFlagBits::eColor), vk::AttachmentLoadOp::eLoad)
+		.AddDepthStencilAttachment(targetDepthBuffer->GetImageView(vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil), vk::AttachmentLoadOp::eLoad)
 		.SetRenderArea(state.framebuffer.width, state.framebuffer.height);
 
 	DynamicViewport viewport(state.framebuffer.width, state.framebuffer.height);
@@ -207,5 +207,5 @@ void LightDrawPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rend
 
 	cmd->endRendering();
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 }

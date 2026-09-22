@@ -68,32 +68,35 @@ vk::CommandPool VKCommandPool::GetHandle() const { return  _handle; }
 
 SpinLock& VKWrapper::VKCommandPool::GetCommandPoolMutex() { return _commandPoolMutex; }
 
-vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer, vk::CommandBufferLevel level)
+vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer)
 {
-	LockGuard guard(_commandPoolMutex);
-	vk::CommandBuffer handle = _cmdResPool.FetchHandle();
-	if (handle == VK_NULL_HANDLE)
+	buffer->_pool = shared_from_this();
+
 	{
-		vk::CommandBufferAllocateInfo allocateInfo;
-		allocateInfo
-			.setCommandPool(_handle)
-			.setLevel(level)
-			.setCommandBufferCount(1);
-
-
-		auto [res, hs] = _device->GetHandle().allocateCommandBuffers(allocateInfo);
-		if (res != vk::Result::eSuccess)
+		LockGuard guard(_commandPoolMutex);
+		vk::CommandBuffer handle = _cmdResPool.FetchHandle();
+		if (handle != VK_NULL_HANDLE)
 		{
-			outStream << std::format("[ VKCommandPool ] ERROR\nFailed to allocate command buffers!\nError code: {}\n", to_string(res));
-			return res;
+			buffer->_handle = handle;
+			return vk::Result::eSuccess;
 		}
-
-		handle = hs[0];
 	}
 
-	buffer = std::make_shared<VKCommandBuffer>();
-	buffer->_handle = handle;
-	buffer->_pool = shared_from_this();
+	vk::CommandBufferAllocateInfo allocateInfo;
+	allocateInfo
+		.setCommandPool(_handle)
+		.setLevel(vk::CommandBufferLevel::ePrimary)
+		.setCommandBufferCount(1);
+
+
+	auto [res, hs] = _device->GetHandle().allocateCommandBuffers(allocateInfo);
+	if (res != vk::Result::eSuccess)
+	{
+		outStream << std::format("[ VKCommandPool ] ERROR\nFailed to allocate command buffers!\nError code: {}\n", to_string(res));
+		return res;
+	}
+
+	buffer->_handle = hs[0];
 
 	return vk::Result::eSuccess;
 }
@@ -130,8 +133,7 @@ VkCommandBuffer VKWrapper::VKCommandPool::CmdResPool::FetchHandle()
 bool VKWrapper::VKCommandPool::CmdResPool::RecycleHandle(VkCommandBuffer handle)
 {
 	// 已持有的数据
-	auto it = _datas.find(handle);
-	if (it != _datas.end())
+	if (_datas.find(handle) != _datas.end())
 	{
 		if (_iDleList.find(handle) == _iDleList.end())
 		{
@@ -152,11 +154,9 @@ bool VKWrapper::VKCommandPool::CmdResPool::RecycleHandle(VkCommandBuffer handle)
 			_iDleList.insert(handle);
 			return true;
 		}
-		else
-		{
-			return false;
-		}
 	}
+
+	return false;
 }
 
 void VKWrapper::VKCommandPool::CmdResPool::Clear() {

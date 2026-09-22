@@ -4,6 +4,7 @@
 
 #include "VulkanRenderEngine\VKCore\CoreGeneral.h"
 #include "VulkanRenderEngine\VKWrapper\WrapperGeneral.h"
+#include "VulkanRenderEngine/General/CmdSyncData.h"
 #include "VulkanRenderEngine\GlobalConfig.h"
 
 #include "CriticalSectionLock.h"
@@ -11,29 +12,11 @@
 
 class VKWrapper::VKFence;
 
-struct WaitSemaphoreData
-{
-	std::shared_ptr<VKWrapper::VKSemaphore> semaphore;
-	vk::PipelineStageFlags flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-	uint64_t value = 0;
-};
-
-struct SignalSemaphoreData
-{
-	std::shared_ptr<VKWrapper::VKSemaphore> semaphore;
-	uint64_t value = 0;
-};
-
-struct CmdSyncSeamphore
-{
-	std::vector<WaitSemaphoreData> waitSemaphores;
-	std::vector<SignalSemaphoreData> signalSemaphores;
-};
-
 class VKThreadContext
 {
 public:
 	std::shared_ptr<VKWrapper::VKCommandBuffer> GetCommandBuffer();
+	bool GetCommandBuffer(std::shared_ptr<VKWrapper::VKCommandBuffer> existedCmdInstance);
 	std::shared_ptr<VKWrapper::VKCommandPool> GetCommandPool();
 	void NeedCommandPool();
 
@@ -59,6 +42,8 @@ public:
 	vk::DescriptorPool GetDescriptorPool();
 
 	std::shared_ptr<VKWrapper::VKCommandBuffer> GetCommandBuffer();
+	bool GetCommandBuffer(std::shared_ptr<VKWrapper::VKCommandBuffer> existedCmdInstance);
+
 	vk::ResultValue<std::vector<vk::DescriptorSet>> AllocateDescriptorSets(vk::DescriptorSetAllocateInfo& allocInfo);
 	vk::Result FreeDescriptorSets(const std::vector<vk::DescriptorSet>& sets);
 
@@ -85,13 +70,6 @@ private:
 	void NeedDescriptorPool();
 
 private:
-	struct SubmitCMDData
-	{
-		std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> buffers;
-		CmdSyncSeamphore syncSeamphore;
-		std::shared_ptr<VKWrapper::VKFence> signalFence;
-	};
-
 	struct PendingResource
 	{
 		VKWrapper::IVKResource* res = nullptr;

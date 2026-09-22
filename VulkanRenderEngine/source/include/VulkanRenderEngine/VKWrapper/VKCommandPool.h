@@ -14,7 +14,7 @@ namespace VKWrapper
 		{
 
 		public:
-			CmdResPool(uint32_t maxResNum = 50);
+			CmdResPool(uint32_t maxResNum = 400);
 			void Clear();
 			VkCommandBuffer FetchHandle();				// 分配
 			bool RecycleHandle(VkCommandBuffer handle);	// 回收
@@ -22,7 +22,7 @@ namespace VKWrapper
 		private:
 			std::unordered_set<VkCommandBuffer> _iDleList;
 			std::unordered_set<VkCommandBuffer> _datas;
-			uint32_t _maxResNum = 50;
+			uint32_t _maxResNum;
 		};
 
 	public:
@@ -39,7 +39,7 @@ namespace VKWrapper
 		vk::CommandPool GetHandle() const;
 		SpinLock& GetCommandPoolMutex();
 
-		vk::Result AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer, vk::CommandBufferLevel level = vk::CommandBufferLevel::ePrimary);
+		vk::Result AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer);
 		void FreeBuffers(vk::CommandBuffer handle);
 		void Trim(vk::CommandPoolTrimFlags flags = {});
 

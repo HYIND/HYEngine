@@ -13,7 +13,7 @@ std::vector<PassNode*> DependencySolver::SortPasses(std::vector<PassNode*>& pass
 			// 检查 passA 的输出是否被 passB 读取
 			for (const auto& output : passA->GetOutputs()) {
 				for (const auto& input : passB->GetInputs()) {
-					if (output == input){
+					if (output.resource == input.resource){
 						passB->After(passA);
 						return true;
 					}
@@ -22,7 +22,7 @@ std::vector<PassNode*> DependencySolver::SortPasses(std::vector<PassNode*>& pass
 			// 检查 passA 的输出是否被 passB 作为可选读取
 			for (const auto& output : passA->GetOutputs()) {
 				for (const auto& input : passB->GetInputOptions()) {
-					if (output == input) {
+					if (output.resource == input.resource) {
 						passB->After(passA);
 						return true;
 					}
@@ -151,7 +151,8 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 
 		// 处理输入
 		for (const auto& input : pass->GetInputs()) {
-			auto& usage = usageMap[input];
+			auto res = input.resource;
+			auto& usage = usageMap[res];
 			usage.firstBatch = std::min(usage.firstBatch, passBatch);
 			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isRead = true;
@@ -159,7 +160,8 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 
 		// 处理可选输入
 		for (const auto& input : pass->GetInputOptions()) {
-			auto& usage = usageMap[input];
+			auto res = input.resource;
+			auto& usage = usageMap[res];
 			usage.firstBatch = std::min(usage.firstBatch, passBatch);
 			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isRead = true;
@@ -167,7 +169,8 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 
 		// 处理输出
 		for (const auto& output : pass->GetOutputs()) {
-			auto& usage = usageMap[output];
+			auto res = output.resource;
+			auto& usage = usageMap[res];
 			usage.firstBatch = std::min(usage.firstBatch, passBatch);
 			usage.lastBatch = std::max(usage.lastBatch, passBatch);
 			usage.isWritten = true;
@@ -175,7 +178,8 @@ std::unordered_map<RenderGraphResource, ResourceUsage> DependencySolver::Calcula
 
 		// 处理临时资源
 		for (const auto& temp : pass->GetTemps()) {
-			auto& usage = usageMap[temp];
+			auto res = temp.resource;
+			auto& usage = usageMap[res];
 			// 临时资源只在当前Batch使用
 			usage.firstBatch = passBatch;
 			usage.lastBatch = passBatch;

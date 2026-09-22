@@ -330,6 +330,12 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKResource.h">
       <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\ImageLayoutWrapper.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -544,6 +550,12 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

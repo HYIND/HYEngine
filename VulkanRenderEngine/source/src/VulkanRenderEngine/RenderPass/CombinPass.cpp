@@ -43,9 +43,9 @@ void CombinPass::Draw(std::shared_ptr<Texture2D>& destColorTexture, std::shared_
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	ComputeBindingRecord _binding;
-	_binding.SetStorageImage(destColorTexture, 0);
-	_binding.SetStorageImage(destBrightTexture, 1);
-	_binding.SetUniformTextureArray(colorBuffers, 2);
+	_binding.SetStorageImage(destColorTexture, vk::ImageAspectFlagBits::eColor, 0);
+	_binding.SetStorageImage(destBrightTexture, vk::ImageAspectFlagBits::eColor, 1);
+	_binding.SetUniformTextureArray(colorBuffers, vk::ImageAspectFlagBits::eColor, 2);
 
 	uint32_t count = std::min(Max_Color_Buffer_Count, (uint32_t)colorBuffers.size());
 
@@ -54,6 +54,6 @@ void CombinPass::Draw(std::shared_ptr<Texture2D>& destColorTexture, std::shared_
 
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNowAndWait();
 }
 

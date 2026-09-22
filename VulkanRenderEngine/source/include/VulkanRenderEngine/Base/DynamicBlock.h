@@ -58,11 +58,11 @@ public:
 	void WriteData(const void* data, uint64_t size, uint64_t offset = 0);
 	void CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
 
-	void SetSizeAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize);
-	void WriteDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const void* data, uint64_t size, uint64_t offset = 0);
-	void CopySelfDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
+	void SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize);
+	void WriteDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const void* data, uint64_t size, uint64_t offset = 0);
+	void CopySelfDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
 
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur,
 		vk::DependencyFlags flags = {});
@@ -89,7 +89,7 @@ class UniformBlock : public DynamicBlock
 public:
 	UniformBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
 		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::UniformBuffer, device) {}
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::UniformRead,
 		vk::DependencyFlags flags = {}) {
@@ -103,7 +103,7 @@ public:
 	StorageBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
 		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::StorageBuffer, device) {}
 
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::StorageRead | BufferUsage::StorageWrite,
 		vk::DependencyFlags flags = {}) {
@@ -119,7 +119,7 @@ public:
 		_usage = _usage | VKWrapper::VmaBuffer::Usage::VertexBuffer;
 	}
 
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::VertexAttributeRead | BufferUsage::StorageRead | BufferUsage::StorageWrite,
 		vk::DependencyFlags flags = {}) {
@@ -134,7 +134,7 @@ public:
 		: StorageBlock(size, device) {
 		_usage = _usage | VKWrapper::VmaBuffer::Usage::IndexBuffer;
 	}
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::IndexRead | BufferUsage::StorageRead | BufferUsage::StorageWrite,
 		vk::DependencyFlags flags = {}) {
@@ -147,7 +147,7 @@ class IndirectBufferBlock : public DynamicBlock
 public:
 	IndirectBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
 		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::IndirectBuffer, device) {}
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::IndirectRead,
 		vk::DependencyFlags flags = {}) {
@@ -160,7 +160,7 @@ class SBTBufferBlock : public DynamicBlock
 public:
 	SBTBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
 		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::SBTBuffer, device) {}
-	void Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::ShaderBindingTableRead,
 		vk::DependencyFlags flags = {}) {

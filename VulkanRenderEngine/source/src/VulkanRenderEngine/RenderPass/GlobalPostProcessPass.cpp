@@ -53,9 +53,9 @@ void GlobalPostProcessPass::Draw(
 	Params params{ .exposureValue = exposureValue, .gammaValue = gammaValue, .gammaEnable = gamma_on, .bloomEnable = bloom_on, .filpY = flipY };
 
 	ComputeBindingRecord binding;
-	binding.SetStorageImage(outPut, 0);
-	binding.SetUniformTexture(colorBuffer, 1);
-	if (bloom_on)binding.SetUniformTexture(bloomBlurMap, 2);
+	binding.SetStorageImage(outPut, vk::ImageAspectFlagBits::eColor, 0);
+	binding.SetUniformTexture(colorBuffer, vk::ImageAspectFlagBits::eColor, 1);
+	if (bloom_on) binding.SetUniformTexture(bloomBlurMap, vk::ImageAspectFlagBits::eColor, 2);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
@@ -64,5 +64,5 @@ void GlobalPostProcessPass::Draw(
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNowAndWait();
 }

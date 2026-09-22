@@ -35,7 +35,7 @@ LightingPass::~LightingPass() {}
 void LightingPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
 
-void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto gPosition = ctx.GetInput(0);
 	auto gNormal = ctx.GetInput(1);
@@ -52,15 +52,15 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 
-	binding.SetStorageImage(target, 0);
-	binding.SetUniformTexture(gPosition, 1);
-	binding.SetUniformTexture(gNormal, 2);
-	binding.SetUniformTexture(gAlbedoOpacity, 3);
-	binding.SetUniformTexture(gMetallicRoughness, 4);
-	binding.SetUniformTexture(gEmission, 5);
-	binding.SetUniformTexture(ssao, 6);
-	binding.SetUniformTexture(atlasShadowMap, 7);
-	binding.SetUniformTexture(gDepthStencilMap, 8);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 0);
+	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 1);
+	binding.SetUniformTexture(gNormal, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetUniformTexture(gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 4);
+	binding.SetUniformTexture(gEmission, vk::ImageAspectFlagBits::eColor, 5);
+	binding.SetUniformTexture(ssao, vk::ImageAspectFlagBits::eColor, 6);
+	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
+	binding.SetUniformTexture(gDepthStencilMap, vk::ImageAspectFlagBits::eDepth, 8);
 
 	binding.SetLightStorageData(
 		state.lights.ssbo_dirLightMeta,
@@ -69,9 +69,10 @@ void LightingPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 		state.lights.ssbo_spotLightMeta
 	);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNow();
+	//cmd->SubmitToQueue();
 }

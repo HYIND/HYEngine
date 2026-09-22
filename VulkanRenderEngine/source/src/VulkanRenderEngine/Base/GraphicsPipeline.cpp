@@ -206,7 +206,7 @@ bool GraphicsPipelineConfig::Validate() const
 
 GraphicsPipeline::GraphicsPipeline() {
 	m_bindPoint = vk::PipelineBindPoint::eGraphics;
-	m_bindStage = Texture2D::BindStage::Graphics;
+	m_bindStage = ImageLayout::BindStage::Graphics;
 }
 
 GraphicsPipeline::~GraphicsPipeline()
@@ -319,7 +319,7 @@ bool GraphicsPipeline::CreatePipeline(GraphicsPipelineConfig& config)
 	return true;
 }
 
-void GraphicsPipeline::Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
+void GraphicsPipeline::Bind(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) {
 	if (!cmdBuffer)
 		return;
 	Pipeline::Bind(cmdBuffer, bindingRecord);

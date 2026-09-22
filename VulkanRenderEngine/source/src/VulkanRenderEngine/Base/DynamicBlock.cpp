@@ -82,7 +82,7 @@ void DynamicBlock::CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t 
 	VKWrapper::VmaBuffer::CopyBuffer(*_curBuffer, *_curBuffer, _size, srcFirst, destFirst);
 }
 
-void DynamicBlock::SetSizeAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize)
+void DynamicBlock::SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize)
 {
 	LockGuard guard(_mutex);
 
@@ -98,7 +98,7 @@ void DynamicBlock::SetSizeAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd
 	_size = newsize;
 }
 
-void DynamicBlock::WriteDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const void* data, uint64_t size, uint64_t offset)
+void DynamicBlock::WriteDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const void* data, uint64_t size, uint64_t offset)
 {
 	LockGuard guard(_mutex);
 	if (size + offset > _size)
@@ -108,7 +108,7 @@ void DynamicBlock::WriteDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& c
 		_curBuffer->UpdateAsync(cmd, data, size, offset);
 }
 
-void DynamicBlock::CopySelfDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t destFirst, uint64_t srcFirst, uint64_t length)
+void DynamicBlock::CopySelfDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t destFirst, uint64_t srcFirst, uint64_t length)
 {
 	if (length == 0 || destFirst == srcFirst)
 		return;
@@ -120,7 +120,7 @@ void DynamicBlock::CopySelfDataAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	VKWrapper::VmaBuffer::CopyBufferAsync(cmd, *_curBuffer, *_curBuffer, _size, srcFirst, destFirst);
 }
 
-void DynamicBlock::Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, BufferUsage pre, BufferUsage cur, vk::DependencyFlags flags)
+void DynamicBlock::Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, BufferUsage pre, BufferUsage cur, vk::DependencyFlags flags)
 {
 	auto preInfo = GetBufferUsageInfo(pre);
 	auto curInfo = GetBufferUsageInfo(cur);

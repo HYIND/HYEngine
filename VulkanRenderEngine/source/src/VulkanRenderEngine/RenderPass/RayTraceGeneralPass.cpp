@@ -40,7 +40,6 @@ std::shared_ptr<StorageBlock> RayTraceGeneralBuffer::GetWorldBVHNode()
 RayTraceGeneralPass::RayTraceGeneralPass()
 {
 	_buffers = std::make_shared<RayTraceGeneralBuffer>();
-	_fence = std::make_shared< VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
 }
 
 RayTraceGeneralPass::~RayTraceGeneralPass()
@@ -52,9 +51,8 @@ bool RayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry
 	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
 }
 
-void RayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void RayTraceGeneralPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	//_fence->WaitAndReset();
 }
 
 void RayTraceGeneralPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)

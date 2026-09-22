@@ -182,6 +182,4 @@ private:
 	ThreadPool _frameTaskPool;
 	bool _stop = true;
 	std::shared_ptr<std::thread> _exeLoopThread;
-
-
 };

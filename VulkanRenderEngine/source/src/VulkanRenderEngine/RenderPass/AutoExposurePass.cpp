@@ -49,17 +49,17 @@ void AutoExposurePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Rend
 	binding.SetStorageBlock(paramsSSBO, 0);
 }
 
-void AutoExposurePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void AutoExposurePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 
 	auto sceneColorBuffer = ctx.GetExternal(0);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 
 	ComputeBindingRecord& binding = *registry.Get<ComputeBindingRecord>("binding");
 	std::shared_ptr<StorageBlock> paramsSSBO = registry.GetStorageBlock("paramsSSBO");
 
-	binding.SetStorageImage(sceneColorBuffer, 1);
+	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);
 
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);

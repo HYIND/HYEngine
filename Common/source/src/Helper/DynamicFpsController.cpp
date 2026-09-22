@@ -83,7 +83,7 @@ void DynamicFpsController::run()
 	}
 
 	if (sleep_time > 0)
-			std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
+		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
 }
 
 float DynamicFpsController::getTimeDiffMS() const

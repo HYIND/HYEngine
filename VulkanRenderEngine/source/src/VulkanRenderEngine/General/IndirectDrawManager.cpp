@@ -48,6 +48,129 @@ namespace ReitreRes
 
 std::shared_ptr<Texture2D> BindlessTextureManager::_placeholderTexture;
 
+std::shared_ptr<BindlessTextureManager> BindlessTextureManager::Instance()
+{
+	static auto instance = std::shared_ptr<BindlessTextureManager>(new BindlessTextureManager());
+	return instance;
+}
+
+BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const std::shared_ptr<Texture2D>& tex)
+{
+	if (!tex)
+		return BindlessIndexNull;
+	return RegisterOrUpdateTexture(tex.get());
+}
+
+BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* tex)
+{
+	if (!tex)
+		return BindlessIndexNull;
+
+	LockGuard guard(_mutex);
+	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
+	{
+		auto [storedTex, index] = *it;
+		TextureDescBindEntry& entry = _entrys[index];
+		if (_entrys[index].version != storedTex->GetDescBindEntryVersion())
+		{
+			entry = std::move(storedTex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor));
+		}
+		return index;
+	}
+	else
+	{
+		TextureDescBindEntry entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+		if (!entry.image || !entry.imageView || !entry.sampler)
+			return BindlessIndexNull;
+
+		if (_idleSlot.empty())
+		{
+			BindlessIndex newIndex = _entrys.size();
+
+			_entrys.push_back(std::move(entry));
+			_textureEntrys[tex] = newIndex;
+			return newIndex;
+		}
+		else
+		{
+			BindlessIndex idleIndex = _idleSlot.front();
+			_idleSlot.pop();
+
+			_entrys[idleIndex] = std::move(entry);
+			_textureEntrys[tex] = idleIndex;
+			return idleIndex;
+		}
+	}
+}
+
+BindlessIndex BindlessTextureManager::GetTextureIndex(const std::shared_ptr<Texture2D>& tex)
+{
+	if (!tex)
+		return BindlessIndexNull;
+	return GetTextureIndex(tex.get());
+}
+
+BindlessIndex BindlessTextureManager::GetTextureIndex(const Texture2D* tex)
+{
+	if (!tex)
+		return BindlessIndexNull;
+
+	SharedLockGuard guard(_mutex);
+	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
+		return it->second;
+
+	return BindlessIndexNull;
+}
+
+void BindlessTextureManager::UnregisterTexture(const std::shared_ptr<Texture2D>& tex)
+{
+	if (!tex)
+		return;
+	UnregisterTexture(tex.get());
+}
+
+void BindlessTextureManager::UnregisterTexture(const Texture2D* tex)
+{
+	if (!tex)
+		return;
+
+	{
+		SharedLockGuard guard(_mutex);
+		if (auto it = _textureEntrys.find(tex); it == _textureEntrys.end())
+			return;
+	}
+
+	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(tex));
+}
+
+std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntrys() const
+{
+	SharedLockGuard guard(_mutex);
+	return _entrys;
+}
+
+void BindlessTextureManager::DeleteTexture(const Texture2D* tex)
+{
+	LockGuard guard(_mutex);
+	auto it = _textureEntrys.find(tex);
+	if (it == _textureEntrys.end())
+		return;
+
+	if (!_placeholderTexture)
+		_placeholderTexture = std::make_shared<Texture2D>(1, 1);
+
+	uint32_t index = it->second;
+	_idleSlot.push(index);
+	_entrys[index] = _placeholderTexture->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+	_textureEntrys.erase(it);
+}
+
+BindlessTextureManager::BindlessTextureManager() {
+	_aspect = vk::ImageAspectFlagBits::eColor;
+}
+
+IndirectDrawManager::IndirectDrawManager() {}
+
 std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 {
 	static std::shared_ptr<IndirectDrawManager> instance = std::shared_ptr<IndirectDrawManager>(new IndirectDrawManager());
@@ -112,20 +235,19 @@ std::shared_ptr<IndexBufferBlock> IndirectDrawManager::GetIndexBlock() const {
 
 void IndirectDrawManager::SetupMaterial(Material& material)
 {
-	auto guard = LockGuard(_materialMutex);
-
 	for (auto& [type, tex] : material.GetTextures())
 		BindlessTextureManager::Instance()->RegisterOrUpdateTexture(tex);
 
 	auto uuid = material.GetUUID();
 	auto version = material.GetVersion();
+
+	auto guard = LockGuard(_materialMutex);
 	SegmentData segmentData;
 	if (!_MaterialManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
 	{
 		auto data = material.GetMaterialCompData();
 		_MaterialManager.SetSegment(uuid, (void*)version, &data, sizeof(data));
 	}
-
 }
 
 void IndirectDrawManager::RetireMaterial(Material& material)
@@ -149,121 +271,67 @@ std::shared_ptr<StorageBlock> IndirectDrawManager::GetMaterialSSBO() {
 	return _MaterialManager.GetBuffer()->GetBlock();
 }
 
-IndirectDrawManager::IndirectDrawManager() {}
-
-std::shared_ptr<BindlessTextureManager> BindlessTextureManager::Instance()
+void IndirectDrawManager::WithMeshWriteLock(const std::function<void()>& call)
 {
-	static auto instance = std::shared_ptr<BindlessTextureManager>(new BindlessTextureManager());
-	return instance;
+	LockGuard guard(_meshMutex);
+	if (call)
+		call();
 }
 
-BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const std::shared_ptr<Texture2D>& tex)
+
+void IndirectDrawManager::WithMaterialWriteLock(const std::function<void()>& call)
 {
-	if (!tex)
-		return BindlessIndexNull;
-	return RegisterOrUpdateTexture(tex.get());
+	LockGuard guard(_materialMutex);
+	if (call)
+		call();
 }
 
-BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* tex)
+void IndirectDrawManager::WithMeshMaterialWriteLock(const std::function<void()>& call)
 {
-	if (!tex)
-		return BindlessIndexNull;
+	LockGuard guard1(_meshMutex);
+	LockGuard guard2(_materialMutex);
+	if (call)
+		call();
+}
 
-	LockGuard guard(_mutex);
-	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
+void IndirectDrawManager::SetupMesh_LockFree(Mesh& mesh)
+{
+	auto uuid = mesh.GetUUID();
+	auto version = mesh.GetVerticesIndicesVsrsion();
+
 	{
-		auto [storedTex, index] = *it;
-		TextureDescBindEntry& entry = _entrys[index];
-		if (_entrys[index].version != storedTex->GetDescBindEntryVersion())
+		SegmentData segmentData;
+		if (!_VertexManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
 		{
-			entry = std::move(storedTex->GetDescBindEntry());
+			auto& vertices = mesh.GetVertices();
+			_VertexManager.SetSegment(uuid, (void*)version, vertices.data(), vertices.size() * sizeof(Vertex));
 		}
-		return index;
 	}
-	else
+
 	{
-		TextureDescBindEntry entry = tex->GetDescBindEntry();
-		if (!entry.image || !entry.imageView || !entry.sampler)
-			return BindlessIndexNull;
-
-		if (_idleSlot.empty())
+		SegmentData segmentData;
+		if (!_IndexManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
 		{
-			BindlessIndex newIndex = _entrys.size();
-
-			_entrys.push_back(std::move(entry));
-			_textureEntrys[tex] = newIndex;
-			return newIndex;
-		}
-		else
-		{
-			BindlessIndex idleIndex = _idleSlot.front();
-			_idleSlot.pop();
-
-			_entrys[idleIndex] = std::move(entry);
-			_textureEntrys[tex] = idleIndex;
-			return idleIndex;
+			auto& indices = mesh.GetIndices();
+			_IndexManager.SetSegment(uuid, (void*)version, indices.data(), indices.size() * sizeof(unsigned int));
 		}
 	}
 }
 
-BindlessIndex BindlessTextureManager::GetTextureIndex(const std::shared_ptr<Texture2D>& tex)
+void IndirectDrawManager::SetupMaterial_LockFree(Material& material)
 {
-	if (!tex)
-		return BindlessIndexNull;
-	return GetTextureIndex(tex.get());
-}
+	for (auto& [type, tex] : material.GetTextures())
+		BindlessTextureManager::Instance()->RegisterOrUpdateTexture(tex);
 
-BindlessIndex BindlessTextureManager::GetTextureIndex(const Texture2D* tex)
-{
-	if (!tex)
-		return BindlessIndexNull;
+	auto uuid = material.GetUUID();
+	auto version = material.GetVersion();
 
-	LockGuard guard(_mutex);
-	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
-		return it->second;
-
-	return BindlessIndexNull;
-}
-
-void BindlessTextureManager::UnregisterTexture(const std::shared_ptr<Texture2D>& tex)
-{
-	if (!tex)
-		return;
-	UnregisterTexture(tex.get());
-}
-
-void BindlessTextureManager::UnregisterTexture(const Texture2D* tex)
-{
-	if (!tex)
-		return;
-
-	LockGuard guard(_mutex);
-	if (auto it = _textureEntrys.find(tex); it == _textureEntrys.end())
-		return;
-
-	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(tex));
-}
-
-std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntrys() const
-{
-	LockGuard guard(_mutex);
-	return _entrys;
-}
-
-void BindlessTextureManager::DeleteTexture(const Texture2D* tex)
-{
-	LockGuard guard(_mutex);
-	auto it = _textureEntrys.find(tex);
-	if (it == _textureEntrys.end())
-		return;
-
-	if (!_placeholderTexture)
-		_placeholderTexture = std::make_shared<Texture2D>(1, 1);
-
-	uint32_t index = it->second;
-	_idleSlot.push(index);
-	_entrys[index] = _placeholderTexture->GetDescBindEntry();
-	_textureEntrys.erase(it);
+	SegmentData segmentData;
+	if (!_MaterialManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
+	{
+		auto data = material.GetMaterialCompData();
+		_MaterialManager.SetSegment(uuid, (void*)version, &data, sizeof(data));
+	}
 }
 
 void IndirectDrawManager::WithMeshSharedLock(const std::function<void()>& call)

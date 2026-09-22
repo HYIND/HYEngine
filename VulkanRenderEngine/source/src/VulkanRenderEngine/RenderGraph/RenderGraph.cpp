@@ -45,22 +45,24 @@ ExternalResource Graph::CreateExternalTexture(const ResourceName& name)
 }
 
 // Pass管理
-PassNode* Graph::AddPass(const std::string& name) {
-	auto pass = std::make_unique<PassNode>(name);
-	_passes.push_back(pass.get());
-	_ownedPasses.push_back(std::move(pass));
+PassNode* Graph::AddNode(const std::string& name) {
+	auto node = std::make_unique<PassNode>(name);
+	auto rawptr = node.get();
+	_passes.push_back(rawptr);
+	_ownedPasses.push_back(std::move(node));
 	_needsCompile = true;
-	return _passes.back();
+	return rawptr;
 }
 
 PassNode* Graph::AddFence(const std::string& name)
 {
-	auto pass = std::make_unique<PassNode>(name);
-	pass->SetEnable(false);
-	_passes.push_back(pass.get());
-	_ownedPasses.push_back(std::move(pass));
+	auto node = std::make_unique<PassNode>(name);
+	node->SetEnable(false);
+	auto rawptr = node.get();
+	_passes.push_back(rawptr);
+	_ownedPasses.push_back(std::move(node));
 	_needsCompile = true;
-	return _passes.back();
+	return rawptr;
 }
 
 // 编译（分析依赖和生命周期）
@@ -130,7 +132,8 @@ void Graph::FindReadyNodeAndExcute(
 	RenderState& state,
 	const std::string& resPrefix,
 	ExternalResourceManager& externalResManager,
-	std::atomic<uint32_t>& doneCounter
+	std::atomic<uint32_t>& doneCounter,
+	std::shared_ptr<CriticalSectionLock>& _cmdMutex
 )
 {
 	for (auto& passData : batchdata.passes)
@@ -145,11 +148,12 @@ void Graph::FindReadyNodeAndExcute(
 			{
 				executeHandle = _executeParallelPool.submit(
 					[&, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
-						ExcutePass(ctx.node, ctx.registry, state, resPrefix, externalResManager);
+						ExecutePass(ctx.node, ctx.registry, state, resPrefix, externalResManager, _cmdMutex);
 						for (auto& next : ctx.nextIndexs)
 							--passCtxs[next].dependency;
 						doneCounter++;
 					});
+				executeHandle.get();
 			}
 		}
 	}
@@ -178,55 +182,67 @@ void Graph::FindReadyNodeAndExcute(
 
 }
 
-void Graph::ExcutePass(
+void Graph::ExecutePass(
 	PassNode* node,
 	FrameDataRegistry& registry,
 	RenderState& state,
 	const std::string& resPrefix,
-	ExternalResourceManager& externalResManager
+	ExternalResourceManager& externalResManager,
+	std::shared_ptr<CriticalSectionLock>& _cmdMutex
 )
 {
 	//auto start = Tool::GetTimestampMircoseconds();
-	//std::cout << std::format("ExcutePass {}\n", pass->GetName());
+	//std::cout << std::format("ExecutePass {}, threadid = {}\n", node->GetName(), std::this_thread::get_id());
 
 	if (node->ShouldExecute(registry, state))
 	{
+		PassFrameCmdContext cmdCtx(_cmdMutex);
 		PassFrameContext ctx;
 		ctx.passName = node->GetName();
 
 		for (const auto& input : node->GetInputs()) {
-			ctx.inputTextures.push_back(_resManager.GetTexture(input, resPrefix));
+			auto tex = _resManager.GetTexture(input.resource, resPrefix);
+			ctx.inputTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, input.layout);
 		}
 
 		for (const auto& input : node->GetInputOptions()) {
-			ctx.optionInputTextures.push_back(_resManager.TryGetTexture(input, resPrefix));
+			auto tex = _resManager.TryGetTexture(input.resource, resPrefix);
+			ctx.optionInputTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, input.layout);
 		}
 
 		for (const auto& output : node->GetOutputs()) {
-			ctx.outputTextures.push_back(_resManager.GetTexture(output, resPrefix));
+			auto tex = _resManager.GetTexture(output.resource, resPrefix);
+			ctx.outputTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, output.layout);
 		}
 
 		for (const auto& temp : node->GetTemps()) {
-			ctx.tempTextures.push_back(_resManager.GetTexture(temp, resPrefix));
+			auto tex = _resManager.GetTexture(temp.resource, resPrefix);
+			ctx.tempTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, temp.layout);
 		}
 
 		for (const auto& persitent : node->GetPersistents()) {
-			ctx.persitentTextures.push_back(_resManager.GetTexture(persitent, ""));
+			auto tex = _resManager.GetTexture(persitent.resource, "");
+			ctx.persitentTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, persitent.layout);
 		}
 
 		for (const auto& external : node->GetExternals()) {
-			if (external.type == ResourceType::Texture)
-				ctx.externalTextures.push_back(externalResManager.GetExternalTexture(external.name));
+			if (external.resource.type == ResourceType::Texture)
+			{
+				auto tex = externalResManager.GetExternalTexture(external.resource.name);
+				ctx.externalTextures.push_back(tex);
+				cmdCtx.PushTexWithLayout(tex, external.layout);
+			}
 		}
 
-		node->Execute(registry, ctx, state);
-		//std::cout << std::format("ExcutePass {}\n ", pass->GetName());
+		node->Execute(cmdCtx, registry, ctx, state);
 	}
 
-	//std::cout << std::format("ExcutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
-
-	//LockGuard guard(notifyData->doneMutex);
-	//notifyData->doneCV.NotifyOne();
+	//std::cout << std::format("ExecutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
 }
 
 
@@ -240,6 +256,7 @@ void Graph::Execute(
 	if (!state)
 		return;
 
+	auto _cmdMutex = std::make_shared<CriticalSectionLock>();
 	std::atomic<uint32_t> doneCounter(0u);
 	std::atomic<uint32_t> beginCounter(0u);
 
@@ -362,7 +379,7 @@ void Graph::Execute(
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager, doneCounter);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager, doneCounter, _cmdMutex);
 
 			if (batch.isEnd)
 			{

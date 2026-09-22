@@ -144,7 +144,7 @@ bool RayTraceReflectPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry
 	return true;
 }
 
-void RayTraceReflectPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void RayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
@@ -169,12 +169,18 @@ void RayTraceReflectPass::Execute(RenderGraph::FrameDataRegistry& registry, cons
 
 	data.outPutTexture = ctx.GetOutput(0);
 
-	if (!DrawRayTraceGI(data, state)) return;
-	if (!DrawSpatialDenoising(data, state)) return;
-	if (!DrawTemporalDenoising(data, state)) return;
+	auto cmd = cmdCtx.GetCmd();
+
+	if (!DrawRayTraceGI(cmd, data, state)) return;
+	if (!DrawSpatialDenoising(cmd, data, state)) return;
+	if (!DrawTemporalDenoising(cmd, data, state)) return;
 
 	if (data.outPutTexture && data.historyColorTexture)
-		Texture2D::CopyTexture(data.outPutTexture, data.historyColorTexture);
+	{
+		Texture2D::CopyTextureAsync(cmd, data.outPutTexture, data.historyColorTexture);
+		cmd->SubmitToQueue();
+	}
+
 
 	//if (!DrawScale(data, state)) return;
 
@@ -195,16 +201,15 @@ void RayTraceReflectPass::SetGeneralBuffer(std::shared_ptr<RayTraceGeneralBuffer
 	_buffers = buffer;
 }
 
-bool RayTraceReflectPass::DrawRayTraceGI(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& target = data.originTexture;
 
 	if (!target || target->IsEmpty())
 		return false;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -241,24 +246,24 @@ bool RayTraceReflectPass::DrawRayTraceGI(FrameRenderData& data, RenderState& sta
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	binding.SetStorageImage(target, 6);
-	binding.SetUniformTexture(data.gPosition, 7);
-	binding.SetUniformTexture(data.gNormal, 8);
-	binding.SetUniformTexture(data.gAlbedoOpacity, 9);
-	binding.SetUniformTexture(data.gMetallicRoughness, 10);
-	binding.SetUniformTexture(data.sceneDepthBuffer, 11);
-	binding.SetUniformTexture(data.atlasShadowMap, 12);
-	binding.SetUniformTexture(data.ssaoMap, 13);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 6);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
+	binding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 11);
+	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
+	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
 
 	rayTraceShader.Bind(cmd, binding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNow();
 
 	return true;
 }
 
-bool RayTraceReflectPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.originTexture;
 	auto& target = data.spatialDenoisingTexture;
@@ -269,9 +274,8 @@ bool RayTraceReflectPass::DrawSpatialDenoising(FrameRenderData& data, RenderStat
 	if (!target || target->IsEmpty())
 		return false;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -293,20 +297,20 @@ bool RayTraceReflectPass::DrawSpatialDenoising(FrameRenderData& data, RenderStat
 	SpatialDenoisingParamsUBO->WriteData(&params, sizeof(params));
 
 	_spatialDenoisingBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingBinding.SetStorageImage(target, 1);
-	_spatialDenoisingBinding.SetUniformTexture(data.gNormal, 2);
-	_spatialDenoisingBinding.SetUniformTexture(data.sceneDepthBuffer, 3);
-	_spatialDenoisingBinding.SetUniformTexture(source, 4);
+	_spatialDenoisingBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
+	_spatialDenoisingBinding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 2);
+	_spatialDenoisingBinding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 3);
+	_spatialDenoisingBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 4);
 
 	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNow();
 
 	return true;
 }
 
-bool RayTraceReflectPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.spatialDenoisingTexture;
 	auto& target = data.outPutTexture;
@@ -319,14 +323,13 @@ bool RayTraceReflectPass::DrawTemporalDenoising(FrameRenderData& data, RenderSta
 
 	if (_firstDrawTemporal || !data.gMotionVector || !data.historyColorTexture)
 	{
-		Texture2D::CopyTexture(source, target);
+		Texture2D::CopyTextureAsync(cmd, source, target);
 		_firstDrawTemporal = false;
+		cmd->SubmitNow();
 		return true;
 	}
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -344,20 +347,20 @@ bool RayTraceReflectPass::DrawTemporalDenoising(FrameRenderData& data, RenderSta
 	};
 	TemporalAccumulateParamsUBO->WriteData(&params, sizeof(params));
 
-	_temporalDenoisingBinding.SetStorageImage(target, 1);
-	_temporalDenoisingBinding.SetUniformTexture(source, 2);
-	_temporalDenoisingBinding.SetUniformTexture(data.historyColorTexture, 3);
-	_temporalDenoisingBinding.SetUniformTexture(data.gMotionVector, 4);
+	_temporalDenoisingBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
+	_temporalDenoisingBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 2);
+	_temporalDenoisingBinding.SetUniformTexture(data.historyColorTexture, vk::ImageAspectFlagBits::eColor, 3);
+	_temporalDenoisingBinding.SetUniformTexture(data.gMotionVector, vk::ImageAspectFlagBits::eColor, 4);
 
 	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNow();
 
 	return true;
 }
 
-bool RayTraceReflectPass::DrawScale(FrameRenderData& data, RenderState& state)
+bool RayTraceReflectPass::DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	//std::shared_ptr<Texture2D> srcTex;
 	//std::shared_ptr<Texture2D>& targetTex = data.outPutTexture;

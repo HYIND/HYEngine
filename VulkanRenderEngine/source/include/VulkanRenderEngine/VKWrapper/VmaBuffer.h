@@ -22,7 +22,7 @@ namespace VKWrapper
 
 	public:
 		static bool CopyBuffer(VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset = 0, size_t dstOffset = 0);
-		static bool CopyBufferAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset = 0, size_t dstOffset = 0);
+		static bool CopyBufferAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset = 0, size_t dstOffset = 0);
 
 	public:
 		VmaBuffer() = default;
@@ -57,11 +57,11 @@ namespace VKWrapper
 		// ---------- 数据更新 ----------
 		// 自动根据内存类型决定是否支持
 		bool Update(const void* data, size_t size, size_t offset);
-		bool UpdateAsync(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset);
+		bool UpdateAsync(const std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset);
 
 		// 读回数据
 		bool Readback(void* outData, size_t size, size_t offset = 0);
-		bool Readback(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset = 0);
+		bool Readback(const std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset = 0);
 
 		// ---------- 查询 ----------
 		bool IsHostVisible() const;
@@ -71,10 +71,10 @@ namespace VKWrapper
 
 	private:
 		bool UpdateMappable(const void* data, size_t size, size_t offset);
-		bool UpdateStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset);
+		bool UpdateStagingBuffer(const std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset);
 
 		bool ReadMappable(void* outData, size_t size, size_t offset);
-		bool ReadStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset);
+		bool ReadStagingBuffer(const std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset);
 
 	private:
 		VKCore::VulkanDevice* m_device = nullptr;

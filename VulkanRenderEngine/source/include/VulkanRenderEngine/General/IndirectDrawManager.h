@@ -38,7 +38,7 @@ public:
 	void DeleteTexture(const Texture2D* tex);
 
 private:
-	BindlessTextureManager() = default;
+	BindlessTextureManager();
 
 private:
 	std::vector<TextureDescBindEntry> _entrys;
@@ -69,6 +69,13 @@ public:
 	std::shared_ptr<StorageBlock> GetMaterialSSBO();
 
 public:
+	void WithMeshWriteLock(const std::function<void()>& call);
+	void WithMaterialWriteLock(const std::function<void()>& call);
+	void WithMeshMaterialWriteLock(const std::function<void()>& call);
+
+	void SetupMesh_LockFree(Mesh& mesh);
+	void SetupMaterial_LockFree(Material& material);
+
 	void WithMeshSharedLock(const std::function<void()>& call);
 	void WithMaterialSharedLock(const std::function<void()>& call);
 	void WithMeshMaterialSharedLock(const std::function<void()>& call);

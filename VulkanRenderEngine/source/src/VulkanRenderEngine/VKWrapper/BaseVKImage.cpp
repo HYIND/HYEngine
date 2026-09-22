@@ -5,11 +5,11 @@
 
 using namespace VKWrapper;
 
-uint64_t VKWrapper::BaseVKImage::MakeKey(uint32_t mipLevel, uint32_t arrayLayer) const {
+uint64_t VKWrapper::ImageState::MakeKey(uint32_t mipLevel, uint32_t arrayLayer) {
 	return (static_cast<uint32_t>(mipLevel) << 32) | 0;
 }
 
-VKWrapper::BaseVKImage::SubresourceState& VKWrapper::BaseVKImage::GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer) const {
+VKWrapper::SubresourceState& VKWrapper::ImageState::GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer) const {
 	uint64_t key = MakeKey(mipLevel, 0);
 	auto it = _subresourceStates.find(key);
 	if (it == _subresourceStates.end()) {
@@ -18,316 +18,20 @@ VKWrapper::BaseVKImage::SubresourceState& VKWrapper::BaseVKImage::GetSubresource
 	return it->second;
 }
 
-bool BaseVKImage::IsColorFormat(vk::Format format)
-{
-	switch (format)
-	{
-	case vk::Format::eD16Unorm:
-	case vk::Format::eD32Sfloat:
-	case vk::Format::eD16UnormS8Uint:
-	case vk::Format::eD24UnormS8Uint:
-	case vk::Format::eD32SfloatS8Uint:
-	case vk::Format::eS8Uint:
-		return false;
-	default:
-		return true;
+SubresourceState& BaseVKImage::GetSubresourceState(uint32_t level) const {
+	if (auto ctx = PassImageStateRecord::Current()) {
+		return ctx->GetRecordState(shared_from_this(), level);
 	}
-}
-
-bool BaseVKImage::IsDepthStencilFormat(vk::Format format)
-{
-	switch (format)
-	{
-	case vk::Format::eD16UnormS8Uint:
-	case vk::Format::eD24UnormS8Uint:
-	case vk::Format::eD32SfloatS8Uint:
-		return true;
-	default:
-		return false;
+	else {
+		return m_imageState.GetSubresourceState(level);
 	}
-}
-
-bool BaseVKImage::IsDepthFormat(vk::Format format)
-{
-	switch (format)
-	{
-	case vk::Format::eD16Unorm:
-	case vk::Format::eD32Sfloat:
-		return true;
-	default:
-		return false;
-	}
-}
-
-bool BaseVKImage::IsStencilFormat(vk::Format format)
-{
-	switch (format)
-	{
-	case vk::Format::eS8Uint:
-		return true;
-	default:
-		return false;
-	}
-}
-
-bool BaseVKImage::IsLinearFormat(vk::Format format)
-{
-	switch (format)
-	{
-		// 所有 sRGB 格式都是非线性的
-	case vk::Format::eR8Srgb:
-	case vk::Format::eR8G8Srgb:
-	case vk::Format::eR8G8B8Srgb:
-	case vk::Format::eR8G8B8A8Srgb:
-	case vk::Format::eB8G8R8Srgb:
-	case vk::Format::eB8G8R8A8Srgb:
-	case vk::Format::eA8B8G8R8SrgbPack32:
-		// BC 压缩格式的 sRGB 变体
-	case vk::Format::eBc1RgbSrgbBlock:
-	case vk::Format::eBc1RgbaSrgbBlock:
-	case vk::Format::eBc2SrgbBlock:
-	case vk::Format::eBc3SrgbBlock:
-	case vk::Format::eBc7SrgbBlock:
-		// ETC 压缩格式的 sRGB 变体
-	case vk::Format::eEtc2R8G8B8SrgbBlock:
-	case vk::Format::eEtc2R8G8B8A1SrgbBlock:
-	case vk::Format::eEtc2R8G8B8A8SrgbBlock:
-		// ASTC 压缩格式的 sRGB 变体
-	case vk::Format::eAstc4x4SrgbBlock:
-	case vk::Format::eAstc5x4SrgbBlock:
-	case vk::Format::eAstc5x5SrgbBlock:
-	case vk::Format::eAstc6x5SrgbBlock:
-	case vk::Format::eAstc6x6SrgbBlock:
-	case vk::Format::eAstc8x5SrgbBlock:
-	case vk::Format::eAstc8x6SrgbBlock:
-	case vk::Format::eAstc8x8SrgbBlock:
-	case vk::Format::eAstc10x5SrgbBlock:
-	case vk::Format::eAstc10x6SrgbBlock:
-	case vk::Format::eAstc10x8SrgbBlock:
-	case vk::Format::eAstc10x10SrgbBlock:
-	case vk::Format::eAstc12x10SrgbBlock:
-	case vk::Format::eAstc12x12SrgbBlock:
-		return false;
-	default:
-		return true;  // 默认认为是线性格式
-	}
-}
-
-vk::AccessFlags BaseVKImage::GetAccessMaskForLayout(vk::ImageLayout layout, vk::PipelineStageFlags dstStageMask) {
-	switch (layout) {
-	case vk::ImageLayout::eUndefined:
-		return vk::AccessFlagBits::eNone;
-
-	case vk::ImageLayout::eGeneral:
-		if (dstStageMask & vk::PipelineStageFlagBits::eTransfer)
-			return vk::AccessFlagBits::eTransferRead | vk::AccessFlagBits::eTransferWrite;
-		if (dstStageMask &
-			(vk::PipelineStageFlagBits::eComputeShader
-				| vk::PipelineStageFlagBits::eVertexShader
-				| vk::PipelineStageFlagBits::eFragmentShader
-				| vk::PipelineStageFlagBits::eAllGraphics)
-			)
-			return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-		return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-
-	case vk::ImageLayout::eColorAttachmentOptimal:
-		return vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
-
-	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eDepthAttachmentOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eStencilAttachmentOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead;
-
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		return vk::AccessFlagBits::eShaderRead;
-
-	case vk::ImageLayout::eTransferSrcOptimal:
-		return vk::AccessFlagBits::eTransferRead;
-
-	case vk::ImageLayout::eTransferDstOptimal:
-		return vk::AccessFlagBits::eTransferWrite;
-
-	case vk::ImageLayout::ePreinitialized:
-		return vk::AccessFlagBits::eHostWrite;
-
-	case vk::ImageLayout::ePresentSrcKHR:
-		return vk::AccessFlagBits::eNone;
-
-	case vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eDepthReadOnlyOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	case vk::ImageLayout::eStencilReadOnlyOptimal:
-		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-	default:
-		return vk::AccessFlagBits::eNone;
-	}
-}
-
-// srcStageMask：从当前 AccessMask 推导
-vk::PipelineStageFlags BaseVKImage::AccessMaskToStage(vk::AccessFlags mask) {
-	if (!mask) {
-		return vk::PipelineStageFlagBits::eTopOfPipe;
-	}
-
-	// 注意：按优先级从高到低判断，因为一个 mask 可能包含多个 bit
-	// 如果同时包含多个，取"最保守"的那个
-
-	// 主机操作
-	if (mask & (vk::AccessFlagBits::eHostRead | vk::AccessFlagBits::eHostWrite)) {
-		return vk::PipelineStageFlagBits::eHost;
-	}
-
-	// 传输操作
-	if (mask & (vk::AccessFlagBits::eTransferRead | vk::AccessFlagBits::eTransferWrite)) {
-		return vk::PipelineStageFlagBits::eTransfer;
-	}
-
-	// 颜色附件输出
-	if (mask & (vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite)) {
-		return vk::PipelineStageFlagBits::eColorAttachmentOutput;
-	}
-
-	// 深度模板附件
-	if (mask & (vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite)) {
-		return vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-	}
-
-	// 着色器写入（通常是 Compute）
-	if (mask & vk::AccessFlagBits::eShaderWrite) {
-		return vk::PipelineStageFlagBits::eComputeShader;
-	}
-
-	// 着色器读取（保守：等待所有图形阶段）
-	if (mask & vk::AccessFlagBits::eShaderRead) {
-		return vk::PipelineStageFlagBits::eAllGraphics;
-	}
-
-	// 索引/顶点/Uniform 读取（都属于顶点输入阶段）
-	if (mask & (vk::AccessFlagBits::eIndexRead | vk::AccessFlagBits::eVertexAttributeRead)) {
-		return vk::PipelineStageFlagBits::eVertexInput;
-	}
-
-	if (mask & vk::AccessFlagBits::eUniformRead) {
-		return vk::PipelineStageFlagBits::eAllGraphics;
-	}
-
-	// 间接命令读取
-	if (mask & vk::AccessFlagBits::eIndirectCommandRead) {
-		return vk::PipelineStageFlagBits::eDrawIndirect;
-	}
-
-	return vk::PipelineStageFlagBits::eTopOfPipe;
-}
-
-static size_t GetFormatSize(vk::Format format) {
-	switch (format) {
-		// 8-bit 单通道
-	case vk::Format::eR8Unorm:
-	case vk::Format::eR8Snorm:
-	case vk::Format::eR8Uint:
-	case vk::Format::eR8Sint:
-		return 1;
-
-		// 8-bit 双通道
-	case vk::Format::eR8G8Unorm:
-	case vk::Format::eR8G8Snorm:
-	case vk::Format::eR8G8Uint:
-	case vk::Format::eR8G8Sint:
-		return 2;
-
-		// 8-bit 三通道（24 字节，但 GPU 通常对齐到 4）
-	case vk::Format::eR8G8B8Unorm:
-	case vk::Format::eR8G8B8Snorm:
-	case vk::Format::eR8G8B8Uint:
-	case vk::Format::eR8G8B8Sint:
-		return 3;
-
-		// 8-bit 四通道（最常用）
-	case vk::Format::eR8G8B8A8Unorm:
-	case vk::Format::eR8G8B8A8Snorm:
-	case vk::Format::eR8G8B8A8Uint:
-	case vk::Format::eR8G8B8A8Sint:
-	case vk::Format::eB8G8R8A8Unorm:
-		return 4;
-
-		// 16-bit 单通道
-	case vk::Format::eR16Unorm:
-	case vk::Format::eR16Snorm:
-	case vk::Format::eR16Uint:
-	case vk::Format::eR16Sint:
-	case vk::Format::eR16Sfloat:
-		return 2;
-
-		// 16-bit 双通道
-	case vk::Format::eR16G16Unorm:
-	case vk::Format::eR16G16Snorm:
-	case vk::Format::eR16G16Uint:
-	case vk::Format::eR16G16Sint:
-	case vk::Format::eR16G16Sfloat:
-		return 4;
-
-		// 16-bit 四通道
-	case vk::Format::eR16G16B16A16Unorm:
-	case vk::Format::eR16G16B16A16Snorm:
-	case vk::Format::eR16G16B16A16Uint:
-	case vk::Format::eR16G16B16A16Sint:
-	case vk::Format::eR16G16B16A16Sfloat:
-		return 8;
-
-		// 32-bit 单通道
-	case vk::Format::eR32Uint:
-	case vk::Format::eR32Sint:
-	case vk::Format::eR32Sfloat:
-		return 4;
-
-		// 32-bit 双通道
-	case vk::Format::eR32G32Uint:
-	case vk::Format::eR32G32Sint:
-	case vk::Format::eR32G32Sfloat:
-		return 8;
-
-		// 32-bit 四通道
-	case vk::Format::eR32G32B32A32Uint:
-	case vk::Format::eR32G32B32A32Sint:
-	case vk::Format::eR32G32B32A32Sfloat:
-		return 16;
-
-		// 压缩格式（暂不处理）
-	default:
-		return 4;  // 默认按 RGBA8 处理
-	}
-}
-
-vk::ImageAspectFlags BaseVKImage::GetAspectMask(vk::Format format)
-{
-	if (BaseVKImage::IsColorFormat(format))
-		return vk::ImageAspectFlagBits::eColor;
-	if (BaseVKImage::IsDepthStencilFormat(format))
-		return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
-	if (BaseVKImage::IsDepthFormat(format))
-		return vk::ImageAspectFlagBits::eDepth;
-	if (BaseVKImage::IsStencilFormat(format))
-		return vk::ImageAspectFlagBits::eStencil;
-	return vk::ImageAspectFlagBits::eColor;
 };
 
 vk::Image BaseVKImage::GetHandle() const { return m_image; }
 
-vk::ImageLayout BaseVKImage::GetCurrentLayout(uint32_t level) const { return GetSubresourceState(level).layout; }
+vk::ImageLayout BaseVKImage::GetCurrentLayout(uint32_t level) const {
+	return GetSubresourceState(level).layout;
+}
 
 uint32_t BaseVKImage::GetMipLevels() const { return m_mipLevels; }
 
@@ -347,7 +51,7 @@ void BaseVKImage::TransitionLayout(
 ) {
 	if (!cmd || !m_image) return;
 
-	vk::AccessFlags newAccessMask = GetAccessMaskForLayout(newLayout, dstStageMask);
+	vk::AccessFlags newAccessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
 
 	for (uint32_t level = baseMipLevel; level < std::min(m_mipLevels, baseMipLevel + levelCount); ++level)
 	{
@@ -356,10 +60,10 @@ void BaseVKImage::TransitionLayout(
 		if (!force && state.layout == newLayout && state.accessMask == newAccessMask)
 			continue;
 
-		vk::PipelineStageFlags srcStageMask = AccessMaskToStage(state.accessMask);
+		vk::PipelineStageFlags srcStageMask = ImageLayout::AccessMaskToStage(state.accessMask);
 
 		vk::ImageSubresourceRange subresourceRange;
-		subresourceRange.setAspectMask(m_aspectMask);
+		subresourceRange.setAspectMask(ImageLayout::GetAspectMaskForFormat(m_format));
 		subresourceRange.setBaseMipLevel(level);
 		subresourceRange.setLevelCount(1);
 		subresourceRange.setBaseArrayLayer(0);
@@ -393,7 +97,7 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 
 
 	// 计算像素大小（根据格式）
-	size_t bytesPerPixel = GetFormatSize(m_format);
+	size_t bytesPerPixel = ImageLayout::GetFormatSize(m_format);
 	vk::DeviceSize dataSize = m_extent.width * m_extent.height * bytesPerPixel;
 
 	// 创建 Staging Buffer（复用 VmaBuffer）
@@ -429,7 +133,7 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 
 	// 执行拷贝
 	vk::ImageSubresourceLayers subresourceLayers;
-	subresourceLayers.setAspectMask(m_aspectMask);
+	subresourceLayers.setAspectMask(ImageLayout::GetAspectMaskForFormat(m_format));
 	subresourceLayers.setMipLevel(mipLevel);
 	subresourceLayers.setBaseArrayLayer(layer);
 	subresourceLayers.setLayerCount(1);
@@ -457,137 +161,122 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 	return true;
 }
 
-bool BaseVKImage::GenerateMipmaps(
-	std::shared_ptr<VKCommandBuffer> cmd,
-	vk::ImageLayout finalLayout,
-	vk::PipelineStageFlags dstStageMask
-) {
-	if (!cmd || !m_image || m_mipLevels <= 1) {
-		return false;
+void VKWrapper::BaseVKImage::Release()
+{
+	m_device = nullptr;
+	m_image = VK_NULL_HANDLE;
+
+	m_imageState._subresourceStates.clear();
+
+	m_mipLevels = 1;
+	m_extent = vk::Extent3D();
+	m_format = vk::Format::eUndefined;
+}
+
+thread_local std::shared_ptr<PassImageStateRecord> _record;
+
+void VKWrapper::PassImageStateRecord::StartRecord()
+{
+	_record = std::make_shared<PassImageStateRecord>();
+}
+
+void VKWrapper::PassImageStateRecord::AddState(std::shared_ptr<const BaseVKImage> image, ImageLayout::BindStage stage, ImageLayout::BindUsage usage)
+{
+	if (!_record)
+		return;
+
+	auto imageState = image->m_imageState;
+	for (auto& [key, subState] : imageState._subresourceStates)
+	{
+		vk::ImageLayout newLayout;
+		vk::PipelineStageFlags dstStageMask;
+		GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, image->m_format, stage, usage);
+		subState.layout = newLayout;
 	}
+	_record->_recordFirstStates[image] = imageState;
+	_record->_recordStates[image] = imageState;
+}
 
-	// 检查格式是否支持线性过滤（生成 Mipmap 需要）
-	vk::FormatProperties formatProps = m_device->GetPhysicalDevice().getFormatProperties(m_format);
+void VKWrapper::PassImageStateRecord::EndRecord(const std::shared_ptr<VKWrapper::VKCommandBuffer>& auxCmd)
+{
+	if (!_record)
+		return;
 
-	if (!(formatProps.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
-		// 不支持自动生成，返回失败（上层可以降级处理）
-		return false;
-	}
+	for (auto& [image, record] : _record->_recordFirstStates) {
+		auto& real = image->m_imageState._subresourceStates;
 
-	//  确保整图在 TRANSFER_DST_OPTIMAL（方便后续操作）
-	//  注意：当前 m_currentLayout 可能只是第 0 级的状态，但 GenerateMipmaps 需要操作所有级别
-	//  所以需要先把整图切到 TRANSFER_DST_OPTIMAL
-	TransitionLayout(
-		cmd,
-		vk::ImageLayout::eTransferDstOptimal,
-		vk::PipelineStageFlagBits::eTransfer
-	);
+		for (auto& [key, recordState] : record._subresourceStates)
+		{
+			auto& realState = real[key];
+			uint32_t level = key >> 32;
 
-	// 逐级生成 Mipmap
-	int32_t mipWidth = m_extent.width;
-	int32_t mipHeight = m_extent.height;
+			// 补差：真实态 → 声明态
+			if (realState.layout != recordState.layout ||
+				realState.accessMask != recordState.accessMask)
+			{
+				vk::ImageSubresourceRange subresourceRange;
+				subresourceRange.setAspectMask(ImageLayout::GetAspectMaskForFormat(image->m_format));
+				subresourceRange.setBaseMipLevel(level);
+				subresourceRange.setLevelCount(1);
+				subresourceRange.setBaseArrayLayer(0);
+				subresourceRange.setLayerCount(vk::RemainingArrayLayers);
 
-	for (uint32_t i = 1; i < m_mipLevels; i++) {
-		// ---- 将上一级（i-1）从 TRANSFER_DST 切换到 TRANSFER_SRC ----
-		// 因为上一级刚被写入，需要切换到 SRC 才能作为 Blit 的源
-		vk::ImageMemoryBarrier srcBarrier;
-		srcBarrier
-			.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-			.setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
-			.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)   // 上一步是写入
-			.setDstAccessMask(vk::AccessFlagBits::eTransferRead)    // 下一步要读取
-			.setImage(m_image)
-			.setSubresourceRange(
-				vk::ImageSubresourceRange()
-				.setAspectMask(m_aspectMask)
-				.setBaseMipLevel(i - 1)
-				.setLevelCount(1)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1)
-			);
+				vk::ImageMemoryBarrier barrier;
+				barrier.setImage(image->GetHandle());
+				barrier.setOldLayout(realState.layout);
+				barrier.setNewLayout(recordState.layout);
+				barrier.setSrcAccessMask(realState.accessMask);
+				//barrier.setDstAccessMask(recordState.accessMask);
+				barrier.setDstAccessMask(vk::AccessFlagBits::eMemoryRead);
+				barrier.setSubresourceRange(subresourceRange);
 
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, srcBarrier, vk::DependencyFlagBits::eByRegion);
-
-		// ---- 计算当前 Mip 的尺寸 ----
-		mipWidth = std::max(1, mipWidth / 2);
-		mipHeight = std::max(1, mipHeight / 2);
-
-		// ---- 执行 Blit（缩放拷贝） ----
-		vk::ImageBlit blit;
-
-		std::array<vk::Offset3D, 2> srcOffsets = {
-			vk::Offset3D(0, 0, 0),
-			vk::Offset3D(mipWidth * 2, mipHeight * 2, 1)  // 上一级尺寸
-		};
-
-		std::array<vk::Offset3D, 2> dstOffsets = {
-			vk::Offset3D(0, 0, 0),
-			vk::Offset3D(mipWidth, mipHeight, 1)  // 当前级尺寸
-		};
-
-		blit.setSrcOffsets(srcOffsets)
-			.setSrcSubresource(
-				vk::ImageSubresourceLayers()
-				.setAspectMask(m_aspectMask)
-				.setMipLevel(i - 1)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1)
-			)
-			.setDstOffsets(dstOffsets)
-			.setDstSubresource(
-				vk::ImageSubresourceLayers()
-				.setAspectMask(m_aspectMask)
-				.setMipLevel(i)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1)
-			);
-
-		cmd->blitImage(m_image, vk::ImageLayout::eTransferSrcOptimal, m_image, vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);
-
-		// ---- 将当前级从 TRANSFER_DST 切换到 TRANSFER_SRC ----
-		// 准备作为下一轮 Blit 的源（只有当前级不是最后一级时才需要）
-		if (i < m_mipLevels - 1) {
-			vk::ImageMemoryBarrier dstBarrier;
-			dstBarrier
-				.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-				.setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
-				.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)   // 刚刚 Blit 写入
-				.setDstAccessMask(vk::AccessFlagBits::eTransferRead)    // 下一轮要读取
-				.setImage(m_image)
-				.setSubresourceRange(
-					vk::ImageSubresourceRange()
-					.setAspectMask(m_aspectMask)
-					.setBaseMipLevel(i)
-					.setLevelCount(1)
-					.setBaseArrayLayer(0)
-					.setLayerCount(1)
+				auxCmd->pipelineBarrier(
+					ImageLayout::AccessMaskToStage(realState.accessMask),
+					vk::PipelineStageFlagBits::eAllCommands,
+					barrier,
+					vk::DependencyFlagBits::eByRegion
 				);
+			}
 
-			cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, dstBarrier, vk::DependencyFlagBits::eByRegion);
+			// 更新真实态为声明态（主 cmd 的起点）
+			realState.layout = recordState.layout;
+			realState.accessMask = recordState.accessMask;
 		}
 	}
 
-	// 将第 0 级从 TRANSFER_SRC 切回 TRANSFER_DST（因为第 0 级可能被改成了 SRC）
-	// 注意：只有 m_mipLevels > 1 时才需要
-	if (m_mipLevels > 1) {
-		vk::ImageMemoryBarrier finalBarrier0;
-		finalBarrier0
-			.setOldLayout(vk::ImageLayout::eTransferSrcOptimal)
-			.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-			.setSrcAccessMask(vk::AccessFlagBits::eTransferRead)
-			.setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
-			.setImage(m_image)
-			.setSubresourceRange(
-				vk::ImageSubresourceRange()
-				.setAspectMask(m_aspectMask)
-				.setBaseMipLevel(0)
-				.setLevelCount(1)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1)
-			);
+	// 把本地终态写回真实态
+	for (auto& [image, record] : _record->_recordStates) {
+		auto& real = image->m_imageState._subresourceStates;
 
-		cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, finalBarrier0, vk::DependencyFlagBits::eByRegion);
+		for (auto& [key, recordState] : record._subresourceStates)
+		{
+			auto& realState = real[key];
+			uint32_t level = key >> 32;
+			realState.layout = recordState.layout;
+			realState.accessMask = recordState.accessMask;
+		}
 	}
 
-	return true;
+	_record.reset();
+}
+
+std::shared_ptr<PassImageStateRecord> VKWrapper::PassImageStateRecord::Current()
+{
+	return _record;
+}
+
+SubresourceState& VKWrapper::PassImageStateRecord::GetRecordState(std::shared_ptr<const BaseVKImage> image, uint32_t level)
+{
+	auto it = _recordStates.find(image);
+	if (it != _recordStates.end())
+	{
+		auto& imageState = it->second;
+		return imageState.GetSubresourceState(level);
+	}
+	else
+	{
+		_recordFirstStates[image] = image->m_imageState;
+		_recordStates[image] = image->m_imageState;
+		return _recordStates[image].GetSubresourceState(level);
+	}
 }

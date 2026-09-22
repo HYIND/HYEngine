@@ -93,10 +93,9 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetSubresourceState(i);
+		auto state = m_imageState.GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}
@@ -155,9 +154,9 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eD32Sfloat);
 
 	auto GetUsageFlags = [&]->vk::ImageUsageFlags {
-		if (IsColorFormat(format))
-			return IsLinearFormat(format) ? linearColorUsage : colorUsage;
-		else if (IsDepthFormat(format))
+		if (ImageLayout::IsColorFormat(format))
+			return ImageLayout::IsLinearFormat(format) ? linearColorUsage : colorUsage;
+		else if (ImageLayout::IsDepthFormat(format))
 			return depthUsage;
 		else
 			return depthStencilUsage;
@@ -197,10 +196,9 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetSubresourceState(i);
+		auto state = m_imageState.GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}
@@ -213,15 +211,8 @@ void VmaImage::Release() {
 	if (m_allocator && m_image && m_allocation) {
 		VKCONTEXT->Retire(new RestireImage(m_allocator, m_image, m_allocation));
 	}
-	m_device = nullptr;
 	m_allocator = VK_NULL_HANDLE;
-	m_image = VK_NULL_HANDLE;
 	m_allocation = VK_NULL_HANDLE;
 
-	m_aspectMask = vk::ImageAspectFlagBits::eColor;
-	_subresourceStates.clear();
-
-	m_mipLevels = 1;
-	m_extent = vk::Extent3D();
-	m_format = vk::Format::eUndefined;
+	BaseVKImage::Release();
 }

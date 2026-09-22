@@ -54,7 +54,7 @@ public:
 	RenderOption GetOption() const;
 	void SetOption(RenderOption option);
 
-	bool ResizeVulkan(uint32_t width, uint32_t height);
+	bool ResizeVulkan(uint32_t width, uint32_t height, std::function<void()> prevClear);
 
 public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);

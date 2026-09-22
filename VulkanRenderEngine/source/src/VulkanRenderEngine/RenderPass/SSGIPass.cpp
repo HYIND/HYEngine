@@ -121,7 +121,7 @@ bool SSGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderSta
 	return true;
 }
 
-void SSGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void SSGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
@@ -147,12 +147,17 @@ void SSGIPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGra
 	data.colorMap = ctx.GetExternal(0);
 	data.depthMap = ctx.GetExternal(1);
 
-	if (!DrawSSGI(data, state)) return;
-	if (!DrawSpatialDenoising(data, state)) return;
-	if (!DrawTemporalDenoising(data, state)) return;
+	auto cmd = cmdCtx.GetCmd();
+
+	if (!DrawSSGI(cmd, data, state)) return;
+	if (!DrawSpatialDenoising(cmd, data, state)) return;
+	if (!DrawTemporalDenoising(cmd, data, state)) return;
 
 	if (data.outPutTexture && data.historyColorTexture)
-		Texture2D::CopyTexture(data.outPutTexture, data.historyColorTexture);
+	{
+		Texture2D::CopyTextureAsync(cmd, data.outPutTexture, data.historyColorTexture);
+		cmd->SubmitToQueue();
+	}
 }
 
 void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -211,16 +216,14 @@ void SSGIPass::SetEnable(bool enable) const
 		_firstDrawTemporal = true;
 }
 
-bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
+bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& target = data.originTexture;
 
 	if (!target || target->IsEmpty())
 		return false;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -232,25 +235,25 @@ bool SSGIPass::DrawSSGI(FrameRenderData& data, RenderState& state)
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
 	_ssgiShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_ssgiShaderBinding.SetStorageImage(target, 1);
-	_ssgiShaderBinding.SetUniformTexture(data.gPosition, 2);
-	_ssgiShaderBinding.SetUniformTexture(data.gNormal, 3);
-	_ssgiShaderBinding.SetUniformTexture(data.gAlbedoOpacity, 4);
-	_ssgiShaderBinding.SetUniformTexture(data.gMetallicRoughness, 5);
-	_ssgiShaderBinding.SetUniformTexture(data.colorMap, 6);
-	_ssgiShaderBinding.SetUniformTexture(data.depthMap, 7);
-	_ssgiShaderBinding.SetUniformTexture(data.ssaoTexture, 8);
-	_ssgiShaderBinding.SetUniformTexture(data.hzbDepthMap, 9);
+	_ssgiShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
+	_ssgiShaderBinding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 2);
+	_ssgiShaderBinding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 3);
+	_ssgiShaderBinding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 4);
+	_ssgiShaderBinding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 5);
+	_ssgiShaderBinding.SetUniformTexture(data.colorMap, vk::ImageAspectFlagBits::eColor, 6);
+	_ssgiShaderBinding.SetUniformTexture(data.depthMap, vk::ImageAspectFlagBits::eDepth, 7);
+	_ssgiShaderBinding.SetUniformTexture(data.ssaoTexture, vk::ImageAspectFlagBits::eColor, 8);
+	_ssgiShaderBinding.SetUniformTexture(data.hzbDepthMap, vk::ImageAspectFlagBits::eDepth, 9);
 
 	_ssgiShader.Bind(cmd, _ssgiShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 
 	return true;
 }
 
-bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
+bool SSGIPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.originTexture;
 	auto& target = data.spatialDenoisingTexture;
@@ -261,9 +264,7 @@ bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
 	if (!target || target->IsEmpty())
 		return false;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -275,20 +276,20 @@ bool SSGIPass::DrawSpatialDenoising(FrameRenderData& data, RenderState& state)
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
 	_spatialDenoisingShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingShaderBinding.SetStorageImage(target, 1);
-	_spatialDenoisingShaderBinding.SetUniformTexture(data.gNormal, 2);
-	_spatialDenoisingShaderBinding.SetUniformTexture(data.depthMap, 3);
-	_spatialDenoisingShaderBinding.SetUniformTexture(source, 4);
+	_spatialDenoisingShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 2);
+	_spatialDenoisingShaderBinding.SetUniformTexture(data.depthMap, vk::ImageAspectFlagBits::eDepth, 3);
+	_spatialDenoisingShaderBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 4);
 
 	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 
 	return true;
 }
 
-bool SSGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
+bool SSGIPass::DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.spatialDenoisingTexture;
 	auto& target = data.outPutTexture;
@@ -301,14 +302,13 @@ bool SSGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
 
 	if (_firstDrawTemporal || !data.gMotionVector || !data.historyColorTexture)
 	{
-		Texture2D::CopyTexture(source, target);
+		Texture2D::CopyTextureAsync(cmd, source, target);
 		_firstDrawTemporal = false;
+		cmd->SubmitToQueue();
 		return true;
 	}
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	target->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
+	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
 	vk::ImageSubresourceRange range;
@@ -319,15 +319,15 @@ bool SSGIPass::DrawTemporalDenoising(FrameRenderData& data, RenderState& state)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_temporalDenoisingShaderBinding.SetStorageImage(target, 1);
-	_temporalDenoisingShaderBinding.SetUniformTexture(source, 2);
-	_temporalDenoisingShaderBinding.SetUniformTexture(data.historyColorTexture, 3);
-	_temporalDenoisingShaderBinding.SetUniformTexture(data.gMotionVector, 4);
+	_temporalDenoisingShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
+	_temporalDenoisingShaderBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 2);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.historyColorTexture, vk::ImageAspectFlagBits::eColor, 3);
+	_temporalDenoisingShaderBinding.SetUniformTexture(data.gMotionVector, vk::ImageAspectFlagBits::eColor, 4);
 
 	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingShaderBinding);
 	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 
 	return true;
 }
