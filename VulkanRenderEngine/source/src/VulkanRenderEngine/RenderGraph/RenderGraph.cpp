@@ -153,7 +153,6 @@ void Graph::FindReadyNodeAndExcute(
 							--passCtxs[next].dependency;
 						doneCounter++;
 					});
-				executeHandle.get();
 			}
 		}
 	}
