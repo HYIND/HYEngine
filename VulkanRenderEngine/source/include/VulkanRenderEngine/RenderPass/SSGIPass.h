@@ -16,7 +16,7 @@ public:
 	);
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetEnable(bool enable) const;
@@ -45,9 +45,9 @@ private:
 		std::shared_ptr<Texture2D> hzbDepthMap;
 	};
 
-	bool DrawSSGI(FrameRenderData& data, RenderState& state);
-	bool DrawSpatialDenoising(FrameRenderData& data, RenderState& state);
-	bool DrawTemporalDenoising(FrameRenderData& data, RenderState& state);
+	bool DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 private:
 	ComputePipeline _ssgiShader;

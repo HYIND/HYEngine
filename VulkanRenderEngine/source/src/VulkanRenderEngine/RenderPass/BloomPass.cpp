@@ -48,12 +48,12 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer)
 	{
 		params.horizontal = horizontal;
 
-		DrawImage->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Output);
-		SampleImage->Barrier(cmd, nullptr, Texture2D::BindStage::Compute, Texture2D::BindUsage::Sample);
+		DrawImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+		SampleImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 
 		ComputeBindingRecord bloomBlurBinding;
-		bloomBlurBinding.SetStorageImage(DrawImage, 0);
-		bloomBlurBinding.SetUniformTexture(SampleImage, 1);
+		bloomBlurBinding.SetStorageImage(DrawImage, vk::ImageAspectFlagBits::eColor, 0);
+		bloomBlurBinding.SetUniformTexture(SampleImage, vk::ImageAspectFlagBits::eColor, 1);
 		_bloomBlurShader.SetPushConstants(cmd, &params, sizeof(params));
 
 		_bloomBlurShader.Bind(cmd, bloomBlurBinding);
@@ -72,7 +72,7 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer)
 			std::swap(DrawImage, SampleImage);
 	}
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNowAndWait();
 }
 
 std::shared_ptr<Texture2D> BloomPass::GetBloomBlurMap()

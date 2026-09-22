@@ -57,7 +57,7 @@ void DepthFogPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 	binding.SetUniformBlock(paramsUBO, 0);
 }
 
-void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void DepthFogPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto sceneColorBuffer = ctx.GetExternal(0);
 	auto sceneDepthBuffer = ctx.GetExternal(1);
@@ -73,7 +73,7 @@ void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 		)
 		return;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 
 	Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColor);
 
@@ -84,12 +84,12 @@ void DepthFogPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	binding.SetStorageImage(sceneColorBuffer, 1);
-	binding.SetUniformTexture(tempColor, 2);
-	binding.SetUniformTexture(sceneDepthBuffer, 3);
+	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);
+	binding.SetUniformTexture(tempColor, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 3);
 
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 }

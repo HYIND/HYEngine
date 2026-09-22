@@ -288,10 +288,9 @@ bool VKWrapper::SharedImage::Create(VKCore::VulkanDevice* device, std::shared_pt
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	m_aspectMask = GetAspectMask(m_format);
 	for (uint32_t i = 0; i < m_mipLevels; i++)
 	{
-		auto state = GetSubresourceState(i);
+		auto state = m_imageState.GetSubresourceState(i);
 		state.layout = imageInfo.initialLayout;
 		state.accessMask = vk::AccessFlags::BitsType::eNone;
 	}
@@ -306,14 +305,5 @@ void SharedImage::Release()
 		m_device->GetHandle().freeMemory(m_devicememory);
 	if (m_image)
 		m_device->GetHandle().destroyImage(m_image);
-
-	m_device = nullptr;
-	m_image = VK_NULL_HANDLE;
-
-	m_aspectMask = vk::ImageAspectFlagBits::eColor;
-	_subresourceStates.clear();
-
-	m_mipLevels = 1;
-	m_extent = vk::Extent3D();
-	m_format = vk::Format::eUndefined;
+	BaseVKImage::Release();
 }

@@ -92,27 +92,16 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 	std::shared_ptr<Texture2D>& gDepthStencilMap
 )
 {
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	gPosition->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gNormal->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gAlbedoOpacity->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gMetallicRoughnessMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gMotionVectorMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gEmission->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	gDepthStencilMap->TransitionLayout(cmd, nullptr, Texture2D::BindStage::Graphics, Texture2D::BindUsage::Output);
-	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
-
 	DynamicRenderInfo info;
 	info
 		.SetRenderArea(state.framebuffer.width, state.framebuffer.height)
-		.AddColorAttachment(gPosition->GetImageView())
-		.AddColorAttachment(gNormal->GetImageView())
-		.AddColorAttachment(gAlbedoOpacity->GetImageView())
-		.AddColorAttachment(gMetallicRoughnessMap->GetImageView())
-		.AddColorAttachment(gMotionVectorMap->GetImageView())
-		.AddColorAttachment(gEmission->GetImageView())
-		.AddDepthStencilAttachment(gDepthStencilMap->GetImageView());
+		.AddColorAttachment(gPosition->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddColorAttachment(gNormal->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddColorAttachment(gAlbedoOpacity->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddColorAttachment(gMetallicRoughnessMap->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddColorAttachment(gMotionVectorMap->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddColorAttachment(gEmission->GetImageView(vk::ImageAspectFlagBits::eColor))
+		.AddDepthStencilAttachment(gDepthStencilMap->GetImageView(vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eDepth));
 	return info;
 }
 
@@ -142,7 +131,7 @@ void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 	}
 }
 
-void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 
 	auto gPosition = ctx.GetOutput(0);
@@ -150,8 +139,19 @@ void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	auto gAlbedoOpacity = ctx.GetOutput(2);
 	auto gMetallicRoughnessMap = ctx.GetOutput(3);
 	auto gMotionVectorMap = ctx.GetOutput(4);
-	auto gDepthStencilMap = ctx.GetOutput(5);
-	auto gEmission = ctx.GetOutput(6);
+	auto gEmission = ctx.GetOutput(5);
+	auto gDepthStencilMap = ctx.GetOutput(6);
+
+	auto cmd = cmdCtx.GetCmd();
+	gPosition->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gNormal->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gAlbedoOpacity->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gMetallicRoughnessMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gMotionVectorMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gEmission->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gDepthStencilMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	if (cmd->IsRecording())
+		cmd->SubmitToQueue();
 
 	DynamicRenderInfo renderInfo = GenerateDynamicRenderInfo(
 		state,
@@ -159,20 +159,18 @@ void GeometryPass::Execute(RenderGraph::FrameDataRegistry& registry, const Rende
 	);
 	DynamicViewport viewPort(state.framebuffer.width, state.framebuffer.height);
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
 	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
 	RenderSceneGeometryPassSkinned(registry, cmd, state, renderInfo, viewPort);
 
 	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		cmd->SubmitToQueue();
 }
 
 void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
 
 bool GeometryPass::SetupStaticBufferData(
-	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	GraphicsBindingRecord& binding,
 	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
 	VKRenderObjectData::RenderIndex& renderIndex,
@@ -247,7 +245,7 @@ bool GeometryPass::SetupStaticBufferData(
 				});
 			});
 
-			startInedx += indices.size();
+		startInedx += indices.size();
 	}
 
 	renderdata_ssbo->WriteDataAsync(cmd, renderData.data(), renderData.size() * sizeof(RenderData));
@@ -256,7 +254,7 @@ bool GeometryPass::SetupStaticBufferData(
 	return true;
 }
 
-void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
+void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
 {
 
 	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
@@ -313,7 +311,7 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 	cmd->endRendering();
 }
 
-void GeometryPass::RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
+void GeometryPass::RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
 {
 	//auto& opaqueSinnedModels = state.objects.sceneRenderData.opaqueSkinnedModel;
 	//auto& renderIndexArrays = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;

@@ -116,9 +116,11 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureCube.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\DynamicBlock.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\BVHBuilder.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\ImageLayoutWrapper.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
@@ -211,6 +213,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\BVHBuilder.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\DDSLoader.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\GeneralSegmentBuffer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
@@ -218,6 +221,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\DependencySolver.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\PassNode.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraph.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />

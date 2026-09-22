@@ -525,7 +525,7 @@ void WorldManager::SetOption(RenderOption option)
 	_renderer->SetOption(option);
 }
 
-bool WorldManager::ResizeVulkan(uint32_t width, uint32_t height)
+bool WorldManager::ResizeVulkan(uint32_t width, uint32_t height, std::function<void()> prevClear)
 {
 	if (pendingWidth != width || pendingHeight != height)
 	{
@@ -538,6 +538,7 @@ bool WorldManager::ResizeVulkan(uint32_t width, uint32_t height)
 	{
 		if (resizePending && Tool::GetTimestampMilliseconds() - resizeTimeStamp > 200 && _renderer)
 		{
+			prevClear();
 			_renderer->Resize(pendingWidth, pendingHeight);
 			resizePending = false;
 			return true;

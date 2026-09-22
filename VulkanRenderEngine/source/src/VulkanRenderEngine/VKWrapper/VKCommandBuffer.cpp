@@ -24,6 +24,17 @@ public:
 	vk::CommandBuffer _handle = VK_NULL_HANDLE;
 };
 
+VKWrapper::VKCommandBuffer::VKCommandBuffer(VKCommandBuffer&& other) noexcept
+{
+	Release();
+	_pool = other._pool;
+	_handle = other._handle;
+	_isRecording = other._isRecording;
+	other._pool.reset();
+	other._handle = VK_NULL_HANDLE;
+	other._isRecording = false;
+}
+
 VKCommandBuffer::VKCommandBuffer(VKCommandPool* pool)
 {}
 
@@ -43,6 +54,7 @@ void VKCommandBuffer::Release()
 
 	_pool.reset();
 	_handle = VK_NULL_HANDLE;
+	_isRecording = false;
 }
 
 vk::CommandBuffer VKCommandBuffer::GetHandle() const { return _handle; }
@@ -103,6 +115,21 @@ vk::Result VKCommandBuffer::Reset() const
 		return result;
 	}
 	return vk::Result::eSuccess;
+}
+
+void VKWrapper::VKCommandBuffer::SubmitToQueue(const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
+{
+	VKCONTEXT->SubmitCommandBufferToPendingQueue(shared_from_this(), syncSeamphore, signalFence);
+}
+
+void VKWrapper::VKCommandBuffer::SubmitNow(const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
+{
+	VKCONTEXT->SubmitCommandImmediately(shared_from_this(), syncSeamphore, signalFence);
+}
+
+void VKWrapper::VKCommandBuffer::SubmitNowAndWait(const CmdSyncSeamphore& syncSeamphore)
+{
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(shared_from_this(), syncSeamphore);
 }
 
 // 绑定命令

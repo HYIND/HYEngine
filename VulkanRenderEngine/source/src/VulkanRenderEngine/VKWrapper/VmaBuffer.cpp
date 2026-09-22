@@ -149,11 +149,11 @@ bool VmaBuffer::Update(const void* data, size_t size, size_t offset)
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 	bool result = UpdateStagingBuffer(cmd, data, size, offset);
 	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		cmd->SubmitNowAndWait();
 	return result;
 }
 
-bool VmaBuffer::UpdateAsync(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
+bool VmaBuffer::UpdateAsync(const std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
 {
 	if (!cmd) return false;
 	if (size == 0 || data == nullptr) return true;
@@ -178,11 +178,11 @@ bool VmaBuffer::Readback(void* outData, size_t size, size_t offset)
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 	bool result = ReadStagingBuffer(cmd, outData, size, offset);
 	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		cmd->SubmitNowAndWait();
 	return result;
 }
 
-bool VmaBuffer::Readback(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
+bool VmaBuffer::Readback(const std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
 {
 	if (!cmd) return false;
 	if (outData == nullptr || size == 0) return true;
@@ -191,7 +191,7 @@ bool VmaBuffer::Readback(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, s
 	// Buffer 可映射（HOST_VISIBLE）, 直接 CPU 读取
 	if (IsMappable()) {
 		if (cmd->IsRecording())
-			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+			cmd->SubmitNowAndWait();
 		return ReadMappable(outData, size, offset);
 	}
 
@@ -268,7 +268,7 @@ bool VmaBuffer::UpdateMappable(const void* data, size_t size, size_t offset)
 	return true;
 }
 
-bool VmaBuffer::UpdateStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
+bool VmaBuffer::UpdateStagingBuffer(const std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset)
 {
 	// 创建临时 Staging Buffer
 	VkBuffer stagingBuffer;
@@ -350,7 +350,7 @@ bool VmaBuffer::ReadMappable(void* outData, size_t size, size_t offset)
 	return true;
 }
 
-bool VmaBuffer::ReadStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
+bool VmaBuffer::ReadStagingBuffer(const std::shared_ptr<VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
 {
 
 	// 创建 Staging Buffer（CPU 可读）
@@ -376,7 +376,7 @@ bool VmaBuffer::ReadStagingBuffer(std::shared_ptr<VKCommandBuffer>& cmd, void* o
 	region.size = size;
 
 	cmd->copyBuffer(m_buffer, stagingBuffer, region);
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitNowAndWait();
 
 	void* mapped;
 	if (vmaMapMemory(m_allocator, stagingAllocation, &mapped) != VK_SUCCESS) {
@@ -419,12 +419,12 @@ bool VmaBuffer::CopyBuffer(VmaBuffer& src, VmaBuffer& dst, size_t size, size_t s
 	if (!cmd) return false;
 	bool result = CopyBufferAsync(cmd, src, dst, size, srcOffset, dstOffset);
 	if (cmd->IsRecording())
-		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+		cmd->SubmitNowAndWait();
 
 	return result;
 }
 
-bool VKWrapper::VmaBuffer::CopyBufferAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset, size_t dstOffset)
+bool VKWrapper::VmaBuffer::CopyBufferAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, VmaBuffer& src, VmaBuffer& dst, size_t size, size_t srcOffset, size_t dstOffset)
 {
 	if (srcOffset + size > src.GetSize() || dstOffset + size > dst.GetSize())
 		return false;

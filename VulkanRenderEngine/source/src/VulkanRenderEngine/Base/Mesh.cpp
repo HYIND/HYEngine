@@ -341,7 +341,7 @@ void Mesh::SetNeedUpdateIndirectDraw(bool value)
 	needUpdateIndirectDraw = value;
 }
 
-bool Mesh::GetNeedUpdateIndricetDraw() const
+bool Mesh::GetNeedUpdateIndirectDraw() const
 {
 	return needUpdateIndirectDraw;
 }

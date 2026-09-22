@@ -27,239 +27,7 @@ static float GetAnisotropicTextureFiltering()
 	return s_value.value();
 }
 
-static vk::ImageAspectFlags GetAspectMaskForFormat(vk::Format format, bool prefeerdDepth = true) {
-	switch (format) {
-		// ===== 颜色格式 =====
-		// 8-bit
-	case vk::Format::eR8Unorm:
-	case vk::Format::eR8Snorm:
-	case vk::Format::eR8Uint:
-	case vk::Format::eR8Sint:
-	case vk::Format::eR8G8Unorm:
-	case vk::Format::eR8G8Snorm:
-	case vk::Format::eR8G8Uint:
-	case vk::Format::eR8G8Sint:
-	case vk::Format::eR8G8B8Unorm:
-	case vk::Format::eR8G8B8Snorm:
-	case vk::Format::eR8G8B8Uint:
-	case vk::Format::eR8G8B8Sint:
-	case vk::Format::eR8G8B8A8Unorm:
-	case vk::Format::eR8G8B8A8Snorm:
-	case vk::Format::eR8G8B8A8Uint:
-	case vk::Format::eR8G8B8A8Sint:
-	case vk::Format::eB8G8R8A8Unorm:
-	case vk::Format::eB8G8R8A8Snorm:
-	case vk::Format::eR8Srgb:
-	case vk::Format::eR8G8Srgb:
-	case vk::Format::eR8G8B8Srgb:
-	case vk::Format::eR8G8B8A8Srgb:
-	case vk::Format::eB8G8R8A8Srgb:
-
-		// 16-bit
-	case vk::Format::eR16Unorm:
-	case vk::Format::eR16Snorm:
-	case vk::Format::eR16Uint:
-	case vk::Format::eR16Sint:
-	case vk::Format::eR16Sfloat:
-	case vk::Format::eR16G16Unorm:
-	case vk::Format::eR16G16Snorm:
-	case vk::Format::eR16G16Uint:
-	case vk::Format::eR16G16Sint:
-	case vk::Format::eR16G16Sfloat:
-	case vk::Format::eR16G16B16A16Unorm:
-	case vk::Format::eR16G16B16A16Snorm:
-	case vk::Format::eR16G16B16A16Uint:
-	case vk::Format::eR16G16B16A16Sint:
-	case vk::Format::eR16G16B16A16Sfloat:
-
-		// 32-bit
-	case vk::Format::eR32Uint:
-	case vk::Format::eR32Sint:
-	case vk::Format::eR32Sfloat:
-	case vk::Format::eR32G32Uint:
-	case vk::Format::eR32G32Sint:
-	case vk::Format::eR32G32Sfloat:
-	case vk::Format::eR32G32B32A32Uint:
-	case vk::Format::eR32G32B32A32Sint:
-	case vk::Format::eR32G32B32A32Sfloat:
-
-		// 压缩格式（BC/ETC/ASTC 等）
-	case vk::Format::eBc1RgbUnormBlock:
-	case vk::Format::eBc1RgbSrgbBlock:
-	case vk::Format::eBc1RgbaUnormBlock:
-	case vk::Format::eBc1RgbaSrgbBlock:
-	case vk::Format::eBc2UnormBlock:
-	case vk::Format::eBc2SrgbBlock:
-	case vk::Format::eBc3UnormBlock:
-	case vk::Format::eBc3SrgbBlock:
-	case vk::Format::eBc4UnormBlock:
-	case vk::Format::eBc4SnormBlock:
-	case vk::Format::eBc5UnormBlock:
-	case vk::Format::eBc5SnormBlock:
-	case vk::Format::eBc6HUfloatBlock:
-	case vk::Format::eBc6HSfloatBlock:
-	case vk::Format::eBc7UnormBlock:
-	case vk::Format::eBc7SrgbBlock:
-	case vk::Format::eEtc2R8G8B8UnormBlock:
-	case vk::Format::eEtc2R8G8B8SrgbBlock:
-	case vk::Format::eEtc2R8G8B8A1UnormBlock:
-	case vk::Format::eEtc2R8G8B8A1SrgbBlock:
-	case vk::Format::eEtc2R8G8B8A8UnormBlock:
-	case vk::Format::eEtc2R8G8B8A8SrgbBlock:
-	case vk::Format::eAstc4x4UnormBlock:
-	case vk::Format::eAstc4x4SrgbBlock:
-	case vk::Format::eAstc5x4UnormBlock:
-	case vk::Format::eAstc5x4SrgbBlock:
-	case vk::Format::eAstc5x5UnormBlock:
-	case vk::Format::eAstc5x5SrgbBlock:
-	case vk::Format::eAstc6x5UnormBlock:
-	case vk::Format::eAstc6x5SrgbBlock:
-	case vk::Format::eAstc6x6UnormBlock:
-	case vk::Format::eAstc6x6SrgbBlock:
-	case vk::Format::eAstc8x5UnormBlock:
-	case vk::Format::eAstc8x5SrgbBlock:
-	case vk::Format::eAstc8x6UnormBlock:
-	case vk::Format::eAstc8x6SrgbBlock:
-	case vk::Format::eAstc8x8UnormBlock:
-	case vk::Format::eAstc8x8SrgbBlock:
-	case vk::Format::eAstc10x5UnormBlock:
-	case vk::Format::eAstc10x5SrgbBlock:
-	case vk::Format::eAstc10x6UnormBlock:
-	case vk::Format::eAstc10x6SrgbBlock:
-	case vk::Format::eAstc10x8UnormBlock:
-	case vk::Format::eAstc10x8SrgbBlock:
-	case vk::Format::eAstc10x10UnormBlock:
-	case vk::Format::eAstc10x10SrgbBlock:
-	case vk::Format::eAstc12x10UnormBlock:
-	case vk::Format::eAstc12x10SrgbBlock:
-	case vk::Format::eAstc12x12UnormBlock:
-	case vk::Format::eAstc12x12SrgbBlock:
-
-		// 其他颜色格式
-	case vk::Format::eR4G4UnormPack8:
-	case vk::Format::eR4G4B4A4UnormPack16:
-	case vk::Format::eB4G4R4A4UnormPack16:
-	case vk::Format::eR5G6B5UnormPack16:
-	case vk::Format::eB5G6R5UnormPack16:
-	case vk::Format::eR5G5B5A1UnormPack16:
-	case vk::Format::eB5G5R5A1UnormPack16:
-	case vk::Format::eA1R5G5B5UnormPack16:
-	case vk::Format::eA8B8G8R8UnormPack32:
-	case vk::Format::eA8B8G8R8SnormPack32:
-	case vk::Format::eA8B8G8R8SrgbPack32:
-	case vk::Format::eA8B8G8R8UintPack32:
-	case vk::Format::eA8B8G8R8SintPack32:
-	case vk::Format::eA2R10G10B10UnormPack32:
-	case vk::Format::eA2R10G10B10UintPack32:
-	case vk::Format::eA2B10G10R10UnormPack32:
-	case vk::Format::eA2B10G10R10UintPack32:
-	case vk::Format::eG8B8G8R8422Unorm:
-	case vk::Format::eB8G8R8G8422Unorm:
-		return vk::ImageAspectFlagBits::eColor;
-
-		// ===== 深度格式 =====
-	case vk::Format::eD16Unorm:
-	case vk::Format::eX8D24UnormPack32:
-	case vk::Format::eD32Sfloat:
-		return vk::ImageAspectFlagBits::eDepth;
-
-		// ===== 深度+模板组合格式 =====
-	case vk::Format::eD16UnormS8Uint:
-	case vk::Format::eD24UnormS8Uint:
-	case vk::Format::eD32SfloatS8Uint:
-		if (prefeerdDepth)
-			return vk::ImageAspectFlagBits::eDepth;
-		else
-			return vk::ImageAspectFlagBits::eStencil;
-
-		// ===== 纯模板格式 =====
-	case vk::Format::eS8Uint:
-		return vk::ImageAspectFlagBits::eStencil;
-
-		// ===== 未知格式 =====
-	default:
-		// 默认返回 COLOR（颜色图像最常见）
-		return vk::ImageAspectFlagBits::eColor;
-	}
-}
-
-void Texture2D::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::PipelineStageFlags* outDestStageFlag, vk::Format format, BindStage stage, BindUsage usage)
-{
-	using Layout = vk::ImageLayout;
-	using StageFlag = vk::PipelineStageFlagBits;
-
-	vk::ImageLayout newLayout;
-	vk::PipelineStageFlags dstStageMask;
-
-	bool isColorFormat = VKWrapper::VmaImage::IsColorFormat(format);
-	bool isDepthStencilFormat = VKWrapper::VmaImage::IsDepthStencilFormat(format);
-	bool isDepthFormat = VKWrapper::VmaImage::IsDepthFormat(format);
-	bool isStencilFormat = VKWrapper::VmaImage::IsStencilFormat(format);
-
-	if (usage == BindUsage::Sample)
-	{
-		if (stage == BindStage::Compute)
-		{
-			dstStageMask = StageFlag::eComputeShader;
-			newLayout = Layout::eGeneral;
-		}
-		else if (stage == BindStage::Graphics)
-		{
-			dstStageMask = StageFlag::eVertexShader | StageFlag::eFragmentShader;
-			if (isColorFormat)
-				newLayout = Layout::eShaderReadOnlyOptimal;
-			if (isDepthStencilFormat)
-				newLayout = Layout::eDepthStencilReadOnlyOptimal;
-			if (isDepthFormat)
-				newLayout = Layout::eDepthReadOnlyOptimal;
-			if (isStencilFormat)
-				newLayout = Layout::eStencilReadOnlyOptimal;
-		}
-		else if (stage == BindStage::RayTracing)
-		{
-			dstStageMask = StageFlag::eRayTracingShaderKHR;
-			newLayout = Layout::eGeneral;
-		}
-	}
-	else if (usage == BindUsage::Output)
-	{
-		if (stage == BindStage::Compute)
-		{
-			dstStageMask = StageFlag::eComputeShader;
-			newLayout = Layout::eGeneral;
-		}
-		else if (stage == BindStage::Graphics)
-		{
-			if (isColorFormat)
-			{
-				dstStageMask = StageFlag::eColorAttachmentOutput;
-				newLayout = Layout::eColorAttachmentOptimal;
-			}
-			else
-			{
-				dstStageMask = StageFlag::eEarlyFragmentTests;
-				if (isDepthStencilFormat)
-					newLayout = Layout::eDepthStencilAttachmentOptimal;
-				if (isDepthFormat)
-					newLayout = Layout::eDepthAttachmentOptimal;
-				if (isStencilFormat)
-					newLayout = Layout::eStencilAttachmentOptimal;
-			}
-		}
-		else if (stage == BindStage::RayTracing)
-		{
-			dstStageMask = StageFlag::eRayTracingShaderKHR;
-			newLayout = Layout::eGeneral;
-		}
-	}
-
-	if (outLayout)
-		*outLayout = newLayout;
-	if (outDestStageFlag)
-		*outDestStageFlag = dstStageMask;
-}
-
-void Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+void Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
 {
 	vk::Image srcImage = src._image->GetHandle();
 	vk::ImageLayout srcLayout = src._image->GetCurrentLayout(0);
@@ -295,7 +63,7 @@ void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth,
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }
 
-bool Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest)
+bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest)
 {
 	vk::Image srcImage = src._image->GetHandle();
 	vk::Image dstImage = dest._image->GetHandle();
@@ -335,7 +103,7 @@ bool Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	return true;
 }
 
-bool Texture2D::BlitImageAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
+bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
 	if (!src || !dest)
 		return false;
 	return BlitImageAsync(cmd, *src, *dest);
@@ -355,7 +123,7 @@ bool Texture2D::BlitImage(const std::shared_ptr<Texture2D>& src, const std::shar
 	return BlitImage(*src, *dest);
 }
 
-bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
+bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
 {
 	using namespace VKWrapper;
 
@@ -387,9 +155,11 @@ bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 	vk::Image srcImage = src._image->GetHandle();
 	vk::Image dstImage = dest._image->GetHandle();
 
-	// 保存当前布局（用于恢复）
 	vk::ImageLayout srcOldLayout = src._image->GetCurrentLayout(srcLevel);
 	vk::ImageLayout dstOldLayout = dest._image->GetCurrentLayout(destLevel);
+
+	auto srcAspectMask = ImageLayout::GetAspectMaskForFormat(src.m_Format);
+	auto dstAspectMask = ImageLayout::GetAspectMaskForFormat(dest.m_Format);
 
 	// 切换源到 TRANSFER_SRC
 	if (srcOldLayout != vk::ImageLayout::eTransferSrcOptimal) {
@@ -413,24 +183,25 @@ bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 		);
 	}
 
-	vk::ImageSubresourceLayers subresourceLayers;
-	subresourceLayers
-		.setAspectMask(GetAspectMaskForFormat(src.m_Format))
+	vk::ImageSubresourceLayers srcSubresourceLayers;
+	srcSubresourceLayers
+		.setAspectMask(srcAspectMask)
 		.setMipLevel(srcLevel)
+		.setBaseArrayLayer(0)
+		.setLayerCount(1);
+
+	vk::ImageSubresourceLayers dstSubresourceLayers;
+	dstSubresourceLayers
+		.setAspectMask(dstAspectMask)
+		.setMipLevel(destLevel)
 		.setBaseArrayLayer(0)
 		.setLayerCount(1);
 
 	vk::ImageCopy region;
 	region
-		.setSrcSubresource(subresourceLayers)
+		.setSrcSubresource(srcSubresourceLayers)
 		.setSrcOffset({ 0, 0, 0 })
-		.setDstSubresource(
-			vk::ImageSubresourceLayers()
-			.setAspectMask(GetAspectMaskForFormat(dest.m_Format))
-			.setMipLevel(destLevel)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1)
-		)
+		.setDstSubresource(dstSubresourceLayers)
 		.setDstOffset({ 0, 0, 0 })
 		.setExtent({ srcWidth, srcHeight, 1 });
 
@@ -442,7 +213,7 @@ bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 	return true;
 }
 
-bool Texture2D::CopyTextureAsync(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
+bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel, uint32_t destLevel)
 {
 	if (!src || !dest)
 		return false;
@@ -486,7 +257,6 @@ Texture2D::Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const Texture
 	CreateImageView();
 	CreateSampler();
 }
-
 
 Texture2D::~Texture2D()
 {
@@ -572,31 +342,7 @@ vk::SamplerAddressMode Texture2D::GetWrapV() const
 	return m_config.wrapV;
 }
 
-void Texture2D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout layout, vk::PipelineStageFlags dstAccessMask, uint32_t level)
-{
-	if (!cmd) return;
-
-	if (level == UINT32_MAX)
-	{
-		_image->TransitionLayout(
-			cmd,
-			layout,
-			dstAccessMask
-		);
-	}
-	else
-	{
-		_image->TransitionLayout(
-			cmd,
-			layout,
-			dstAccessMask,
-			level,
-			1
-		);
-	}
-}
-
-void Texture2D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, BindStage stage, BindUsage usage, uint32_t level)
+void Texture2D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, ImageLayout::BindStage stage, ImageLayout::BindUsage usage, uint32_t level)
 {
 	if (!cmd) return;
 
@@ -631,7 +377,7 @@ void Texture2D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd
 		*outLayout = newLayout;
 }
 
-void Texture2D::Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, BindStage stage, BindUsage usage, uint32_t level)
+void Texture2D::Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, ImageLayout::BindStage stage, ImageLayout::BindUsage usage, uint32_t level)
 {
 	if (!cmd) return;
 
@@ -641,7 +387,7 @@ void Texture2D::Barrier(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::Ima
 	vk::ImageLayout newLayout;
 	vk::PipelineStageFlags dstStageMask;
 
-	GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, m_Format, stage, usage);
+	ImageLayout::GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, m_Format, stage, usage);
 
 	if (level == UINT32_MAX)
 	{
@@ -675,28 +421,23 @@ vk::Image Texture2D::GetImage() const
 	return _image->GetHandle();
 }
 
-vk::ImageView Texture2D::GetImageView(uint32_t baseMipLevel, uint32_t levelCount) const
+vk::ImageView Texture2D::GetImageView(vk::ImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t levelCount) const
 {
-	if (baseMipLevel == 0 && levelCount == UINT32_MAX)
-	{
-		if (auto imageView = _imageView)
-			return imageView->GetHandle();
-		return VK_NULL_HANDLE;
-	}
+	return GetImageView(ImageViewInfo{ .aspect = aspect, .base = baseMipLevel, .count = levelCount });
+}
+
+vk::ImageView Texture2D::GetImageView(const ImageViewInfo& info) const
+{
+	LockGuard guard(_mutex);
+	if (auto it = _levelImageViews.find(info); it != _levelImageViews.end())
+		return it->second->GetHandle();
 	else
 	{
-		LockGuard guard(_mutex);
-		LevelInfo info(baseMipLevel, levelCount);
-		if (auto it = _levelImageViews.find(info); it != _levelImageViews.end())
-			return it->second->GetHandle();
-		else
-		{
-			auto levelImageView = CreateLevelImageView(baseMipLevel, levelCount);
-			if (!levelImageView)
-				return VK_NULL_HANDLE;
-			_levelImageViews[info] = levelImageView;
-			return levelImageView->GetHandle();
-		}
+		auto levelImageView = CreateLevelImageView(info);
+		if (!levelImageView)
+			return VK_NULL_HANDLE;
+		_levelImageViews[info] = levelImageView;
+		return levelImageView->GetHandle();
 	}
 }
 
@@ -707,32 +448,23 @@ vk::Sampler Texture2D::GetSampler() const
 	return VK_NULL_HANDLE;
 }
 
-//GLuint64 Texture2D::GetBindlessID() const
-//{
-//	return t_ThreadResidentProxy.GetThreadBindlessData(this, _BindlessVersion.load());
-//}
-
-TextureDescBindEntry Texture2D::GetDescBindEntry(uint32_t baseMipLevel, uint32_t levelCount) const
+TextureDescBindEntry Texture2D::GetDescBindEntry(vk::ImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t levelCount) const
 {
-	if (baseMipLevel == 0 && levelCount == UINT32_MAX)
-	{
-		LockGuard guard(_mutex);
-		return TextureDescBindEntry{ .image = _image, .imageView = _imageView, .sampler = _sampler, .version = _version };
-	}
+	return GetDescBindEntry(ImageViewInfo{ .aspect = aspect, .base = baseMipLevel, .count = levelCount });
+}
+
+TextureDescBindEntry Texture2D::GetDescBindEntry(const ImageViewInfo& info) const
+{
+	LockGuard guard(_mutex);
+	if (auto it = _levelImageViews.find(info); it != _levelImageViews.end())
+		return TextureDescBindEntry{ .image = _image, .imageView = it->second, .sampler = _sampler, .version = _version };
 	else
 	{
-		LockGuard guard(_mutex);
-		LevelInfo info(baseMipLevel, levelCount);
-		if (auto it = _levelImageViews.find(info); it != _levelImageViews.end())
-			return TextureDescBindEntry{ .image = _image, .imageView = it->second, .sampler = _sampler, .version = _version };
-		else
-		{
-			auto levelImageView = CreateLevelImageView(baseMipLevel, levelCount);
-			if (!levelImageView)
-				return TextureDescBindEntry{ .image = _image, .imageView = nullptr, .sampler = _sampler, .version = _version };
-			_levelImageViews[info] = levelImageView;
-			return TextureDescBindEntry{ .image = _image, .imageView = levelImageView, .sampler = _sampler, .version = _version };
-		}
+		auto levelImageView = CreateLevelImageView(info);
+		if (!levelImageView)
+			return TextureDescBindEntry{ .image = _image, .imageView = nullptr, .sampler = _sampler, .version = _version };
+		_levelImageViews[info] = levelImageView;
+		return TextureDescBindEntry{ .image = _image, .imageView = levelImageView, .sampler = _sampler, .version = _version };
 	}
 }
 
@@ -882,30 +614,8 @@ bool Texture2D::CreateImage()
 bool Texture2D::CreateImageView()
 {
 	LockGuard guard(_mutex);
-
-	vk::ImageViewCreateInfo viewInfo = {};
-	viewInfo
-		.setImage(_image->GetHandle())
-		.setViewType(vk::ImageViewType::e2D)
-		.setFormat(m_Format)
-		.setSubresourceRange(
-			vk::ImageSubresourceRange()
-			.setAspectMask(GetAspectMaskForFormat(m_Format))
-			.setBaseMipLevel(0)
-			.setLevelCount(vk::RemainingMipLevels)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1)
-		);
-
-	auto imageView = std::make_shared<VKWrapper::VKImageView>();
-	vk::Result result = imageView->Create(VKCONTEXT->GetDevice().get(), viewInfo);
-	if (result != vk::Result::eSuccess)
-		return false;
-
-	_imageView = imageView;
 	_levelImageViews.clear();
 	_version++;
-
 	return true;
 }
 
@@ -941,7 +651,7 @@ bool Texture2D::CreateSampler()
 	return true;
 }
 
-std::shared_ptr<VKWrapper::VKImageView> Texture2D::CreateLevelImageView(uint32_t BaseMipLevel, uint32_t LevelCount) const
+std::shared_ptr<VKWrapper::VKImageView> Texture2D::CreateLevelImageView(const ImageViewInfo& info) const
 {
 
 	vk::ImageViewCreateInfo viewInfo = {};
@@ -951,9 +661,9 @@ std::shared_ptr<VKWrapper::VKImageView> Texture2D::CreateLevelImageView(uint32_t
 		.setFormat(m_Format)
 		.setSubresourceRange(
 			vk::ImageSubresourceRange()
-			.setAspectMask(GetAspectMaskForFormat(m_Format))
-			.setBaseMipLevel(BaseMipLevel)
-			.setLevelCount(LevelCount)
+			.setAspectMask(info.aspect)
+			.setBaseMipLevel(info.base)
+			.setLevelCount(info.count)
 			.setBaseArrayLayer(0)
 			.setLayerCount(1)
 		);
@@ -980,8 +690,6 @@ bool Texture2D::CreateFromDX11SharedHandle(std::shared_ptr<SharedTexture> shared
 
 	return true;
 }
-
-
 
 bool Texture2DConfig::operator==(const Texture2DConfig& other)
 {

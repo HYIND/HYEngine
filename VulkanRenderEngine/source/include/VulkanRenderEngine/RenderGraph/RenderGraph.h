@@ -47,7 +47,7 @@ namespace RenderGraph
 		RenderGraphResource CreateTexture(const TextureDesc& desc, const ResourceName& name);					// 获取资源声明
 		ExternalResource CreateExternalTexture(const ResourceName& name);										// 获取外部资源声明
 
-		PassNode* AddPass(const std::string& name);		// 添加Pass
+		PassNode* AddNode(const std::string& name);		// 添加Node
 		PassNode* AddFence(const std::string& name);	// 添加栅栏
 
 		void Compile();									// 编译（分析依赖和生命周期）
@@ -101,14 +101,16 @@ namespace RenderGraph
 			RenderState& state,
 			const std::string& resPrefix,
 			ExternalResourceManager& externalResManager,
-			std::atomic<uint32_t>& doneCounter
+			std::atomic<uint32_t>& doneCounter,
+			std::shared_ptr<CriticalSectionLock>& _cmdMutex
 		);
-		void ExcutePass(
+		void ExecutePass(
 			PassNode* node,
 			FrameDataRegistry& registry,
 			RenderState& state,
 			const std::string& resPrefix,
-			ExternalResourceManager& externalResManager
+			ExternalResourceManager& externalResManager,
+			std::shared_ptr<CriticalSectionLock>& _cmdMutex
 		);
 
 	private:

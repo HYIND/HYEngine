@@ -18,7 +18,7 @@ public:
 	~GeometryPass();
 
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
@@ -34,15 +34,15 @@ private:
 	);
 
 	bool SetupStaticBufferData(
-		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		GraphicsBindingRecord& binding,
 		std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
 		VKRenderObjectData::RenderIndex& renderIndex,
 		std::vector<IndirectDrawCommand>& oneSideCommands,
 		std::vector<IndirectDrawCommand>& twoSideCommands
 	);
-	void RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort);
-	void RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort);
+	void RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort);
+	void RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _staticShader;

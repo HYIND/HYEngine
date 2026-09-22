@@ -2,6 +2,7 @@
 
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
+#include "VulkanRenderEngine/General/ImageLayoutWrapper.h"
 #include "CriticalSectionLock.h"
 
 struct TextureCubeConfig
@@ -28,12 +29,6 @@ struct TextureCubeDescBindEntry
 
 class TextureCube
 {
-public:
-	enum class BindStage { Graphics = 0, Compute };	// 使用场景，图像渲染管线还是计算管线
-	enum class BindUsage { Output = 0, Sample };	// 用途,作为管线输出(Graphics中的附件，Compute中imagestore的对象)，还是输入的采样纹理
-
-public:
-	static void GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::PipelineStageFlags* outDestStageFlag, vk::Format format, BindStage stage = BindStage::Graphics, BindUsage usage = BindUsage::Sample);
 
 public:
 	TextureCube(const std::array<std::string, 6>& filepaths, const TextureCubeConfig& config = {});
@@ -72,8 +67,8 @@ public:
 public:
 	void TransitionLayout(
 		std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
-		vk::ImageLayout* outLayout = nullptr,
-		BindStage stage = BindStage::Graphics, BindUsage usage = BindUsage::Sample,
+		vk::ImageLayout* outLayout,
+		ImageLayout::BindStage stage, ImageLayout::BindUsage usage,
 		uint32_t level = UINT32_MAX
 	);
 

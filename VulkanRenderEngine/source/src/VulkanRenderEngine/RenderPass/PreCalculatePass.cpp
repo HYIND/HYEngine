@@ -14,17 +14,18 @@ PreCalculatePass::PreCalculatePass()
 PreCalculatePass::~PreCalculatePass()
 {}
 
-void PreCalculatePass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void PreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	//auto start = Tool::GetTimestampMircoseconds();
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
 	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices);
+	//std::cout << std::format("cost {}us\n", Tool::GetTimestampMircoseconds() - start);
 
+	auto cmd = cmdCtx.GetCmd();
 	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
 		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
-	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteData(staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
-
-	//std::cout << std::format("cost {}us\n", Tool::GetTimestampMircoseconds() - start);
+	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteDataAsync(cmd, staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
+	cmd->SubmitToQueue();
 }
 
 void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices)

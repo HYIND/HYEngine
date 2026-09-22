@@ -939,21 +939,21 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 
 		if (worldManager->GetVulkanRener()->GetWidth() != 0 && worldManager->GetVulkanRener()->GetHeight() != 0)
 		{
-
-			if (worldManager->ResizeVulkan(viewportSize.x, viewportSize.y))
-			{
+			auto prevClear = [&]() {
 				for (auto& [view, textureId] : imguiRegisterTexture)
 				{
 					if (textureId != VK_NULL_HANDLE)
 						ImGui_ImplVulkan_RemoveTexture(textureId);
 				}
 				imguiRegisterTexture.clear();
-			}
+				};
+
+			worldManager->ResizeVulkan(viewportSize.x, viewportSize.y, prevClear);
 
 			worldManager->WaitImage([&](std::shared_ptr<Texture2D> tex) {
 				if (!tex) return;
 
-				VkImageView view = tex->GetImageView();
+				VkImageView view = tex->GetImageView(vk::ImageAspectFlagBits::eColor);
 				if (view == VK_NULL_HANDLE)
 					return;
 

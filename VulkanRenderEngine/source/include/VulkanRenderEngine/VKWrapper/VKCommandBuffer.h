@@ -5,6 +5,7 @@
 #include "VulkanRenderEngine\VKCore\VulkanOutput.h"
 #include "VKCommandPool.h"
 #include "VKRenderPass.h"
+#include "VulkanRenderEngine/General/CmdSyncData.h"
 
 #define VK_CMD_WRAPPER(CMD_NAME) \
     template <typename... Args> \
@@ -68,13 +69,14 @@ struct DynamicRenderInfo
 namespace VKWrapper
 {
 
-	class VKCommandBuffer
+	class VKCommandBuffer :public std::enable_shared_from_this<VKCommandBuffer>
 	{
 	public:
 		VKCommandBuffer() = default;
+		VKCommandBuffer(VKCommandBuffer&& other) noexcept;
 		VKCommandBuffer(VKCommandPool* pool);
 
-		~VKCommandBuffer();
+		virtual ~VKCommandBuffer();
 
 		void Release();
 
@@ -85,6 +87,10 @@ namespace VKWrapper
 		vk::Result Begin(vk::CommandBufferUsageFlags usageFlags = {}) const;
 		vk::Result End() const;
 		vk::Result Reset() const;
+
+		virtual void SubmitToQueue(const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		virtual void SubmitNow(const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+		virtual void SubmitNowAndWait(const CmdSyncSeamphore& syncSeamphore = {});
 
 	private:
 		void Need() const;

@@ -43,18 +43,18 @@ public:
 	virtual ~LightShadowDepthPass();
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 private:
 	void CalculateShadowAtlas(RenderState& state, AtlasMap& atlas);
 
-	void processDirAndSpotLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
-	void processPointLight(SelfContext& ctx, std::shared_ptr<VKWrapper::VKTimelineSemaphore>& semaphore, uint64_t& cmdcount, RenderState& state, DynamicRenderInfo& renderInfo);
+	void processDirAndSpotLight(SelfContext& ctx, RenderState& state, const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd, DynamicRenderInfo& renderInfo);
+	void processPointLight(SelfContext& ctx, RenderState& state, const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd, DynamicRenderInfo& renderInfo);
 
 	void RenderSceneLightShadowPassSceneInstance(
 		SelfContext& ctx,
-		std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+		const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
 		RenderState& state,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 		std::shared_ptr<GraphicsPipeline>& shader_Skinned,

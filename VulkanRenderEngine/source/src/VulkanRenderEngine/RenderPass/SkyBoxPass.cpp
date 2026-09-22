@@ -30,7 +30,7 @@ bool SkyBoxPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderS
 	return state.option.flags.skyboxOn && state.skybox.cube;
 }
 
-void SkyBoxPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void SkyBoxPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto skyboxCubeMap = state.skybox.cube;
 	if (!skyboxCubeMap)
@@ -40,16 +40,16 @@ void SkyBoxPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderG
 	auto depthBuffer = ctx.GetExternal(1);
 	auto cubeMap = state.skybox.cube;
 
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	auto cmd = cmdCtx.GetCmd();
 
 	ComputeBindingRecord binding;
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	binding.SetStorageImage(colorBuffer, 0);
-	binding.SetUniformTexture(depthBuffer, 1);
-	binding.SetUniformTextureCube(state.skybox.cube, 2);
+	binding.SetStorageImage(colorBuffer, vk::ImageAspectFlagBits::eColor, 0);
+	binding.SetUniformTexture(depthBuffer, vk::ImageAspectFlagBits::eDepth, 1);
+	binding.SetUniformTextureCube(state.skybox.cube, vk::ImageAspectFlagBits::eColor, 2);
 
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
 
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	cmd->SubmitToQueue();
 }

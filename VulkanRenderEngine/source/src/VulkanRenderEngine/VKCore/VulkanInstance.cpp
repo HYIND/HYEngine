@@ -1,6 +1,7 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine\VKCore\VulkanInstance.h"
 #include "VulkanRenderEngine\GlobalConfig.h"
+#include "VulkanRenderEngine\RenderGraph\PassNode.h"
 
 using namespace VKCore;
 
@@ -9,7 +10,7 @@ static PFN_vkDebugUtilsMessengerCallbackEXT DebugUtilsMessengerCallback = [](
 	VkDebugUtilsMessageTypeFlagsEXT messageTypes,
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData)->VkBool32 {
-		std::cout << std::format("{}\n\n", pCallbackData->pMessage);
+		std::cout << std::format("PassName = \"{}\" , threadid = {} ,{}\n\n", RenderGraph::PassNode::GetCurThreadPassName(), std::this_thread::get_id(), pCallbackData->pMessage);
 		return VK_FALSE;
 	};
 

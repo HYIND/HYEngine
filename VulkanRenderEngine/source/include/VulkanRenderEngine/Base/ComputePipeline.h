@@ -44,7 +44,7 @@ public:
 	);
 
 	virtual void Release() override;
-	virtual void Bind(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
+	virtual void Bind(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, BindingRecord& bindingRecord) override;
 
 private:
 	bool CreatePipeline(vk::PipelineCreateFlags flag = {});
@@ -58,11 +58,11 @@ class ComputeBindingRecord :public BindingRecord
 public:
 	ComputeBindingRecord() = default;
 
-	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, uint32_t binding, uint32_t set = 0);
-	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
+	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
+	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
 	void SetStorageImageArray(const std::vector<BindingRecord::StorageImageEntry>& entrys, uint32_t binding, uint32_t set = 0);
 
-	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, const BindingPoint& bp);
-	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
+	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, const BindingPoint& bp);
+	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
 	void SetStorageImageArray(const std::vector<BindingRecord::StorageImageEntry>& entrys, const BindingPoint& bp);
 };

@@ -267,7 +267,6 @@ std::shared_ptr<StorageBlock> RTCoreRayTraceGeneralBuffer::GetInstancesInfosBloc
 RTCoreRayTraceGeneralPass::RTCoreRayTraceGeneralPass()
 {
 	_buffers = std::make_shared<RTCoreRayTraceGeneralBuffer>();
-	_fence = std::make_shared< VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
 	_scratchBlock = std::make_shared<StorageBlock>();
 }
 
@@ -279,9 +278,8 @@ bool RTCoreRayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& re
 	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
 }
 
-void RTCoreRayTraceGeneralPass::Execute(RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void RTCoreRayTraceGeneralPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	//_fence->WaitAndReset();
 }
 
 void RTCoreRayTraceGeneralPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
