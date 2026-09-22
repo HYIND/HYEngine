@@ -19,13 +19,25 @@ void IconManager::Need() const
 
 void IconManager::LoadIcons() const
 {
-	m_icons["folder"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/folder.png") };
-	m_icons["file"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/file.png") };
-	m_icons["model"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/mesh.png") };
-	m_icons["texture"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/texture.png") };
-	m_icons["material"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/material.png") };
-	m_icons["scene"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/scene.png") };
-	m_icons["audio"] = Icon{ .tex = std::make_shared<Texture2D>("Icons/audio.png") };
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	auto LoadTex = [&](const std::string& path)->Icon {
+		auto tex = std::make_shared<Texture2D>(path);
+		if (!tex->IsEmpty())
+			tex->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Read);
+		return Icon{ .tex = tex };
+		};
+
+	m_icons["folder"] = LoadTex("Icons/folder.png");
+	m_icons["file"] = LoadTex("Icons/file.png");
+	m_icons["model"] = LoadTex("Icons/mesh.png");
+	m_icons["texture"] = LoadTex("Icons/texture.png");
+	m_icons["material"] = LoadTex("Icons/material.png");
+	m_icons["scene"] = LoadTex("Icons/scene.png");
+	m_icons["audio"] = LoadTex("Icons/audio.png");
+
+	if (cmd->IsRecording())
+		cmd->SubmitNowAndWait();
 }
 
 ImTextureID IconManager::GetIcon(const std::string& name) const
@@ -40,7 +52,7 @@ ImTextureID IconManager::GetIcon(const std::string& name) const
 	if (icon.descSet == VK_NULL_HANDLE && icon.tex && !icon.tex->IsEmpty())
 	{
 		icon.descSet = ImGui_ImplVulkan_AddTexture(
-			icon.tex->GetImageView(),
+			icon.tex->GetImageView(vk::ImageAspectFlagBits::eColor),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		);
 	}
