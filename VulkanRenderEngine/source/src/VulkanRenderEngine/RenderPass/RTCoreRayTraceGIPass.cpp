@@ -271,20 +271,20 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 		state.lights.ssbo_spotLightMeta
 	);
 
-	//binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	//binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 6);
-	//binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 7);
-	//binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
-	//binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
-	//binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
-	//binding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 11);
-	//binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
-	//binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 6);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
+	binding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 11);
+	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
+	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
 
 	rayTraceShader.Bind(cmd, binding);
 	auto regionData = rayTraceShader.GetSBTData();
-	//cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
+	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
 
 	cmd->SubmitToQueue();
 
