@@ -1,0 +1,221 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+
+layout (binding = 0) uniform Params
+{
+    vec3 DirLightColor;
+    vec3 DirLightDir;
+    float PlanetRadius;
+    float AtmosphereHeight;
+    float RayleighScatteringScalarHeight;
+    float MieScatteringScalarHeight;
+    float MieAnisotropy;
+    float OzoneLevelCenterHeight;
+    float OzoneLevelWidth;
+
+    uint ScatterPathSampleCount;
+    uint TransmittanceSampleCount;
+};
+
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D colorMap;
+layout (binding = 3) uniform sampler2D depthMap;
+
+const float MAX_RAY_DISTANCE = 1e5;
+
+vec3 RayleighCoefficient(float h)
+{
+    const vec3 sigma = vec3(5.802, 13.558, 33.1) * 1e-6;
+    float H_R = RayleighScatteringScalarHeight;
+    float rho_h = exp(-(h / H_R));
+    return sigma * rho_h;
+}
+
+float RayleighPhase(float cos_theta)
+{
+    return (3.0 / (16.0 * 3.14159265)) * (1.0 + cos_theta * cos_theta);
+}
+
+vec3 MieCoefficient(float h)
+{
+    const vec3 sigma = vec3(3.996e-6);
+    float H_M = MieScatteringScalarHeight;
+    float rho_h = exp(-(h / H_M));
+    return sigma * rho_h;
+}
+
+float MiePhase(float cos_theta)
+{
+    float g = MieAnisotropy;
+
+    float a = 3.0 / (8.0 * 3.14159265);
+    float b = (1.0 - g * g) / (2.0 + g * g);
+    float c = 1.0 + cos_theta * cos_theta;
+    float d = pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5);
+
+    return a * b * (c / d);
+}
+vec3 Scattering(vec3 p, vec3 lightDir, vec3 viewDir)
+{
+    float cos_theta = dot(lightDir, viewDir);
+
+    float h = p.y;
+    vec3 rayleigh = RayleighCoefficient(h) * RayleighPhase(cos_theta);
+    vec3 mie = MieCoefficient(h) * MiePhase(cos_theta);
+
+    return rayleigh + mie;
+}
+vec3 MieAbsorption(float h)
+{
+    const vec3 sigma = vec3(4.4e-6);
+    float H_M = MieScatteringScalarHeight;
+    float rho_h = exp(-(h / H_M));
+    return sigma * rho_h;
+}
+
+vec3 OzoneAbsorption(float h)
+{
+    const vec3 sigma_lambda = vec3(0.650, 1.881, 0.085) * 1e-6;
+    float center = OzoneLevelCenterHeight;
+    float width = OzoneLevelWidth;
+    float rho = max(0.0, 1.0 - abs(h - center) / width);
+    return sigma_lambda * rho;
+}
+vec3 Transmittance(vec3 p1, vec3 p2)
+{
+    vec3 dir = normalize(p2 - p1);
+    float dist = distance(p2, p1);
+    float ds = dist / float(TransmittanceSampleCount);
+    vec3 sum = vec3(0.0);
+    vec3 p = p1 + dir * ds * 0.5;
+
+    for(int i = 0; i < TransmittanceSampleCount; i++)
+    {
+        float h = p.y;
+
+        vec3 scattering = RayleighCoefficient(h) + MieCoefficient(h);
+        vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
+        vec3 extinction = scattering + absorption;
+
+        sum += extinction * ds;
+        p += dir * ds;
+    }
+
+    // 计算透光率
+    return exp(-sum);
+}
+
+// 返回 t，使得 p0 + t * d 落在平面 y = H 上
+// 如果射线平行于平面，返回 -1
+float RayIntersectPlane(float planeHeight, vec3 position, vec3 dir)
+{
+    if (abs(dir.y) < 1e-6) {
+        return -1.0;  // 平行，不相交
+    }
+    float t = (planeHeight - position.y) / dir.y;
+    return t;
+}
+
+vec3 singleScatterSkyColor(vec3 cameraPos, vec3 targetPos, vec3 lightColor, vec3 lightDir)
+{
+    vec3 viewDir = normalize(targetPos - cameraPos);
+    vec3 toLightDir = -lightDir;
+    float dstToTarget = distance(cameraPos, targetPos);
+    float stepSize = dstToTarget / float(ScatterPathSampleCount);
+    vec3 testPoint = cameraPos + viewDir * stepSize * 0.5;
+    vec3 color = vec3(0.f);
+    for (uint i = 0; i < ScatterPathSampleCount; i++) {     
+        float disToLight = RayIntersectPlane(AtmosphereHeight, testPoint, toLightDir);                   // 太阳方向rayMarching的距离
+        vec3 tramsmittanceLightToTest = Transmittance(testPoint + toLightDir * disToLight, testPoint);   // 太阳到采样点之间的透光率
+        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                    // 散射光比例
+        vec3 tramsmittanceTestToCam = Transmittance(testPoint, cameraPos);                               // 摄像机到采样点之间的透光度
+        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor; // 采样点的光照计算
+        testPoint += viewDir * stepSize;
+        color += inScattering;
+    }
+
+    float cosAngle = dot(viewDir, toLightDir);
+    if(cosAngle > 0.9998) {
+        // 视线指向太阳圆盘
+        float disToLight = RayIntersectPlane(AtmosphereHeight, cameraPos, toLightDir);
+        color += Transmittance(cameraPos + toLightDir * disToLight, cameraPos) * lightColor;
+    }
+
+    return color;
+}
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+}
+
+vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
+{
+    vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
+    
+    vec4 viewPos = camera.invProjection * ndcPos;
+    viewPos /= viewPos.w; // 透视除法
+    
+    // 逆视图变换到世界空间
+    vec4 worldPos = camera.invView * viewPos;
+    return worldPos.xyz;
+}
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+
+    float samplerDepth = texture(depthMap, TexCoords).r;
+    float viewDepth = DepthBufferConvertToViewDepth(samplerDepth);
+    vec3 worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
+
+    if (samplerDepth >= 0.99994)
+    {
+        vec3 viewDir = normalize(worldPos - camera.position);
+        if (viewDir.y > 1e-6)
+        {
+            float t = RayIntersectPlane(AtmosphereHeight, camera.position, viewDir);
+            if (t < 0.f)
+                return;
+            t = min(MAX_RAY_DISTANCE, t);
+            worldPos = camera.position + viewDir * t;
+        }
+        else
+            worldPos = camera.position + viewDir * MAX_RAY_DISTANCE;
+    }
+
+    vec3 result = vec3 (0.f);
+
+    vec3 sunLightColor = DirLightColor;
+    vec3 sunLightDir = normalize(DirLightDir);
+    if (sunLightDir.y < -1e-6)
+    {
+        result += singleScatterSkyColor(camera.position, worldPos, sunLightColor, sunLightDir);
+    }
+
+    if (samplerDepth < 0.99994)
+    {    
+        vec3 fragTransmittance = Transmittance(camera.position, worldPos);
+        vec3 fragColor = texture(colorMap, TexCoords).rgb;
+        result += fragColor * fragTransmittance;
+    }
+    
+    imageStore(outputImage, coord, vec4(result, 1.0));
+}

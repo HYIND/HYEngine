@@ -87,6 +87,18 @@ struct RenderOption
 		float fogHeightFalloff = 0.01;
 	} depthFogParams;
 
+	struct AtomsphereParams {
+		float PlanetRadius = 6371000;
+		float AtmosphereHeight = 60000;
+		float RayleighScatteringScalarHeight = 8000;
+		float MieScatteringScalarHeight = 1200;
+		float MieAnisotropy = 0.8;
+		float OzoneLevelCenterHeight = 25000;
+		float OzoneLevelWidth = 15000;
+		uint32_t ScatterPathSampleCount = 16;
+		uint32_t TransmittanceSampleCount = 24;
+	} atomsphereParams;
+
 	struct PostProcessParams {
 		float EV100 = 0.0f;
 		float gamma = 2.2f;
@@ -100,8 +112,9 @@ struct RenderOption
 		bool drawTransparent = true;
 		bool ssrOn = false;
 		bool ssgiOn = false;
-		bool skyboxOn = true;
-		bool depthFogOn = true;
+		bool skyboxOn = false;
+		bool depthFogOn = false;
+		bool atomsphereOn = true;
 		bool rayTraceReflectOn = false;
 		bool rayTraceGIOn = false;
 		bool autoExposureOn = false;

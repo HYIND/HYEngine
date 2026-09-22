@@ -1204,6 +1204,7 @@ static bool PropertiesHelper::DrawData(RenderOption& option)
 	anyChange |= PropertiesHelper::DrawWithTitle("SSReflectParams", option.ssrTraceParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSGIParams", option.ssgiTraceParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("DepthFogParams", option.depthFogParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("AtomsphereParams", option.atomsphereParams);
 	return anyChange;
 }
 

@@ -180,7 +180,7 @@ void main()
     vec2 uv = pixelCenter / screenSize;
 
     float depth = texture(depthMap, uv).r;
-    if(depth >= 0.99999)
+    if(depth >= 0.99994)
         return;
 
     if(maxBounce <= 0)

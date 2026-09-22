@@ -25,7 +25,7 @@ void main() {
     vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(screenSize);
 
     float depth = texture(depthMap, TexCoords).r;
-    if (depth <= 0.9999)
+    if (depth <= 0.99994)
         return;
 
     vec2 ndc = vec2(
