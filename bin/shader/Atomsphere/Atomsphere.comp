@@ -144,13 +144,6 @@ vec3 singleScatterSkyColor(vec3 cameraPos, vec3 targetPos, vec3 lightColor, vec3
         color += inScattering;
     }
 
-    float cosAngle = dot(viewDir, toLightDir);
-    if(cosAngle > 0.9998) {
-        // 视线指向太阳圆盘
-        float disToLight = RayIntersectPlane(AtmosphereHeight, cameraPos, toLightDir);
-        color += Transmittance(cameraPos + toLightDir * disToLight, cameraPos) * lightColor;
-    }
-
     return color;
 }
 
@@ -210,7 +203,18 @@ void main()
         result += singleScatterSkyColor(camera.position, worldPos, sunLightColor, sunLightDir);
     }
 
-    if (samplerDepth < 0.99994)
+    if (samplerDepth >= 0.99994)
+    {
+        vec3 viewDir = normalize(worldPos - camera.position);
+        vec3 toLightDir = -sunLightDir;
+        float cosAngle = dot(viewDir, toLightDir);
+        if(cosAngle > 0.9998) {
+            // 视线指向太阳圆盘
+            float disToLight = RayIntersectPlane(AtmosphereHeight, camera.position, toLightDir);
+            result += Transmittance(camera.position + toLightDir * disToLight, camera.position) * sunLightColor;
+        }
+    }
+    else
     {    
         vec3 fragTransmittance = Transmittance(camera.position, worldPos);
         vec3 fragColor = texture(colorMap, TexCoords).rgb;
