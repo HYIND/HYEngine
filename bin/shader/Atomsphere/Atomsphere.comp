@@ -65,11 +65,14 @@ float MiePhase(float cos_theta)
 
     return a * b * (c / d);
 }
-vec3 Scattering(vec3 p, vec3 lightDir, vec3 viewDir)
+vec3 Scattering(vec3 p, vec3 toLightDir, vec3 viewDir)
 {
-    float cos_theta = dot(lightDir, viewDir);
+    float cos_theta = dot(toLightDir, viewDir);
 
-    float h = p.y;
+    p.y -= 1500;
+    float h = length(p) - PlanetRadius;
+    h = max(0.5, h);
+
     vec3 rayleigh = RayleighCoefficient(h) * RayleighPhase(cos_theta);
     vec3 mie = MieCoefficient(h) * MiePhase(cos_theta);
 
@@ -98,10 +101,12 @@ vec3 Transmittance(vec3 p1, vec3 p2)
     float ds = dist / float(TransmittanceSampleCount);
     vec3 sum = vec3(0.0);
     vec3 p = p1 + dir * ds * 0.5;
+    p.y -= 1500;
 
     for(int i = 0; i < TransmittanceSampleCount; i++)
     {
-        float h = p.y;
+        float h = length(p) - PlanetRadius;
+        h = max(0.5, h);
 
         vec3 scattering = RayleighCoefficient(h) + MieCoefficient(h);
         vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
@@ -115,41 +120,180 @@ vec3 Transmittance(vec3 p1, vec3 p2)
     return exp(-sum);
 }
 
-// 返回 t，使得 p0 + t * d 落在平面 y = H 上
-// 如果射线平行于平面，返回 -1
-float RayIntersectPlane(float planeHeight, vec3 position, vec3 dir)
+bool RaySphereIntersection(
+    vec3 center,
+    float radius,
+    vec3 rayStart,
+    vec3 rayDir,
+    out float tNear,
+    out float tFar)
 {
-    if (abs(dir.y) < 1e-6) {
-        return -1.0;  // 平行，不相交
+    vec3 oc = rayStart - center;
+
+    float b = dot(oc, rayDir);
+    float c = dot(oc, oc) - radius * radius;
+
+    float discriminant = b * b - c;
+
+    if (discriminant < 0.0)
+    {
+        tNear = -1.0;
+        tFar  = -1.0;
+        return false;
     }
-    float t = (planeHeight - position.y) / dir.y;
-    return t;
+
+    float sqrtD = sqrt(discriminant);
+
+    tNear = -b - sqrtD;
+    tFar  = -b + sqrtD;
+
+    return true;
 }
 
-vec3 singleScatterSkyColor(vec3 cameraPos, vec3 targetPos, vec3 lightColor, vec3 lightDir)
+bool GetAtmosphereRaySegment(
+    vec3 rayStart,
+    vec3 rayDir,
+    out float tStart,
+    out float tEnd
+    )
 {
-    vec3 viewDir = normalize(targetPos - cameraPos);
+    const vec3 planetCenter = vec3(0.0);
+
+    float atmosphereRadius = PlanetRadius + AtmosphereHeight + 1500 - 1.0;
+
+    // ------------------------------------------------------------
+    // 1. Ray vs atmosphere
+    // ------------------------------------------------------------
+
+    float atmosphereNear;
+    float atmosphereFar;
+
+    if (!RaySphereIntersection(
+            planetCenter,
+            atmosphereRadius,
+            rayStart,
+            rayDir,
+            atmosphereNear,
+            atmosphereFar))
+    {
+        return false;
+    }
+
+    // Ray 从相机开始，所以不能积分 t < 0
+    tStart = max(atmosphereNear, 0.0);
+    tEnd = atmosphereFar;
+
+    if (tEnd <= tStart)
+        return false;
+
+
+    // ------------------------------------------------------------
+    // 2. Ray vs planet
+    // ------------------------------------------------------------
+
+    float planetNear;
+    float planetFar;
+
+    bool hitPlanet = RaySphereIntersection(
+        planetCenter,
+        PlanetRadius,
+        rayStart,
+        rayDir,
+        planetNear,
+        planetFar
+    );
+
+
+    // ------------------------------------------------------------
+    // 3. 相机在地球内部
+    // ------------------------------------------------------------
+
+    float cameraRadius = length(rayStart);
+
+    if (cameraRadius < PlanetRadius)
+    {
+        // 相机在地球内部。
+        //
+        // planetNear < 0
+        // planetFar  > 0
+        //
+        // 必须穿过地表以后才能进入大气。
+
+        if (!hitPlanet)
+            return false;
+
+        tStart = max(tStart, planetFar);
+    }
+    else
+    {
+        // --------------------------------------------------------
+        // 4. 相机在地表以上
+        // --------------------------------------------------------
+
+        if (hitPlanet && planetNear > 0.0)
+        {
+            // 视线击中地球。
+            // 大气积分只能到地表。
+            tEnd = min(tEnd, planetNear);
+        }
+    }
+
+    return tEnd > tStart;
+}
+
+vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir)
+{
+
+    vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
     vec3 toLightDir = -lightDir;
-    float dstToTarget = distance(cameraPos, targetPos);
+    float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
     float stepSize = dstToTarget / float(ScatterPathSampleCount);
-    vec3 testPoint = cameraPos + viewDir * stepSize * 0.5;
+    vec3 testPoint = startPosInPlanet + viewDir * stepSize * 0.5;
     vec3 color = vec3(0.f);
-    for (uint i = 0; i < ScatterPathSampleCount; i++) {     
-        float disToLight = RayIntersectPlane(AtmosphereHeight, testPoint, toLightDir);                   // 太阳方向rayMarching的距离
-        vec3 tramsmittanceLightToTest = Transmittance(testPoint + toLightDir * disToLight, testPoint);   // 太阳到采样点之间的透光率
-        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                    // 散射光比例
-        vec3 tramsmittanceTestToCam = Transmittance(testPoint, cameraPos);                               // 摄像机到采样点之间的透光度
+
+    for (uint i = 0; i < ScatterPathSampleCount; i++) {
+
+        float planetNear, planetFar;
+        bool hitPlanet = RaySphereIntersection(
+            vec3(0,0,0),
+            PlanetRadius,
+            testPoint,
+            toLightDir,
+            planetNear,
+            planetFar
+        );
+        if (hitPlanet && (planetNear > 0 || planetFar > 0))
+        {
+            testPoint += viewDir * stepSize;
+            continue;
+        }
+
+        float tStart, tEnd;
+        bool validSegment = GetAtmosphereRaySegment(
+            testPoint,
+            toLightDir,
+            tStart,
+            tEnd
+        );
+        if (!validSegment)
+        {
+            testPoint += viewDir * stepSize;
+            continue;
+        }
+
+        vec3 atmosphereStart = testPoint + toLightDir * tStart;
+        vec3 atmosphereEnd = testPoint + toLightDir * tEnd;
+
+        vec3 tramsmittanceLightToTest = Transmittance(atmosphereEnd, atmosphereStart);                              // 太阳到采样点之间的透光率
+        vec3 scattering = Scattering(atmosphereStart, toLightDir, viewDir);                                         // 散射光比例
+        vec3 tramsmittanceTestToCam = Transmittance(atmosphereStart, startPosInPlanet);                             // 摄像机到采样点之间的透光度
         vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor; // 采样点的光照计算
-        testPoint += viewDir * stepSize;
         color += inScattering;
+
+        testPoint += viewDir * stepSize;
     }
 
     return color;
-}
-
-float DepthBufferConvertToViewDepth(float depth)
-{
-    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
 vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
@@ -176,49 +320,112 @@ void main()
 
 
     float samplerDepth = texture(depthMap, TexCoords).r;
-    float viewDepth = DepthBufferConvertToViewDepth(samplerDepth);
-    vec3 worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
-
-    if (samplerDepth >= 0.99994)
-    {
-        vec3 viewDir = normalize(worldPos - camera.position);
-        if (viewDir.y > 1e-6)
-        {
-            float t = RayIntersectPlane(AtmosphereHeight, camera.position, viewDir);
-            if (t < 0.f)
-                return;
-            t = min(MAX_RAY_DISTANCE, t);
-            worldPos = camera.position + viewDir * t;
-        }
-        else
-            worldPos = camera.position + viewDir * MAX_RAY_DISTANCE;
-    }
-
-    vec3 result = vec3 (0.f);
 
     vec3 sunLightColor = DirLightColor;
     vec3 sunLightDir = normalize(DirLightDir);
-    if (sunLightDir.y < -1e-6)
-    {
-        result += singleScatterSkyColor(camera.position, worldPos, sunLightColor, sunLightDir);
-    }
 
-    if (samplerDepth >= 0.99994)
+    vec3 result = vec3 (0.f);
+
+    if (sunLightDir.y < 0.3 || samplerDepth < 0.99994)
     {
-        vec3 viewDir = normalize(worldPos - camera.position);
-        vec3 toLightDir = -sunLightDir;
-        float cosAngle = dot(viewDir, toLightDir);
-        if(cosAngle > 0.9998) {
-            // 视线指向太阳圆盘
-            float disToLight = RayIntersectPlane(AtmosphereHeight, camera.position, toLightDir);
-            result += Transmittance(camera.position + toLightDir * disToLight, camera.position) * sunLightColor;
+
+        vec3 worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
+
+        vec3 cameraPosInPlanet = camera.position + vec3(0, PlanetRadius + 1500, 0.f);
+
+        vec3 startPosInPlanet;
+        vec3 targetPosInPlanet;
+
+        bool shouldCalculateSkyLight = true;
+
+        if (samplerDepth >= 0.99994)
+        {
+            float tStart;
+            float tEnd;
+
+            vec3 viewDir = normalize(worldPos - camera.position);
+            bool validSegment = GetAtmosphereRaySegment(
+                cameraPosInPlanet,
+                viewDir,
+                tStart,
+                tEnd
+            );
+
+            if (validSegment)
+            {
+                // tEnd = min(MAX_RAY_DISTANCE, tEnd);
+
+                vec3 atmosphereStart = cameraPosInPlanet + viewDir * tStart;
+                vec3 atmosphereEnd = cameraPosInPlanet + viewDir * tEnd;
+
+                startPosInPlanet = atmosphereStart;
+                targetPosInPlanet = atmosphereEnd;
+
+                // 大气积分距离
+                // float maxDistance = tEnd - tStart;
+                // maxDistance = min(maxDistance, MAX_RAY_DISTANCE);
+                // targetPosInPlanet = startPosInPlanet + viewDir * maxDistance;
+            }
+            else
+            {
+                shouldCalculateSkyLight = false;
+            }
+
         }
-    }
-    else
-    {    
-        vec3 fragTransmittance = Transmittance(camera.position, worldPos);
-        vec3 fragColor = texture(colorMap, TexCoords).rgb;
-        result += fragColor * fragTransmittance;
+        else 
+        {
+            startPosInPlanet = cameraPosInPlanet;
+            targetPosInPlanet = worldPos + vec3(0, PlanetRadius + 1500, 0.f);
+        }
+
+        if (shouldCalculateSkyLight && sunLightDir.y < 0.3)
+            result += singleScatterSkyColor(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir);
+
+        if (samplerDepth >= 0.99994)
+        {
+            vec3 viewDir = normalize(worldPos - camera.position);
+            vec3 toLightDir = -sunLightDir;
+            float cosAngle = dot(viewDir, toLightDir);
+            if(cosAngle > 0.9998) {// 视线指向太阳圆盘
+                
+                float planetNear, planetFar;
+                bool hitPlanet = RaySphereIntersection(
+                    vec3(0,0,0),
+                    PlanetRadius,
+                    cameraPosInPlanet,
+                    viewDir,
+                    planetNear,
+                    planetFar
+                );
+                if (!hitPlanet || (planetNear < 0 && planetFar < 0))
+                {
+                    float tStart, tEnd;
+                    bool validSegment = GetAtmosphereRaySegment(
+                        cameraPosInPlanet,
+                        toLightDir,
+                        tStart,
+                        tEnd
+                    );
+                    if (validSegment)
+                    {
+                        vec3 atmosphereStart = cameraPosInPlanet + toLightDir * tStart;
+                        vec3 atmosphereEnd = cameraPosInPlanet + toLightDir * tEnd;
+                        result += Transmittance(atmosphereEnd, atmosphereStart) * sunLightColor;
+                    }
+                    else 
+                    {
+                        result += sunLightColor;
+                    }
+                }
+            }
+        }
+        else
+        {    
+            vec3 fragTransmittance = Transmittance(targetPosInPlanet, startPosInPlanet);
+            vec3 fragColor = texture(colorMap, TexCoords).rgb;
+            result += fragColor * fragTransmittance;
+        }
+
     }
     
     imageStore(outputImage, coord, vec4(result, 1.0));
