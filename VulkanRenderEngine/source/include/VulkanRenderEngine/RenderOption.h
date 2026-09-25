@@ -88,15 +88,15 @@ struct RenderOption
 	} depthFogParams;
 
 	struct AtomsphereParams {
-		float PlanetRadius = 6371000;
-		float AtmosphereHeight = 60000;
-		float RayleighScatteringScalarHeight = 8000;
-		float MieScatteringScalarHeight = 1200;
+		float PlanetRadius = 6370 * 1e3;
+		float AtmosphereHeight = 100 * 1e3;
+		float RayleighScatteringScalarHeight = 8 * 1e3;
+		float MieScatteringScalarHeight = 1.2 * 1e3;
 		float MieAnisotropy = 0.8;
-		float OzoneLevelCenterHeight = 25000;
-		float OzoneLevelWidth = 15000;
-		uint32_t ScatterPathSampleCount = 16;
-		uint32_t TransmittanceSampleCount = 24;
+		float OzoneLevelCenterHeight = 25 * 1e3;
+		float OzoneLevelWidth = 15 * 1e3;
+		uint32_t ScatterPathSampleCount = 24;
+		uint32_t TransmittanceSampleCount = 48;
 	} atomsphereParams;
 
 	struct PostProcessParams {

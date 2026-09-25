@@ -1,0 +1,281 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Atomsphere/AtomPublic.comp"
+
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D transmittanceLut;
+
+
+vec4 TransmittanceSample(float height, float cos_theta)
+{
+    height = max(0.0, height);
+
+    float uv_x = height / AtmosphereHeight;
+    // float uv_x = sqrt(height / AtmosphereHeight);
+
+    // float x = sign(cos_theta) * cos_theta * cos_theta;
+    // float uv_y = x * 0.5 + 0.5;
+
+    float theta = acos(clamp(cos_theta, -1.0, 1.0));
+    float uv_y = theta / PI;
+
+    // float uv_y = cos_theta * 0.5 + 0.5;
+
+    uv_x = clamp(uv_x, 0, 1);
+    uv_y = clamp(uv_y, 0, 1);
+
+    vec2 uv = vec2(uv_x, uv_y);
+    vec4 T = texture(transmittanceLut, uv).rgba;
+
+    return T;
+}
+
+// 计算两点之间的透射率
+vec3 TransmittanceWithLut(vec3 p1, vec3 p2)
+{
+    vec3 dir = normalize(p2 - p1);
+
+    float h1 = length(p1) - PlanetRadius;
+    float h2 = length(p2) - PlanetRadius;
+
+    h1 = max(0.0, h1);
+    h2 = max(0.0, h2);
+
+    vec3 up1 = normalize(p1);
+    vec3 up2 = normalize(p2);
+    float cos_theta1 = dot(dir, up1);
+    float cos_theta2 = dot(dir, up2);
+
+    // vec3 up = vec3(0,1,0);
+    // float cos_theta1 = dot(dir, up);
+    // float cos_theta2 = dot(dir, up);
+
+    vec4 T1 = TransmittanceSample(h1, cos_theta1);
+    vec4 T2 = TransmittanceSample(h2, cos_theta2);
+
+    if (sign(T1.a) == sign(T2.a))
+    {
+        const vec3 EPS = vec3(1e-6);
+        return min(max(T1.rgb, EPS) / max(T2.rgb, EPS), vec3(1.0));
+    }
+    else 
+    {
+        return vec3(0.f);
+    }
+}
+
+// 计算光学厚度
+vec3 GetExtinction(vec3 p1, vec3 p2)
+{
+    float dist = distance(p2, p1);
+
+    vec3 p = mix(p1, p2, 0.5);
+
+    float h = length(p) - PlanetRadius;
+    h = max(0.0, h);
+
+    vec3 scattering = RayleighCoefficient(h) + MieCoefficient(h);
+    vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
+    vec3 extinction = scattering + absorption;
+
+    vec3 sum = extinction * dist;
+
+    return sum;
+}
+
+vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir)
+{
+
+    vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
+    vec3 toLightDir = -lightDir;
+    float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
+    float stepSize = dstToTarget / float(ScatterPathSampleCount);
+    vec3 color = vec3(0.f);
+
+    // 累积光学厚度
+    vec3 camSumExtinction = vec3(0.f);
+
+    for (uint i = 0; i < ScatterPathSampleCount; i++) {
+
+        vec3 camPoint = mix(startPosInPlanet, targetPosInPlanet, float(i)/float(ScatterPathSampleCount));
+        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(ScatterPathSampleCount));
+
+        vec3 extinction = GetExtinction(camPoint, testPoint);
+        camSumExtinction += extinction;
+
+        // 已累积的光线厚度转化为当前段的消光率
+        vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
+
+        float planetNear, planetFar;
+        bool hitPlanet = RaySphereIntersection(
+            vec3(0,0,0),
+            PlanetRadius,
+            testPoint,
+            toLightDir,
+            planetNear,
+            planetFar
+        );
+        if (hitPlanet)
+        {
+            // 情况 1：行星在采样点到太阳之间 → 遮挡
+            if (hitPlanet && planetNear > 0.0)
+            {
+                continue;
+            }
+            // 情况 2：采样点在行星内部 → 无效
+            if (hitPlanet && planetNear < 0.0 && planetFar > 0.0)
+            {
+                continue;
+            }
+        }
+
+        float tStart, tEnd;
+        bool validSegment = GetAtmosphereRaySegment(
+            testPoint,
+            toLightDir,
+            tStart,
+            tEnd
+        );
+        if (!validSegment)
+        {
+            camPoint += viewDir * stepSize;
+            testPoint += viewDir * stepSize;
+            continue;
+        }
+
+        vec3 atmosphereStart = testPoint + toLightDir * tStart;
+        vec3 atmosphereEnd = testPoint + toLightDir * tEnd;
+
+        vec3 tramsmittanceLightToTest = TransmittanceWithLut(atmosphereStart, atmosphereEnd);                       // 太阳到采样点之间的透光率
+        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                               // 散射光比例
+        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
+        color += inScattering;
+        
+        // if (tramsmittanceLightToTest.x > 1 || tramsmittanceLightToTest.y > 1 || tramsmittanceLightToTest.z > 1)
+        //     return vec3(1,0,0);
+        // if ((tramsmittanceTestToCam.x > 1 || tramsmittanceTestToCam.y > 1 || tramsmittanceTestToCam.z > 1) && (inScattering.x > 1 || inScattering.y > 1 || inScattering.z > 1))
+            // return vec3(1,0,0);
+        // if (scattering.x > 1 || scattering.y > 1 || scattering.z > 1)
+        //     return vec3(1,0,0);
+        // if (tramsmittanceTestToCam.x > 1 || tramsmittanceTestToCam.y > 1 || tramsmittanceTestToCam.z > 1)
+        //     return vec3(1,0,0);
+
+    }
+
+
+    return color;
+}
+
+vec3 GetViewDir(vec2 uv, float aspect)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.x *= aspect;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(camera.fov) * 0.5);
+    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
+    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
+    return worldRayDir;
+}
+
+const float MAX_DISTANCE = 1e5;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec3 sunLightColor = DirLightColor;
+    vec3 sunLightDir = normalize(DirLightDir);
+
+    vec3 result = vec3(0.f);
+
+    if (sunLightDir.y < 0.2)
+    {
+        vec3 cameraPosInPlanet = camera.position + vec3(0, PlanetRadius, 0.f);
+
+        vec3 startPosInPlanet;
+        vec3 targetPosInPlanet;
+
+        bool shouldCalculateSkyLight = true;
+
+        float tStart;
+        float tEnd;
+
+        vec3 viewDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
+        bool validSegment = GetAtmosphereRaySegment(
+            cameraPosInPlanet,
+            viewDir,
+            tStart,
+            tEnd
+        );
+
+        if (validSegment)
+        {
+            // tEnd = min(MAX_DISTANCE, tEnd);
+
+            vec3 atmosphereStart = cameraPosInPlanet + viewDir * tStart;
+            vec3 atmosphereEnd = cameraPosInPlanet + viewDir * tEnd;
+
+            startPosInPlanet = atmosphereStart;
+            targetPosInPlanet = atmosphereEnd;
+        }
+        else
+            shouldCalculateSkyLight = false;
+
+        if (shouldCalculateSkyLight && sunLightDir.y < 0.3)
+            result += singleScatterSkyColor(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir);
+
+        vec3 toLightDir = -sunLightDir;
+        float cosAngle = dot(viewDir, toLightDir);
+        if(cosAngle > 0.9998) {// 视线指向太阳圆盘
+            
+            float planetNear, planetFar;
+            bool hitPlanet = RaySphereIntersection(
+                vec3(0,0,0),
+                PlanetRadius,
+                cameraPosInPlanet,
+                viewDir,
+                planetNear,
+                planetFar
+            );
+            if (!hitPlanet || (planetNear < 0 && planetFar < 0))
+            {
+                float tStart, tEnd;
+                bool validSegment = GetAtmosphereRaySegment(
+                    cameraPosInPlanet,
+                    toLightDir,
+                    tStart,
+                    tEnd
+                );
+                if (validSegment)
+                {
+                    vec3 atmosphereStart = cameraPosInPlanet + toLightDir * tStart;
+                    vec3 atmosphereEnd = cameraPosInPlanet + toLightDir * tEnd;
+                    result += TransmittanceWithLut(atmosphereStart, atmosphereEnd) * sunLightColor;
+                }
+                else 
+                {
+                    result += sunLightColor;
+                }
+            }
+        }
+    }
+
+    
+    imageStore(outputImage, coord, vec4(result, 1.0));
+}

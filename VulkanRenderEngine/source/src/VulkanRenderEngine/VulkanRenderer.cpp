@@ -615,7 +615,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto atomspherePass = std::make_unique<AtomspherePass>("shader/Atomsphere/Atomsphere.comp");
+	auto atomspherePass = std::make_unique<AtomspherePass>("shader/Atomsphere/Atomsphere.comp", "shader/Atomsphere/TransmittanceLut.comp", "shader/Atomsphere/SkyViewLut.comp");
 
 	auto depthFogPass = std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp");
 

@@ -170,17 +170,7 @@ vec3 tracePath(
 void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
 {
     vec3 normal = normalize(texture(gNormal, uv).rgb);
-
 	vec3 fragPos = texture(gPosition, uv).rgb;
-    
-    vec2 ndc = uv * 2.0 - 1.0;
-    float aspect = float(screenSize.x) / float(screenSize.y);
-    ndc.x *= aspect;
-    float tanHalfFov = tan(radians(camera.fov) * 0.5);
-    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
-    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
-    vec3 reflectDir = normalize(reflect(worldRayDir, normal));
-
     info.position = fragPos + normal * 0.001;
     info.normal = normal;
 }
