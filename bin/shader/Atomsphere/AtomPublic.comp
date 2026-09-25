@@ -1,0 +1,204 @@
+
+layout (binding = 0) uniform Params
+{
+    vec3 DirLightColor;
+    vec3 DirLightDir;
+    float PlanetRadius;
+    float AtmosphereHeight;
+    float RayleighScatteringScalarHeight;
+    float MieScatteringScalarHeight;
+    float MieAnisotropy;
+    float OzoneLevelCenterHeight;
+    float OzoneLevelWidth;
+
+    uint ScatterPathSampleCount;
+    uint TransmittanceSampleCount;
+};
+
+const float PI = 3.14159265359;
+
+vec3 RayleighCoefficient(float h)
+{
+    const vec3 sigma = vec3(5.802, 13.558, 33.1) * 1e-6;
+    float H_R = RayleighScatteringScalarHeight;
+    float rho_h = exp(-(h / H_R));
+    return sigma * rho_h;
+}
+
+float RayleighPhase(float cos_theta)
+{
+    const float a = 3.0 / (16.0 * PI);
+    return a * (1.0 + cos_theta * cos_theta);
+}
+
+vec3 MieCoefficient(float h)
+{
+    const vec3 sigma = vec3(3.996e-6);
+    float H_M = MieScatteringScalarHeight;
+    float rho_h = exp(-(h / H_M));
+    return sigma * rho_h;
+}
+
+float MiePhase(float cos_theta)
+{
+    float g = MieAnisotropy;
+    float g2 = g * g;
+
+    const float a = 3.0 / (8.0 * PI);
+    float b = (1.0 - g2) / (2.0 + g2);
+    float c = 1.0 + cos_theta * cos_theta;
+    float d = pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
+
+    return a * b * (c / d);
+}
+
+vec3 Scattering(vec3 p, vec3 toLightDir, vec3 viewDir)
+{
+    float cos_theta = dot(toLightDir, viewDir);
+
+    float h = length(p) - PlanetRadius;
+    h = max(0.5, h);
+
+    vec3 rayleigh = RayleighCoefficient(h) * RayleighPhase(cos_theta);
+    vec3 mie = MieCoefficient(h) * MiePhase(cos_theta);
+
+    return rayleigh + mie;
+}
+
+vec3 MieAbsorption(float h)
+{
+    const vec3 sigma = vec3(4.4e-6);
+    float H_M = MieScatteringScalarHeight;
+    float rho_h = exp(-(h / H_M));
+    return sigma * rho_h;
+}
+
+vec3 OzoneAbsorption(float h)
+{
+    const vec3 sigma_lambda = vec3(0.650, 1.881, 0.085) * 1e-6;
+    float center = OzoneLevelCenterHeight;
+    float width = OzoneLevelWidth;
+    float rho = max(0.0, 1.0 - abs(h - center) / width);
+    return sigma_lambda * rho;
+}
+
+bool RaySphereIntersection(
+    vec3 center,
+    float radius,
+    vec3 rayStart,
+    vec3 rayDir,
+    out float tNear,
+    out float tFar)
+{
+    vec3 oc = rayStart - center;
+
+    float b = dot(oc, rayDir);
+    float c = dot(oc, oc) - radius * radius;
+
+    float discriminant = b * b - c;
+
+    if (discriminant < 0.0)
+    {
+        tNear = -1.0;
+        tFar  = -1.0;
+        return false;
+    }
+
+    float sqrtD = sqrt(discriminant);
+
+    tNear = -b - sqrtD;
+    tFar  = -b + sqrtD;
+
+    return true;
+}
+
+bool GetAtmosphereRaySegment(
+    vec3 rayStart,
+    vec3 rayDir,
+    out float tStart,
+    out float tEnd
+    )
+{
+    const vec3 planetCenter = vec3(0.0);
+
+    float atmosphereRadius = PlanetRadius + AtmosphereHeight;
+
+    // ------------------------------------------------------------
+    // 1. Ray vs atmosphere
+    // ------------------------------------------------------------
+
+    float atmosphereNear;
+    float atmosphereFar;
+
+    if (!RaySphereIntersection(
+            planetCenter,
+            atmosphereRadius,
+            rayStart,
+            rayDir,
+            atmosphereNear,
+            atmosphereFar))
+    {
+        return false;
+    }
+
+    // Ray 从相机开始，所以不能积分 t < 0
+    tStart = max(atmosphereNear, 0.0);
+    tEnd = atmosphereFar;
+
+    if (tEnd <= tStart)
+        return false;
+
+
+    // ------------------------------------------------------------
+    // 2. Ray vs planet
+    // ------------------------------------------------------------
+
+    float planetNear;
+    float planetFar;
+
+    bool hitPlanet = RaySphereIntersection(
+        planetCenter,
+        PlanetRadius,
+        rayStart,
+        rayDir,
+        planetNear,
+        planetFar
+    );
+
+
+    // ------------------------------------------------------------
+    // 3. 相机在地球内部
+    // ------------------------------------------------------------
+
+    float cameraRadius = length(rayStart);
+
+    if (cameraRadius < PlanetRadius)
+    {
+        // 相机在地球内部。
+        //
+        // planetNear < 0
+        // planetFar  > 0
+        //
+        // 必须穿过地表以后才能进入大气。
+
+        if (!hitPlanet)
+            return false;
+
+        tStart = max(tStart, planetFar);
+    }
+    else
+    {
+        // --------------------------------------------------------
+        // 4. 相机在地表以上
+        // --------------------------------------------------------
+
+        if (hitPlanet && planetNear > 0.0)
+        {
+            // 视线击中地球。
+            // 大气积分只能到地表。
+            tEnd = min(tEnd, planetNear);
+        }
+    }
+
+    return tEnd > tStart;
+}
