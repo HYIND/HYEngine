@@ -108,7 +108,7 @@ struct RenderOption
 	struct PostProcessFlags {
 		bool bloomOn = true;
 		bool gammaOn = true;
-		bool lightDrawOn = true;
+		bool lightDrawOn = false;
 		bool drawTransparent = true;
 		bool ssrOn = false;
 		bool ssgiOn = false;
