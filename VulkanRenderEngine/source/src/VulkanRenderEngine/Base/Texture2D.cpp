@@ -236,10 +236,10 @@ bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::sh
 	return CopyTexture(*src, *dest, srcLevel, destLevel);
 }
 
-Texture2D::Texture2D(const std::string& filepath, const Texture2DConfig& config)
-	: m_Width(0), m_Height(0), m_MaxLevel(1), m_config(config)
+Texture2D::Texture2D(const std::string& filepath, const Texture2DConfig& config, bool autoMipMaps)
+	: m_Width(0), m_Height(0), m_MaxLevel(1u), m_config(config)
 {
-	LoadFromFile(filepath);
+	LoadFromFile(filepath, autoMipMaps);
 }
 
 Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const Texture2DConfig& config, uint32_t level)
@@ -498,6 +498,17 @@ Texture2DConfig Texture2D::GetConfig() const
 	return m_config;
 }
 
+void Texture2D::GenerateTextureMipMaps()
+{
+	if (m_MaxLevel <= 1)
+		return;
+
+	if (auto img = _image)
+		img->GenerateMipMaps();
+}
+
+std::shared_ptr<VKWrapper::BaseVKImage> Texture2D::GetImageSharedPtr() const { return _image; }
+
 void Texture2D::UpdateTextureData(void* data, uint32_t level) {
 
 	uint32_t maxLevelIdx = m_MaxLevel - 1;
@@ -512,7 +523,7 @@ bool Texture2D::IsEmpty() const
 	return !_image || _image->GetHandle() == VK_NULL_HANDLE;
 }
 
-bool Texture2D::LoadFromFile(const std::string& filepath)
+bool Texture2D::LoadFromFile(const std::string& filepath, bool autoMipMaps)
 {
 	LockGuard guard(_mutex);
 
@@ -521,7 +532,10 @@ bool Texture2D::LoadFromFile(const std::string& filepath)
 			m_Width = width;
 			m_Height = height;
 			m_Format = format;
-			m_MaxLevel = 1;
+			m_MaxLevel = autoMipMaps ? floor(log2(std::max(width, height))) + 1 : 1u;
+
+			if (autoMipMaps)
+				m_MaxLevel = std::min(m_MaxLevel, 7u);
 
 			if (!CreateImage())
 				return false;
@@ -532,6 +546,9 @@ bool Texture2D::LoadFromFile(const std::string& filepath)
 			vk::DeviceSize dataSize = static_cast<vk::DeviceSize>(width * height * dataComponents);
 			if (!_image->UploadData(data, 0))
 				return false;
+
+			if (m_MaxLevel > 1)
+				GenerateTextureMipMaps();
 
 			return true;
 		};
@@ -621,6 +638,7 @@ bool Texture2D::CreateImageView()
 
 bool Texture2D::CreateSampler()
 {
+	m_config.anisotropy = false;
 	LockGuard guard(_mutex);
 
 	vk::SamplerCreateInfo samplerInfo = {};

@@ -100,7 +100,7 @@ std::shared_ptr<TextureAsset> AssetLoadHelper::LoadTexture(AssetMeta& meta, std:
 		return asset;
 
 	auto config = desc.GetConfig();
-	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config);
+	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config, true);
 
 	return asset;
 }
