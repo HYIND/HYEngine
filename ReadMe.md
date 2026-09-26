@@ -16,7 +16,8 @@
 ### Vulkan/OpenGL渲染
 - Vulkan/OpenGL 支持
 - 混合渲染，结合延迟渲染与向前渲染，支持多光源渲染，支持间接调用的批量渲染
-- 后处理效果，HDR、SSAO、SSR、SSGI、RayTrace、自动曝光、泛光等
+- 后处理效果，SSR、SSGI、RayTrace等
+- 基于预计算的大气散射渲染
 - 基于距离排序的半透明渲染
 
 ### 物理引擎

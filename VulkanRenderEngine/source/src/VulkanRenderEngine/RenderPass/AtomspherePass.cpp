@@ -69,8 +69,8 @@ AtomspherePass::AtomspherePass(
 		config.wrapV = vk::SamplerAddressMode::eClampToEdge;
 		config.anisotropy = false;
 		config.gammaCorrection = false;
-		_transmittanceLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR16G16B16A16Sfloat, config);
-		_skyViewLut = std::make_shared<Texture2D>(512, 512, vk::Format::eR16G16B16A16Sfloat, config);
+		_transmittanceLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR32G32B32A32Sfloat, config);
+		_skyViewLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR32G32B32A32Sfloat, config);
 	}
 
 }

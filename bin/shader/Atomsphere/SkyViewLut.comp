@@ -12,7 +12,7 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Atomsphere/AtomPublic.comp"
 
-layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 1, rgba32f) uniform image2D outputImage;
 layout (binding = 2) uniform sampler2D transmittanceLut;
 
 
@@ -75,12 +75,8 @@ vec3 TransmittanceWithLut(vec3 p1, vec3 p2)
 }
 
 // 计算光学厚度
-vec3 GetExtinction(vec3 p1, vec3 p2)
+vec3 GetExtinction(vec3 p)
 {
-    float dist = distance(p2, p1);
-
-    vec3 p = mix(p1, p2, 0.5);
-
     float h = length(p) - PlanetRadius;
     h = max(0.0, h);
 
@@ -88,9 +84,7 @@ vec3 GetExtinction(vec3 p1, vec3 p2)
     vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
     vec3 extinction = scattering + absorption;
 
-    vec3 sum = extinction * dist;
-
-    return sum;
+    return extinction;
 }
 
 vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir)
@@ -107,10 +101,9 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
 
     for (uint i = 0; i < ScatterPathSampleCount; i++) {
 
-        vec3 camPoint = mix(startPosInPlanet, targetPosInPlanet, float(i)/float(ScatterPathSampleCount));
         vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(ScatterPathSampleCount));
 
-        vec3 extinction = GetExtinction(camPoint, testPoint);
+        vec3 extinction = GetExtinction(testPoint) * stepSize;
         camSumExtinction += extinction;
 
         // 已累积的光线厚度转化为当前段的消光率
@@ -148,8 +141,6 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
         );
         if (!validSegment)
         {
-            camPoint += viewDir * stepSize;
-            testPoint += viewDir * stepSize;
             continue;
         }
 
@@ -160,16 +151,6 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
         vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                               // 散射光比例
         vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
         color += inScattering;
-        
-        // if (tramsmittanceLightToTest.x > 1 || tramsmittanceLightToTest.y > 1 || tramsmittanceLightToTest.z > 1)
-        //     return vec3(1,0,0);
-        // if ((tramsmittanceTestToCam.x > 1 || tramsmittanceTestToCam.y > 1 || tramsmittanceTestToCam.z > 1) && (inScattering.x > 1 || inScattering.y > 1 || inScattering.z > 1))
-            // return vec3(1,0,0);
-        // if (scattering.x > 1 || scattering.y > 1 || scattering.z > 1)
-        //     return vec3(1,0,0);
-        // if (tramsmittanceTestToCam.x > 1 || tramsmittanceTestToCam.y > 1 || tramsmittanceTestToCam.z > 1)
-        //     return vec3(1,0,0);
-
     }
 
 
