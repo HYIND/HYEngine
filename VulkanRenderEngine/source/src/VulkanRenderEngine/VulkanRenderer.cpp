@@ -846,6 +846,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.Before(transprantFence);
 
 	atomsphereNode->SetRenderPass(std::move(atomspherePass))
+		.Input(ResourceData{ atlasShadowMap, computeReadLayout })
 		.After(opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atomsphereNode_TempColor"), {} })

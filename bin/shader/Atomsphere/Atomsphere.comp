@@ -11,12 +11,30 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Atomsphere/AtomPublic.comp"
+#include "shader/Helper/lightingHelper.comp"
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
 layout (binding = 2) uniform sampler2D colorMap;
 layout (binding = 3) uniform sampler2D depthMap;
 layout (binding = 4) uniform sampler2D transmittanceLut;
 layout (binding = 5) uniform sampler2D skyViewLut;
+layout (binding = 6) uniform sampler2D atlasShadowMap;
+
+bool InShadow(vec3 fragPos)
+{
+    DirLight light = dirLightMetaData.info[0];
+	if (!light.castShadow)
+        return false;
+
+    vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), -light.direction, 0.1);
+    DirLightCascade cascade = GetCascade(camera.view * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
+    vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+    float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasShadowMap, 
+                                            vec2(cascade.atlasX, cascade.atlasY),
+                                            vec2(cascade.atlasWidth, cascade.atlasHeight));
+    shadow = clamp(shadow, 0.f, 1.f);
+    return shadow > 0.1;
+}
 
 vec4 TransmittanceSample(float height, float cos_theta)
 {
@@ -135,9 +153,6 @@ vec3 singleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
         vec3 extinction = GetExtinction(testPoint) * stepSize;
         camSumExtinction += extinction;
 
-        // 已累积的光线厚度转化为当前段的消光率
-        vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
-
         float planetNear, planetFar;
         bool hitPlanet = RaySphereIntersection(
             vec3(0,0,0),
@@ -161,6 +176,9 @@ vec3 singleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
             }
         }
 
+        if (InShadow(testPoint - vec3(0, PlanetRadius, 0.f)))
+            continue;
+
         float tStart, tEnd;
         bool validSegment = GetAtmosphereRaySegment(
             testPoint,
@@ -172,6 +190,9 @@ vec3 singleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
         {
             continue;
         }
+
+        // 已累积的光线厚度转化为当前段的消光率
+        vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
 
         vec3 atmosphereStart = testPoint + toLightDir * tStart;
         vec3 atmosphereEnd = testPoint + toLightDir * tEnd;

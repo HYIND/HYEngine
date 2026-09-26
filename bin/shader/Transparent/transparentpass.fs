@@ -2,7 +2,7 @@
 
 #include "shader/dataDef/materialuboDef.comp"
 #include "shader/dataDef/camerauboDef.comp"
-#include "shader/Helper/ligtingHelper.comp"
+#include "shader/Helper/lightingHelper.comp"
 
 out vec4 FragColor;
 
