@@ -5,6 +5,7 @@
 ## 截图
 
 ![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot1.png?raw=true)
+![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot2.png?raw=true)
 
 ## ✨ 核心功能
 
