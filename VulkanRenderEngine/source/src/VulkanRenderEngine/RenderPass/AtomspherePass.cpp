@@ -19,12 +19,14 @@ AtomspherePass::AtomspherePass(
 
 		config
 			.AddCameraUnifromDataBinding()
+			.AddLightDataBinding()
 			.AddUnifromBuffer(0)
 			.AddStorageImage(1)
 			.AddUnifromTexture(2)
 			.AddUnifromTexture(3)
 			.AddUnifromTexture(4)
-			.AddUnifromTexture(5);
+			.AddUnifromTexture(5)
+			.AddUnifromTexture(6);
 
 		if (config.Validate())
 			_shader.Create(config);
@@ -136,6 +138,8 @@ void AtomspherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 
 	auto tempColor = ctx.GetTemp(0);
 
+	auto atlasShadowMap = ctx.GetInput(0);
+
 	if (!sceneColorBuffer
 		|| !sceneDepthBuffer
 		|| !tempColor
@@ -156,11 +160,19 @@ void AtomspherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetLightStorageData(
+		state.lights.ssbo_dirLightMeta,
+		state.lights.ssbo_dirLightCascade,
+		state.lights.ssbo_pointLightMeta,
+		state.lights.ssbo_spotLightMeta
+	);
+
 	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);
 	binding.SetUniformTexture(tempColor, vk::ImageAspectFlagBits::eColor, 2);
 	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 3);
 	binding.SetUniformTexture(_transmittanceLut, vk::ImageAspectFlagBits::eColor, 4);
 	binding.SetUniformTexture(_skyViewLut, vk::ImageAspectFlagBits::eColor, 5);
+	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 6);
 
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);

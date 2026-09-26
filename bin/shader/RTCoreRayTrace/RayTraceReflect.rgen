@@ -7,7 +7,7 @@
 
 #include "shader/dataDef/MaterialTextureDef.comp"
 #include "shader/dataDef/camerauboDef.comp"
-#include "shader/Helper/ligtingHelper.comp"
+#include "shader/Helper/lightingHelper.comp"
 #include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
 
 

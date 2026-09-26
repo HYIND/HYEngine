@@ -1,5 +1,8 @@
 
+#ifndef PI_DEFINE
+#define PI_DEFINE
 const float PI = 3.14159265359;
+#endif
 
 struct PBRProperties
 {
