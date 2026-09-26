@@ -29,6 +29,18 @@ std::string ImguiLayout::m_selectedFolder;
 
 AssetImportPopup ImguiLayout::s_assetImportPopup;
 
+// 新建文件夹
+bool        m_showNewFolderPopup = false;
+char        m_newFolderBuffer[256] = {};
+std::string m_newFolderParentPath;
+
+// 重命名
+bool        m_showRenamePopup = false;
+char        m_renameBuffer[256] = {};
+std::string m_renameTarget;
+bool        m_renameIsFolder = false;
+
+
 const char* GetOpName(ImGuizmo::OPERATION operation)
 {
 	// 注意：OPERATION 是位标志，需要按位检查
@@ -223,20 +235,29 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 	// 网格布局
 	float iconSize = 80.0f;
 	float padding = 8.f;
-	float textHeight = ImGui::GetFontSize() * 2;  // 获取当前字体高度（单行）
+	float textHeight = ImGui::GetFontSize() * 2;
 	float windowWidth = ImGui::GetContentRegionAvail().x;
-	float rowHeight = iconSize + textHeight + padding;  // 固定行高
+	float rowHeight = iconSize + textHeight + padding;
 
 	int columns = std::max(1, (int)(windowWidth / (iconSize + padding)));
 
 	int totalItems = items.size();
 	int totalRows = (totalItems + columns - 1) / columns;
 
+
 	ImGui::Columns(columns, nullptr, false);
 
 	auto* iconMgr = IconManager::Get();
 
-	auto DrawFolder = [&](const Item& item)-> void
+	bool anyItemHovered = false;
+
+	// ---- 用于删除/重命名等操作的延迟处理（避免在遍历时修改目录） ----
+	std::string pendingDeletePath;   // 待删除的完整路径
+	AssetGUID   pendingDeleteGuid;   // 若是资产，记录 guid
+	bool        pendingDeleteIsAsset = false;
+	std::string pendingDeleteName;   // 用于日志
+
+	auto DrawFolder = [&](const Item& item) -> void
 		{
 			ImGui::PushID(item.name.c_str());
 
@@ -257,27 +278,81 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 			bool isHovered = ImGui::IsItemHovered();
 			bool isDbClicked = isHovered && ImGui::IsMouseDoubleClicked(0);
+			bool isRightClicked = isHovered && ImGui::IsMouseClicked(1);
 
 			if (isHovered)
 			{
+				anyItemHovered = true;
 				drawList->AddRectFilled(iconPos, ImVec2(iconPos.x + iconSize, iconPos.y + iconSize),
-					IM_COL32(70, 130, 200, 150));  // 蓝色
+					IM_COL32(70, 130, 200, 150));
 			}
 
-			ImGui::TextWrapped("%s", item.name.c_str());
+			auto fullFolderPath = fs::weakly_canonical(currentPath / item.name);
 
 			if (isDbClicked)
 			{
-				fs::path fullFolderPath = currentPath / fs::path(item.name);
 				fs::path relativeRootPath = fs::relative(fullFolderPath, fs::path(projectManager->GetProjectFolderFullPath()));
 				m_selectedFolder = relativeRootPath.string();
 			}
+
+			if (isRightClicked) {
+			}
+
+			if (ImGui::BeginPopupContextItem("folder_context_menu"))
+			{
+				if (ImGui::MenuItem("打开")) {
+					fs::path relativeRootPath = fs::relative(fullFolderPath, fs::path(projectManager->GetProjectFolderFullPath()));
+					m_selectedFolder = relativeRootPath.string();
+				}
+
+				ImGui::Separator();
+
+				if (ImGui::MenuItem("复制路径")) {
+					ImGui::SetClipboardText(fullFolderPath.string().c_str());
+				}
+				if (ImGui::MenuItem("复制文件夹名")) {
+					ImGui::SetClipboardText(item.name.c_str());
+				}
+
+				ImGui::Separator();
+
+				if (ImGui::MenuItem("重命名")) {
+					m_renameTarget = fullFolderPath.string();
+					m_renameIsFolder = true;
+					strncpy_s(m_renameBuffer, item.name.c_str(), sizeof(m_renameBuffer) - 1);
+					m_showRenamePopup = true;
+				}
+
+				if (ImGui::MenuItem("删除文件夹")) {
+					// 延迟删除，避免在遍历/绘制时修改目录
+					pendingDeletePath = fullFolderPath.string();
+					pendingDeleteIsAsset = false;
+					pendingDeleteGuid.clear();
+					pendingDeleteName = item.name;
+				}
+
+				ImGui::EndPopup();
+			}
+
+			ImVec2 textPos = ImGui::GetCursorScreenPos();
+			ImVec2 textSize = ImGui::CalcTextSize(item.name.c_str(), nullptr, false, iconSize);
+			drawList->AddText(
+				ImGui::GetFont(),
+				ImGui::GetFontSize(),
+				textPos,
+				ImGui::GetColorU32(ImGuiCol_Text),
+				item.name.c_str(),
+				nullptr,
+				iconSize,
+				nullptr
+			);
+			ImGui::Dummy(ImVec2(iconSize, textSize.y));
 
 			ImGui::NextColumn();
 			ImGui::PopID();
 		};
 
-	auto DrawFile = [&](const Item& item)-> void {
+	auto DrawFile = [&](const Item& item) -> void {
 		bool isAssetFile = item.isAssetFile;
 		AssetMeta meta = item.meta;
 
@@ -309,97 +384,95 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 		if (isHovered)
 		{
+			anyItemHovered = true;
 			drawList->AddRectFilled(iconPos, ImVec2(iconPos.x + iconSize, iconPos.y + iconSize),
-				IM_COL32(70, 130, 200, 150));  // 蓝色
-
-			if (ImGui::IsMouseDragging(0))
+				IM_COL32(70, 130, 200, 150));
+			if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
 			{
-
-				if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+				if (isAssetFile)
 				{
-					if (isAssetFile)
-					{
-						AssetGUID str = meta.guid;
-						ImGui::SetDragDropPayload("ASSET_GUID", str.c_str(), str.size() + 1);
-					}
-					else
-					{
-						std::string str = fullFilePath.string();
-						ImGui::SetDragDropPayload("ASSET_FILE", str.c_str(), str.size() + 1);
-					}
-
-					ImGui::Image(fileIcon, ImVec2(iconSize * 0.8, iconSize * 0.8));
-					ImGui::Text("%s", item.name.c_str());
-					ImGui::EndDragDropSource();
+					AssetGUID str = meta.guid;
+					ImGui::SetDragDropPayload("ASSET_GUID", str.c_str(), str.size() + 1);
 				}
+				else
+				{
+					std::string str = fullFilePath.string();
+					ImGui::SetDragDropPayload("ASSET_FILE", str.c_str(), str.size() + 1);
+				}
+
+				ImGui::Image(fileIcon, ImVec2(iconSize * 0.8, iconSize * 0.8));
+				ImGui::Text("%s", item.name.c_str());
+				ImGui::EndDragDropSource();
 			}
 		}
-
-		ImGui::TextWrapped("%s", item.name.c_str());
-
 
 		if (isDbClicked)
 		{
 		}
 
 		if (isRightClicked) {
-			ImGui::OpenPopup("file_context_menu");
 		}
 
 		if (ImGui::BeginPopupContextItem("file_context_menu"))
 		{
-			// 菜单项
-			if (ImGui::MenuItem("打开")) {
-				//// 打开文件
-				//OpenFile(file);
-			}
+			if (ImGui::MenuItem("打开")) { /*OpenFile*/ }
 
 			ImGui::Separator();
 
 			if (ImGui::MenuItem("复制路径")) {
 				ImGui::SetClipboardText(fullFilePath.string().c_str());
 			}
-
 			if (ImGui::MenuItem("复制文件名")) {
 				ImGui::SetClipboardText(item.name.c_str());
 			}
 
 			ImGui::Separator();
 
+			if (ImGui::MenuItem("重命名")) {
+				m_renameTarget = fullFilePath.string();
+				m_renameIsFolder = false;
+				strncpy_s(m_renameBuffer, item.name.c_str(), sizeof(m_renameBuffer) - 1);
+				m_showRenamePopup = true;
+			}
+
 			std::string deleteStr = isAssetFile ? "删除资产" : "删除文件";
 			if (ImGui::MenuItem(deleteStr.c_str()))
 			{
-				try {
-					fs::remove_all(fullFilePath);
-					if (isAssetFile)
-						projectManager->DeleteAsset(meta.guid);
-				}
-				catch (const fs::filesystem_error& e) {
-					ImGui::OpenPopup("删除失败");
-				}
-			}
-
-
-			if (ImGui::MenuItem("重命名")) {
-				//// 重命名
-				//m_renameTarget = file;
-				//m_showRenamePopup = true;
+				pendingDeletePath = fullFilePath.string();
+				pendingDeleteIsAsset = isAssetFile;
+				pendingDeleteGuid = isAssetFile ? meta.guid : AssetGUID{};
+				pendingDeleteName = item.name;
 			}
 
 			ImGui::Separator();
 
-			if (ImGui::MenuItem("属性")) {
-				// 显示文件属性
-				//ShowFileProperties(file);
-			}
+			if (ImGui::MenuItem("属性")) { /*ShowFileProperties*/ }
 
 			ImGui::EndPopup();
 		}
+
+		ImVec2 textPos = ImGui::GetCursorScreenPos();
+		ImVec2 textSize = ImGui::CalcTextSize(item.name.c_str(), nullptr, false, iconSize);
+		drawList->AddText(
+			ImGui::GetFont(),
+			ImGui::GetFontSize(),
+			textPos,
+			ImGui::GetColorU32(ImGuiCol_Text),
+			item.name.c_str(),
+			nullptr,
+			iconSize,
+			nullptr
+		);
+		ImGui::Dummy(ImVec2(iconSize, textSize.y));
 
 		ImGui::NextColumn();
 		ImGui::PopID();
 		};
 
+
+	// ==========================================================
+	// 绘制网格内容
+	// ==========================================================
 	ImGuiListClipper clipper;
 	clipper.Begin(totalRows, rowHeight);
 	while (clipper.Step())
@@ -422,10 +495,128 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 	ImGui::Columns(1);
 
-	float totalHeight = totalRows * rowHeight;
-	float currentHeight = ImGui::GetCursorPosY();
-	if (totalHeight > currentHeight) {
-		ImGui::Dummy(ImVec2(0, totalHeight - currentHeight));
+	bool windowHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+
+	if (windowHovered && !anyItemHovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+	{
+		ImGui::OpenPopup("blank_context_menu");
+	}
+
+	if (ImGui::BeginPopup("blank_context_menu"))
+	{
+		if (ImGui::MenuItem("新建文件夹"))
+		{
+			m_showNewFolderPopup = true;
+			m_newFolderBuffer[0] = '\0';
+			m_newFolderParentPath = currentPath.string();
+		}
+
+		ImGui::Separator();
+
+		if (ImGui::MenuItem("刷新")) {
+			// 下一帧自动重新读取
+		}
+
+		ImGui::EndPopup();
+	}
+
+	// ==========================================================
+	// 新建文件夹弹窗
+	// ==========================================================
+	if (m_showNewFolderPopup)
+	{
+		ImGui::OpenPopup("新建文件夹");
+	}
+	if (ImGui::BeginPopupModal("新建文件夹", &m_showNewFolderPopup, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::Text("父目录: %s", m_newFolderParentPath.c_str());
+		ImGui::Separator();
+
+		ImGui::InputText("文件夹名", m_newFolderBuffer, sizeof(m_newFolderBuffer));
+
+		bool valid = m_newFolderBuffer[0] != '\0';
+
+		if (valid) {
+			fs::path newPath = fs::path(m_newFolderParentPath) / m_newFolderBuffer;
+			if (fs::exists(newPath)) {
+				ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "已存在同名文件/文件夹");
+				valid = false;
+			}
+		}
+
+		if (valid && ImGui::Button("创建", ImVec2(120, 0)))
+		{
+			try {
+				fs::create_directory(fs::path(m_newFolderParentPath) / m_newFolderBuffer);
+				m_showNewFolderPopup = false;
+				ImGui::CloseCurrentPopup();
+			}
+			catch (const fs::filesystem_error& e) {
+				// 可以弹一个错误提示
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消", ImVec2(120, 0))) {
+			m_showNewFolderPopup = false;
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
+
+	// ==========================================================
+	// 重命名弹窗
+	// ==========================================================
+	if (m_showRenamePopup)
+	{
+		ImGui::OpenPopup("重命名");
+	}
+	if (ImGui::BeginPopupModal("重命名", &m_showRenamePopup, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::Text("目标: %s", m_renameTarget.c_str());
+		ImGui::Separator();
+
+		ImGui::InputText("新名称", m_renameBuffer, sizeof(m_renameBuffer));
+
+		bool valid = m_renameBuffer[0] != '\0';
+
+		if (valid && ImGui::Button("确定", ImVec2(120, 0)))
+		{
+			try {
+				fs::path oldPath(m_renameTarget);
+				fs::path newPath = oldPath.parent_path() / m_renameBuffer;
+				if (!fs::exists(newPath)) {
+					fs::rename(oldPath, newPath);
+				}
+				m_showRenamePopup = false;
+				ImGui::CloseCurrentPopup();
+			}
+			catch (const fs::filesystem_error&) {
+				// 错误处理
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消", ImVec2(120, 0))) {
+			m_showRenamePopup = false;
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
+
+	// ==========================================================
+	// 延迟删除处理（遍历结束后执行）
+	// ==========================================================
+	if (!pendingDeletePath.empty())
+	{
+		try {
+			fs::remove_all(fs::path(pendingDeletePath));
+			if (pendingDeleteIsAsset && !pendingDeleteGuid.empty())
+				projectManager->DeleteAsset(pendingDeleteGuid);
+		}
+		catch (const fs::filesystem_error& e) {
+			// 可以记录日志 / 弹窗
+		}
 	}
 }
 
@@ -1243,7 +1434,8 @@ void ImguiLayout::DrawStatusBar(WorldManager* worldManager)
 		| ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoScrollbar
 		| ImGuiWindowFlags_NoSavedSettings
-		| ImGuiWindowFlags_NoNavFocus;
+		| ImGuiWindowFlags_NoNavFocus
+		| ImGuiWindowFlags_NoInputs;
 
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -1265,32 +1457,37 @@ void ImguiLayout::DrawStatusBar(WorldManager* worldManager)
 		1.5f
 	);
 
-	// 状态栏内容 - 使用多列布局
-	ImGui::Columns(3, "StatusBarColumns", false);
-	ImGui::SetColumnWidth(0, 200.0f);
-	ImGui::SetColumnWidth(1, 180.0f);
-	// 第3列自动适应剩余宽度
+	if (ImGui::BeginTable("StatusBarTable", 3, ImGuiTableFlags_None))
+	{
+		ImGui::TableSetupColumn("##col0", ImGuiTableColumnFlags_WidthFixed, 200.0f);
+		ImGui::TableSetupColumn("##col1", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+		ImGui::TableSetupColumn("##col2", ImGuiTableColumnFlags_WidthStretch);
 
-	// ---- 第1列：场景信息 ----
-	ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "实体数量: %d", worldManager->GetWorld()->getAllEntityCount());
+		ImGui::TableNextRow();
 
-	// ---- 第2列：选中的物体 ----
-	ImGui::NextColumn();
-	if (selectedEntity) {
-		ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "选择实体: %d", selectedEntity.getId());
+		// ---- 第1列：场景信息 ----
+		ImGui::TableNextColumn();
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "实体数量: %d", worldManager->GetWorld()->getAllEntityCount());
+
+		// ---- 第2列：选中的物体 ----
+		ImGui::TableNextColumn();
+		if (selectedEntity) {
+			ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "选择实体: %d", selectedEntity.getId());
+		}
+		else {
+			ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "未选中实体");
+		}
+
+		// ---- 第3列：FPS（右对齐） ----
+		ImGui::TableNextColumn();
+		float fps = ImGui::GetIO().Framerate;
+		float ms = 1000.0f / fps;
+		float textWidth = ImGui::CalcTextSize("FPS: 000.0  (00.00ms)").x;
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - textWidth - 8.0f);
+		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "FPS: %.1f  (%.2fms)", fps, ms);
+
+		ImGui::EndTable();
 	}
-	else {
-		ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "未选中实体");
-	}
-
-	// ---- 第3列：FPS（右对齐） ----
-	ImGui::NextColumn();
-	float fps = ImGui::GetIO().Framerate;
-	float ms = 1000.0f / fps;
-	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - 150.0f);
-	ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "FPS: %.1f  (%.2fms)", fps, ms);
-
-	ImGui::Columns(1);
 	ImGui::End();
 }
 
