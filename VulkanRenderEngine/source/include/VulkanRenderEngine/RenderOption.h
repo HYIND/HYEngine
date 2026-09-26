@@ -95,8 +95,8 @@ struct RenderOption
 		float MieAnisotropy = 0.8;
 		float OzoneLevelCenterHeight = 25 * 1e3;
 		float OzoneLevelWidth = 15 * 1e3;
-		uint32_t ScatterPathSampleCount = 24;
-		uint32_t TransmittanceSampleCount = 48;
+		uint32_t ScatterPathSampleCount = 50;
+		uint32_t TransmittanceSampleCount = 100;
 	} atomsphereParams;
 
 	struct PostProcessParams {

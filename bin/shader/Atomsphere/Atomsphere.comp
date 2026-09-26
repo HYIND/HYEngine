@@ -104,6 +104,91 @@ vec3 Transmittance(vec3 p1, vec3 p2)
     return exp(-sum);
 }
 
+vec3 GetExtinction(vec3 p)
+{
+    float h = length(p) - PlanetRadius;
+    h = max(0.0, h);
+
+    vec3 scattering = RayleighCoefficient(h) + MieCoefficient(h);
+    vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
+    vec3 extinction = scattering + absorption;
+
+    return extinction;
+}
+
+vec3 singleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir, vec3 fragColor)
+{
+
+    vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
+    vec3 toLightDir = -lightDir;
+    float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
+    float stepSize = dstToTarget / float(ScatterPathSampleCount);
+    vec3 color = vec3(0.f);
+
+    // 累积光学厚度
+    vec3 camSumExtinction = vec3(0.f);
+
+    for (uint i = 0; i < ScatterPathSampleCount; i++) {
+
+        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(ScatterPathSampleCount));
+
+        vec3 extinction = GetExtinction(testPoint) * stepSize;
+        camSumExtinction += extinction;
+
+        // 已累积的光线厚度转化为当前段的消光率
+        vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
+
+        float planetNear, planetFar;
+        bool hitPlanet = RaySphereIntersection(
+            vec3(0,0,0),
+            PlanetRadius,
+            testPoint,
+            toLightDir,
+            planetNear,
+            planetFar
+        );
+        if (hitPlanet)
+        {
+            // 情况 1：行星在采样点到太阳之间 → 遮挡
+            if (hitPlanet && planetNear > 0.0)
+            {
+                continue;
+            }
+            // 情况 2：采样点在行星内部 → 无效
+            if (hitPlanet && planetNear < 0.0 && planetFar > 0.0)
+            {
+                continue;
+            }
+        }
+
+        float tStart, tEnd;
+        bool validSegment = GetAtmosphereRaySegment(
+            testPoint,
+            toLightDir,
+            tStart,
+            tEnd
+        );
+        if (!validSegment)
+        {
+            continue;
+        }
+
+        vec3 atmosphereStart = testPoint + toLightDir * tStart;
+        vec3 atmosphereEnd = testPoint + toLightDir * tEnd;
+
+        vec3 tramsmittanceLightToTest = Transmittance(atmosphereStart, atmosphereEnd);                       // 太阳到采样点之间的透光率
+        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                        // 散射光比例
+        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
+        color += inScattering;
+    }
+
+    vec3 tramsmittanceFragToCam = exp(-camSumExtinction);
+    vec3 tramsmittanceFragColor = tramsmittanceFragToCam * fragColor;
+    color += tramsmittanceFragColor;
+
+    return color;
+}
+
 vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
 {
     vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
@@ -141,11 +226,10 @@ void main()
         vec3 startPosInPlanet = cameraPosInPlanet;
         vec3 targetPosInPlanet = worldPos + vec3(0, PlanetRadius, 0.f);
 
-        vec3 fragTransmittance = Transmittance(startPosInPlanet, targetPosInPlanet);
-        result += fragColor * fragTransmittance;
+        vec3 color = singleScatterToFrag(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir, fragColor);
+        result += color;
     }
-
-    if (sunLightDir.y < 0.2 && samplerDepth >= 0.99994) 
+    else if (sunLightDir.y < 0.2 && samplerDepth >= 0.99994) 
     {
         vec3 skyViewColor = texture(skyViewLut, TexCoords).rgb;
         result += skyViewColor;
