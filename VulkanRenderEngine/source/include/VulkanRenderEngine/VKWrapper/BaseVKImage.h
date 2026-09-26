@@ -36,6 +36,7 @@ namespace VKWrapper {
 	private:
 		std::unordered_map<std::shared_ptr<const BaseVKImage>, ImageState> _recordStates;
 		std::unordered_map<std::shared_ptr<const BaseVKImage>, ImageState> _recordFirstStates;
+		SpinLock _mutex;
 	};
 
 	class BaseVKImage :public std::enable_shared_from_this<BaseVKImage>
@@ -72,6 +73,7 @@ namespace VKWrapper {
 
 		virtual void Release();
 
+		void GenerateMipMaps();
 	private:
 		SubresourceState& GetSubresourceState(uint32_t level) const;
 

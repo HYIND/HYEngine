@@ -172,8 +172,7 @@ Model::Model(const std::string& path)
 }
 
 Model::Model()
-{
-}
+{}
 
 void Model::AddMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material> material)
 {
@@ -564,7 +563,7 @@ std::vector<LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextur
 		bool isLoadSuccess = false;
 		for (auto& filepath : paths)
 		{
-			std::shared_ptr<Texture2D> tex = std::make_shared<Texture2D>(filepath.string(), config);
+			std::shared_ptr<Texture2D> tex = std::make_shared<Texture2D>(filepath.string(), config, true);
 			if (tex->IsEmpty())
 				continue;
 

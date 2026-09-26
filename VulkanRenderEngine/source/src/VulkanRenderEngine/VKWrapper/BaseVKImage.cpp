@@ -51,9 +51,15 @@ void BaseVKImage::TransitionLayout(
 ) {
 	if (!cmd || !m_image) return;
 
+	if (baseMipLevel >= m_mipLevels)
+		return;
+
+	uint32_t realLevelCount = std::min(m_mipLevels - baseMipLevel, levelCount);
+	uint32_t endMipLevel = baseMipLevel + realLevelCount;
+
 	vk::AccessFlags newAccessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
 
-	for (uint32_t level = baseMipLevel; level < std::min(m_mipLevels, baseMipLevel + levelCount); ++level)
+	for (uint32_t level = baseMipLevel; level < endMipLevel; ++level)
 	{
 		auto& state = GetSubresourceState(level);
 
@@ -70,12 +76,13 @@ void BaseVKImage::TransitionLayout(
 		subresourceRange.setLayerCount(vk::RemainingArrayLayers);
 
 		vk::ImageMemoryBarrier barrier;
-		barrier.setImage(m_image);
-		barrier.setOldLayout(state.layout);
-		barrier.setNewLayout(newLayout);
-		barrier.setSrcAccessMask(state.accessMask);
-		barrier.setDstAccessMask(newAccessMask);
-		barrier.setSubresourceRange(subresourceRange);
+		barrier
+			.setImage(m_image)
+			.setOldLayout(state.layout)
+			.setNewLayout(newLayout)
+			.setSrcAccessMask(state.accessMask)
+			.setDstAccessMask(newAccessMask)
+			.setSubresourceRange(subresourceRange);
 
 		cmd->pipelineBarrier(srcStageMask, dstStageMask, barrier, vk::DependencyFlagBits::eByRegion);
 
@@ -173,6 +180,66 @@ void VKWrapper::BaseVKImage::Release()
 	m_format = vk::Format::eUndefined;
 }
 
+void VKWrapper::BaseVKImage::GenerateMipMaps()
+{
+	if (m_mipLevels <= 1)
+		return;
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	uint32_t width = m_extent.width;
+	uint32_t height = m_extent.height;
+	for (uint32_t level = 1; level < m_mipLevels; level++) {
+		uint32_t prevW = std::max(1u, width >> (level - 1));
+		uint32_t prevH = std::max(1u, height >> (level - 1));
+		uint32_t currW = std::max(1u, width >> level);
+		uint32_t currH = std::max(1u, height >> level);
+
+		uint32_t inputLevel = level - 1;
+		uint32_t outputLevel = level;
+
+		vk::ImageLayout srcLayout = GetSubresourceState(inputLevel).layout;
+		vk::ImageLayout dstLayout = GetSubresourceState(outputLevel).layout;
+
+		if (srcLayout != vk::ImageLayout::eTransferSrcOptimal) {
+			TransitionLayout(
+				cmd,
+				vk::ImageLayout::eTransferSrcOptimal,
+				vk::PipelineStageFlagBits::eTransfer,
+				inputLevel,
+				1
+			);
+		}
+
+		if (dstLayout != vk::ImageLayout::eTransferDstOptimal) {
+			TransitionLayout(
+				cmd,
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::PipelineStageFlagBits::eTransfer,
+				outputLevel,
+				1
+			);
+		}
+
+		std::array<vk::Offset3D, 2> srcOffsets = { vk::Offset3D{ 0, 0, 0 },vk::Offset3D{ (int)prevW, (int)prevH, 1 } };
+		std::array<vk::Offset3D, 2> dstOffsets = { vk::Offset3D{ 0, 0, 0 },vk::Offset3D{ (int)currW, (int)currH, 1} };
+
+		vk::ImageBlit blitRegion = {};
+		blitRegion.setSrcSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(inputLevel).setBaseArrayLayer(0).setLayerCount(1));
+		blitRegion.setSrcOffsets(srcOffsets);
+		blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(outputLevel).setBaseArrayLayer(0).setLayerCount(1));
+		blitRegion.setDstOffsets(dstOffsets);
+
+		cmd->blitImage(m_image, vk::ImageLayout::eTransferSrcOptimal, m_image, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eNearest);
+
+		//if (level < m_mipLevels - 1)
+		//	TransitionLayout(cmd, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	}
+
+	if (cmd->IsRecording())
+		cmd->SubmitNowAndWait();
+}
+
 thread_local std::shared_ptr<PassImageStateRecord> _record;
 
 void VKWrapper::PassImageStateRecord::StartRecord()
@@ -267,6 +334,7 @@ std::shared_ptr<PassImageStateRecord> VKWrapper::PassImageStateRecord::Current()
 
 SubresourceState& VKWrapper::PassImageStateRecord::GetRecordState(std::shared_ptr<const BaseVKImage> image, uint32_t level)
 {
+	LockGuard guard(_mutex);
 	auto it = _recordStates.find(image);
 	if (it != _recordStates.end())
 	{

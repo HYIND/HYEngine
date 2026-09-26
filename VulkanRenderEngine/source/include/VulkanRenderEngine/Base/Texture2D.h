@@ -67,7 +67,7 @@ public:
 	static bool CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 
 public:
-	Texture2D(const std::string& filepath, const Texture2DConfig& config = {});																					// 从文件加载纹理
+	Texture2D(const std::string& filepath, const Texture2DConfig& config = {}, bool autoMipMaps = false);																				// 从文件加载纹理
 	Texture2D(uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm, const Texture2DConfig& config = {}, uint32_t maxLevel = 1);	// 创建空纹理
 	Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const Texture2DConfig& config = {});			// 创建共享纹理
 
@@ -81,7 +81,7 @@ public:
 	Texture2D& SetAnisotropy(bool anisotropy);
 
 	void UpdateTextureData(void* data, uint32_t level = 0);
-	bool LoadFromFile(const std::string& filepath);
+	bool LoadFromFile(const std::string& filepath, bool autoMipMaps);
 
 	void Resize(uint32_t width, uint32_t height);			// 不保留数据！
 
@@ -121,8 +121,9 @@ public:
 
 	Texture2DConfig GetConfig() const;
 
+	void GenerateTextureMipMaps();
 public:
-	std::shared_ptr<VKWrapper::BaseVKImage> GetImageSharedPtr() const { return _image; }
+	std::shared_ptr<VKWrapper::BaseVKImage> GetImageSharedPtr() const;
 
 private:
 	bool CreateImage();
