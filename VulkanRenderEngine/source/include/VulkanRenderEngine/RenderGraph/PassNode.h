@@ -40,6 +40,8 @@ namespace RenderGraph
 		PassNode& Temp(const ResourceData& resource);
 		PassNode& Persistent(const ResourceData& resource);
 		PassNode& External(const ExternalResourceData& resource);
+		PassNode& FrameLocal(const ResourceData& resource);
+		PassNode& FramePersistent(const ResourceData& resource);
 
 		// 顺序依赖声明
 		PassNode& After(PassNode* node);
@@ -70,6 +72,8 @@ namespace RenderGraph
 		auto Before(Passes&&... passes) -> typename std::enable_if<(sizeof...(Passes) > 1), PassNode&>::type;
 		template<typename... Passes>
 		auto External(Passes&&... passes) -> typename std::enable_if<(sizeof...(Passes) > 1), PassNode&>::type;
+		template<typename... Passes>
+		auto FrameLocal(Passes&&... passes) -> typename std::enable_if<(sizeof...(Passes) > 1), PassNode&>::type;
 
 	public:
 		int GetIndex() const;
@@ -83,6 +87,7 @@ namespace RenderGraph
 		const std::vector<ResourceData>& GetTemps() const;
 		const std::vector<ResourceData>& GetPersistents() const;
 		const std::vector<ExternalResourceData>& GetExternals() const;
+		const std::vector<ResourceData>& GetFrameLocal() const;
 		const std::vector<RenderGraphResource>& GetLifeCycleResource() const;
 		const std::unordered_set<PassNode*>& GetAfters() const;
 		const std::unordered_set<PassNode*>& GetBefores() const;
@@ -100,7 +105,8 @@ namespace RenderGraph
 		std::vector<ResourceData> _outputs;				//输出
 		std::vector<ResourceData> _temps;				//临时资源
 		std::vector<ResourceData> _persistents;			//持久资源
-		std::vector<ExternalResourceData> _externals;				//外部资源
+		std::vector<ExternalResourceData> _externals;	//外部资源
+		std::vector<ResourceData> _frameLocal;			//单帧内的多Pass共享资源
 
 		std::vector<RenderGraphResource> _lifeCycleResource;	//记录需要控制生命周期的资源
 

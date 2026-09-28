@@ -4,6 +4,8 @@
 #include "RenderPassBase.h"
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/Base/RayTracingPipeline.h"
+#include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
+#include "VulkanRenderEngine/General/TemporalAccumulate.h"
 
 class RTCoreRayTraceReflectPass :public RenderPassBase
 {
@@ -16,7 +18,7 @@ public:
 		const std::string& intersectionPath,
 		const std::string& callablePath,
 		const std::string& spatialDenoisingComputerShaderPath,
-		const std::string& temporalDenoisingComputerShaderPath, 
+		const std::string& temporalAccumulateComputerShaderPath,
 		const std::string& scaleComputerShaderPath
 	);
 	~RTCoreRayTraceReflectPass();
@@ -35,23 +37,32 @@ private:
 
 		std::shared_ptr<Texture2D> gPosition;
 		std::shared_ptr<Texture2D> gNormal;
+		std::shared_ptr<Texture2D> gDepthStencil;
+
 		std::shared_ptr<Texture2D> gAlbedoOpacity;
 		std::shared_ptr<Texture2D> gMetallicRoughness;
-		std::shared_ptr<Texture2D> sceneDepthBuffer;
 		std::shared_ptr<Texture2D> atlasShadowMap;
 		std::shared_ptr<Texture2D> ssaoMap;
 		std::shared_ptr<Texture2D> gMotionVector;
 
+		std::shared_ptr<Texture2D> gPrevPosition;
+		std::shared_ptr<Texture2D> gPrevNormal;
+		std::shared_ptr<Texture2D> gPrevDepthStencil;
+
 		std::shared_ptr<Texture2D> originTexture;
-		std::shared_ptr<Texture2D> spatialDenoisingTexture;
 		std::shared_ptr<Texture2D> outPutTexture;
 
-		std::shared_ptr<Texture2D> historyColorTexture;
+		std::shared_ptr<Texture2D> temporalAccumulateColorTexture;
+		std::shared_ptr<Texture2D> temporalAccumulateMomentTexture;
+		std::shared_ptr<Texture2D> spatialDenoisingTempTexture;
+
+		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
+		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
 	};
 
-	bool DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
-	bool DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 	void SetEnable(bool enable) const;
@@ -60,21 +71,17 @@ private:
 
 private:
 	RayTracingPipeline _rayTraceShader;
-	ComputePipeline _spatialDenoisingShader;
-	ComputePipeline _temporalDenoisingShader;
 	ComputePipeline _scaleShader;
 
 	RayTracingBindingRecord _rayTraceShaderBinding;
-	ComputeBindingRecord _spatialDenoisingShaderBinding;
-	ComputeBindingRecord _temporalDenoisingShaderBinding;
 	ComputeBindingRecord _scaleShaderBinding;
 
-	mutable bool _firstDrawTemporal; 
+	mutable bool _firstDrawTemporal;
 	mutable bool _enable;
 
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> _buffers;
-
 	std::shared_ptr<UniformBlock> _RayTraceParamsUBO;
-	std::shared_ptr<UniformBlock> _SpatialDenoisingParamsUBO;
-	std::shared_ptr<UniformBlock> _TemporalAccumulateParamsUBO;
+
+	TemporalAccumulate _temporalAccumulate;
+	AtrousBilateralFilter _spatialDenoisingFilter;
 };

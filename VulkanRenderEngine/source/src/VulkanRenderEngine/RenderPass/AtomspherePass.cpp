@@ -134,7 +134,7 @@ void AtomspherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 void AtomspherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto sceneColorBuffer = ctx.GetExternal(0);
-	auto sceneDepthBuffer = ctx.GetExternal(1);
+	auto sceneDepthBuffer = ctx.GetFrameLocal(0);
 
 	auto tempColor = ctx.GetTemp(0);
 

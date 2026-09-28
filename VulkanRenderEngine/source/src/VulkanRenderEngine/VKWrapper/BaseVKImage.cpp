@@ -259,6 +259,7 @@ void VKWrapper::PassImageStateRecord::AddState(std::shared_ptr<const BaseVKImage
 		vk::PipelineStageFlags dstStageMask;
 		GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, image->m_format, stage, usage);
 		subState.layout = newLayout;
+		subState.accessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
 	}
 	_record->_recordFirstStates[image] = imageState;
 	_record->_recordStates[image] = imageState;

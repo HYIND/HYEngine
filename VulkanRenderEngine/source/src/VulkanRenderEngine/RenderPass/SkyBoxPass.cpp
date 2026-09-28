@@ -37,7 +37,7 @@ void SkyBoxPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::
 		return;
 
 	auto colorBuffer = ctx.GetExternal(0);
-	auto depthBuffer = ctx.GetExternal(1);
+	auto depthBuffer = ctx.GetFrameLocal(0);
 	auto cubeMap = state.skybox.cube;
 
 	auto cmd = cmdCtx.GetCmd();

@@ -14,13 +14,12 @@ struct RenderOption
 
 		uint32_t NumSamples = 2;
 
-		uint32_t BlurKernelSize = 1;
-		float BlurGaussSigma = 0.6;
-		float BlurRadius = 1;
-		float BlurDepthWeight = 10.0;
+		float normalFactor = 128.0;
+		float depthFactor = 1.0;
+		float luminanceFactor = 0.033;
 
-		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.08;
+		uint32_t maxAccumulateCount = 64;
+		uint32_t filterCount = 5;
 	} rayTraceReflectParams;
 
 	struct RayTraceGIParams {
@@ -31,13 +30,12 @@ struct RenderOption
 		uint32_t NumSamples = 3;
 		float GIIntensity = 1.0;
 
-		uint32_t BlurKernelSize = 3;
-		float BlurGaussSigma = 1.2;
-		float BlurRadius = 1;
-		float BlurDepthWeight = 10.0;
+		float normalFactor = 128.0;
+		float depthFactor = 1.0;
+		float luminanceFactor = 0.033;
 
-		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.1;
+		uint32_t maxAccumulateCount = 64;
+		uint32_t filterCount = 5;
 	} rayTraceGIParams;
 
 	struct SSRTraceParams {

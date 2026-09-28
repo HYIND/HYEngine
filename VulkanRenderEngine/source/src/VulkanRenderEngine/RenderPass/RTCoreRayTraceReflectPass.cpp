@@ -16,22 +16,6 @@ struct RayTraceParams
 	uint32_t frameIndex;
 };
 
-struct SpatialDenoisingParams
-{
-	glm::ivec2 screenSize;
-	uint32_t kernelSize;
-	float sigma;
-	float blurRadius;
-	float blurDepthWeight;
-};
-
-struct TemporalAccumulateParams
-{
-	glm::ivec2 screenSize;
-	float initBlendFactor;
-	float dynamicBlendFactor;
-};
-
 
 RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 	const std::string& raygenPath,
@@ -40,19 +24,19 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 	const std::string& anyHitPath,
 	const std::string& intersectionPath,
 	const std::string& callablePath,
-	const std::string& spatialDenoisingComputerShaderPath,
-	const std::string& temporalDenoisingComputerShaderPath,
+	const std::string& atrousComputerShaderPath,
+	const std::string& temporalAccumulateComputerShaderPath,
 	const std::string& scaleComputerShaderPath
 )
 	:
 	_firstDrawTemporal(true),
-	_enable(false)
+	_enable(false),
+	_temporalAccumulate(temporalAccumulateComputerShaderPath),
+	_spatialDenoisingFilter(atrousComputerShaderPath)
 {
 
 	{
 		RayTracingPipelineConfig config;
-		//config.AddDefineMacro("Max_Recursive_Depth", GlobalConfig::RayTrace_Max_Recursive_Depth);
-		//config.AddDefineMacro("Max_Bounce_limit", GlobalConfig::RayTrace_Max_Bounce_limit);
 		config.raygenPath = raygenPath;
 		config.missPath = missPath;
 		config.closestHitPath = closestHitPath;
@@ -86,42 +70,6 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 		ComputePipelineConfig config;
 		config.AddDefineMacro("work_size_x", work_size_x);
 		config.AddDefineMacro("work_size_y", work_size_y);
-		config.computePath = spatialDenoisingComputerShaderPath;
-
-		config
-			.AddCameraUnifromDataBinding()
-			.AddUnifromBuffer(0)
-			.AddStorageImage(1)
-			.AddUnifromTexture(2)
-			.AddUnifromTexture(3)
-			.AddUnifromTexture(4);
-
-		if (config.Validate())
-			_spatialDenoisingShader.Create(config);
-	}
-
-	{
-		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
-		config.computePath = temporalDenoisingComputerShaderPath;
-
-		config
-			.AddUnifromBuffer(0)
-			.AddStorageImage(1)
-			.AddUnifromTexture(2)
-			.AddUnifromTexture(3)
-			.AddUnifromTexture(4);
-
-		if (config.Validate())
-			_temporalDenoisingShader.Create(config);
-	}
-
-
-	{
-		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
 		config.computePath = scaleComputerShaderPath;
 
 		config
@@ -134,12 +82,8 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 	}
 
 	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
-	_SpatialDenoisingParamsUBO = std::make_shared<UniformBlock>(sizeof(SpatialDenoisingParams));
-	_TemporalAccumulateParamsUBO = std::make_shared<UniformBlock>(sizeof(TemporalAccumulateParams));
 
 	_rayTraceShaderBinding.SetUniformBlock(_RayTraceParamsUBO, 5);
-	_spatialDenoisingShaderBinding.SetUniformBlock(_SpatialDenoisingParamsUBO, 0);
-	_temporalDenoisingShaderBinding.SetUniformBlock(_TemporalAccumulateParamsUBO, 0);
 }
 
 RTCoreRayTraceReflectPass::~RTCoreRayTraceReflectPass()
@@ -160,6 +104,7 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 	FrameRenderData data;
 	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
 	data.drawSize = data.scrSize;
+
 	data.gPosition = ctx.GetInput(0);
 	data.gNormal = ctx.GetInput(1);
 	data.gAlbedoOpacity = ctx.GetInput(2);
@@ -167,27 +112,36 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 	data.atlasShadowMap = ctx.GetInput(4);
 	data.ssaoMap = ctx.GetInput(5);
 	data.gMotionVector = ctx.GetInput(6);
+	data.gPrevPosition = ctx.GetInput(7);
+	data.gPrevNormal = ctx.GetInput(8);
+	data.gPrevDepthStencil = ctx.GetInput(9);
 
-	data.sceneDepthBuffer = ctx.GetExternal(0);
+	data.gDepthStencil = ctx.GetFrameLocal(0);
 
 	data.originTexture = ctx.GetTemp(0);
-	data.spatialDenoisingTexture = ctx.GetTemp(1);
+	data.temporalAccumulateColorTexture = ctx.GetTemp(1);
+	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
+	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
 
-	data.historyColorTexture = ctx.GetPersitent(0);
+	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
+	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
 
 	data.outPutTexture = ctx.GetOutput(0);
 
 	auto cmd = cmdCtx.GetCmd();
 
-	if (!DrawRayTraceGI(cmd, data, state)) return;
-	if (!DrawSpatialDenoising(cmd, data, state)) return;
-	if (!DrawTemporalDenoising(cmd, data, state)) return;
+	if (!DrawRayTraceReflect(cmd, data, state)) return;
 
-	if (data.outPutTexture && data.historyColorTexture)
-	{
-		Texture2D::CopyTextureAsync(cmd, data.outPutTexture, data.historyColorTexture);
+	if (!DrawTemporalAccumulate(cmd, data, state)) return;
+
+	if (data.temporalAccumulateColorTexture && data.temporalAccumulateHistoryColorTexture)
+		Texture2D::CopyTextureAsync(cmd, data.temporalAccumulateColorTexture, data.temporalAccumulateHistoryColorTexture);
+	if (data.temporalAccumulateMomentTexture && data.temporalAccumulateHistoryMomentTexture)
+		Texture2D::CopyTextureAsync(cmd, data.temporalAccumulateMomentTexture, data.temporalAccumulateHistoryMomentTexture);
+	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
-	}
+
+	if (!DrawSpatialDenoising(cmd, data, state)) return;
 
 	//if (!DrawScale(data, state)) return;
 }
@@ -212,39 +166,18 @@ void RTCoreRayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& regis
 		_RayTraceParamsUBO->WriteData(&params, sizeof(RayTraceParams));
 	}
 
-	{
-		SpatialDenoisingParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
-			.kernelSize = state.option.rayTraceReflectParams.BlurKernelSize,
-			.sigma = state.option.rayTraceReflectParams.BlurGaussSigma,
-			.blurRadius = state.option.rayTraceReflectParams.BlurRadius,
-			.blurDepthWeight = state.option.rayTraceReflectParams.BlurDepthWeight
-		};
-		_SpatialDenoisingParamsUBO->WriteData(&params, sizeof(SpatialDenoisingParams));
-	}
-
-	{
-		TemporalAccumulateParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
-			.initBlendFactor = state.option.rayTraceReflectParams.initBlendFactor,
-			.dynamicBlendFactor = state.option.rayTraceReflectParams.dynamicBlendFactor
-		};
-		_TemporalAccumulateParamsUBO->WriteData(&params, sizeof(TemporalAccumulateParams));
-	}
-
 }
 
 void RTCoreRayTraceReflectPass::SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGeneralBuffer> buffer) {
 	_buffers = buffer;
 }
 
-bool RTCoreRayTraceReflectPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& target = data.originTexture;
 
 	if (!target || target->IsEmpty())
 		return false;
-
 
 	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
@@ -256,6 +189,7 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::
 		.setBaseMipLevel(0)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	auto& rayTraceShader = _rayTraceShader;
 	auto& binding = _rayTraceShaderBinding;
@@ -276,7 +210,7 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
 	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
 	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
-	binding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 11);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 11);
 	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
 	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
 
@@ -289,47 +223,69 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::
 	return true;
 }
 
-bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.originTexture;
-	auto& target = data.spatialDenoisingTexture;
+	auto& target = data.temporalAccumulateColorTexture;
+	auto& moment = data.temporalAccumulateMomentTexture;
 
-	if (!source || source->IsEmpty())
+	if (!source
+		|| source->IsEmpty()
+		|| !target
+		|| target->IsEmpty()
+		|| !moment
+		|| moment->IsEmpty()
+		)
 		return false;
 
-	if (!target || target->IsEmpty())
-		return false;
+	if (_firstDrawTemporal)
+	{
+		vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		vk::ClearColorValue clearMoments = { 0.0f, 0.0f, 0.0f, 0.0f };
+		vk::ImageSubresourceRange range;
+		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1)
+			.setBaseMipLevel(0)
+			.setLevelCount(1);
+		cmd->clearColorImage(data.temporalAccumulateHistoryColorTexture->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+		cmd->clearColorImage(data.temporalAccumulateHistoryMomentTexture->GetImage(), vk::ImageLayout::eGeneral, clearMoments, range);
+		_firstDrawTemporal = false;
+	}
 
+	TemporalAccumulate::Params params{
+		.maxAccumulateCount = state.option.rayTraceReflectParams.maxAccumulateCount
+	};
 
-	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-
-	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-	vk::ImageSubresourceRange range;
-	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-		.setBaseArrayLayer(0)
-		.setLayerCount(1)
-		.setBaseMipLevel(0)
-		.setLevelCount(1);
-	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
-
-	_spatialDenoisingShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_spatialDenoisingShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
-	_spatialDenoisingShaderBinding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 2);
-	_spatialDenoisingShaderBinding.SetUniformTexture(data.sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 3);
-	_spatialDenoisingShaderBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 4);
-
-	_spatialDenoisingShader.Bind(cmd, _spatialDenoisingShaderBinding);
-	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+	_temporalAccumulate.Execute(
+		cmd,
+		source,
+		data.gPosition,
+		data.gNormal,
+		data.gDepthStencil,
+		data.gMotionVector,
+		data.gPrevPosition,
+		data.gPrevNormal,
+		data.gPrevDepthStencil,
+		target,
+		moment,
+		data.temporalAccumulateHistoryColorTexture,
+		data.temporalAccumulateHistoryMomentTexture,
+		params,
+		state.camera.curUBO,
+		state.camera.prevUBO
+	);
 
 	cmd->SubmitToQueue();
 
 	return true;
 }
 
-bool RTCoreRayTraceReflectPass::DrawTemporalDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
-	auto& source = data.spatialDenoisingTexture;
+	auto& source = data.temporalAccumulateColorTexture;
 	auto& target = data.outPutTexture;
+	auto& moment = data.temporalAccumulateMomentTexture;
 
 	if (!source || source->IsEmpty())
 		return false;
@@ -337,33 +293,25 @@ bool RTCoreRayTraceReflectPass::DrawTemporalDenoising(const std::shared_ptr<VKWr
 	if (!target || target->IsEmpty())
 		return false;
 
-	if (_firstDrawTemporal || !data.gMotionVector || !data.historyColorTexture)
-	{
-		Texture2D::CopyTextureAsync(cmd, source, target);
-		_firstDrawTemporal = false;
-		cmd->SubmitToQueue();
-		return true;
-	}
+	AtrousBilateralFilter::Params params{
+		.normalFactor = state.option.rayTraceReflectParams.normalFactor,
+		.depthFactor = state.option.rayTraceReflectParams.depthFactor,
+		.luminanceFactor = state.option.rayTraceReflectParams.luminanceFactor
+	};
 
-
-	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-
-	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-	vk::ImageSubresourceRange range;
-	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-		.setBaseArrayLayer(0)
-		.setLayerCount(1)
-		.setBaseMipLevel(0)
-		.setLevelCount(1);
-	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
-
-	_temporalDenoisingShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
-	_temporalDenoisingShaderBinding.SetUniformTexture(source, vk::ImageAspectFlagBits::eColor, 2);
-	_temporalDenoisingShaderBinding.SetUniformTexture(data.historyColorTexture, vk::ImageAspectFlagBits::eColor, 3);
-	_temporalDenoisingShaderBinding.SetUniformTexture(data.gMotionVector, vk::ImageAspectFlagBits::eColor, 4);
-
-	_temporalDenoisingShader.Bind(cmd, _temporalDenoisingShaderBinding);
-	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+	_spatialDenoisingFilter.Execute(
+		cmd,
+		source,
+		data.gNormal,
+		data.gDepthStencil,
+		moment,
+		target,
+		data.spatialDenoisingTempTexture,
+		params,
+		state.camera.curUBO,
+		state.camera.prevUBO,
+		state.option.rayTraceReflectParams.filterCount
+	);
 
 	cmd->SubmitToQueue();
 
@@ -372,46 +320,6 @@ bool RTCoreRayTraceReflectPass::DrawTemporalDenoising(const std::shared_ptr<VKWr
 
 bool RTCoreRayTraceReflectPass::DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
-	//std::shared_ptr<Texture2D> srcTex;
-	//std::shared_ptr<Texture2D>& targetTex = data.outPutTexture;
-
-	//if (data.outPutTexture)
-	//	srcTex = data.outPutTexture;
-	//else
-	//	srcTex = data.originTexture;
-
-	//if (!srcTex || srcTex->IsEmpty())
-	//	return false;
-
-	//int srcWidth = srcTex->GetWidth();
-	//int srcHeight = srcTex->GetHeight();
-
-	//if (!targetTex || targetTex->IsEmpty())
-	//	return false;
-
-	//GLfloat clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	//glClearTexImage(targetTex->GetID(), 0, GL_RGBA, GL_FLOAT, clearColor);
-
-	//int destWidth = targetTex->GetWidth();
-	//int destHeight = targetTex->GetHeight();
-
-	//if (srcWidth == destWidth && srcHeight == destHeight)
-	//{
-	//	Texture2D::CopyTexture(srcTex, targetTex);
-	//}
-	//else
-	//{
-	//	_scaleShader.Use();
-
-	//	_scaleShader.setIVec2("srcScreenSize", glm::ivec2(srcWidth, srcHeight));
-	//	_scaleShader.setIVec2("destScreenSize", glm::ivec2(destWidth, destHeight));
-
-	//	glBindImageTexture(0, srcTex->GetID(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16F);
-	//	glBindImageTexture(1, targetTex->GetID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-	//	glDispatchCompute((destWidth + work_size_x - 1) / work_size_x, (destHeight + work_size_y - 1) / work_size_y, 1);
-	//	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	//}
-
 	return true;
 }
 

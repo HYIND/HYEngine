@@ -49,6 +49,17 @@ PassNode& PassNode::External(const ExternalResourceData& resource)
 	return *this;
 }
 
+PassNode& RenderGraph::PassNode::FrameLocal(const ResourceData& resource)
+{
+	_frameLocal.push_back(resource);
+	return *this;
+}
+
+PassNode& RenderGraph::PassNode::FramePersistent(const ResourceData& resource)
+{
+	// TODO: 在此处插入 return 语句
+}
+
 PassNode& PassNode::After(PassNode* node) {
 	if (node != this)
 		_afters.insert(node);
@@ -123,6 +134,8 @@ const std::vector<PassNode::ResourceData>& PassNode::GetTemps() const { return _
 const std::vector<PassNode::ResourceData>& PassNode::GetPersistents() const { return _persistents; }
 
 const std::vector<PassNode::ExternalResourceData>& PassNode::GetExternals() const { return _externals; }
+
+const std::vector<PassNode::ResourceData>& PassNode::GetFrameLocal() const { return _frameLocal; }
 
 const std::vector<RenderGraphResource>& PassNode::GetLifeCycleResource() const { return _lifeCycleResource; }
 

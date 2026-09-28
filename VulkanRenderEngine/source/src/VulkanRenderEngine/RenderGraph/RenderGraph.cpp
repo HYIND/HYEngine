@@ -131,6 +131,7 @@ void Graph::FindReadyNodeAndExcute(
 	std::vector<PassExecuteContext>& passCtxs,
 	RenderState& state,
 	const std::string& resPrefix,
+	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
 	std::atomic<uint32_t>& doneCounter,
 	std::shared_ptr<CriticalSectionLock>& _cmdMutex
@@ -148,7 +149,7 @@ void Graph::FindReadyNodeAndExcute(
 			{
 				executeHandle = _executeParallelPool.submit(
 					[&, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
-						ExecutePass(ctx.node, ctx.registry, state, resPrefix, externalResManager, _cmdMutex);
+						ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, _cmdMutex);
 						for (auto& next : ctx.nextIndexs)
 							--passCtxs[next].dependency;
 						doneCounter++;
@@ -186,6 +187,7 @@ void Graph::ExecutePass(
 	FrameDataRegistry& registry,
 	RenderState& state,
 	const std::string& resPrefix,
+	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
 	std::shared_ptr<CriticalSectionLock>& _cmdMutex
 )
@@ -236,6 +238,13 @@ void Graph::ExecutePass(
 				ctx.externalTextures.push_back(tex);
 				cmdCtx.PushTexWithLayout(tex, external.layout);
 			}
+		}
+
+		for (const auto& framelocal : node->GetFrameLocal()) {
+			auto tex = _resManager.GetTexture(framelocal.resource, resPrefix);
+			ctx.frameLocalTextures.push_back(tex);
+			frameLocalResRecord.AddTexture(framelocal.resource);
+			cmdCtx.PushTexWithLayout(tex, framelocal.layout);
 		}
 
 		node->Execute(cmdCtx, registry, ctx, state);
@@ -289,6 +298,7 @@ void Graph::Execute(
 
 	auto resPrefix = Tool::GenerateSimpleUuid();
 	ExternalResourceManager externalResManager(externalResources);
+	FrameLocalResourceRecord frameLocalResRecord;
 
 	std::vector<BatchData> running_batchs;
 	running_batchs.reserve(_sortedPasses.size());
@@ -378,7 +388,7 @@ void Graph::Execute(
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, externalResManager, doneCounter, _cmdMutex);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, frameLocalResRecord, externalResManager, doneCounter, _cmdMutex);
 
 			if (batch.isEnd)
 			{
@@ -412,6 +422,9 @@ void Graph::Execute(
 	}
 	for (auto& handle : EndHandles)
 		handle->get();
+
+	for (auto& res : frameLocalResRecord.GetRes())
+		_resManager.ReleaseTexture(res, resPrefix);
 
 	//std::cout << std::format("Execute done {}\n", frameIndex);
 }

@@ -49,6 +49,7 @@ namespace RenderGraph
 		std::vector<std::shared_ptr<Texture2D>> tempTextures;
 		std::vector<std::shared_ptr<Texture2D>> persitentTextures;
 		std::vector<std::shared_ptr<Texture2D>> externalTextures;
+		std::vector<std::shared_ptr<Texture2D>> frameLocalTextures;
 
 		const std::string& GetName() const { return passName; };
 		std::shared_ptr<Texture2D> GetInput(uint32_t idx) const { return idx >= 0 && idx < inputTextures.size() ? inputTextures[idx] : nullptr; };
@@ -57,6 +58,7 @@ namespace RenderGraph
 		std::shared_ptr<Texture2D> GetTemp(uint32_t idx) const { return idx >= 0 && idx < tempTextures.size() ? tempTextures[idx] : nullptr; };
 		std::shared_ptr<Texture2D> GetPersitent(uint32_t idx) const { return idx >= 0 && idx < persitentTextures.size() ? persitentTextures[idx] : nullptr; };
 		std::shared_ptr<Texture2D> GetExternal(uint32_t idx) const { return idx >= 0 && idx < externalTextures.size() ? externalTextures[idx] : nullptr; };
+		std::shared_ptr<Texture2D> GetFrameLocal(uint32_t idx) const { return idx >= 0 && idx < frameLocalTextures.size() ? frameLocalTextures[idx] : nullptr; };
 	};
 
 	using ResourceName = std::string;

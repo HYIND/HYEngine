@@ -136,31 +136,49 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 
 	auto gPosition = ctx.GetOutput(0);
 	auto gNormal = ctx.GetOutput(1);
+	auto gDepthStencil = ctx.GetFrameLocal(0);
+
 	auto gAlbedoOpacity = ctx.GetOutput(2);
-	auto gMetallicRoughnessMap = ctx.GetOutput(3);
-	auto gMotionVectorMap = ctx.GetOutput(4);
+	auto gMetallicRoughness = ctx.GetOutput(3);
+	auto gMotionVector = ctx.GetOutput(4);
 	auto gEmission = ctx.GetOutput(5);
-	auto gDepthStencilMap = ctx.GetOutput(6);
+
+	auto gPrevPosition = ctx.GetOutput(6);
+	auto gPrevNormal = ctx.GetOutput(7);
+	auto gPrevDepthStencil = ctx.GetOutput(8);
+
+	auto gPositionHistory = ctx.GetPersitent(0);
+	auto gNormalHistory = ctx.GetPersitent(1);
+	auto gDepthStencilHistory = ctx.GetPersitent(2);
 
 	auto cmd = cmdCtx.GetCmd();
+
 	gPosition->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	gNormal->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gDepthStencil->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	gAlbedoOpacity->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
-	gMetallicRoughnessMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
-	gMotionVectorMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gMetallicRoughness->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gMotionVector->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	gEmission->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
-	gDepthStencilMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
 
 	DynamicRenderInfo renderInfo = GenerateDynamicRenderInfo(
 		state,
-		gPosition, gNormal, gAlbedoOpacity, gMetallicRoughnessMap, gMotionVectorMap, gEmission, gDepthStencilMap
+		gPosition, gNormal, gAlbedoOpacity, gMetallicRoughness, gMotionVector, gEmission, gDepthStencil
 	);
 	DynamicViewport viewPort(state.framebuffer.width, state.framebuffer.height);
 
 	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
 	RenderSceneGeometryPassSkinned(registry, cmd, state, renderInfo, viewPort);
+
+	Texture2D::CopyTextureAsync(cmd, gPositionHistory, gPrevPosition);
+	Texture2D::CopyTextureAsync(cmd, gNormalHistory, gPrevNormal);
+	Texture2D::CopyTextureAsync(cmd, gDepthStencilHistory, gPrevDepthStencil);
+
+	Texture2D::CopyTextureAsync(cmd, gPosition, gPositionHistory);
+	Texture2D::CopyTextureAsync(cmd, gNormal, gNormalHistory);
+	Texture2D::CopyTextureAsync(cmd, gDepthStencil, gDepthStencilHistory);
 
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();

@@ -175,7 +175,7 @@ void LightDrawPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGrap
 		return;
 
 	auto targetColorBuffer = ctx.GetExternal(0);
-	auto targetDepthBuffer = ctx.GetExternal(1);
+	auto targetDepthBuffer = ctx.GetFrameLocal(0);
 
 	auto cmd = cmdCtx.GetCmd();
 
