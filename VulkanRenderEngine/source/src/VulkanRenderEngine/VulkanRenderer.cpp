@@ -601,9 +601,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 		giPass = std::move(t_giPass);
 	}
 
-	auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp");
+	auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/Atrous-BilateralFilter.comp", "shader/ssr/TemporalAccumulate.comp");
 
-	auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp", "shader/ssr/BilateralFilterBlur.comp", "shader/ssr/TemporalAccumulate.comp");
+	auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp", "shader/ssr/Atrous-BilateralFilter.comp", "shader/ssr/TemporalAccumulate.comp");
 
 	auto combinIndirectLightingPass = MakeConbinIndirectLightingPass();
 
@@ -811,35 +811,49 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	ssrNode->SetRenderPass(std::move(ssrPass))
 		.Input(
-			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ gMotionVector, computeReadLayout }, ResourceData{ hzbMap, computeReadLayout }
+			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
+			ResourceData{ gMotionVector, computeReadLayout },
+			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
+			ResourceData{ hzbMap, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"), computeWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp2"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp3"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp3"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp4"), computeWriteLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout })
 		.Output(ResourceData{ ssr_Output, computeWriteLayout })
-		.Persistent(ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout })
+		.Persistent(
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout },
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyMomentTexture"), computeReadLayout }
+		)
 		.After(geometryNode, lightingNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	ssgiNode->SetRenderPass(std::move(ssgiPass))
 		.Input(
-			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout }, ResourceData{ gMotionVector, computeReadLayout },
-			ResourceData{ hzbMap, computeReadLayout }
+			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
+			ResourceData{ gMotionVector, computeReadLayout },
+			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
+			ResourceData{ hzbMap, computeReadLayout },
+			ResourceData{ ssaoOutPut, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp1"), computeWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp2"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp3"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp3"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp4"), computeWriteLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout })
 		.Output(ResourceData{ ssgi_Output, computeWriteLayout })
-		.Persistent(ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"), computeReadLayout })
+		.Persistent(
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"), computeReadLayout },
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyMomentTexture"), computeReadLayout }
+		)
 		.After(geometryNode, lightingNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });

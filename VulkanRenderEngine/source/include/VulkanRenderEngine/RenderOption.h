@@ -18,7 +18,7 @@ struct RenderOption
 		float depthFactor = 1.0;
 		float luminanceFactor = 0.033;
 
-		uint32_t maxAccumulateCount = 64;
+		uint32_t maxAccumulateCount = 50;
 		uint32_t filterCount = 5;
 	} rayTraceReflectParams;
 
@@ -34,7 +34,7 @@ struct RenderOption
 		float depthFactor = 1.0;
 		float luminanceFactor = 0.033;
 
-		uint32_t maxAccumulateCount = 64;
+		uint32_t maxAccumulateCount = 50;
 		uint32_t filterCount = 5;
 	} rayTraceGIParams;
 
@@ -48,13 +48,12 @@ struct RenderOption
 		float Sample_Indirect_Clamp_Value = 2.0;
 		float DistanceFactor = 0.02;
 
-		uint32_t BlurKernelSize = 2;
-		float BlurGaussSigma = 0.7;
-		float BlurRadius = 0.75;
-		float BlurDepthWeight = 10.0;
+		float normalFactor = 128.0;
+		float depthFactor = 1.0;
+		float luminanceFactor = 0.033;
 
-		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.05;
+		uint32_t maxAccumulateCount = 32;
+		uint32_t filterCount = 5;
 	} ssrTraceParams;
 
 	struct SSGITraceParams {
@@ -69,13 +68,12 @@ struct RenderOption
 		float AOIntensity = 0.8;
 		float DistanceFactor = 0.05;
 
-		uint32_t BlurKernelSize = 3;
-		float BlurGaussSigma = 1.2;
-		float BlurRadius = 1.0;
-		float BlurDepthWeight = 10.0;
+		float normalFactor = 128.0;
+		float depthFactor = 1.0;
+		float luminanceFactor = 0.033;
 
-		float initBlendFactor = 0.96;
-		float dynamicBlendFactor = 0.075;
+		uint32_t maxAccumulateCount = 32;
+		uint32_t filterCount = 5;
 	} ssgiTraceParams;
 
 	struct DepthFogParams {
