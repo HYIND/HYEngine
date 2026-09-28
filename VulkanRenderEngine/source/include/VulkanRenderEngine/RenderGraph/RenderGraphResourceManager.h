@@ -40,4 +40,17 @@ namespace RenderGraph
 		std::unordered_map<ResourceName, std::shared_ptr<Texture2D>> _externalTextures;
 		mutable SpinLock _externalTexturesMutex;
 	};
+
+	class FrameLocalResourceRecord
+	{
+	public:
+		FrameLocalResourceRecord() = default;
+
+		void AddTexture(const RenderGraphResource& name);
+		const std::unordered_set<RenderGraphResource>& GetRes() const;
+
+	private:
+		std::unordered_set<RenderGraphResource> _textures;
+		mutable SpinLock _texturesMutex;
+	};
 }

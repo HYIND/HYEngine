@@ -100,6 +100,7 @@ namespace RenderGraph
 			BatchData& batchdata, std::vector<PassExecuteContext>& passCtxs,
 			RenderState& state,
 			const std::string& resPrefix,
+			FrameLocalResourceRecord& frameLocalResRecord,
 			ExternalResourceManager& externalResManager,
 			std::atomic<uint32_t>& doneCounter,
 			std::shared_ptr<CriticalSectionLock>& _cmdMutex
@@ -109,6 +110,7 @@ namespace RenderGraph
 			FrameDataRegistry& registry,
 			RenderState& state,
 			const std::string& resPrefix,
+			FrameLocalResourceRecord& frameLocalResRecord,
 			ExternalResourceManager& externalResManager,
 			std::shared_ptr<CriticalSectionLock>& _cmdMutex
 		);

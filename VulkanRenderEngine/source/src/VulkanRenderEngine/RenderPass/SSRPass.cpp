@@ -141,7 +141,7 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	data.hzbDepthMap = ctx.GetInput(5);
 
 	data.colorMap = ctx.GetExternal(0);
-	data.depthMap = ctx.GetExternal(1);
+	data.depthMap = ctx.GetFrameLocal(0);
 
 	auto cmd = cmdCtx.GetCmd();
 

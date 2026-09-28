@@ -117,17 +117,19 @@ void RenderGraph::PassFrameCmdContext::End()
 		{
 			LockGuard gaurd(*_mutex);
 			StartupCmd();
+			if (_timeLine && cmdcount > 0)
+				_timeLine->Wait(cmdcount);
 		}
 	}
 	else
 	{
 		if (!_submitcmds.empty())
 			StartupCmd();
+		if (_timeLine && cmdcount > 0)
+			_timeLine->Wait(cmdcount);
 		_mutex->unlock();
 	}
 
-	if (_timeLine && cmdcount > 0)
-		_timeLine->Wait(cmdcount);
 }
 
 void PassFrameCmdContext::StartupCmd()

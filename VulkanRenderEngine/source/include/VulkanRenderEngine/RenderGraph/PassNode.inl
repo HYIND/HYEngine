@@ -56,4 +56,10 @@ namespace RenderGraph
 		(External(std::forward<Passes>(passes)), ...);
 		return *this;
 	};
+	template<typename... Passes>
+	auto PassNode::FrameLocal(Passes&&... passes) ->
+		typename std::enable_if<(sizeof...(Passes) > 1), PassNode&>::type{
+		(FrameLocal(std::forward<Passes>(passes)), ...);
+		return *this;
+	};
 }

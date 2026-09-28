@@ -101,8 +101,8 @@ private:
 
 private:
 	struct RenderTargetData {
-		std::shared_ptr<Texture2D> sceneColorBuffer, sceneDepthBuffer;
-		std::shared_ptr<Texture2D> firstPersonColorBuffer, firstPersonDepthBuffer;
+		std::shared_ptr<Texture2D> sceneColorBuffer;
+		std::shared_ptr<Texture2D> firstPersonColorBuffer;
 		std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
 		std::shared_ptr<Texture2D> finalColorBuffer;
 	};

@@ -10,64 +10,162 @@
 
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
+#include "shader/dataDef/camerauboDef.comp"
+
 layout (binding = 0) uniform Params
 {
-    ivec2 screenSize;
-    float initBlendFactor;
-    float dynamicBlendFactor;
+    uint maxAccumulateCount;
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
-layout (binding = 2) uniform sampler2D rawTexture;
-layout (binding = 3) uniform sampler2D historyColorTexture;
-layout (binding = 4) uniform sampler2D motionMap;
+layout (binding = 2, rgba16f) uniform image2D outputMoments;
+layout (binding = 3) uniform sampler2D rawTexture;
+layout (binding = 4) uniform sampler2D historyColorTexture;
+layout (binding = 5) uniform sampler2D historyMomentTexture;
+layout (binding = 6) uniform sampler2D positionMap;
+layout (binding = 7) uniform sampler2D normalMap;
+layout (binding = 8) uniform sampler2D depthMap;
+layout (binding = 9) uniform sampler2D motionMap;
+layout (binding = 10) uniform sampler2D prevPositionMap;
+layout (binding = 11) uniform sampler2D prevNormalMap;
+layout (binding = 12) uniform sampler2D prevDepthMap;
+
+float GetLuminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+float GetVariance(float M1, float M2)
+{
+    return max(M2 - M1 * M1, 0.0);
+}
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+}
+
+void GetDepthNormal(vec2 uv, inout float depth, inout vec3 normal)
+{    
+    depth = texture(depthMap, uv).r;
+    normal = normalize(texture(normalMap, uv).rgb);
+}
+
+const float depthThreshold = 0.5;
+const float positiondistThreshold = 0.2;
+const float normalThreshold = 0.9;
 
 
 void main() 
 {
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
         return;
 
-    vec2 screenTexelSize = 1.0 / vec2(screenSize);
-    vec2 pixelCenter = pixelCoord + 0.5;
-    vec2 currentUV = pixelCenter / screenSize;
+    vec2 currentUV = (vec2(coord) + vec2(0.5f)) / imageSize;
+    
+    vec4 currentColor = texture(rawTexture, currentUV).rgba;
 
-    // imageStore(outputImage, pixelCoord, texture(rawTexture, currentUV));
-    // return;
+    float L = GetLuminance(currentColor.rgb);
+    float currentM1 = L;
+    float currentM2 = L * L;
 
-    vec2 motionVector = clamp(texture(motionMap, currentUV).rg, -1, 1);
+    float currentDepth = texture(depthMap, currentUV).r;
+    if (currentDepth >= 0.99994)
+    {
+        imageStore(outputImage, coord, currentColor);
+        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        return;
+    }
 
+    vec3 currentNormal = texture(normalMap, currentUV).xyz;
+    vec3 currentWorldPos = texture(positionMap, currentUV).xyz;
+
+    vec2 motionVector = clamp(texture(motionMap, currentUV).xy, -1, 1);
     vec2 historyUV = currentUV - motionVector;
 
     // 边界检查（如果上一帧没这个像素，直接返回当前帧）
-    if (historyUV.x <= 0.0 || historyUV.x >= 1.0 || historyUV.y <= 0.0 || historyUV.y >= 1.0) {
-        imageStore(outputImage, pixelCoord, texture(rawTexture, currentUV));
+    if (historyUV.x <= 0.0 || historyUV.x >= 1.0 || historyUV.y <= 0.0 || historyUV.y >= 1.0) 
+    {
+        imageStore(outputImage, coord, currentColor);
+        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
         return;
     }
 
-    vec3 currentColor = texture(rawTexture, currentUV).rgb;
-    vec3 historyColor = texture(historyColorTexture, historyUV).rgb;
-
-    // AABB 钳制（消除拖影）
-    vec3 minColor = currentColor;
-    vec3 maxColor = currentColor;
-
-    // 取周围 11x11 的最小最大值
-    for (int i = -5; i <= 5; i++) {
-        for (int j = -5; j <= 5; j++) {
-            vec3 neighbor = texture(rawTexture, currentUV + vec2(i, j) * screenTexelSize).rgb;
-            minColor = min(minColor, neighbor);
-            maxColor = max(maxColor, neighbor);
-        }
+    float historyDepth = texture(prevDepthMap, historyUV).r;
+    if (historyDepth >= 0.99994)
+    {
+        imageStore(outputImage, coord, currentColor);
+        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        return;
     }
-    historyColor  = clamp(historyColor, minColor, maxColor);
 
-    // 计算动态混合权重
-    float motion = distance(currentUV, historyUV);
-    float blendFactor = mix(initBlendFactor, dynamicBlendFactor, smoothstep(0.0, max(0.02,min(screenTexelSize.y * 3, screenTexelSize.x * 3)), motion));
-        
-    vec3 finalColor = mix(currentColor, historyColor, blendFactor);
+    vec3 historyNormal = texture(prevNormalMap, historyUV).xyz;
+    vec3 historyWorldPos = texture(prevPositionMap, historyUV).xyz;
 
-    imageStore(outputImage, pixelCoord, vec4(finalColor, 1.0));
+    float currentLinearDepth = DepthBufferConvertToViewDepth(currentDepth);
+    float historyLinearDepth = DepthBufferConvertToViewDepth(historyDepth);
+
+    float normalSimilarity = dot(currentNormal, historyNormal);
+    bool normalValid = normalSimilarity > normalThreshold;
+
+    float depthDiff = abs(currentLinearDepth - historyLinearDepth); 
+    bool depthValid = depthDiff < depthThreshold;
+
+    vec3 d = currentWorldPos - historyWorldPos;
+    float positionDiff2 = dot(d, d);
+    bool positionValid = positionDiff2 < positiondistThreshold * positiondistThreshold;
+
+    // {
+    //     vec4 color = vec4(0,0,0,1);
+    //     if (!normalValid) color.r = 1;
+    //     if (!depthValid) color.g = 1;
+    //     if (!positionValid) color.b = 1;
+    //     if (!normalValid || !depthValid || !positionValid)
+    //         imageStore(outputImage, coord, color);
+    //     return;
+    // }
+
+    if (!normalValid || !depthValid || !positionValid)
+    {
+        imageStore(outputImage, coord, currentColor);
+        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        return;
+    }
+
+    vec4 historyColor = texture(historyColorTexture, historyUV).rgba;
+    vec4 historyMoments = texture(historyMomentTexture, historyUV).rgba;
+    float historyM1 = historyMoments.x;
+    float historyM2 = historyMoments.y;
+    uint accumulateLength = uint(historyMoments.w);
+
+    // // AABB 钳制（消除拖影）
+    // vec4 minColor = currentColor;
+    // vec4 maxColor = currentColor;
+
+    // // 取周围 11x11 的最小最大值
+    // for (int x = -5; x <= 5; x++) {
+    //     for (int y = -5; y <= 5; y++) {
+    //         ivec2 sampleCoord = coord + ivec2(x, y);
+    //         sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
+    //         vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
+
+    //         vec4 neighbor = texture(rawTexture, uv).rgba;
+    //         minColor = min(minColor, neighbor);
+    //         maxColor = max(maxColor, neighbor);
+    //     }
+    // }
+    // historyColor  = clamp(historyColor, minColor, maxColor);
+
+    uint blendlenth = min(accumulateLength + 1, maxAccumulateCount);
+    float blendFactor = float(blendlenth - 1) / float(blendlenth);
+
+    vec4 finalColor = mix(currentColor, historyColor, blendFactor);
+    float finalM1 = mix(currentM1, historyM1, blendFactor);
+    float finalM2 = mix(currentM2, historyM2, blendFactor);
+
+    imageStore(outputImage, coord, finalColor);
+    imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), float(accumulateLength + 1)));
 }

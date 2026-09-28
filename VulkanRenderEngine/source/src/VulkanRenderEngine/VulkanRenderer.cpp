@@ -29,7 +29,6 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceReflectPass.h"
 
 const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
-const std::string Ext_RenderTargetDepthBuffer_Name = "renderTargetDepthBuffer";
 
 static void NeedVulkanBaseInitlized()
 {
@@ -315,10 +314,8 @@ void VulkanRenderer::InitRenderTarget()
 		auto renderTarget = std::make_shared<RenderTargetData>();
 
 		renderTarget->sceneColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-		renderTarget->sceneDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
 
 		renderTarget->firstPersonColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
-		renderTarget->firstPersonDepthBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eD24UnormS8Uint, config);
 
 		renderTarget->combinColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
 		renderTarget->combinBrightColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
@@ -554,15 +551,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	auto lightingPass = std::make_unique<LightingPass>("shader/lighting/lightingpass.comp");
 
-	auto copyDepthPass = MakeLambdaPass([](RenderGraph::PassFrameCmdContext& cmdCtx, const RenderGraph::PassFrameContext& ctx, RenderState& state)-> void
-		{
-			auto cmd = cmdCtx.GetCmd();
-			auto geometryDepthStencil = ctx.GetInput(0);
-			auto renderTargetDepthBuffer = ctx.GetExternal(0);
-			Texture2D::CopyTextureAsync(cmd, geometryDepthStencil, renderTargetDepthBuffer);
-			cmd->SubmitToQueue();
-		});
-
 	auto skyBoxPass = std::make_unique<SkyBoxPass>("shader/skybox/skybox.comp");
 
 	std::unique_ptr<RenderPassBase> generalPass;
@@ -572,8 +560,18 @@ void VulkanRenderer::InitSceneRenderGraph()
 	if (!GlobalConfig::RTCoreEnable)
 	{
 		auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
-		auto t_reflectPass = std::make_unique<RayTraceReflectPass>("shader/RayTrace/RayTraceReflect.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
-		auto t_giPass = std::make_unique<RayTraceGIPass>("shader/RayTrace/RayTraceGI.comp", "shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+		auto t_reflectPass = std::make_unique<RayTraceReflectPass>(
+			"shader/RayTrace/RayTraceReflect.comp",
+			"shader/RayTrace/Atrous-BilateralFilter.comp",
+			"shader/RayTrace/TemporalAccumulate.comp",
+			"shader/General/imagescale.comp"
+		);
+		auto t_giPass = std::make_unique<RayTraceGIPass>(
+			"shader/RayTrace/RayTraceGI.comp",
+			"shader/RayTrace/Atrous-BilateralFilter.comp",
+			"shader/RayTrace/TemporalAccumulate.comp", 
+			"shader/General/imagescale.comp"
+		);
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
@@ -589,11 +587,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
 			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
 			"", "", "",
-			"shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
 		auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
 			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
 			"", "", "",
-			"shader/RayTrace/BilateralFilterBlur.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
@@ -623,27 +621,37 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 
 	auto& sceneColorBuffer = _renderTargets[0]->sceneColorBuffer;
-	auto& sceneDepthBuffer = _renderTargets[0]->sceneDepthBuffer;
 
 	auto Ext_RenderTargetColorBuffer = _sceneRenderGraph->CreateExternalTexture(Ext_RenderTargetColorBuffer_Name);
-	auto Ext_RenderTargetDepthBuffer = _sceneRenderGraph->CreateExternalTexture(Ext_RenderTargetDepthBuffer_Name);
 
 	ResourceBuilder resbuilder(_sceneRenderGraph);
 
 	auto hzbMap = resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "HZBMap", hzbPass->GetMaxLevel());
+
 	auto gPosition = resbuilder.CreateTexture(width, height, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gPosition");
 	auto gNormal = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gNormal");
+	auto gDepthStencil = resbuilder.CreateTexture(width, height, vk::Format::eD24UnormS8Uint, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gDepthStencil");
+	auto gMotionVector = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMotionVector");
+
 	auto gAlbedoOpacity = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gAlbedoOpacity");
-	auto gMetallicRoughnessMap = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMetallicRoughnessMap");
-	auto gMotionVectorMap = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMotionVectorMap");
+	auto gMetallicRoughness = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMetallicRoughness");
 	auto gEmission = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
-	auto gDepthStencilMap = resbuilder.CreateTexture(sceneDepthBuffer, "geometryPass_TempDepthStencilMap");
+
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
 	auto rayTraceReflect_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
 	auto rayTraceGI_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
 	auto ssr_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
-	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadowMap");
+	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");
+
+	auto gPrevPosition = resbuilder.CreateTexture(gPosition, "gPrevPosition");
+	auto gPrevNormal = resbuilder.CreateTexture(gNormal, "gPrevNormal");
+	auto gPrevDepthStencil = resbuilder.CreateTexture(gDepthStencil, "gPrevDepthStencil");
+
+	auto gPositionHistory = resbuilder.CreateTexture(gPosition, "gPositionHistory");
+	auto gNormalHistory = resbuilder.CreateTexture(gNormal, "gNormalHistory");
+	auto gDepthStencilHistory = resbuilder.CreateTexture(gDepthStencil, "gDepthStencilHistory");
+
 
 	// 不透明物体
 	auto preCalculateNode = _sceneRenderGraph->AddNode("preCalculateNode");
@@ -652,7 +660,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto lightingShadowDepthNode = _sceneRenderGraph->AddNode("lightingShadowDepthNode");
 	auto ssaoNode = _sceneRenderGraph->AddNode("ssaoNode");
 	auto lightingNode = _sceneRenderGraph->AddNode("lightingNode");
-	auto copyDepthNode = _sceneRenderGraph->AddNode("copyDepthNode");
 	auto skyBoxNode = _sceneRenderGraph->AddNode("skyBoxNode");
 	auto rayTraceGeneralNode = _sceneRenderGraph->AddNode("rayTraceGeneralNode");
 	auto rayTraceReflectNode = _sceneRenderGraph->AddNode("rayTraceReflectNode");
@@ -712,13 +719,21 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPosition ,graphicsWriteLayout },
 			ResourceData{ gNormal ,graphicsWriteLayout },
 			ResourceData{ gAlbedoOpacity ,graphicsWriteLayout },
-			ResourceData{ gMetallicRoughnessMap ,graphicsWriteLayout },
-			ResourceData{ gMotionVectorMap ,graphicsWriteLayout },
+			ResourceData{ gMetallicRoughness ,graphicsWriteLayout },
+			ResourceData{ gMotionVector ,graphicsWriteLayout },
 			ResourceData{ gEmission ,graphicsWriteLayout },
-			ResourceData{ gDepthStencilMap ,graphicsWriteLayout }
+			ResourceData{ gPrevPosition ,transferWriteLayout },
+			ResourceData{ gPrevNormal ,transferWriteLayout },
+			ResourceData{ gPrevDepthStencil ,transferWriteLayout }
+		)
+		.Persistent(
+			ResourceData{ gPositionHistory ,transferReadLayout },
+			ResourceData{ gNormalHistory ,transferReadLayout },
+			ResourceData{ gDepthStencilHistory ,transferReadLayout }
 		)
 		.After(hzbNode, preCalculateNode)
-		.Before(lightingNode);
+		.Before(lightingNode)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
 	ssaoNode->SetRenderPass(std::move(ssaoPass))
 		.Input(ResourceData{ gPosition ,computeReadLayout }, ResourceData{ gNormal,computeReadLayout })
@@ -732,90 +747,102 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPosition, computeReadLayout },
 			ResourceData{ gNormal, computeReadLayout },
 			ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughnessMap, computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout },
 			ResourceData{ atlasShadowMap, computeReadLayout },
 			ResourceData{ ssaoOutPut, computeReadLayout },
-			ResourceData{ gEmission, computeReadLayout },
-			ResourceData{ gDepthStencilMap, computeReadLayout }
+			ResourceData{ gEmission, computeReadLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.After(lightingShadowDepthNode, ssaoNode)
-		.Before(opaqueFence);
-
-	copyDepthNode->SetRenderPass(std::move(copyDepthPass))
-		.Input(ResourceData{ gDepthStencilMap, transferReadLayout })
-		.External(ExternalResourceData{ Ext_RenderTargetDepthBuffer, transferWriteLayout })
-		.Before(skyBoxNode, opaqueFence);
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	skyBoxNode->SetRenderPass(std::move(skyBoxPass))
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
-		.After(copyDepthNode)
-		.Before(opaqueFence);
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
+		.After(geometryNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil ,computeReadLayout });
 
 	rayTraceGeneralNode->SetRenderPass(std::move(generalPass));
 
 	rayTraceReflectNode->SetRenderPass(std::move(reflectPass))
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughnessMap, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut,computeReadLayout },
-			ResourceData{ gMotionVectorMap, computeReadLayout }
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut,computeReadLayout },
+			ResourceData{ gMotionVector, computeReadLayout },
+			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp3"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp4"), computeWriteLayout }
 		)
-		.External(ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
 		.Output(ResourceData{ rayTraceReflect_Output, computeWriteLayout })
-		.Persistent(ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"), computeReadLayout })
-		.After(copyDepthNode, rayTraceGeneralNode)
-		.Before(opaqueFence);
+		.Persistent(
+			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"), computeReadLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyMomentTexture"), computeReadLayout }
+		)
+		.After(geometryNode, rayTraceGeneralNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	rayTraceGINode->SetRenderPass(std::move(giPass))
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
-			ResourceData{ gMetallicRoughnessMap, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
-			ResourceData{ gMotionVectorMap, computeReadLayout }
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
+			ResourceData{ gMotionVector, computeReadLayout },
+			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp3"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp4"), computeWriteLayout }
 		)
-		.External(ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
 		.Output(ResourceData{ rayTraceGI_Output, computeWriteLayout })
-		.Persistent(ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"), computeReadLayout })
-		.After(copyDepthNode, rayTraceGeneralNode)
-		.Before(opaqueFence);
+		.Persistent(
+			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"), computeReadLayout },
+			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyMomentTexture"), computeReadLayout }
+		)
+		.After(geometryNode, rayTraceGeneralNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	ssrNode->SetRenderPass(std::move(ssrPass))
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughnessMap, computeReadLayout }, ResourceData{ gMotionVectorMap, computeReadLayout }, ResourceData{ hzbMap, computeReadLayout }
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ gMotionVector, computeReadLayout }, ResourceData{ hzbMap, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp2"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp2"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp3"), computeWriteLayout }
 		)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout })
 		.Output(ResourceData{ ssr_Output, computeWriteLayout })
 		.Persistent(ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout })
-		.After(copyDepthNode, lightingNode)
-		.Before(opaqueFence);
+		.After(geometryNode, lightingNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	ssgiNode->SetRenderPass(std::move(ssgiPass))
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughnessMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout }, ResourceData{ gMotionVectorMap, computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout }, ResourceData{ gMotionVector, computeReadLayout },
 			ResourceData{ hzbMap, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp2"), computeWriteLayout }
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp2"), computeWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_temp3"), computeWriteLayout }
 		)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout })
 		.Output(ResourceData{ ssgi_Output, computeWriteLayout })
 		.Persistent(ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"), computeReadLayout })
-		.After(copyDepthNode, lightingNode)
-		.Before(opaqueFence);
+		.After(geometryNode, lightingNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	{
 
@@ -832,9 +859,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 	}
 
 	lightDrawNode->SetRenderPass(std::move(lightDrawPass))
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, graphicsWriteLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
 		.After(combinIndirectLightingNode)
-		.Before(opaqueFence);
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
+
 
 	//effectNode->SetRenderPass(std::move(effectPass));
 	//	.After(opaqueFence)
@@ -848,15 +877,17 @@ void VulkanRenderer::InitSceneRenderGraph()
 	atomsphereNode->SetRenderPass(std::move(atomspherePass))
 		.Input(ResourceData{ atlasShadowMap, computeReadLayout })
 		.After(opaqueFence, transprantFence)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atomsphereNode_TempColor"), {} })
-		.Before(postProcessFence);
+		.Before(postProcessFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	depthFogNode->SetRenderPass(std::move(depthFogPass))
 		.After(atomsphereNode, opaqueFence, transprantFence)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout }, ExternalResourceData{ Ext_RenderTargetDepthBuffer, computeReadLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "depthFogPass_TempColor"), {} })
-		.Before(postProcessFence);
+		.Before(postProcessFence)
+		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	autoExposureNode->SetRenderPass(std::move(autoExposurePass))
 		.After(postProcessFence)
@@ -893,8 +924,7 @@ void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 
 	{
 		std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
-			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer },
-			{ Ext_RenderTargetDepthBuffer_Name, data->renderTarget->sceneDepthBuffer }
+			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer }
 		};
 		auto guard = sync->MakeProgressGuard();
 		_sceneRenderGraph->Execute(state, sync, externalResources);

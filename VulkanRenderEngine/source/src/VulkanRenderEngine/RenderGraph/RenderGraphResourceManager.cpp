@@ -53,13 +53,13 @@ void ResourceManager::ReleaseTexture(const RenderGraphResource& res, const std::
 }
 
 
-void RenderGraph::ResourceManager::CleanupIdleResource()
+void ResourceManager::CleanupIdleResource()
 {
 	LockGuard guard(_texturesMutex);
 	_texPool.CleanupIdleTextures();
 }
 
-RenderGraph::ExternalResourceManager::ExternalResourceManager(const std::unordered_map<ResourceName, std::shared_ptr<Texture2D>>& textures)
+ExternalResourceManager::ExternalResourceManager(const std::unordered_map<ResourceName, std::shared_ptr<Texture2D>>& textures)
 	:_externalTextures(textures)
 {}
 
@@ -84,4 +84,13 @@ std::shared_ptr<Texture2D> ExternalResourceManager::GetExternalTexture(const Res
 	if (it == _externalTextures.end())
 		return nullptr;
 	return it->second;
+}
+
+void FrameLocalResourceRecord::AddTexture(const RenderGraphResource& name) {
+	LockGuard gaurd(_texturesMutex);
+	_textures.insert(name); 
+}
+
+const std::unordered_set<RenderGraphResource>& FrameLocalResourceRecord::GetRes() const {
+	return _textures; 
 }
