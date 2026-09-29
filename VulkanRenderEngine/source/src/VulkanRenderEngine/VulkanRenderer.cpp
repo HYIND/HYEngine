@@ -1242,21 +1242,11 @@ void VulkanRenderer::Stop()
 
 void VulkanRenderer::ExecuteLoop()
 {
+	SetThreadDescription(GetCurrentThread(), L"VulkanRenderer::ExecuteLoop");
+
 	while (!_stop || !_runningFrames.empty())
 	{
-		//auto time = Tool::GetTimestampSecond();
-		//if (time - _lastCleanupTimeAccumulator > _CleanupThresold)
-		//{
-		//	if (_lastCleanupTimeAccumulator != 0)
-		//		_resManager.CleanupIdleResource();
-		//	_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
-		//}
-
-
-		//if (_needsCompile)
-		//{
-		//	Compile();
-		//}
+		_sceneRenderGraph->CleanGraphIdleResource();
 
 		bool didWork = false;
 
