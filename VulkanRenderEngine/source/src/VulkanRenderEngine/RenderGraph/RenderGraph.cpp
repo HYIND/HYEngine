@@ -6,7 +6,7 @@ using namespace RenderGraph;
 
 Graph::PassExecuteContext::PassExecuteContext() : dependency(0) {}
 
-RenderGraph::Graph::PassExecuteContext::PassExecuteContext(PassExecuteContext&& other) noexcept
+Graph::PassExecuteContext::PassExecuteContext(PassExecuteContext&& other) noexcept
 	: node(other.node)
 	, registry(std::move(other.registry))
 	, enable(other.enable)
@@ -15,7 +15,8 @@ RenderGraph::Graph::PassExecuteContext::PassExecuteContext(PassExecuteContext&& 
 {}
 
 Graph::Graph(const std::string& name)
-	:_name(name)
+	:_name(name),
+	_lastCleanupTimeAccumulator(0)
 {
 	_frameParallelPool.start();
 	_executeParallelPool.start();
@@ -458,8 +459,23 @@ void Graph::SetPassEnabled(const std::string& name, bool enabled) {
 	}
 }
 
-void Graph::SetRenderTargetFBO(std::shared_ptr<VKWrapper::VKFrameBuffer> fbo)
+void Graph::CleanGraphIdleResource()
 {
-	_renderTargetFBO = fbo;
+	auto time = Tool::GetTimestampSecond();
+	if (time - _lastCleanupTimeAccumulator <= _CleanupThresold)
+		return;
+
+	if (_lastCleanupTimeAccumulator != 0)
+		_resManager.CleanupIdleResource();
+	_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
 }
 
+void Graph::FilghtSync::WaitForNextProgress() {
+	if (preFrameTimeLine)
+		preFrameTimeLine->Wait(curProgress + 1);
+	curProgress++;
+}
+
+void Graph::FilghtSync::SignalDoneProgress() {
+	curframeTimeLine->Signal(curProgress);
+}

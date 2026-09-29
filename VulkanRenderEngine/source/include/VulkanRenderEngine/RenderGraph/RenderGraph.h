@@ -19,14 +19,8 @@ namespace RenderGraph
 			std::shared_ptr<VKWrapper::VKTimelineSemaphore> curframeTimeLine;
 			uint32_t curProgress = 0;
 
-			void WaitForNextProgress() {
-				if (preFrameTimeLine)
-					preFrameTimeLine->Wait(curProgress + 1);
-				curProgress++;
-			}
-			void SignalDoneProgress() {
-				curframeTimeLine->Signal(curProgress);
-			}
+			void WaitForNextProgress();
+			void SignalDoneProgress();
 			//void WaitUntil(uint32_t targetProgress) { preFrameTimeLine->Wait(targetProgress); }
 
 			struct FilghtSyncProgressGuard
@@ -62,10 +56,8 @@ namespace RenderGraph
 		PassNode* GetPass(const std::string& name) const;
 		void SetPassEnabled(const std::string& name, bool enabled);// 配置
 
-		void SetRenderTargetFBO(std::shared_ptr<VKWrapper::VKFrameBuffer> fbo);
+		void CleanGraphIdleResource();
 
-		void Run();
-		void ExecuteLoop();
 
 	private:
 
@@ -128,8 +120,6 @@ namespace RenderGraph
 
 		bool _needsCompile = true;
 		int _compiledVersion = 0;
-
-		std::shared_ptr<VKWrapper::VKFrameBuffer> _renderTargetFBO;
 
 		ThreadPool _executeParallelPool;
 		ThreadPool _frameParallelPool;
