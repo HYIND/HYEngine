@@ -8,10 +8,10 @@
 #include "RenderPassBase.h"
 
 
-class AtomspherePass :public RenderPassBase
+class AtmospherePass :public RenderPassBase
 {
 private:
-	struct alignas(16) AtomsphereParams
+	struct alignas(16) AtmosphereParams
 	{
 		alignas(16) glm::vec3 DirLightColor;
 		alignas(16) glm::vec3 DirLightDir;
@@ -27,8 +27,8 @@ private:
 	};
 
 public:
-	AtomspherePass(const std::string& computeShaderPath, const std::string& transmittanceLutShaderPath, const std::string& skyViewLutLutShaderPath);
-	virtual ~AtomspherePass() = default;
+	AtmospherePass(const std::string& computeShaderPath, const std::string& transmittanceLutShaderPath, const std::string& skyViewLutLutShaderPath);
+	virtual ~AtmospherePass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
@@ -46,5 +46,5 @@ private:
 	std::shared_ptr<Texture2D> _transmittanceLut;
 	std::shared_ptr<Texture2D> _skyViewLut;
 
-	std::shared_ptr<AtomsphereParams> _lastParams;
+	std::shared_ptr<AtmosphereParams> _lastParams;
 };
