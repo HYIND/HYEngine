@@ -336,7 +336,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtomspherePass.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousBilateralFilter.h">
@@ -566,7 +566,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtomspherePass.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousBilateralFilter.cpp">

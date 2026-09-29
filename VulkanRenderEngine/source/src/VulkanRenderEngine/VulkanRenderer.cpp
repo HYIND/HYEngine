@@ -22,7 +22,7 @@
 #include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
-#include "VulkanRenderEngine/RenderPass/AtomspherePass.h"
+#include "VulkanRenderEngine/RenderPass/AtmospherePass.h"
 
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
@@ -613,7 +613,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto atomspherePass = std::make_unique<AtomspherePass>("shader/Atomsphere/Atomsphere.comp", "shader/Atomsphere/TransmittanceLut.comp", "shader/Atomsphere/SkyViewLut.comp");
+	auto atmospherePass = std::make_unique<AtmospherePass>("shader/Atmosphere/Atmosphere.comp", "shader/Atmosphere/TransmittanceLut.comp", "shader/Atmosphere/SkyViewLut.comp");
 
 	auto depthFogPass = std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp");
 
@@ -678,7 +678,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	// 后处理
 	auto depthFogNode = _sceneRenderGraph->AddNode("depthFogNode");
-	auto atomsphereNode = _sceneRenderGraph->AddNode("atomsphereNode");
+	auto atmosphereNode = _sceneRenderGraph->AddNode("atmosphereNode");
 	auto postProcessFence = _sceneRenderGraph->AddFence("postProcessFence");
 	postProcessFence->After(transprantFence);
 
@@ -888,16 +888,16 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.After(opaqueFence, effectPass)
 	//	.Before(transprantFence);
 
-	atomsphereNode->SetRenderPass(std::move(atomspherePass))
+	atmosphereNode->SetRenderPass(std::move(atmospherePass))
 		.Input(ResourceData{ atlasShadowMap, computeReadLayout })
 		.After(opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atomsphereNode_TempColor"), {} })
+		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atmosphereNode_TempColor"), {} })
 		.Before(postProcessFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
 	depthFogNode->SetRenderPass(std::move(depthFogPass))
-		.After(atomsphereNode, opaqueFence, transprantFence)
+		.After(atmosphereNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "depthFogPass_TempColor"), {} })
 		.Before(postProcessFence)

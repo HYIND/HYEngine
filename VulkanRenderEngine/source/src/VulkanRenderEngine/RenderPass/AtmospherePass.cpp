@@ -1,11 +1,11 @@
 ﻿#include "vkstdafx.h"
-#include "VulkanRenderEngine/RenderPass/AtomspherePass.h"
+#include "VulkanRenderEngine/RenderPass/AtmospherePass.h"
 
 constexpr uint32_t work_size_x = 16;
 constexpr uint32_t work_size_y = 16;
 
 
-AtomspherePass::AtomspherePass(
+AtmospherePass::AtmospherePass(
 	const std::string& computeShaderPath,
 	const std::string& transmittanceLutShaderPath,
 	const std::string& skyViewLutLutShaderPath
@@ -77,40 +77,40 @@ AtomspherePass::AtomspherePass(
 
 }
 
-bool AtomspherePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+bool AtmospherePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return state.option.flags.atomsphereOn && !state.lights.dirLightInfos.empty();
+	return state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
 }
 
-void AtomspherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+void AtmospherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	if (!ShouldExecute(registry, state))
 		return;
 
 	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
-	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(AtomsphereParams));
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(AtmosphereParams));
 
 	auto& dirLight = state.lights.dirLightInfos[0]->light;
 
-	AtomsphereParams params
+	AtmosphereParams params
 	{
 		.DirLightColor = dirLight->getColor() * dirLight->getIntensity(),
 		.DirLightDir = dirLight->getDirection(),
-		.PlanetRadius = state.option.atomsphereParams.PlanetRadius,
-		.AtmosphereHeight = state.option.atomsphereParams.AtmosphereHeight,
-		.RayleighScatteringScalarHeight = state.option.atomsphereParams.RayleighScatteringScalarHeight,
-		.MieScatteringScalarHeight = state.option.atomsphereParams.MieScatteringScalarHeight,
-		.MieAnisotropy = state.option.atomsphereParams.MieAnisotropy,
-		.OzoneLevelCenterHeight = state.option.atomsphereParams.OzoneLevelCenterHeight,
-		.OzoneLevelWidth = state.option.atomsphereParams.OzoneLevelWidth,
-		.ScatterPathSampleCount = state.option.atomsphereParams.ScatterPathSampleCount,
-		.TransmittanceSampleCount = state.option.atomsphereParams.TransmittanceSampleCount
+		.PlanetRadius = state.option.atmosphereParams.PlanetRadius,
+		.AtmosphereHeight = state.option.atmosphereParams.AtmosphereHeight,
+		.RayleighScatteringScalarHeight = state.option.atmosphereParams.RayleighScatteringScalarHeight,
+		.MieScatteringScalarHeight = state.option.atmosphereParams.MieScatteringScalarHeight,
+		.MieAnisotropy = state.option.atmosphereParams.MieAnisotropy,
+		.OzoneLevelCenterHeight = state.option.atmosphereParams.OzoneLevelCenterHeight,
+		.OzoneLevelWidth = state.option.atmosphereParams.OzoneLevelWidth,
+		.ScatterPathSampleCount = state.option.atmosphereParams.ScatterPathSampleCount,
+		.TransmittanceSampleCount = state.option.atmosphereParams.TransmittanceSampleCount
 	};
 
-	paramsUBO->WriteData(&params, sizeof(AtomsphereParams));
+	paramsUBO->WriteData(&params, sizeof(AtmosphereParams));
 	binding.SetUniformBlock(paramsUBO, 0);
 
-	static auto shouldUpdateTransmittanceLut = [](AtomsphereParams& params1, AtomsphereParams& params2) ->bool {
+	static auto shouldUpdateTransmittanceLut = [](AtmosphereParams& params1, AtmosphereParams& params2) ->bool {
 		return params1.PlanetRadius != params2.PlanetRadius
 			|| params1.AtmosphereHeight != params2.AtmosphereHeight
 			|| params1.RayleighScatteringScalarHeight != params2.RayleighScatteringScalarHeight
@@ -123,7 +123,7 @@ void AtomspherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 	if (!_lastParams || shouldUpdateTransmittanceLut(params, *_lastParams))
 	{
 		if (!_lastParams)
-			_lastParams = std::make_shared<AtomsphereParams>();
+			_lastParams = std::make_shared<AtmosphereParams>();
 		*_lastParams = params;
 		CaulateTransmittanceLut(binding);
 	}
@@ -131,7 +131,7 @@ void AtomspherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 	CaulateSkyViewLut(binding, state);
 }
 
-void AtomspherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+void AtmospherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
 	auto sceneColorBuffer = ctx.GetExternal(0);
 	auto sceneDepthBuffer = ctx.GetFrameLocal(0);
@@ -180,7 +180,7 @@ void AtomspherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 	cmd->SubmitToQueue();
 }
 
-void AtomspherePass::CaulateTransmittanceLut(ComputeBindingRecord& binding)
+void AtmospherePass::CaulateTransmittanceLut(ComputeBindingRecord& binding)
 {
 	if (!_transmittanceLut || _transmittanceLut->IsEmpty())
 		return;
@@ -195,7 +195,7 @@ void AtomspherePass::CaulateTransmittanceLut(ComputeBindingRecord& binding)
 	cmd->SubmitNowAndWait();
 }
 
-void AtomspherePass::CaulateSkyViewLut(ComputeBindingRecord& binding, RenderState& state)
+void AtmospherePass::CaulateSkyViewLut(ComputeBindingRecord& binding, RenderState& state)
 {
 	if (!_skyViewLut || _skyViewLut->IsEmpty())
 		return;
