@@ -220,23 +220,23 @@ void SetupDustLight(World& world)
 {
 	for (int i = 0; i < 1; i++)
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5f, true, 4, 3000, 3000);
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 4.f, true, 6, 2000, 2000);
 		auto& renderlight = entity.getComponent<RenderLight>();
 		renderlight.renderCube = true;
 	}
 
 	for (int i = 0; i < 1; i++)
 	{
-		Entity entity = LightFactory::CreateSpotLight(world, glm::vec3(-15, 5, 144), glm::vec3(0, -1, 0), 300.f, 45.f, 60.f);
+		Entity entity = LightFactory::CreateSpotLight(world, glm::vec3(-15, 5 + 100, 144), glm::vec3(0, -1, 0), 300.f, 45.f, 60.f);
 	}
 
 	static std::vector<glm::vec3> innerLightPos = {
-		{-45.7,-3.73,11.7},
-		{-63.2,-3.73,11.7},
-		{-80.5,-3.73,11.7},
-		{-97.6,-3.73,11.7},
-		{-35.2,-18.2,-6.2},
-		{-18.4,-18.2,-6.2}
+		{-45.7,-3.73 + 100,11.7},
+		{-63.2,-3.73 + 100,11.7},
+		{-80.5,-3.73 + 100,11.7},
+		{-97.6,-3.73 + 100,11.7},
+		{-35.2,-18.2 + 100,-6.2},
+		{-18.4,-18.2 + 100,-6.2}
 	};
 	for (auto& pos : innerLightPos)
 	{
@@ -265,7 +265,7 @@ void CreateTestDustScene(World& world)
 
 		{
 			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
-			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(-15, -7.6, 144));
+			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(-15, -7.6 + 100, 144));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(90.f);
 			cameracom.camera.SetNearPlane(0.1f);
@@ -291,8 +291,8 @@ void CreateTestDustScene(World& world)
 
 	if (auto model = ResFactory->GetModelRes(ResName::Keqing1))
 	{
-		Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-35, -7.6, 144), glm::identity<glm::quat>(), model);
-		//Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-79, -17, -92.5), glm::identity<glm::quat>(), model);
+		Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-35, -7.6 + 100, 144), glm::identity<glm::quat>(), model);
+		//Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-79, -17 + 100, -92.5), glm::identity<glm::quat>(), model);
 		if (auto* physics = character.tryGetComponent<Physics>())
 			physics->walkSpeed = 16.f;
 
@@ -323,7 +323,7 @@ void CreateTestDustScene(World& world)
 
 	if (auto model = ResFactory->GetModelRes(ResName::Keqing2))
 	{
-		Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-40, -7.6, 144), glm::identity<glm::quat>(), model);
+		Entity character = CharacterFactory::CreatePlayerCharacter(world, glm::vec3(-40, -7.6 + 100, 144), glm::identity<glm::quat>(), model);
 		if (auto* physics = character.tryGetComponent<Physics>())
 			physics->walkSpeed = 20.f;
 
@@ -353,7 +353,7 @@ void CreateTestDustScene(World& world)
 
 		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
-		trans.position = glm::vec3(23.5, -16.6, 29);
+		trans.position = glm::vec3(23.5, -16.6 + 100, 29);
 		glm::mat4 mat = glm::rotate(glm::mat4(1.0f), glm::radians(90.f), glm::vec3(0, 0, 1));
 		trans.rotation = glm::quat_cast(mat);
 
@@ -378,7 +378,7 @@ void CreateTestDustScene(World& world)
 		{
 			auto& material = model->getMeshInfos()[0].material;
 			material->SetAlbedo(glm::vec3(224.f / 255.f));
-			material->SetMetallic(0.9);
+			material->SetMetallic(0.95);
 			material->SetRoughness(0.05f);
 		}
 	}
@@ -388,7 +388,7 @@ void CreateTestDustScene(World& world)
 
 		Entity scene = world.createEntity();
 		auto& trans = scene.addComponent<Transform>();
-		trans.position = glm::vec3(0, 0.f, 0);
+		trans.position = glm::vec3(0, 0.f + 100, 0);
 		trans.rotation = glm::identity<glm::quat>();
 
 		auto& physics = scene.addComponent<Physics>();
@@ -413,7 +413,7 @@ void CreateTestDustScene(World& world)
 	if (auto model = ResFactory->GetModelRes(ResName::AK47))
 	{
 		Entity testAnimation = world.createEntity();
-		auto& trans = testAnimation.addComponent<Transform>(glm::vec3(-20, -7.6, 144), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(0.03));
+		auto& trans = testAnimation.addComponent<Transform>(glm::vec3(-20, -7.6 + 100, 144), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(0.03));
 		auto& renderModel = testAnimation.addComponent<RenderModel>(model->Clone(false, true, true));
 
 		auto& aniGroup = testAnimation.addComponent<SkeletonAnimatorGroup>();
