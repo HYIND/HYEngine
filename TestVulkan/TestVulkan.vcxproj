@@ -103,14 +103,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Editor.h" />
-    <ClInclude Include="Imguizmo\GraphEditor.h" />
-    <ClInclude Include="Imguizmo\ImCurveEdit.h" />
-    <ClInclude Include="Imguizmo\ImGradient.h" />
-    <ClInclude Include="Imguizmo\ImGuizmo.h" />
-    <ClInclude Include="Imguizmo\ImLightRig.h" />
-    <ClInclude Include="Imguizmo\ImSequencer.h" />
-    <ClInclude Include="Imguizmo\ImVectorEditor.h" />
-    <ClInclude Include="Imguizmo\ImZoomSlider.h" />
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h" />
     <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h" />
     <ClInclude Include="Imgui\imconfig.h" />
@@ -122,12 +114,6 @@
     <ClInclude Include="source\include\stdafx.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Imguizmo\GraphEditor.cpp" />
-    <ClCompile Include="Imguizmo\ImCurveEdit.cpp" />
-    <ClCompile Include="Imguizmo\ImGradient.cpp" />
-    <ClCompile Include="Imguizmo\ImGuizmo.cpp" />
-    <ClCompile Include="Imguizmo\ImSequencer.cpp" />
-    <ClCompile Include="Imguizmo\ImVectorEditor.cpp" />
     <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp" />
