@@ -638,7 +638,6 @@ bool Texture2D::CreateImageView()
 
 bool Texture2D::CreateSampler()
 {
-	m_config.anisotropy = false;
 	LockGuard guard(_mutex);
 
 	vk::SamplerCreateInfo samplerInfo = {};
