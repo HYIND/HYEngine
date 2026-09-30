@@ -111,7 +111,8 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 	int winX, winY;
 	glfwGetWindowPos(window, &winX, &winY);
 
-	ImVec2 mousePos((float)mouseX + winX, (float)mouseY + winY);
+	//ImVec2 mousePos((float)mouseX + winX, (float)mouseY + winY);
+	ImVec2 mousePos((float)mouseX, (float)mouseY);
 
 	if (count <= 0)
 		return;
