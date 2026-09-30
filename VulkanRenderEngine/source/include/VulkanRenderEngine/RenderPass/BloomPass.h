@@ -17,5 +17,6 @@ private:
 	uint32_t _height;
 
 	ComputePipeline _bloomDownSampleShader;
+	ComputePipeline _bloomDownSampleShader_FirstSampler;
 	ComputePipeline _bloomUpSampleShader;
 };

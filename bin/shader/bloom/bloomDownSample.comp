@@ -21,6 +21,13 @@ layout (binding = 0) uniform Param{
 layout (binding = 1, rgba16f) uniform image2D outPutImage;
 layout (binding = 2) uniform sampler2D inputImage;
 
+#ifdef FirstSampler
+float GetLuminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+#endif
+
 void main()
 {
     ivec2 outPutSize = imageSize(outPutImage);
@@ -42,12 +49,20 @@ void main()
             vec2 uv = center + vec2(x, y) * inputStride;
             uv = clamp(uv, vec2(0), vec2(1));
 
+            vec3 color = texture(inputImage, uv).rgb;
+
             float wx = weight[x + kernelRadius];
             float wy = weight[y + kernelRadius];
 
             float w = wx * wy;
 
-            result += texture(inputImage, uv).rgb * w;
+#ifdef FirstSampler
+            float lum = GetLuminance(color);
+            float SuppressHighlightsWeight = 1.0/(1.0 + lum);
+            w *= SuppressHighlightsWeight;
+#endif
+
+            result += color * w;
             totalWeight += w;
         }
     }
