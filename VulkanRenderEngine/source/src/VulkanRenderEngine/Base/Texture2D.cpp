@@ -27,7 +27,7 @@ static float GetAnisotropicTextureFiltering()
 	return s_value.value();
 }
 
-void Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+void Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight, vk::Filter filterMode)
 {
 	vk::Image srcImage = src._image->GetHandle();
 	vk::ImageLayout srcLayout = src._image->GetCurrentLayout(0);
@@ -52,18 +52,18 @@ void Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>
 	blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(0).setBaseArrayLayer(0).setLayerCount(1));
 	blitRegion.setDstOffsets(dstOffsets);
 
-	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eLinear);
+	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, filterMode);
 }
 
-void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight)
+void Texture2D::BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight, vk::Filter filterMode)
 {
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	BlitImageAsync(cmd, src, dstImage, dstWidth, dstHeight);
+	BlitImageAsync(cmd, src, dstImage, dstWidth, dstHeight, filterMode);
 	if (cmd->IsRecording())
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 }
 
-bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest)
+bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, vk::Filter filterMode)
 {
 	vk::Image srcImage = src._image->GetHandle();
 	vk::Image dstImage = dest._image->GetHandle();
@@ -99,28 +99,28 @@ bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>
 	blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(0).setBaseArrayLayer(0).setLayerCount(1));
 	blitRegion.setDstOffsets(dstOffsets);
 
-	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eNearest);
+	cmd->blitImage(srcImage, vk::ImageLayout::eTransferSrcOptimal, dstImage, vk::ImageLayout::eTransferDstOptimal, blitRegion, filterMode);
 	return true;
 }
 
-bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
+bool Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, vk::Filter filterMode) {
 	if (!src || !dest)
 		return false;
-	return BlitImageAsync(cmd, *src, *dest);
+	return BlitImageAsync(cmd, *src, *dest, filterMode);
 }
 
-bool Texture2D::BlitImage(Texture2D& src, Texture2D& dest) {
+bool Texture2D::BlitImage(Texture2D& src, Texture2D& dest, vk::Filter filterMode) {
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	bool result = BlitImageAsync(cmd, src, dest);
+	bool result = BlitImageAsync(cmd, src, dest, filterMode);
 	if (cmd->IsRecording())
 		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 	return result;
 }
 
-bool Texture2D::BlitImage(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest) {
+bool Texture2D::BlitImage(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, vk::Filter filterMode) {
 	if (!src || !dest)
 		return false;
-	return BlitImage(*src, *dest);
+	return BlitImage(*src, *dest, filterMode);
 }
 
 bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)

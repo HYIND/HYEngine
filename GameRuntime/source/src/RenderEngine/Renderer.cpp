@@ -452,7 +452,7 @@ void Render::Renderer::renderVulkanFrame()
 
 		if (!tex || !_sharedTexture->vulkanTexture) return;
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		Texture2D::BlitImageAsync(cmd, tex, _sharedTexture->vulkanTexture);
+		Texture2D::BlitImageAsync(cmd, tex, _sharedTexture->vulkanTexture, vk::Filter::eNearest);
 		//_sharedTexture->vulkanTexture->TransitionLayout(cmd, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits::eTransfer);
 		if (cmd->IsRecording())
 			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

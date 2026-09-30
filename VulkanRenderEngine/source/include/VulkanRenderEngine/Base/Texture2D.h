@@ -53,13 +53,13 @@ class Texture2D
 {
 
 public:
-	static void BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight);
-	static void BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight);
+	static void BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight, vk::Filter filterMode);
+	static void BlitImage(Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight, vk::Filter filterMode);
 
-	static bool BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest);
-	static bool BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest);
-	static bool BlitImage(Texture2D& src, Texture2D& dest);
-	static bool BlitImage(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest);
+	static bool BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, vk::Filter filterMode);
+	static bool BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, vk::Filter filterMode);
+	static bool BlitImage(Texture2D& src, Texture2D& dest, vk::Filter filterMode);
+	static bool BlitImage(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, vk::Filter filterMode);
 
 	static bool CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 	static bool CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
