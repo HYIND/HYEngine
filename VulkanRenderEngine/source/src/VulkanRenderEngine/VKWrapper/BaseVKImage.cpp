@@ -230,7 +230,7 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 		blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(outputLevel).setBaseArrayLayer(0).setLayerCount(1));
 		blitRegion.setDstOffsets(dstOffsets);
 
-		cmd->blitImage(m_image, vk::ImageLayout::eTransferSrcOptimal, m_image, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eNearest);
+		cmd->blitImage(m_image, vk::ImageLayout::eTransferSrcOptimal, m_image, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eLinear);
 
 		//if (level < m_mipLevels - 1)
 		//	TransitionLayout(cmd, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
