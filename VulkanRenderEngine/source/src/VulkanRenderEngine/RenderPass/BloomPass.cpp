@@ -4,100 +4,151 @@
 constexpr uint32_t work_size_x = 16;
 constexpr uint32_t work_size_y = 16;
 
-struct alignas(16) Params
-{
-	std::array<float, 5> weight = { 0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162 };
-	uint32_t horizontal;
+std::array<float, 5> s_weight = {
+	1.f / 16.f,
+	4.f / 16.f,
+	6.f / 16.f,
+	4.f / 16.f,
+	1.f / 16.f
 };
 
-static Params params;
+//const std::array<float, 9> s_weight = {
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f,
+//	1.f
+//};
 
-BloomPass::BloomPass(const std::string& computeShaderPath, uint32_t width, uint32_t height)
-	:_width(width), _height(height)
+//const std::array<float, 9> s_weight = {
+//	0.02763055f,
+//	0.06628225f,
+//	0.12383154f,
+//	0.18017382f,
+//	0.20416369f,
+//	0.18017382f,
+//	0.12383154f,
+//	0.06628225f,
+//	0.02763055f
+//};
+
+struct alignas(16) Weight
 {
-	ComputePipelineConfig config;
-	config.AddDefineMacro("work_size_x", work_size_x);
-	config.AddDefineMacro("work_size_y", work_size_y);
-	config.computePath = computeShaderPath;
+	float value;
+	float padding[3];
+};
 
-	config
-		.AddStorageImage(0)
-		.AddUnifromTexture(1)
-		.AddPushConstant(sizeof(Params));
+struct alignas(16) Params
+{
+	std::array<Weight, 5> weight;
+	Params(const std::array<float, 5>& weights = s_weight)
+	{
+		for (int i = 0; i < weight.size(); i++)
+			weight[i].value = weights[i];
+	}
+};
 
-	if (config.Validate())
-		_bloomBlurShader.Create(config);
+BloomPass::BloomPass(
+	const std::string& bloomDownSampleShaderPath,
+	const std::string& bloomUpSampleShaderPath
+)
+{
 
-	init();
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", work_size_x);
+		config.AddDefineMacro("work_size_y", work_size_y);
+		config.computePath = bloomDownSampleShaderPath;
+
+		config
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2);
+
+		if (config.Validate())
+			_bloomDownSampleShader.Create(config);
+	}
+
+	{
+
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", work_size_x);
+		config.AddDefineMacro("work_size_y", work_size_y);
+		config.computePath = bloomUpSampleShaderPath;
+
+		config
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2);
+
+		if (config.Validate())
+			_bloomUpSampleShader.Create(config);
+	}
+
 }
 
-void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer)
+void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<std::shared_ptr<Texture2D>>& bloomMipBuffers)
 {
 	if (!brightColorBuffer || brightColorBuffer->IsEmpty())
 		return;
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	bool horizontal = true;
+	if (!Texture2D::CopyTextureAsync(cmd, brightColorBuffer, bloomMipBuffers[0]))
+		return;
+
+	Params params;
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
+	paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
+	paramsUBO->Barrier(cmd, BufferUsage::UniformRead);
+
+	ComputeBindingRecord binding;
+	binding.SetUniformBlock(paramsUBO, 0);
+
 	bool first_iteration = true;
 
-	uint32_t count = 10;
-	std::shared_ptr<Texture2D> DrawImage = _pingpongColorBuffers[0];
-	std::shared_ptr<Texture2D> SampleImage = brightColorBuffer;
-	for (uint32_t i = 0; i < count; i++)
-	{
-		params.horizontal = horizontal;
+	auto size = bloomMipBuffers[0]->GetSize();
+	for (uint32_t level = 1; level < bloomMipBuffers.size(); level++) {
 
-		DrawImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-		SampleImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+		uint32_t prevLevel = level - 1;
+		uint32_t curLevel = level;
 
-		ComputeBindingRecord bloomBlurBinding;
-		bloomBlurBinding.SetStorageImage(DrawImage, vk::ImageAspectFlagBits::eColor, 0);
-		bloomBlurBinding.SetUniformTexture(SampleImage, vk::ImageAspectFlagBits::eColor, 1);
-		_bloomBlurShader.SetPushConstants(cmd, &params, sizeof(params));
+		auto& prevImage = bloomMipBuffers[prevLevel];
+		auto& curImage = bloomMipBuffers[curLevel];
 
-		_bloomBlurShader.Bind(cmd, bloomBlurBinding);
-		cmd->dispatch((_width + work_size_x - 1) / work_size_x, (_height + work_size_y - 1) / work_size_y, 1);
+		auto prevSize = prevImage->GetSize();
+		auto curSize = curImage->GetSize();
 
-		_outPutTarget = DrawImage;
+		binding.SetStorageImage(curImage, vk::ImageAspectFlagBits::eColor, 1);
+		binding.SetUniformTexture(prevImage, vk::ImageAspectFlagBits::eColor, 2);
+		_bloomDownSampleShader.Bind(cmd, binding);
+		cmd->dispatch((curSize.x + work_size_x - 1) / work_size_x, (curSize.y + work_size_y - 1) / work_size_y, 1);
 
-		horizontal = !horizontal;
-		if (first_iteration)
-		{
-			first_iteration = false;
-			DrawImage = _pingpongColorBuffers[1];
-			SampleImage = _pingpongColorBuffers[0];
-		}
-		else
-			std::swap(DrawImage, SampleImage);
+		curImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	}
+
+	for (uint32_t level = bloomMipBuffers.size() - 1; level > 0; level--) {
+
+		uint32_t prevLevel = level;
+		uint32_t curLevel = level - 1;
+
+		auto& prevImage = bloomMipBuffers[prevLevel];
+		auto& curImage = bloomMipBuffers[curLevel];
+
+		auto prevSize = prevImage->GetSize();
+		auto curSize = curImage->GetSize();
+
+		binding.SetStorageImage(curImage, vk::ImageAspectFlagBits::eColor, 1);
+		binding.SetUniformTexture(prevImage, vk::ImageAspectFlagBits::eColor, 2);
+		_bloomUpSampleShader.Bind(cmd, binding);
+		cmd->dispatch((curSize.x + work_size_x - 1) / work_size_x, (curSize.y + work_size_y - 1) / work_size_y, 1);
+
+		curImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
 
 	cmd->SubmitNowAndWait();
-}
-
-std::shared_ptr<Texture2D> BloomPass::GetBloomBlurMap()
-{
-	return _outPutTarget;
-}
-
-void BloomPass::Resize(uint32_t newWidth, uint32_t newHeight)
-{
-	if (_width == newWidth && _height == newHeight)
-		return;
-
-	_width = newWidth;
-	_height = newHeight;
-	init();
-}
-
-void BloomPass::init()
-{
-	for (auto& tex : _pingpongColorBuffers)
-	{
-		if (!tex)
-			tex = std::make_shared<Texture2D>(_width, _height, vk::Format::eR16G16B16A16Sfloat);
-		else
-			tex->Resize(_width, _height);
-	}
-	_outPutTarget = _pingpongColorBuffers[0];
 }

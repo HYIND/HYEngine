@@ -73,7 +73,7 @@ void main()
 	vec4 brightresult;
 	vec3 alphaMul_Color = result.rgb * result.a;
 	float brightness = dot(alphaMul_Color, vec3(0.2126, 0.7152, 0.0722));
-    if(brightness > 1.0)
+    if(brightness > 1.4)
         brightresult = vec4(alphaMul_Color, result.a);
 	else
 		brightresult = vec4(0.0);

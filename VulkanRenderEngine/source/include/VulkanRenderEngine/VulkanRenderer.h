@@ -104,6 +104,7 @@ private:
 		std::shared_ptr<Texture2D> sceneColorBuffer;
 		std::shared_ptr<Texture2D> firstPersonColorBuffer;
 		std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
+		std::vector<std::shared_ptr<Texture2D>> bloomMipBuffers;
 		std::shared_ptr<Texture2D> finalColorBuffer;
 	};
 
