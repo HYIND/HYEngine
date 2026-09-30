@@ -71,6 +71,11 @@ BloomPass::BloomPass(
 
 		if (config.Validate())
 			_bloomDownSampleShader.Create(config);
+
+		config.AddDefineMacro("FirstSampler");
+
+		if (config.Validate())
+			_bloomDownSampleShader_FirstSampler.Create(config);
 	}
 
 	{
@@ -109,8 +114,6 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<
 	ComputeBindingRecord binding;
 	binding.SetUniformBlock(paramsUBO, 0);
 
-	bool first_iteration = true;
-
 	auto size = bloomMipBuffers[0]->GetSize();
 	for (uint32_t level = 1; level < bloomMipBuffers.size(); level++) {
 
@@ -125,7 +128,10 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<
 
 		binding.SetStorageImage(curImage, vk::ImageAspectFlagBits::eColor, 1);
 		binding.SetUniformTexture(prevImage, vk::ImageAspectFlagBits::eColor, 2);
-		_bloomDownSampleShader.Bind(cmd, binding);
+		if (level == 1)
+			_bloomDownSampleShader_FirstSampler.Bind(cmd, binding);
+		else
+			_bloomDownSampleShader.Bind(cmd, binding);
 		cmd->dispatch((curSize.x + work_size_x - 1) / work_size_x, (curSize.y + work_size_y - 1) / work_size_y, 1);
 
 		curImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);

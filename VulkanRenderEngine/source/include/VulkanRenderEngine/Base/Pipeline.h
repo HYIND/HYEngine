@@ -41,7 +41,7 @@ struct PipelineConfig {
 
 	template <StringConvertable T>
 	void AddDefineMacro(const std::string& name, const T& value) { AddDefineMacro(name, std::to_string(value)); }
-	void AddDefineMacro(const std::string& name, const std::string& value);
+	void AddDefineMacro(const std::string& name, const std::string& value = "");
 	void RemoveDefineMarco(const std::string& name);
 
 	// ---------- 资源布局 ----------
