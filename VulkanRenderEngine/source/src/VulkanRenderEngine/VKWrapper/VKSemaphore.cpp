@@ -131,6 +131,7 @@ bool VKWrapper::VKTimelineSemaphore::Signal(uint64_t signalValue)
 
 	vk::Result result = _device->GetHandle().signalSemaphore(signalInfo);
 	if (result != vk::Result::eSuccess) {
+		auto [value, res] = _device->GetHandle().getSemaphoreCounterValue(_handle);
 		std::cerr << std::format("[ VKTimelineSemaphore ] Error when Signal Semaphore! Error : {}\n", to_string(result));
 		return false;
 	}

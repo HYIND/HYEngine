@@ -289,7 +289,7 @@ void VulkanRenderer::Init_Internal()
 	//_firstPersonPass = std::make_unique<FirstPersonPass>("shader/FPS/firstperson.vs", "shader/FPS/firstperson.fs");
 
 	_combinPass = std::make_unique<CombinPass>("shader/postprocess/combin.comp");
-	_globalBloomPass = std::make_unique<BloomPass>("shader/postprocess/bloomblur.comp", scr_width, scr_height);
+	_globalBloomPass = std::make_unique<BloomPass>("shader/bloom/bloomDownSample.comp", "shader/bloom/bloomUpSample.comp");
 	_globalPostProcessPass = std::make_unique<GlobalPostProcessPass>("shader/postprocess/globalpostprocess.comp");
 
 	InitRenderTarget();
@@ -309,6 +309,10 @@ void VulkanRenderer::InitRenderTarget()
 		.gammaCorrection = false
 	};
 
+	glm::vec2 ratio = glm::vec2(scr_width, scr_height) / glm::vec2(16, 16);
+	uint32_t bloomLevel = floor(log2(std::max(ratio.x, ratio.y))) + 1;
+	bloomLevel = std::min(bloomLevel, 6u);
+
 	for (uint32_t i = 0; i < _maxFramesInFlight * 2; i++)
 	{
 		auto renderTarget = std::make_shared<RenderTargetData>();
@@ -319,6 +323,13 @@ void VulkanRenderer::InitRenderTarget()
 
 		renderTarget->combinColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
 		renderTarget->combinBrightColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR16G16B16A16Sfloat, config);
+
+		for (uint32_t level = 0; level < bloomLevel; level++)
+		{
+			uint32_t currW = std::max(1u, scr_width >> level);
+			uint32_t currH = std::max(1u, scr_height >> level);
+			renderTarget->bloomMipBuffers.push_back(std::make_shared<Texture2D>(currW, currH, vk::Format::eR16G16B16A16Sfloat, config));
+		}
 
 		renderTarget->finalColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR8G8B8A8Unorm, config);
 
@@ -569,7 +580,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto t_giPass = std::make_unique<RayTraceGIPass>(
 			"shader/RayTrace/RayTraceGI.comp",
 			"shader/RayTrace/Atrous-BilateralFilter.comp",
-			"shader/RayTrace/TemporalAccumulate.comp", 
+			"shader/RayTrace/TemporalAccumulate.comp",
 			"shader/General/imagescale.comp"
 		);
 
@@ -946,18 +957,19 @@ void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 
 	auto& renderTarget = data->renderTarget;
 	_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+	auto& option = state->option;
+	if (option.flags.bloomOn) _globalBloomPass->Draw(renderTarget->combinBrightColorBuffer, renderTarget->bloomMipBuffers);
+	_globalPostProcessPass->Draw(
+		renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
+		option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
+		pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
+	);
 
 	{
 		auto guard = sync->MakeProgressGuard();
-		auto& option = state->option;
-		if (option.flags.bloomOn) _globalBloomPass->Draw(renderTarget->combinBrightColorBuffer);
-		_globalPostProcessPass->Draw(
-			renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, _globalBloomPass->GetBloomBlurMap(),
-			option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
-			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
-		);
 		FinishRendering(state);
 	}
+
 }
 
 void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
