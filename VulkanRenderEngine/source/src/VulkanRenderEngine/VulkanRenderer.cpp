@@ -1002,7 +1002,7 @@ void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
 
 	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
 
-	Texture2D::BlitImageAsync(cmd, *renderTarget->finalColorBuffer, swapchainImage, scr_width, scr_height);
+	Texture2D::BlitImageAsync(cmd, *renderTarget->finalColorBuffer, swapchainImage, scr_width, scr_height, vk::Filter::eNearest);
 
 	vk::ImageMemoryBarrier presentBarrier;
 	presentBarrier
