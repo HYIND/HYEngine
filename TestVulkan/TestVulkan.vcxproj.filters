@@ -28,30 +28,6 @@
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
-    <ClInclude Include="Imguizmo\GraphEditor.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImCurveEdit.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImGradient.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImGuizmo.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImLightRig.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImSequencer.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImVectorEditor.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
-    <ClInclude Include="Imguizmo\ImZoomSlider.h">
-      <Filter>Imguizmo</Filter>
-    </ClInclude>
     <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
@@ -71,9 +47,6 @@
     </Filter>
     <Filter Include="Imgui\backend">
       <UniqueIdentifier>{6b7b6e00-b2e8-40d1-b438-566cbc760d10}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Imguizmo">
-      <UniqueIdentifier>{bbcc269d-2021-4071-83cf-c46bdbb7989e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -97,24 +70,6 @@
     </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\GraphEditor.cpp">
-      <Filter>Imguizmo</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\ImCurveEdit.cpp">
-      <Filter>Imguizmo</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\ImGradient.cpp">
-      <Filter>Imguizmo</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\ImGuizmo.cpp">
-      <Filter>Imguizmo</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\ImSequencer.cpp">
-      <Filter>Imguizmo</Filter>
-    </ClCompile>
-    <ClCompile Include="Imguizmo\ImVectorEditor.cpp">
-      <Filter>Imguizmo</Filter>
     </ClCompile>
     <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp">
       <Filter>Imgui\backend</Filter>

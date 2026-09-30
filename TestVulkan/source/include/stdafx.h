@@ -88,11 +88,3 @@
 
 #include "imgui_internal.h"
 
-// ImGuizmo
-#include "ImGuizmo.h"
-#include "ImSequencer.h"
-#include "ImZoomSlider.h"
-#include "ImCurveEdit.h"
-#include "ImVectorEditor.h"
-#include "GraphEditor.h"
-#include "ImLightRig.h"
