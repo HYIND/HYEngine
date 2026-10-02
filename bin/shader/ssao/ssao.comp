@@ -17,9 +17,12 @@ layout(binding = 1) uniform sampler2D gPosition;
 layout(binding = 2) uniform sampler2D gNormal;   
 layout(binding = 3) uniform sampler2D texNoise;  
 
-layout(binding = 4) uniform SSAOParams {
+layout(binding = 4) uniform KernelParams {
     vec4 samples[64];
     uint kernelSize;
+};
+
+layout(binding = 5) uniform Params {
     float radius;
     float bias;
 };

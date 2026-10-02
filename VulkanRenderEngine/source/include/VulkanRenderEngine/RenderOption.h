@@ -96,6 +96,11 @@ struct RenderOption
 		uint32_t TransmittanceSampleCount = 100;
 	} atmosphereParams;
 
+	struct SSAOParams {
+		float radius = 2.0;
+		float bias = 0.01;
+	} ssaoParams;
+
 	struct PostProcessParams {
 		float EV100 = 0.0f;
 		float gamma = 2.2f;

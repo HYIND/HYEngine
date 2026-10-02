@@ -14,6 +14,7 @@ public:
 		const std::string& ssaoBlurComputeShaderPath
 	);
 	virtual ~SSAOPass();
+	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);;
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
@@ -21,5 +22,5 @@ private:
 	ComputePipeline _ssaoBlurShader;
 
 	std::shared_ptr<Texture2D> _noiseTexture;
-	std::shared_ptr<UniformBlock> _ssaoParams;
+	std::shared_ptr<UniformBlock> _kernelParams;
 };
