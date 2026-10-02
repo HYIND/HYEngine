@@ -1,9 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/BloomPass.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
-
 std::array<float, 5> s_weight = {
 	1.f / 16.f,
 	4.f / 16.f,
@@ -60,8 +57,8 @@ BloomPass::BloomPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = bloomDownSampleShaderPath;
 
 		config
@@ -81,8 +78,8 @@ BloomPass::BloomPass(
 	{
 
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = bloomUpSampleShaderPath;
 
 		config
@@ -132,7 +129,7 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<
 			_bloomDownSampleShader_FirstSampler.Bind(cmd, binding);
 		else
 			_bloomDownSampleShader.Bind(cmd, binding);
-		cmd->dispatch((curSize.x + work_size_x - 1) / work_size_x, (curSize.y + work_size_y - 1) / work_size_y, 1);
+		cmd->dispatch((curSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (curSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 		curImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
@@ -151,7 +148,7 @@ void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<
 		binding.SetStorageImage(curImage, vk::ImageAspectFlagBits::eColor, 1);
 		binding.SetUniformTexture(prevImage, vk::ImageAspectFlagBits::eColor, 2);
 		_bloomUpSampleShader.Bind(cmd, binding);
-		cmd->dispatch((curSize.x + work_size_x - 1) / work_size_x, (curSize.y + work_size_y - 1) / work_size_y, 1);
+		cmd->dispatch((curSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (curSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 		curImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}

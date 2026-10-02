@@ -245,7 +245,7 @@ public:
 	{
 		std::shared_ptr<TextureCube> texture;
 		vk::ImageAspectFlags aspect;
-		TextureCubeDescBindEntry descEntry;
+		TextureDescBindEntry descEntry;
 	};
 
 	struct UniformTextureArrayEntry
@@ -268,6 +268,22 @@ public:
 		std::vector<StorageImageEntry> entrys;
 	};
 
+	struct StorageImage2DArrayEntry
+	{
+		std::shared_ptr<Texture2DArray> image2DArray;
+		vk::ImageAspectFlags aspect;
+		TextureDescBindEntry descEntry;
+		uint32_t baseLevel = 0;
+		uint32_t levelCount = UINT32_MAX;
+	};
+
+	struct StorageImageCubeEntry
+	{
+		std::shared_ptr<TextureCube> imageCube;
+		vk::ImageAspectFlags aspect;
+		TextureDescBindEntry descEntry;
+	};
+
 	struct AccelerationStructureEntry
 	{
 		vk::AccelerationStructureKHR handle;
@@ -275,12 +291,17 @@ public:
 
 	struct BindingEntry
 	{
-		enum class DataType { UniformBlock = 0, StorageBlock, UniformTex, UniformTexCube, UniformTexArray, StorageImage, StorageImageArray, AccelerationStructure };
+		enum class DataType {
+			UniformBlock = 0, StorageBlock,
+			UniformTex, UniformTexCube, UniformTexArray,
+			StorageImage, StorageImageArray, StorageImage2DArray, StorageImageCube,
+			AccelerationStructure
+		};
 		DataType type;
 		std::variant<
 			UniformBlockEntry, StorageBlockEntry,
 			UniformTextureEntry, UniformTextureCubeEntry, UniformTextureArrayEntry,
-			StorageImageEntry, StorageImageArrayEntry,
+			StorageImageEntry, StorageImageArrayEntry, StorageImage2DArrayEntry, StorageImageCubeEntry,
 			AccelerationStructureEntry>
 			data;
 	};
@@ -336,10 +357,12 @@ private:
 	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 	void BindUniformTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
 	void BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set);
 	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 
 protected:

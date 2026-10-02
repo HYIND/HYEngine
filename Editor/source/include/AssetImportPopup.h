@@ -13,7 +13,7 @@ public:
 	void DrawPopup(ProjectManager* projectManager);
 
 private:
-	void DrawTexture2DConfig();
+	void DrawTextureConfig();
 	int GetFilterIndex(unsigned int currentValue, unsigned int* values, int count);
 
 private:
@@ -23,5 +23,5 @@ private:
 	bool visiable = false;
 
 private:
-	Texture2DConfig m_config;
+	TextureConfig m_config;
 };

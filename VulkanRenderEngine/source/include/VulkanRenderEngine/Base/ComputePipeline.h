@@ -13,6 +13,8 @@ struct ComputePipelineConfig :public PipelineConfig
 
 	ComputePipelineConfig& AddStorageImage(uint32_t binding, uint32_t set = 0);
 	ComputePipelineConfig& AddStorageImageArray(uint32_t binding, uint32_t count = 1, uint32_t set = 0);
+	ComputePipelineConfig& AddStorageImage2DArray(uint32_t binding, uint32_t set = 0);
+	ComputePipelineConfig& AddStorageImageCube(uint32_t binding, uint32_t set = 0);
 
 	//可变纹理数组，用来支持bindless纹理，必须放在最后一个binding！同一个set中必须最后添加！
 	ComputePipelineConfig& AddStorageVariableImageArray(uint32_t binding, uint32_t maxCount = 1, uint32_t set = 0);
@@ -61,8 +63,14 @@ public:
 	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
 	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
 	void SetStorageImageArray(const std::vector<BindingRecord::StorageImageEntry>& entrys, uint32_t binding, uint32_t set = 0);
+	void SetStorageImage2DArray(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
+	void SetStorageImage2DArrayLevel(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set = 0);
+	void SetStorageImageCube(const std::shared_ptr<TextureCube>& imageCube, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
 
 	void SetStorageImage(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, const BindingPoint& bp);
 	void SetStorageImageLevel(const std::shared_ptr<Texture2D>& texture, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
 	void SetStorageImageArray(const std::vector<BindingRecord::StorageImageEntry>& entrys, const BindingPoint& bp);
+	void SetStorageImage2DArray(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, const BindingPoint& bp);
+	void SetStorageImage2DArrayLevel(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp);
+	void SetStorageImageCube(const std::shared_ptr<TextureCube>& imageCube, vk::ImageAspectFlags aspect, const BindingPoint& bp);
 };

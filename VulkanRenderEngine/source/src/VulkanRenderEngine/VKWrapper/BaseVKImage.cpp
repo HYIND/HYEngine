@@ -225,9 +225,9 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 		std::array<vk::Offset3D, 2> dstOffsets = { vk::Offset3D{ 0, 0, 0 },vk::Offset3D{ (int)currW, (int)currH, 1} };
 
 		vk::ImageBlit blitRegion = {};
-		blitRegion.setSrcSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(inputLevel).setBaseArrayLayer(0).setLayerCount(1));
+		blitRegion.setSrcSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(inputLevel).setBaseArrayLayer(0).setLayerCount(m_layerCount));
 		blitRegion.setSrcOffsets(srcOffsets);
-		blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(outputLevel).setBaseArrayLayer(0).setLayerCount(1));
+		blitRegion.setDstSubresource(vk::ImageSubresourceLayers().setAspectMask(vk::ImageAspectFlagBits::eColor).setMipLevel(outputLevel).setBaseArrayLayer(0).setLayerCount(m_layerCount));
 		blitRegion.setDstOffsets(dstOffsets);
 
 		cmd->blitImage(m_image, vk::ImageLayout::eTransferSrcOptimal, m_image, vk::ImageLayout::eTransferDstOptimal, blitRegion, vk::Filter::eLinear);

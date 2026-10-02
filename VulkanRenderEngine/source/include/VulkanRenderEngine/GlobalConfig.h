@@ -21,4 +21,8 @@ namespace GlobalConfig
 	inline bool RTCoreEnable = true;
 
 	inline constexpr uint32_t MaxFramesInFlight = 2;
+
+
+	inline uint32_t Global_WorkSize_X = 8;
+	inline uint32_t Global_WorkSize_Y = 8;
 }

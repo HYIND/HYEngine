@@ -14,6 +14,18 @@ ComputePipelineConfig& ComputePipelineConfig::AddStorageImageArray(uint32_t bind
 	return *this;
 }
 
+ComputePipelineConfig& ComputePipelineConfig::AddStorageImage2DArray(uint32_t binding, uint32_t set)
+{
+	AddDescriptor(binding, vk::DescriptorType::eStorageImage, defaultShaderStageFlags, 1, set);
+	return *this;
+}
+
+ComputePipelineConfig& ComputePipelineConfig::AddStorageImageCube(uint32_t binding, uint32_t set)
+{
+	AddDescriptor(binding, vk::DescriptorType::eStorageImage, defaultShaderStageFlags, 1, set);
+	return *this;
+}
+
 ComputePipelineConfig& ComputePipelineConfig::AddStorageVariableImageArray(uint32_t binding, uint32_t maxCount, uint32_t set)
 {
 	vk::DescriptorBindingFlags flags =
@@ -119,6 +131,21 @@ void ComputeBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>
 	SetStorageImageLevel(texture, aspect, baseLevel, levelCount, BindingPoint{ .binding = binding, .set = set });
 }
 
+void ComputeBindingRecord::SetStorageImage2DArray(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set)
+{
+	SetStorageImage2DArray(image2DArray, aspect, BindingPoint{ .binding = binding, .set = set });
+}
+
+void ComputeBindingRecord::SetStorageImage2DArrayLevel(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, uint32_t binding, uint32_t set)
+{
+	SetStorageImage2DArrayLevel(image2DArray, aspect, baseLevel, levelCount, BindingPoint{ .binding = binding, .set = set });
+}
+
+void ComputeBindingRecord::SetStorageImageCube(const std::shared_ptr<TextureCube>& imageCube, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set)
+{
+	SetStorageImageCube(imageCube, aspect, BindingPoint{ .binding = binding, .set = set });
+}
+
 void ComputeBindingRecord::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, uint32_t binding, uint32_t set)
 {
 	SetStorageImageArray(entrys, BindingPoint{ .binding = binding, .set = set });
@@ -143,5 +170,29 @@ void ComputeBindingRecord::SetStorageImageLevel(const std::shared_ptr<Texture2D>
 void ComputeBindingRecord::SetStorageImageArray(const std::vector<StorageImageEntry>& entrys, const BindingPoint& bp)
 {
 	BindingEntry entry{ .type = BindingEntry::DataType::StorageImageArray, .data = StorageImageArrayEntry{.entrys = entrys } };
+	m_bindingData[bp] = entry;
+}
+
+void ComputeBindingRecord::SetStorageImage2DArray(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, const BindingPoint& bp)
+{
+	if (!image2DArray)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage2DArray, .data = StorageImage2DArrayEntry{.image2DArray = image2DArray, .aspect = aspect, .baseLevel = 0, .levelCount = UINT32_MAX } };
+	m_bindingData[bp] = entry;
+}
+
+void ComputeBindingRecord::SetStorageImage2DArrayLevel(const std::shared_ptr<Texture2DArray>& image2DArray, vk::ImageAspectFlags aspect, uint32_t baseLevel, uint32_t levelCount, const BindingPoint& bp)
+{
+	if (!image2DArray)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage2DArray, .data = StorageImage2DArrayEntry{.image2DArray = image2DArray, .aspect = aspect, .baseLevel = baseLevel, .levelCount = levelCount } };
+	m_bindingData[bp] = entry;
+}
+
+void ComputeBindingRecord::SetStorageImageCube(const std::shared_ptr<TextureCube>& imageCube, vk::ImageAspectFlags aspect, const BindingPoint& bp)
+{
+	if (imageCube)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImageCube, .data = StorageImageCubeEntry{.imageCube = imageCube, .aspect = aspect } };
 	m_bindingData[bp] = entry;
 }

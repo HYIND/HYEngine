@@ -3,8 +3,8 @@
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
+
+
 
 struct RayTraceParams
 {
@@ -68,8 +68,8 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = scaleComputerShaderPath;
 
 		config

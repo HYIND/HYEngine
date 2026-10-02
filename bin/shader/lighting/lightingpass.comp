@@ -12,16 +12,37 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Helper/lightingHelper.comp"
 
-layout (binding = 0, rgba16f) uniform image2D outPutColor;
+layout (binding = 0) uniform Params
+{
+	bool skyIBLEnable;
+};
 
-layout (binding = 1) uniform sampler2D gPosition;
-layout (binding = 2) uniform sampler2D gNormal;
-layout (binding = 3) uniform sampler2D gAlbedoOpacity;
-layout (binding = 4) uniform sampler2D gMetallicRoughness;
-layout (binding = 5) uniform sampler2D gEmission;
-layout (binding = 6) uniform sampler2D ssao;
-layout (binding = 7) uniform sampler2D atlasShadowMap;
-layout (binding = 8) uniform sampler2D depthMap;
+layout (binding = 1, rgba16f) uniform image2D outPutColor;
+
+layout (binding = 2) uniform sampler2D gPosition;
+layout (binding = 3) uniform sampler2D gNormal;
+layout (binding = 4) uniform sampler2D gAlbedoOpacity;
+layout (binding = 5) uniform sampler2D gMetallicRoughness;
+layout (binding = 6) uniform sampler2D gEmission;
+layout (binding = 7) uniform sampler2D ssao;
+layout (binding = 8) uniform sampler2D atlasShadowMap;
+layout (binding = 9) uniform sampler2D depthMap;
+layout (binding = 10) uniform samplerCube IBLDiffuse;
+layout (binding = 11) uniform samplerCube IBLPrefilter;
+layout (binding = 12) uniform sampler2D IBLBrdfLUT;
+
+
+vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
+{
+    vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
+    
+    vec4 viewPos = camera.invProjection * ndcPos;
+    viewPos /= viewPos.w; // 透视除法
+    
+    // 逆视图变换到世界空间
+    vec4 worldPos = camera.invView * viewPos;
+    return worldPos.xyz;
+}
 
 void main()
 {
@@ -50,8 +71,21 @@ void main()
 	prop.roughness = metallicRoughness.g;
 	prop.ambientOcclusion = clamp(min(texture(ssao, TexCoords).r, metallicRoughness.b), 0.f, 1.f);
 
-	vec3 emission = texture(gEmission, TexCoords).rgb;
-	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal, prop);
+	vec3 color = vec3(0.f);
 
-	imageStore(outPutColor, coord, vec4(lightColor + emission, 1.0));
+	vec3 emission = texture(gEmission, TexCoords).rgb;
+	color += emission;
+	
+	vec3 lightColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, fragPos, normal, prop);
+	color += lightColor;
+
+	if (skyIBLEnable)
+	{
+		vec3 worldPos = ReconstructWorldPosition(depth, TexCoords);
+		vec3 viewDir = normalize(worldPos - camera.position);
+		vec3 ambient = CalculateIBLLighting(viewDir, normal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT);
+		color += ambient;
+	}
+
+	imageStore(outPutColor, coord, vec4(color, 1.0));
 }

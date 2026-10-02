@@ -19,7 +19,7 @@ TextureHandle TexturePool::AllocateTexture(const TextureDesc& desc)
 	if (handle)
 		return handle;
 
-	Texture2DConfig config;
+	TextureConfig config;
 	config.minFilter = desc.minFilter;
 	config.magFilter = desc.magFilter;
 	config.wrapU = desc.wrapU;

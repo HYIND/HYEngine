@@ -34,14 +34,14 @@ public:
 	virtual bool SaveToFile(const std::string& filePath) override;
 
 	AssetPath GetPath() const;
-	Texture2DConfig GetConfig() const;
+	TextureConfig GetConfig() const;
 
 	void SetPath(const AssetPath& assetPath);
-	void SetConfig(const Texture2DConfig& config);
+	void SetConfig(const TextureConfig& config);
 
 private:
 	AssetPath _path;
-	Texture2DConfig _config;
+	TextureConfig _config;
 };
 
 class AduioAssetDescription : public AssetDescription

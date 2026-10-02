@@ -1,53 +1,10 @@
 #pragma once
 
-#include "vkstdafx.h"
-#include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
-#include "VulkanRenderEngine/General/ImageLayoutWrapper.h"
+#include "TextureGeneralDef.h"
 #include "VulkanRenderEngine/SharedTexture.h"
 #include "CriticalSectionLock.h"
 
 struct SharedTexture;
-
-struct Texture2DConfig
-{
-	vk::Filter minFilter = vk::Filter::eNearest;
-	vk::Filter magFilter = vk::Filter::eNearest;
-
-	vk::SamplerAddressMode wrapU = vk::SamplerAddressMode::eClampToEdge;
-	vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eClampToEdge;
-
-	bool anisotropy = false;
-	bool gammaCorrection = false;
-
-	bool operator==(const Texture2DConfig& other);
-	bool operator!=(const Texture2DConfig& other);
-};
-
-struct TextureDescBindEntry
-{
-	std::shared_ptr<VKWrapper::BaseVKImage> image;
-	std::shared_ptr<VKWrapper::VKImageView> imageView;
-	std::shared_ptr<VKWrapper::VKSampler> sampler;
-	uint32_t version;
-};
-
-struct ImageViewInfo {
-	vk::ImageAspectFlags aspect;
-	uint32_t base = 0;
-	uint32_t count = 1;
-	bool operator==(const ImageViewInfo& other) const { return aspect == other.aspect && base == other.base && count == other.count; }
-};
-
-
-namespace std {
-	template<> struct hash<ImageViewInfo> {
-		size_t operator()(const ImageViewInfo& info) const noexcept {
-			uint64_t hash = (static_cast<uint64_t>(info.base) << 32) | info.count;
-			hash ^= (static_cast<uint64_t>((uint32_t)info.aspect)) * 0x9E3779B97F4A7C15ull;
-			return std::hash<uint64_t>{}(hash);
-		}
-	};
-}
 
 class Texture2D
 {
@@ -67,9 +24,9 @@ public:
 	static bool CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 
 public:
-	Texture2D(const std::string& filepath, const Texture2DConfig& config = {}, bool autoMipMaps = false);																				// 从文件加载纹理
-	Texture2D(uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm, const Texture2DConfig& config = {}, uint32_t maxLevel = 1);	// 创建空纹理
-	Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const Texture2DConfig& config = {});			// 创建共享纹理
+	Texture2D(const std::string& filepath, const TextureConfig& config = {}, bool autoMipMaps = false);																				// 从文件加载纹理
+	Texture2D(uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm, const TextureConfig& config = {}, uint32_t maxLevel = 1);	// 创建空纹理
+	Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const TextureConfig& config = {});			// 创建共享纹理
 
 	~Texture2D();
 
@@ -119,7 +76,7 @@ public:
 	vk::SamplerAddressMode GetWrapU() const;
 	vk::SamplerAddressMode GetWrapV() const;
 
-	Texture2DConfig GetConfig() const;
+	TextureConfig GetConfig() const;
 
 	void GenerateTextureMipMaps();
 public:
@@ -148,7 +105,7 @@ private:
 	uint32_t m_Height;
 	vk::Format m_Format;
 	uint32_t m_MaxLevel;
-	Texture2DConfig m_config;
+	TextureConfig m_config;
 };
 
 class ITextureArrayProvider

@@ -1,0 +1,203 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+layout (binding = 0) uniform Params
+{
+    float roughness;
+    uint sampleCount;
+    uint frameIndex;
+};
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputPrefilterCube;
+layout (binding = 2) uniform samplerCube skyCube;
+
+#ifndef PI_DEFINE
+#define PI_DEFINE
+const float PI = 3.14159265359;
+#endif
+
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float pcg_float(uint seed) {
+    return float(pcg_hash(seed)) / 4294967296.0;
+}
+
+vec2 pcg_float2(uint seed) {
+    uint h1 = pcg_hash(seed);
+    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
+    return vec2(float(h1), float(h2)) / 4294967296.0;
+}
+
+vec2 getRandom(uint seed) 
+{
+    return pcg_float2(seed);
+}
+
+vec3 RotateNormal(vec3 normal, float cosTheta, float r2)
+{
+    float phi = 2.0 * PI * r2;
+    
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
+    vec3 dir = vec3(
+        sinTheta * cos(phi),
+        sinTheta * sin(phi),
+        cosTheta
+    );
+    
+    // 将局部坐标转到世界空间（以法线为Z轴）
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+
+    return samplerDir;
+}
+
+// 生成GGX权重半球随机方向,基于Prefilter调整
+vec3 ImportanceSampleGGX(float roughness, vec3 dirR, vec2 random)
+{
+    float r1 = random.x;
+    float r2 = random.y;  
+
+    // 生成局部坐标系的 H（假设 N 朝上）
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float phi = 2.0 * PI * r1;
+    float cosTheta = sqrt((1.0 - r2) / (1.0 + (a2 - 1.0) * r2));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    // 本地空间的 H 向量 (z轴为N)
+    vec3 H_local = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+
+    // 构建 TBN 矩阵
+    vec3 up = abs(dirR.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, dirR));
+    vec3 bitangent = cross(dirR, tangent);
+    
+    // 将 H 转换到世界空间
+    vec3 H = normalize(tangent * H_local.x + bitangent * H_local.y + dirR * H_local.z);
+
+    vec3 L = reflect(-dirR, H);
+
+    // // 计算正确的 PDF（基于 L 空间，补上雅可比）
+    // float NdotH = max(dot(N, H), 0.0);
+    // float VdotH = max(dot(V, H), 0.0);
+    
+    // // 局部空间的 D（为了算 PDF，必须用局部的夹角，但 cosTheta 已经等于 NdotH，因为 H 转到了世界，且 TBN 是正交的）
+    // float denom = cosTheta * cosTheta * (a2 - 1.0) + 1.0;
+    // float D = a2 / (PI * denom * denom);
+    
+    // float pdf_H = D * cosTheta;             // H 空间的 PDF
+    // pdf_L = pdf_H / (4.0 * VdotH + 0.0001); // L 空间的 PDF
+    
+    return L;
+}
+
+vec3 SamplerPrefilter(vec3 dirR, float roughness, uint sampleId)
+{
+    uint seedbase = uint(gl_GlobalInvocationID.x) * 197u 
+            + uint(gl_GlobalInvocationID.y) * 927u
+            + uint(gl_GlobalInvocationID.z) * 619u
+            + uint(frameIndex) * 777u;
+
+    uint seed = seedbase + uint(sampleId) * 269u;
+
+    // GGX重要性采样
+    vec2 random = getRandom(seed);
+    vec3 samplerLightDir = roughness <= 0.01 ? dirR : ImportanceSampleGGX(roughness, dirR, random);
+
+    float NdotL = max(dot(dirR, samplerLightDir), 0.0);
+
+    vec3 prefilteredColor = texture(skyCube, samplerLightDir).rgb * NdotL;
+
+    return prefilteredColor;
+}
+
+vec3 CalculatePrefilte(vec3 viewDir, float roughness, uint sampleCount) 
+{
+    vec3 totalColor = vec3(0.0);
+
+    if (roughness <= 0.01f)
+        sampleCount = 1;
+
+    for (uint i = 0; i < sampleCount; i++) 
+        totalColor += SamplerPrefilter(viewDir, roughness, i);
+
+    return sampleCount > 0 ?  totalColor / float(sampleCount) : vec3(0.f);
+}
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(90.f) * 0.5);
+    vec2 localRayXY = ndc * tanHalfFov;
+
+    vec3 dir;
+
+    switch (face)
+    {
+        case 0: // +X
+            dir = vec3(1, localRayXY.y, -localRayXY.x);
+            break;
+
+        case 1: // -X
+            dir = vec3(-1, localRayXY.y, localRayXY.x);
+            break;
+
+        case 2: // +Y
+            dir = vec3(localRayXY.x, 1, -localRayXY.y);
+            break;
+
+        case 3: // -Y
+            dir = vec3(localRayXY.x, -1, localRayXY.y);
+            break;
+
+        case 4: // +Z
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+
+        case 5: // -Z
+            dir = vec3(-localRayXY.x, localRayXY.y, -1);
+            break;
+        
+        default:
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+    }
+
+    return normalize(dir);
+}
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputPrefilterCube);
+
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = arraySize.xy;
+
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+
+    vec3 color = CalculatePrefilte(viewDir, roughness, sampleCount);
+    imageStore(outputPrefilterCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f)); 
+}

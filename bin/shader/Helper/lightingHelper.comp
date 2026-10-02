@@ -475,3 +475,28 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 
 	return result;
 }
+
+vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, samplerCube IBLDiffuse, samplerCube IBLPrefilter, sampler2D IBLBrdfLUT)
+{
+    vec3 diffuse;
+ 	CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
+    vec3 irradiance = texture(IBLDiffuse, normal).rgb;
+    vec3 diffuseColor = irradiance * diffuse;
+
+    vec3 reflectionDir = reflect(viewDir, normal);
+    float prefilterMipLevel = prop.roughness * float(textureQueryLevels(IBLPrefilter) - 1);    
+
+    vec3 prefilteredColor = textureLod(IBLPrefilter, reflectionDir, prefilterMipLevel).rgb;
+
+	vec3 F0 = mix(vec3(0.02), prop.albedo, prop.metallic);
+    
+	float NdotV = max(dot(normal, -viewDir), 0.0);
+    vec2 values = texture(IBLBrdfLUT, vec2(NdotV, prop.roughness)).xy;
+    float A = values.x;
+    float B = values.y;
+    vec3 brdf = F0 * A + B;
+
+    vec3 specColor = prefilteredColor * brdf;
+
+    return diffuseColor * prop.ambientOcclusion + specColor;
+}

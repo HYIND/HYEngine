@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-static std::map<TextureType, Texture2DConfig> Texture2DConfigMap =
+static std::map<TextureType, TextureConfig> TextureConfigMap =
 {
 	// ========== 颜色类贴图（必须三线性，开启AF） ==========
 	{
@@ -440,7 +440,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	aiMaterial* ai_material = scene->mMaterials[mesh->mMaterialIndex];
 
 	auto loadTexture = [&](aiTextureType ai_type, TextureType type) -> bool {
-		std::vector<LoadedTexture> loadTextures = loadMaterialTextures(ai_material, ai_type, Texture2DConfigMap[type]);
+		std::vector<LoadedTexture> loadTextures = loadMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
 		if (!loadTextures.empty())
 		{
 			material->SetTexture(type, loadTextures[0].tex);
@@ -528,7 +528,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	return MeshInfo{ meshptr,material };
 }
 
-std::vector<LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config)
+std::vector<LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
 {
 	std::vector<LoadedTexture> textures;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)

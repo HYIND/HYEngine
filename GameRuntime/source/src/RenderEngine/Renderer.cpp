@@ -116,7 +116,7 @@ void RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<Render
 	}
 
 	if (framedata->skybox)
-		state.skybox.cube = framedata->skybox;
+		state.skyboxParams.cube = framedata->skybox;
 }
 
 void RenderFrameDataAnalysisHelp::processSceneModel(

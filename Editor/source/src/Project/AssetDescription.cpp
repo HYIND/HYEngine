@@ -182,11 +182,11 @@ bool TextureAssetDescription::SaveToFile(const std::string& filePath)
 
 AssetPath TextureAssetDescription::GetPath() const { return _path; }
 
-Texture2DConfig TextureAssetDescription::GetConfig() const { return _config; }
+TextureConfig TextureAssetDescription::GetConfig() const { return _config; }
 
 void TextureAssetDescription::SetPath(const AssetPath& assetPath) { _path = assetPath; }
 
-void TextureAssetDescription::SetConfig(const Texture2DConfig& config) { _config = config; }
+void TextureAssetDescription::SetConfig(const TextureConfig& config) { _config = config; }
 
 bool AduioAssetDescription::LoadFromFile(const std::string& filePath)
 {

@@ -14,7 +14,7 @@
 struct AnalysisTextureAssetMeta
 {
 	std::string filepath;
-	Texture2DConfig config;
+	TextureConfig config;
 };
 
 struct AnalysisMaterialAssetMeta

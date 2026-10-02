@@ -391,7 +391,7 @@ bool ResourceManager::InitOpenGLResourceInternal(uint32_t mapFlag)
 						"Test/skybox/box1/back.jpg"
 					};
 
-					TextureCubeRes[ResName::skybox1] = std::make_shared<TextureCube>(faces);
+					TextureCubeRes[ResName::skybox1] = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
 					});
 			};
 
@@ -411,7 +411,7 @@ bool ResourceManager::InitOpenGLResourceInternal(uint32_t mapFlag)
 				"Test/skybox/box2/front.png",
 				"Test/skybox/box2/back.png"
 			};
-			TextureCubeRes[ResName::skybox2] = std::make_shared<TextureCube>(faces);
+			TextureCubeRes[ResName::skybox2] = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
 			});
 
 		pool.submit([&]()->void {

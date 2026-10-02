@@ -7,8 +7,6 @@ namespace VKWrapper {
 
 	class VmaImage :public BaseVKImage
 	{
-	public:
-		enum class ImageType { Image2D = 0, ImageCube };
 
 	public:
 		VmaImage() = default;
@@ -17,7 +15,7 @@ namespace VKWrapper {
 		VmaImage(const VmaImage&) = delete;
 		VmaImage& operator=(const VmaImage&) = delete;
 
-		bool Create(VKCore::VulkanDevice* device, vk::Format format, vk::Extent2D size, uint32_t mipLevels, ImageType type = ImageType::Image2D, bool cpuAccess = false);
+		bool Create(VKCore::VulkanDevice* device, vk::Format format, vk::Extent2D size, uint32_t mipLevels, uint32_t layerCount, bool cpuAccess = false);
 		bool Create(VKCore::VulkanDevice* device, const vk::ImageCreateInfo& imageInfo, const VmaAllocationCreateInfo& allocInfo);
 		virtual void Release();
 

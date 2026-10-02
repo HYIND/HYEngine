@@ -29,7 +29,7 @@ struct MeshInfo
 struct LoadedTexture {
 	std::shared_ptr<Texture2D> tex;
 	std::string path;
-	Texture2DConfig config;
+	TextureConfig config;
 };
 
 class Model
@@ -71,7 +71,7 @@ private:
 	void processNode(aiNode* node, const aiScene* scene);
 
 	MeshInfo processMesh(aiMesh* mesh, const aiScene* scene);
-	std::vector<LoadedTexture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config);
+	std::vector<LoadedTexture> loadMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config);
 
 	void ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene);
 

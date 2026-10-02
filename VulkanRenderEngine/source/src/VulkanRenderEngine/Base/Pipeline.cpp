@@ -1029,17 +1029,17 @@ void BindingRecord::BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>&
 		if (!dataptr) return;
 		BindUniformTexture(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
 	}
-	else if (entry.type == BindingEntry::DataType::UniformTexCube)
-	{
-		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
-		if (!dataptr) return;
-		BindUniformTextureCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
-	}
 	else if (entry.type == BindingEntry::DataType::UniformTexArray)
 	{
 		UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
 		if (!dataptr) return;
 		BindUniformTextureArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::UniformTexCube)
+	{
+		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformTextureCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImage)
 	{
@@ -1052,6 +1052,18 @@ void BindingRecord::BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>&
 		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
 		if (!dataptr) return;
 		BindStorageImageArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageImage2DArray)
+	{
+		StorageImage2DArrayEntry* dataptr = std::get_if<StorageImage2DArrayEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageImage2DArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageImageCube)
+	{
+		StorageImageCubeEntry* dataptr = std::get_if<StorageImageCubeEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageImageCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
 	}
 	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
 	{
@@ -1156,43 +1168,6 @@ void BindingRecord::BindUniformTexture(const std::shared_ptr<VKWrapper::VKComman
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
 
-void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
-{
-	if (!cmdBuffer)
-		return;
-
-	if (entry.texture)
-	{
-		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
-			entry.descEntry = entry.texture->GetDescBindEntry();
-	}
-
-	auto& texrure = entry.texture;
-	auto& imageView = entry.descEntry.imageView;
-	auto& sampler = entry.descEntry.sampler;
-
-	if (!texrure || !imageView || !sampler)
-		return;
-
-	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
-
-	vk::DescriptorImageInfo imageInfo;
-	imageInfo.setImageView(imageView->GetHandle())
-		.setSampler(sampler->GetHandle())
-		.setImageLayout(imageLayout);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
-}
-
 void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
 {
 	if (!cmdBuffer)
@@ -1228,6 +1203,43 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 		.setImageInfo(imageInfos);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetCubeDescBindEntry(entry.aspect);
+	}
+
+	auto& texrure = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setImageInfo(imageInfo);
 
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }
@@ -1302,6 +1314,80 @@ void BindingRecord::BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCom
 		.setDstArrayElement(0)
 		.setDescriptorType(vk::DescriptorType::eStorageImage)
 		.setImageInfo(imageInfos);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.image2DArray)
+	{
+		if (entry.descEntry.version != entry.image2DArray->GetDescBindEntryVersion())
+			entry.descEntry = entry.image2DArray->GetDescBindEntry(entry.aspect, entry.baseLevel, entry.levelCount);
+	}
+
+	auto& texrure = entry.image2DArray;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageImage)
+		.setImageInfo(imageInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.imageCube)
+	{
+		if (entry.descEntry.version != entry.imageCube->GetDescBindEntryVersion())
+			entry.descEntry = entry.imageCube->GetCubeDescBindEntry(entry.aspect);
+	}
+
+	auto& texrure = entry.imageCube;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texrure || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageImage)
+		.setImageInfo(imageInfo);
 
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }

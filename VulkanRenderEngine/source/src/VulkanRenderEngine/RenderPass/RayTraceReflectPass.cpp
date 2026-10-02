@@ -2,8 +2,8 @@
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
+
+
 
 struct RayTraceParams
 {
@@ -31,8 +31,8 @@ RayTraceReflectPass::RayTraceReflectPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.AddDefineMacro("Max_Recursive_Depth", GlobalConfig::RayTrace_Max_Recursive_Depth);
 		config.AddDefineMacro("Max_Bounce_limit", GlobalConfig::RayTrace_Max_Bounce_limit);
 		config.computePath = rayTraceComputerShaderPath;
@@ -62,8 +62,8 @@ RayTraceReflectPass::RayTraceReflectPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = scaleComputerShaderPath;
 
 		config
@@ -209,7 +209,7 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
 
 	rayTraceShader.Bind(cmd, binding);
-	cmd->dispatch((data.drawSize.x + work_size_x - 1) / work_size_x, (data.drawSize.y + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((data.drawSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (data.drawSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
 

@@ -1,16 +1,16 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/CombinPass.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
+
+
 
 CombinPass::CombinPass(const std::string& computerShaderPath)
 {
 
 	ComputePipelineConfig config;
 	config.AddDefineMacro("COMBIN_MODE", 0);
-	config.AddDefineMacro("work_size_x", work_size_x);
-	config.AddDefineMacro("work_size_y", work_size_y);
+	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 	config.computePath = computerShaderPath;
 
 	config
@@ -52,7 +52,7 @@ void CombinPass::Draw(std::shared_ptr<Texture2D>& destColorTexture, std::shared_
 	_shader.Bind(cmd, _binding);
 	_shader.SetPushConstants(cmd, &count, sizeof(count));
 
-	cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitNowAndWait();
 }

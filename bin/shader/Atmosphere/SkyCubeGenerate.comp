@@ -9,10 +9,9 @@
 
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
-#include "shader/dataDef/camerauboDef.comp"
 #include "shader/Atmosphere/AtmoPublic.comp"
 
-layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputCube;
 layout (binding = 2) uniform sampler2D transmittanceLut;
 
 
@@ -21,7 +20,7 @@ vec4 TransmittanceSample(float height, float cos_theta)
     height = max(0.0, height);
 
     float uv_x = height / AtmosphereHeight;
-
+    
     float theta = acos(clamp(cos_theta, -1.0, 1.0));
     float uv_y = theta / PI;
 
@@ -151,37 +150,16 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
     return color;
 }
 
-vec3 GetViewDir(vec2 uv, float aspect)
-{    
-    vec2 ndc = uv * 2.0 - 1.0;
-    ndc.x *= aspect;
-    ndc.y = -ndc.y;
-    float tanHalfFov = tan(radians(camera.fov) * 0.5);
-    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
-    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
-    return worldRayDir;
-}
-
 const float MAX_DISTANCE = 1e5;
 
-void main()
+vec3 CalculateSkyColor(vec3 CameraPosition, vec3 viewDir, vec3 sunLightColor, vec3 sunLightDir)
 {
-    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imageSize = imageSize(outputImage);
-
-    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
-        return;
-
-    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
-
-    vec3 sunLightColor = DirLightColor;
-    vec3 sunLightDir = normalize(DirLightDir);
 
     vec3 result = vec3(0.f);
 
     if (sunLightDir.y < 0.2)
     {
-        vec3 cameraPosInPlanet = camera.position + vec3(0, PlanetRadius, 0.f);
+        vec3 cameraPosInPlanet = CameraPosition + vec3(0, PlanetRadius, 0.f);
 
         vec3 startPosInPlanet;
         vec3 targetPosInPlanet;
@@ -191,7 +169,6 @@ void main()
         float tStart;
         float tEnd;
 
-        vec3 viewDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
         bool validSegment = GetAtmosphereRaySegment(
             cameraPosInPlanet,
             viewDir,
@@ -251,6 +228,69 @@ void main()
         }
     }
 
-    
-    imageStore(outputImage, coord, vec4(result, 1.0));
+    return result;    
+}
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(90.f) * 0.5);
+    vec2 localRayXY = ndc * tanHalfFov;
+
+    vec3 dir;
+
+    switch (face)
+    {
+        case 0: // +X
+            dir = vec3(1, localRayXY.y, -localRayXY.x);
+            break;
+
+        case 1: // -X
+            dir = vec3(-1, localRayXY.y, localRayXY.x);
+            break;
+
+        case 2: // +Y
+            dir = vec3(localRayXY.x, 1, -localRayXY.y);
+            break;
+
+        case 3: // -Y
+            dir = vec3(localRayXY.x, -1, localRayXY.y);
+            break;
+
+        case 4: // +Z
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+
+        case 5: // -Z
+            dir = vec3(-localRayXY.x, localRayXY.y, -1);
+            break;
+        
+        default:
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+    }
+
+    return normalize(dir);
+}
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputCube);
+
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = arraySize.xy;
+
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+
+    vec3 color = CalculateSkyColor(CubeCapturePosition, viewDir, DirLightColor, normalize(DirLightDir));
+
+    imageStore(outputCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f));
 }
