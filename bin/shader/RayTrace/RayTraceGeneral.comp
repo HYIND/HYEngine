@@ -143,15 +143,16 @@ vec2 getRandom(uint seed)
     return pcg_float2(seed);
 }
 
-vec3 RotateNormal(vec3 normal, float r1, float r2)
+vec3 RotateNormal(vec3 normal, float cosTheta, float r2)
 {
-    float theta = acos(r1);
     float phi = 2.0 * PI * r2;
     
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
     vec3 dir = vec3(
-        sin(theta) * cos(phi),
-        sin(theta) * sin(phi),
-        cos(theta)
+        sinTheta * cos(phi),
+        sinTheta * sin(phi),
+        cosTheta
     );
     
     // 将局部坐标转到世界空间（以法线为Z轴）
@@ -167,10 +168,9 @@ vec3 RotateNormal(vec3 normal, float r1, float r2)
 // 生成余弦加权半球随机方向
 vec3 ImportanceSampleCosine(vec3 normal, vec2 random)
 {
-    float r1 = random.x;
+    float cosTheta = sqrt(random.x);// 余弦加权
     float r2 = random.y;  
-    r1 = sqrt(r1); // 余弦加权
-    return RotateNormal(normal, r1, r2);
+    return RotateNormal(normal, cosTheta, r2);
 }
 
 // 生成GGX权重半球随机方向
