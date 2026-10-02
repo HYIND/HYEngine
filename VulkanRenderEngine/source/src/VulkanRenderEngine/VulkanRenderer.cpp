@@ -916,9 +916,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	atmosphereNode->SetRenderPass(std::move(atmospherePass))
 		.Input(
 			ResourceData{ atlasShadowMap, computeReadLayout },
-			ResourceData{ gNormal, computeReadLayout },
-			ResourceData{ gAlbedoOpacity, computeReadLayout },
-			ResourceData{ gMetallicRoughness, computeReadLayout }
+			ResourceData{ gPosition, computeReadLayout }
 		)
 		.After(atmospherePreCaulateNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })

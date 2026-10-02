@@ -19,6 +19,7 @@ layout (binding = 3) uniform sampler2D depthMap;
 layout (binding = 4) uniform sampler2D transmittanceLut;
 layout (binding = 5) uniform sampler2D skyViewLut;
 layout (binding = 6) uniform sampler2D atlasShadowMap;
+layout (binding = 7) uniform sampler2D gPosition;
 
 
 bool InShadow(vec3 fragPos)
@@ -211,17 +212,6 @@ vec3 SingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
     return color;
 }
 
-vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
-{
-    vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
-    
-    vec4 viewPos = camera.invProjection * ndcPos;
-    viewPos /= viewPos.w; // 透视除法
-    
-    // 逆视图变换到世界空间
-    vec4 worldPos = camera.invView * viewPos;
-    return worldPos.xyz;
-}
 
 void main()
 {
@@ -244,7 +234,7 @@ void main()
     vec3 cameraPosInPlanet = camera.position + vec3(0, PlanetRadius, 0.f);
     if (samplerDepth < 0.99994)
     {
-        vec3 worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
+        vec3 worldPos = texture(gPosition, TexCoords).xyz;
         vec3 startPosInPlanet = cameraPosInPlanet;
         vec3 targetPosInPlanet = worldPos + vec3(0, PlanetRadius, 0.f);
 
