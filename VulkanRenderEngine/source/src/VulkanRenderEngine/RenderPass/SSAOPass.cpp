@@ -3,13 +3,14 @@
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
 
-
-
-struct alignas(16) Params {
+struct alignas(16) KernelParams {
 	std::array<glm::vec4, 64> samples;
 	uint32_t kernelSize;
-	float radius;
-	float bias;
+};
+
+struct alignas(16) Params {
+	float radius = 2.0f;
+	float bias = 0.01f;
 };
 
 static float Lerp(float a, float b, float f)
@@ -48,13 +49,11 @@ SSAOPass::SSAOPass(
 {
 
 	{
-		Params params;
-		params.kernelSize = 64;
-		params.radius = 2.0f;
-		params.bias = 0.01f;
+		KernelParams kernelParams;
+		kernelParams.kernelSize = 64;
 
 		std::vector<glm::vec4> ssaoNoise;
-		InitKernelAndNoise(params.samples, ssaoNoise);
+		InitKernelAndNoise(kernelParams.samples, ssaoNoise);
 
 		TextureConfig config{
 			.minFilter = vk::Filter::eNearest,
@@ -65,8 +64,8 @@ SSAOPass::SSAOPass(
 		_noiseTexture = std::make_shared<Texture2D>(4, 4, vk::Format::eR32G32B32A32Sfloat, config);
 		_noiseTexture->UpdateTextureData(&ssaoNoise[0]);
 
-		_ssaoParams = std::make_shared<UniformBlock>(sizeof(Params));
-		_ssaoParams->WriteData(&params, sizeof(Params));
+		_kernelParams = std::make_shared<UniformBlock>(sizeof(kernelParams));
+		_kernelParams->WriteData(&kernelParams, sizeof(kernelParams));
 	}
 
 	{
@@ -81,6 +80,7 @@ SSAOPass::SSAOPass(
 			.AddUnifromTexture(2)
 			.AddUnifromTexture(3)
 			.AddUnifromBuffer(4)
+			.AddUnifromBuffer(5)
 			.AddCameraUnifromDataBinding();
 
 		if (config.Validate())
@@ -106,31 +106,46 @@ SSAOPass::SSAOPass(
 SSAOPass::~SSAOPass()
 {}
 
+void SSAOPass::FrameBegin(RenderGraph::FrameDataRegistry & registry, RenderState & state) 
+{
+
+	Params params{
+		.radius = state.option.ssaoParams.radius,
+		.bias = state.option.ssaoParams.bias
+	};
+
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
+	paramsUBO->WriteData(&params, sizeof(params));
+
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	binding.SetUniformBlock(paramsUBO, 5);
+}
+
 void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	int width = state.framebuffer.width;
-	int height = state.framebuffer.height;
+	uint32_t width = state.framebuffer.width;
+	uint32_t height = state.framebuffer.height;
 
 	auto gPosition = ctx.GetInput(0);
 	auto gNormal = ctx.GetInput(1);
 	auto ssaoColorMap = ctx.GetTemp(0);
 	auto ssaoBlurColorMap = ctx.GetOutput(0);
 
-	ComputeBindingRecord ssaoBinding;
-	ssaoBinding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	ssaoBinding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
-	ssaoBinding.SetStorageImage(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 0);
-	ssaoBinding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 1);
-	ssaoBinding.SetUniformTexture(gNormal, vk::ImageAspectFlagBits::eColor, 2);
-	ssaoBinding.SetUniformTexture(_noiseTexture, vk::ImageAspectFlagBits::eColor, 3);
-	ssaoBinding.SetUniformBlock(_ssaoParams, 4);
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	binding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
+	binding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	binding.SetStorageImage(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 0);
+	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 1);
+	binding.SetUniformTexture(gNormal, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(_noiseTexture, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetUniformBlock(_kernelParams, 4);
 
 	auto cmd = cmdCtx.GetCmd();
 
 	ssaoColorMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
-	_ssaoShader.Bind(cmd, ssaoBinding);
-	cmd->dispatch((state.framebuffer.width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (state.framebuffer.height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+	_ssaoShader.Bind(cmd, binding);
+	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	ssaoColorMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 
@@ -139,7 +154,7 @@ void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 	ssaoBlurBinding.SetUniformTexture(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 1);
 
 	_ssaoBlurShader.Bind(cmd, ssaoBlurBinding);
-	cmd->dispatch((state.framebuffer.width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (state.framebuffer.height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
 }

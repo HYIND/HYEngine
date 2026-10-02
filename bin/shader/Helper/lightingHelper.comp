@@ -497,6 +497,7 @@ vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, sampler
     vec3 brdf = F0 * A + B;
 
     vec3 specColor = prefilteredColor * brdf;
+	vec3 color = diffuseColor + specColor;
 
-    return diffuseColor * prop.ambientOcclusion + specColor;
+    return color * prop.ambientOcclusion;
 }
