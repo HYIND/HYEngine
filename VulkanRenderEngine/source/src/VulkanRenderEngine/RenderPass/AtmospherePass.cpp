@@ -258,7 +258,8 @@ AtmospherePass::AtmospherePass(
 		.AddUnifromTexture(3)
 		.AddUnifromTexture(4)
 		.AddUnifromTexture(5)
-		.AddUnifromTexture(6);
+		.AddUnifromTexture(6)
+		.AddUnifromTexture(7);
 
 	if (config.Validate())
 		_shader.Create(config);
@@ -313,9 +314,7 @@ void AtmospherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 	auto tempColor = ctx.GetTemp(0);
 
 	auto atlasShadowMap = ctx.GetInput(0);
-	auto gNormal = ctx.GetInput(1);
-	auto gAlbedoOpacity = ctx.GetInput(2);
-	auto gMetallicRoughness = ctx.GetInput(3);
+	auto gPosition = ctx.GetInput(1);
 
 	if (!sceneColorBuffer
 		|| !sceneDepthBuffer
@@ -350,6 +349,7 @@ void AtmospherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 	binding.SetUniformTexture(state.skyAtmosphereParams.transmittanceLut, vk::ImageAspectFlagBits::eColor, 4);
 	binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 5);
 	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 6);
+	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 7);
 
 	_shader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);

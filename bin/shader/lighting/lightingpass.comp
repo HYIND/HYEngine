@@ -32,18 +32,6 @@ layout (binding = 11) uniform samplerCube IBLPrefilter;
 layout (binding = 12) uniform sampler2D IBLBrdfLUT;
 
 
-vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
-{
-    vec4 ndcPos = vec4(texCoords * 2.0 - 1.0, depth, 1.0);
-    
-    vec4 viewPos = camera.invProjection * ndcPos;
-    viewPos /= viewPos.w; // 透视除法
-    
-    // 逆视图变换到世界空间
-    vec4 worldPos = camera.invView * viewPos;
-    return worldPos.xyz;
-}
-
 void main()
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
@@ -81,8 +69,7 @@ void main()
 
 	if (skyIBLEnable)
 	{
-		vec3 worldPos = ReconstructWorldPosition(depth, TexCoords);
-		vec3 viewDir = normalize(worldPos - camera.position);
+		vec3 viewDir = normalize(fragPos - camera.position);
 		vec3 ambient = CalculateIBLLighting(viewDir, normal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT);
 		color += ambient;
 	}
