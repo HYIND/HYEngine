@@ -299,7 +299,7 @@ void VulkanRenderer::InitRenderTarget()
 {
 	_renderTargets.clear();
 
-	const Texture2DConfig config
+	const TextureConfig config
 	{
 		.minFilter = vk::Filter::eLinear,
 		.magFilter = vk::Filter::eLinear,
@@ -453,8 +453,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 {
 	static auto MakeConbinIndirectLightingPass = []()-> auto {
 
-		constexpr uint32_t work_size_x = 16;
-		constexpr uint32_t work_size_y = 16;
 		auto makeCombinShader = [&](const std::string& path) -> std::shared_ptr<ComputePipeline>
 			{
 				auto shader = std::make_shared<ComputePipeline>();
@@ -462,8 +460,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 				ComputePipelineConfig config;
 				config.AddDefineMacro("COMBIN_MODE", 1);
 				config.AddDefineMacro("SkipBrightOutput", "");
-				config.AddDefineMacro("work_size_x", work_size_x);
-				config.AddDefineMacro("work_size_y", work_size_y);
+				config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+				config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 				config.computePath = "shader/postprocess/combin.comp";
 
 				config
@@ -479,7 +477,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			};
 
 		return MakeLambdaPass(
-			[_shader = makeCombinShader("shader/postprocess/combin.comp"), work_size_x = work_size_x, work_size_y = work_size_y]
+			[_shader = makeCombinShader("shader/postprocess/combin.comp")]
 			(RenderGraph::PassFrameCmdContext& cmdCtx, const RenderGraph::PassFrameContext& ctx, RenderState& state) mutable -> void
 			{
 				if (!_shader)
@@ -522,7 +520,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 				_shader->Bind(cmd, binding);
 				_shader->SetPushConstants(cmd, &count, sizeof(count));
 
-				cmd->dispatch((width + work_size_x - 1) / work_size_x, (height + work_size_y - 1) / work_size_y, 1);
+				cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 				cmd->SubmitToQueue();
 			});
@@ -535,6 +533,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 	_sceneRenderGraph = std::make_unique<RenderGraph::Graph>("SceneRenderGraph");
 
 	auto preCalculatePass = std::make_unique<PreCalculatePass>();
+
+	auto atmospherePreCalculatePass = std::make_unique<AtmospherePreCalculatePass>(
+		"shader/Atmosphere/TransmittanceLut.comp",
+		"shader/Atmosphere/SkyViewLut.comp",
+		"shader/Atmosphere/SkyCubeGenerate.comp"
+	);
+
+	auto skyboxPreCalculatePass = std::make_unique<SkyBoxPreCalculatePass>();
 
 	auto hzbPass = std::make_unique<HZBPass>(
 		"shader/HZB/depth.vs",
@@ -624,7 +630,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto atmospherePass = std::make_unique<AtmospherePass>("shader/Atmosphere/Atmosphere.comp", "shader/Atmosphere/TransmittanceLut.comp", "shader/Atmosphere/SkyViewLut.comp");
+	auto atmospherePass = std::make_unique<AtmospherePass>("shader/Atmosphere/Atmosphere.comp");
 
 	auto depthFogPass = std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp");
 
@@ -666,6 +672,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	// 不透明物体
 	auto preCalculateNode = _sceneRenderGraph->AddNode("preCalculateNode");
+	auto atmospherePreCaulateNode = _sceneRenderGraph->AddNode("atmospherePreCaulateNode");
+	auto skyboxPreCalculateNode = _sceneRenderGraph->AddNode("skyboxPreCalculateNode");
 	auto hzbNode = _sceneRenderGraph->AddNode("hzbNode");
 	auto geometryNode = _sceneRenderGraph->AddNode("geometry");
 	auto lightingShadowDepthNode = _sceneRenderGraph->AddNode("lightingShadowDepthNode");
@@ -696,7 +704,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 	// 曝光计算
 	auto autoExposureNode = _sceneRenderGraph->AddNode("autoExposureNode");
 
-	preCalculateNode->SetRenderPass(std::move(preCalculatePass));
 
 
 	using RenderGraphResource = RenderGraph::RenderGraphResource;
@@ -713,6 +720,13 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto transferWriteLayout = RenderGraph::RenderGraphResourceLayout{ .data = TextureLayout{.stage = ImageLayout::BindStage::Transfer, .usage = ImageLayout::BindUsage::Write} };
 	auto rayTracingReadLayout = RenderGraph::RenderGraphResourceLayout{ .data = TextureLayout{.stage = ImageLayout::BindStage::RayTracing, .usage = ImageLayout::BindUsage::Read} };
 	auto rayTracingWriteLayout = RenderGraph::RenderGraphResourceLayout{ .data = TextureLayout{.stage = ImageLayout::BindStage::RayTracing, .usage = ImageLayout::BindUsage::Write} };
+
+
+	preCalculateNode->SetRenderPass(std::move(preCalculatePass));
+
+	atmospherePreCaulateNode->SetRenderPass(std::move(atmospherePreCalculatePass));
+
+	skyboxPreCalculateNode->SetRenderPass(std::move(skyboxPreCalculatePass));
 
 	hzbNode->SetRenderPass(std::move(hzbPass))
 		.Temp(ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "hzbPass_temp"), graphicsWriteLayout })
@@ -764,7 +778,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gEmission, computeReadLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.After(lightingShadowDepthNode, ssaoNode)
+		.After(atmospherePreCaulateNode, lightingShadowDepthNode, ssaoNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -900,8 +914,13 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.Before(transprantFence);
 
 	atmosphereNode->SetRenderPass(std::move(atmospherePass))
-		.Input(ResourceData{ atlasShadowMap, computeReadLayout })
-		.After(opaqueFence, transprantFence)
+		.Input(
+			ResourceData{ atlasShadowMap, computeReadLayout },
+			ResourceData{ gNormal, computeReadLayout },
+			ResourceData{ gAlbedoOpacity, computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }
+		)
+		.After(atmospherePreCaulateNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atmosphereNode_TempColor"), {} })
 		.Before(postProcessFence)

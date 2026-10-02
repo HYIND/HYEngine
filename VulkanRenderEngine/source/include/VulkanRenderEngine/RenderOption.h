@@ -84,6 +84,7 @@ struct RenderOption
 	} depthFogParams;
 
 	struct AtmosphereParams {
+		glm::vec3 CubeCapturePosition = glm::vec3(0, 500, 0);
 		float PlanetRadius = 6370 * 1e3;
 		float AtmosphereHeight = 100 * 1e3;
 		float RayleighScatteringScalarHeight = 8 * 1e3;

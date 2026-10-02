@@ -3,10 +3,6 @@
 //#include "VulkanRenderEngine/General/RenderHelp.h"
 //#include "VulkanRenderEngine/General/GPUTimer.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
-
-constexpr uint32_t occ_work_size_x = 256;
 
 struct LevelData {
 	uint32_t inputLevel;
@@ -88,8 +84,8 @@ HZBPass::HZBPass(
 		_HZBShader = std::make_shared<ComputePipeline>();
 
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = HZBComputerShaderPath;
 
 		config
@@ -104,7 +100,7 @@ HZBPass::HZBPass(
 		_occlusionCullShader = std::make_shared<ComputePipeline>();
 
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", occ_work_size_x);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y);
 		config.AddDefineMacro("work_size_y", 1);
 		config.computePath = OcclusionCullingComputerShaderPath;
 
@@ -344,7 +340,7 @@ void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Re
 		data.outputLevel = level;
 
 		_HZBShader->SetPushConstants(cmd, &data, sizeof(data));
-		cmd->dispatch((currW + work_size_x - 1) / work_size_x, (currH + work_size_y - 1) / work_size_y, 1);
+		cmd->dispatch((currW + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (currH + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 		if (level < _maxLevel - 1)
 			HZBMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
@@ -395,7 +391,7 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	occlusionCullShaderBinding.SetUniformTexture(HZBMap, vk::ImageAspectFlagBits::eDepth, 5);
 
 	_occlusionCullShader->Bind(cmd, occlusionCullShaderBinding);
-	cmd->dispatch((frustumObjectIndex.size() + occ_work_size_x - 1) / occ_work_size_x, 1, 1);
+	cmd->dispatch((frustumObjectIndex.size() + GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y, 1, 1);
 
 	// 内含隐式Submit
 	result_ssbo->GetBuffer()->Readback(cmd, frustumOcclusionCullResult.data(), frustumOcclusionCullResult.size() * sizeof(int));

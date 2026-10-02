@@ -1,92 +1,26 @@
 ﻿#pragma once
 
-#include "vkstdafx.h"
-#include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
-#include "VulkanRenderEngine/General/ImageLayoutWrapper.h"
+#include "Texture2DArray.h"
 #include "CriticalSectionLock.h"
 
-struct TextureCubeConfig
+class TextureCube : public Texture2DArray
 {
-	vk::Filter minFilter = vk::Filter::eNearest;
-	vk::Filter magFilter = vk::Filter::eNearest;
-	vk::SamplerAddressMode wrapU = vk::SamplerAddressMode::eClampToEdge;
-	vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eClampToEdge;
-	vk::SamplerAddressMode wrapW = vk::SamplerAddressMode::eClampToEdge;
-	bool anisotropy = false;
-	bool gammaCorrection = true;
-
-	bool operator==(const TextureCubeConfig& other) const;
-	bool operator!=(const TextureCubeConfig& other) const;
-};
-
-struct TextureCubeDescBindEntry
-{
-	std::shared_ptr<VKWrapper::VmaImage> image;
-	std::shared_ptr<VKWrapper::VKImageView> imageView;
-	std::shared_ptr<VKWrapper::VKSampler> sampler;
-	uint32_t version;
-};
-
-class TextureCube
-{
-
 public:
-	TextureCube(const std::array<std::string, 6>& filepaths, const TextureCubeConfig& config = {});
-	~TextureCube() = default;
+	TextureCube(const std::array<std::string, 6>& filepaths, const TextureConfig& config = {}, bool autoMipMaps = false);
+	TextureCube(uint32_t size, vk::Format format = vk::Format::eR8G8B8A8Unorm, const TextureConfig& config = {}, uint32_t maxLevel = 1);	// 创建空纹理
 
-public:
-	TextureCube& SetFiltering(vk::Filter xFilter);
-	TextureCube& SetFiltering(vk::Filter minFilter, vk::Filter magFilter);
-	TextureCube& SetWrapping(vk::SamplerAddressMode wrap);
-	TextureCube& SetWrapping(vk::SamplerAddressMode wrapU, vk::SamplerAddressMode wrapV, vk::SamplerAddressMode wrapW);
-	TextureCube& SetAnisotropy(bool anisotropy);
+	vk::ImageView GetImageCubeView(vk::ImageAspectFlags aspect, uint32_t baseMipLevel = 0, uint32_t levelCount = std::numeric_limits<uint32_t>::max()) const;
+	vk::ImageView GetImageCubeView(const ImageViewInfo& info) const;
+	TextureDescBindEntry GetCubeDescBindEntry(vk::ImageAspectFlags aspect, uint32_t baseMipLevel = 0, uint32_t levelCount = UINT32_MAX) const;
+	TextureDescBindEntry GetCubeDescBindEntry(const ImageViewInfo& info) const;
 
-	bool LoadFromFile(const std::array<std::string, 6>& filepaths);
-
-public:
-	vk::Image GetImage() const;
-	vk::ImageView GetImageView() const;
-	vk::Sampler GetSampler() const;
-	TextureCubeDescBindEntry GetDescBindEntry() const;
-	uint32_t GetDescBindEntryVersion() const;
-	uint32_t GetWidth() const;
-	uint32_t GetHeight() const;
-	uint32_t GetMaxLevel() const;
-	glm::u32vec2 GetSize() const;
-	bool IsEmpty() const;
-
-	vk::Format GetFormat() const;
-	vk::Filter GetMinFilter() const;
-	vk::Filter GetMagFilter() const;
-	vk::SamplerAddressMode GetWrapU() const;
-	vk::SamplerAddressMode GetWrapV() const;
-	vk::SamplerAddressMode GetWrapW() const;
-
-	TextureCubeConfig GetConfig() const;
-
-public:
-	void TransitionLayout(
-		std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
-		vk::ImageLayout* outLayout,
-		ImageLayout::BindStage stage, ImageLayout::BindUsage usage,
-		uint32_t level = UINT32_MAX
-	);
+	bool LoadCubeFromFile(const std::array<std::string, 6>& filepaths, bool autoMipMaps);
 
 private:
-	bool CreateImage();
-	bool CreateImageView();
-	bool CreateSampler();
+	virtual void OnCreateImageView() override;
+
+	std::shared_ptr<VKWrapper::VKImageView> CreateLevelCubeView(const ImageViewInfo& info) const;
 
 private:
-	std::shared_ptr<VKWrapper::VmaImage> _image;
-	std::shared_ptr<VKWrapper::VKImageView> _imageView;
-	std::shared_ptr<VKWrapper::VKSampler> _sampler;
-
-	mutable CriticalSectionLock _mutex;
-
-	std::atomic<uint32_t> _version{ 0 };
-
-	uint32_t m_Size;
-	vk::Format m_Format;
-	TextureCubeConfig m_config;
+	mutable std::unordered_map<ImageViewInfo, std::shared_ptr<VKWrapper::VKImageView>> _levelImageCubeViews;
 };

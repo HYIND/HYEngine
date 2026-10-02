@@ -1,15 +1,13 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/TemporalAccumulate.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
 
 TemporalAccumulate::TemporalAccumulate(const std::string& temporalAccumulateShaderPath)
 {
 
 	ComputePipelineConfig config;
-	config.AddDefineMacro("work_size_x", work_size_x);
-	config.AddDefineMacro("work_size_y", work_size_y);
+	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 	config.computePath = temporalAccumulateShaderPath;
 
 	config
@@ -87,6 +85,6 @@ void TemporalAccumulate::Execute(
 	binding.SetUniformTexture(prevDepthMap, vk::ImageAspectFlagBits::eDepth, 12);
 
 	_pipeline.Bind(cmd, binding);
-	cmd->dispatch((size.x + work_size_x - 1) / work_size_x, (size.y + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 }

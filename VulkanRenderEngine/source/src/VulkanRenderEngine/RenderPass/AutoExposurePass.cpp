@@ -2,8 +2,6 @@
 #include "VulkanRenderEngine/RenderPass/AutoExposurePass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 
-constexpr int work_size_x = 16;
-constexpr int work_size_y = 16;
 
 struct HistogramSSBOParams
 {
@@ -14,8 +12,8 @@ struct HistogramSSBOParams
 AutoExposurePass::AutoExposurePass(const std::string& computeShaderPath)
 {
 	ComputePipelineConfig config;
-	config.AddDefineMacro("work_size_x", work_size_x);
-	config.AddDefineMacro("work_size_y", work_size_y);
+	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 	config.AddDefineMacro("MIN_EV", GlobalConfig::AutoExposure_MIN_EV);
 	config.AddDefineMacro("MAX_EV", GlobalConfig::AutoExposure_MAX_EV);
 	config.computePath = computeShaderPath;
@@ -62,7 +60,7 @@ void AutoExposurePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderG
 	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);
 
 	_shader.Bind(cmd, binding);
-	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((state.framebuffer.width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (state.framebuffer.height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 	paramsSSBO->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
 
 	std::vector<uint32_t> bins;

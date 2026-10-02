@@ -1,0 +1,296 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+#include "shader/Atmosphere/AtmoPublic.comp"
+
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputCube;
+layout (binding = 2) uniform sampler2D transmittanceLut;
+
+
+vec4 TransmittanceSample(float height, float cos_theta)
+{
+    height = max(0.0, height);
+
+    float uv_x = height / AtmosphereHeight;
+    
+    float theta = acos(clamp(cos_theta, -1.0, 1.0));
+    float uv_y = theta / PI;
+
+    uv_x = clamp(uv_x, 0, 1);
+    uv_y = clamp(uv_y, 0, 1);
+
+    vec2 uv = vec2(uv_x, uv_y);
+    vec4 T = texture(transmittanceLut, uv).rgba;
+
+    return T;
+}
+
+// 计算两点之间的透射率
+vec3 TransmittanceWithLut(vec3 p1, vec3 p2)
+{
+    vec3 dir = normalize(p2 - p1);
+
+    float h1 = length(p1) - PlanetRadius;
+    float h2 = length(p2) - PlanetRadius;
+
+    h1 = max(0.0, h1);
+    h2 = max(0.0, h2);
+
+    vec3 up1 = normalize(p1);
+    vec3 up2 = normalize(p2);
+    float cos_theta1 = dot(dir, up1);
+    float cos_theta2 = dot(dir, up2);
+
+    // vec3 up = vec3(0,1,0);
+    // float cos_theta1 = dot(dir, up);
+    // float cos_theta2 = dot(dir, up);
+
+    vec4 T1 = TransmittanceSample(h1, cos_theta1);
+    vec4 T2 = TransmittanceSample(h2, cos_theta2);
+
+    if (sign(T1.a) == sign(T2.a))
+    {
+        const vec3 EPS = vec3(1e-6);
+        return min(max(T1.rgb, EPS) / max(T2.rgb, EPS), vec3(1.0));
+    }
+    else 
+    {
+        return vec3(0.f);
+    }
+}
+
+// 计算光学厚度
+vec3 GetExtinction(vec3 p)
+{
+    float h = length(p) - PlanetRadius;
+    h = max(0.0, h);
+
+    vec3 scattering = RayleighCoefficient(h) + MieCoefficient(h);
+    vec3 absorption = OzoneAbsorption(h) + MieAbsorption(h);
+    vec3 extinction = scattering + absorption;
+
+    return extinction;
+}
+
+vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir)
+{
+
+    vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
+    vec3 toLightDir = -lightDir;
+    float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
+    float stepSize = dstToTarget / float(ScatterPathSampleCount);
+    vec3 color = vec3(0.f);
+
+    // 累积光学厚度
+    vec3 camSumExtinction = vec3(0.f);
+
+    for (uint i = 0; i < ScatterPathSampleCount; i++) {
+
+        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(ScatterPathSampleCount));
+
+        vec3 extinction = GetExtinction(testPoint) * stepSize;
+        camSumExtinction += extinction;
+
+        // 已累积的光线厚度转化为当前段的消光率
+        vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
+
+        float planetNear, planetFar;
+        bool hitPlanet = RaySphereIntersection(
+            vec3(0,0,0),
+            PlanetRadius,
+            testPoint,
+            toLightDir,
+            planetNear,
+            planetFar
+        );
+        if (hitPlanet)
+        {
+            // 情况 1：行星在采样点到太阳之间 → 遮挡
+            if (hitPlanet && planetNear > 0.0)
+            {
+                continue;
+            }
+            // 情况 2：采样点在行星内部 → 无效
+            if (hitPlanet && planetNear < 0.0 && planetFar > 0.0)
+            {
+                continue;
+            }
+        }
+
+        float tStart, tEnd;
+        bool validSegment = GetAtmosphereRaySegment(
+            testPoint,
+            toLightDir,
+            tStart,
+            tEnd
+        );
+        if (!validSegment)
+        {
+            continue;
+        }
+
+        vec3 atmosphereStart = testPoint + toLightDir * tStart;
+        vec3 atmosphereEnd = testPoint + toLightDir * tEnd;
+
+        vec3 tramsmittanceLightToTest = TransmittanceWithLut(atmosphereStart, atmosphereEnd);                       // 太阳到采样点之间的透光率
+        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                               // 散射光比例
+        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
+        color += inScattering;
+    }
+
+
+    return color;
+}
+
+const float MAX_DISTANCE = 1e5;
+
+vec3 CalculateSkyColor(vec3 CameraPosition, vec3 viewDir, vec3 sunLightColor, vec3 sunLightDir)
+{
+
+    vec3 result = vec3(0.f);
+
+    if (sunLightDir.y < 0.2)
+    {
+        vec3 cameraPosInPlanet = CameraPosition + vec3(0, PlanetRadius, 0.f);
+
+        vec3 startPosInPlanet;
+        vec3 targetPosInPlanet;
+
+        bool shouldCalculateSkyLight = true;
+
+        float tStart;
+        float tEnd;
+
+        bool validSegment = GetAtmosphereRaySegment(
+            cameraPosInPlanet,
+            viewDir,
+            tStart,
+            tEnd
+        );
+
+        if (validSegment)
+        {
+            // tEnd = min(MAX_DISTANCE, tEnd);
+
+            vec3 atmosphereStart = cameraPosInPlanet + viewDir * tStart;
+            vec3 atmosphereEnd = cameraPosInPlanet + viewDir * tEnd;
+
+            startPosInPlanet = atmosphereStart;
+            targetPosInPlanet = atmosphereEnd;
+        }
+        else
+            shouldCalculateSkyLight = false;
+
+        if (shouldCalculateSkyLight && sunLightDir.y < 0.3)
+            result += singleScatterSkyColor(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir);
+
+        vec3 toLightDir = -sunLightDir;
+        float cosAngle = dot(viewDir, toLightDir);
+        if(cosAngle > 0.9998) {// 视线指向太阳圆盘
+            
+            float planetNear, planetFar;
+            bool hitPlanet = RaySphereIntersection(
+                vec3(0,0,0),
+                PlanetRadius,
+                cameraPosInPlanet,
+                viewDir,
+                planetNear,
+                planetFar
+            );
+            if (!hitPlanet || (planetNear < 0 && planetFar < 0))
+            {
+                float tStart, tEnd;
+                bool validSegment = GetAtmosphereRaySegment(
+                    cameraPosInPlanet,
+                    toLightDir,
+                    tStart,
+                    tEnd
+                );
+                if (validSegment)
+                {
+                    vec3 atmosphereStart = cameraPosInPlanet + toLightDir * tStart;
+                    vec3 atmosphereEnd = cameraPosInPlanet + toLightDir * tEnd;
+                    result += TransmittanceWithLut(atmosphereStart, atmosphereEnd) * sunLightColor;
+                }
+                else 
+                {
+                    result += sunLightColor;
+                }
+            }
+        }
+    }
+
+    return result;    
+}
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(90.f) * 0.5);
+    vec2 localRayXY = ndc * tanHalfFov;
+
+    vec3 dir;
+
+    switch (face)
+    {
+        case 0: // +X
+            dir = vec3(1, localRayXY.y, -localRayXY.x);
+            break;
+
+        case 1: // -X
+            dir = vec3(-1, localRayXY.y, localRayXY.x);
+            break;
+
+        case 2: // +Y
+            dir = vec3(localRayXY.x, 1, -localRayXY.y);
+            break;
+
+        case 3: // -Y
+            dir = vec3(localRayXY.x, -1, localRayXY.y);
+            break;
+
+        case 4: // +Z
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+
+        case 5: // -Z
+            dir = vec3(-localRayXY.x, localRayXY.y, -1);
+            break;
+        
+        default:
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+    }
+
+    return normalize(dir);
+}
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputCube);
+
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = arraySize.xy;
+
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+
+    vec3 color = CalculateSkyColor(CubeCapturePosition, viewDir, DirLightColor, normalize(DirLightDir));
+
+    imageStore(outputCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f));
+}

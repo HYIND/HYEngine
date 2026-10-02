@@ -107,7 +107,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	vk::Format format,
 	vk::Extent2D size,
 	uint32_t mipLevels,
-	ImageType type,
+	uint32_t layerCount,
 	bool cpuAccess
 ) {
 
@@ -164,16 +164,14 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 
 	vk::ImageUsageFlags usage = GetUsageFlags();
 
-	bool isCubemap = (type == ImageType::ImageCube);
-
 	vk::ImageCreateInfo imageInfo = {};
 	imageInfo.
-		setFlags(isCubemap ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlagBits(0))
+		setFlags(layerCount == 6 ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlagBits(0))
 		.setImageType(vk::ImageType::e2D)
 		.setFormat(format)
 		.setExtent({ size.width,size.height, 1 })
 		.setMipLevels(std::max((uint32_t)1, mipLevels))
-		.setArrayLayers(isCubemap ? 6 : 1)
+		.setArrayLayers(layerCount)
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setTiling(vk::ImageTiling::eOptimal)
 		.setUsage(usage)
@@ -192,6 +190,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 
 	m_device = device;
 	m_allocator = allocator;
+	m_layerCount = imageInfo.arrayLayers;
 	m_mipLevels = imageInfo.mipLevels;
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;

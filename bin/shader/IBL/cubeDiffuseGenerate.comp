@@ -1,0 +1,170 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+layout (binding = 0) uniform Params
+{
+    uint sampleCount;
+    uint frameIndex;
+};
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputDiffuseCube;
+layout (binding = 2) uniform samplerCube skyCube;
+
+#ifndef PI_DEFINE
+#define PI_DEFINE
+const float PI = 3.14159265359;
+#endif
+
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float pcg_float(uint seed) {
+    return float(pcg_hash(seed)) / 4294967296.0;
+}
+
+vec2 pcg_float2(uint seed) {
+    uint h1 = pcg_hash(seed);
+    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
+    return vec2(float(h1), float(h2)) / 4294967296.0;
+}
+
+vec2 getRandom(uint seed) 
+{
+    return pcg_float2(seed);
+}
+
+vec3 RotateNormal(vec3 normal, float cosTheta, float r2)
+{
+    float phi = 2.0 * PI * r2;
+    
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
+    vec3 dir = vec3(
+        sinTheta * cos(phi),
+        sinTheta * sin(phi),
+        cosTheta
+    );
+    
+    // 将局部坐标转到世界空间（以法线为Z轴）
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+
+    return samplerDir;
+}
+
+// 生成余弦加权半球随机方向
+vec3 ImportanceSampleCosine(vec3 normal, vec2 random)
+{
+    float cosTheta = sqrt(random.x);// 余弦加权
+    float r2 = random.y;  
+    return RotateNormal(normal, cosTheta, r2);
+}
+
+vec3 CalcContribute_CosineSample(vec3 light)
+{
+	return light * PI;
+}
+
+vec3 SamplerCubeColor(vec3 viewDir, uint sampleId)
+{
+    uint seedbase = uint(gl_GlobalInvocationID.x) * 197u 
+            + uint(gl_GlobalInvocationID.y) * 927u
+            + uint(gl_GlobalInvocationID.z) * 619u
+            + uint(frameIndex) * 777u;
+
+    uint seed = seedbase + uint(sampleId) * 269u;
+
+    // 余弦加权重要性采样diffuse
+    vec2 random = getRandom(seed);
+    vec3 samplerDir = ImportanceSampleCosine(viewDir, random);
+
+    vec3 diffuse = texture(skyCube, samplerDir).rgb;
+    return CalcContribute_CosineSample(diffuse);
+}
+
+vec3 CalculateDiffuse(vec3 viewDir, uint sampleCount) 
+{
+    vec3 totalIrradiance = vec3(0.0);
+
+    for (uint i = 0; i < sampleCount; i++) 
+        totalIrradiance += SamplerCubeColor(viewDir, i);
+
+    return sampleCount > 0 ?  totalIrradiance / float(sampleCount) : vec3(0.f);
+}
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(90.f) * 0.5);
+    vec2 localRayXY = ndc * tanHalfFov;
+
+    vec3 dir;
+
+    switch (face)
+    {
+        case 0: // +X
+            dir = vec3(1, localRayXY.y, -localRayXY.x);
+            break;
+
+        case 1: // -X
+            dir = vec3(-1, localRayXY.y, localRayXY.x);
+            break;
+
+        case 2: // +Y
+            dir = vec3(localRayXY.x, 1, -localRayXY.y);
+            break;
+
+        case 3: // -Y
+            dir = vec3(localRayXY.x, -1, localRayXY.y);
+            break;
+
+        case 4: // +Z
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+
+        case 5: // -Z
+            dir = vec3(-localRayXY.x, localRayXY.y, -1);
+            break;
+        
+        default:
+            dir = vec3(localRayXY.x, localRayXY.y, 1);
+            break;
+    }
+
+    return normalize(dir);
+}
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputDiffuseCube);
+
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = arraySize.xy;
+
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+
+    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+
+    vec3 color = CalculateDiffuse(viewDir, sampleCount);
+
+    imageStore(outputDiffuseCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f));
+}

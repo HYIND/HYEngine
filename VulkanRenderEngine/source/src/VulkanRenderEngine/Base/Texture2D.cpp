@@ -7,26 +7,6 @@
 #include <stb\stb_image.h>   
 #include "VulkanRenderEngine/General/DDSLoader.h"
 
-static float GetAnisotropicTextureFiltering()
-{
-	static std::optional<float> s_value;
-	static std::mutex s_mutex;
-
-	if (s_value.has_value())
-		return s_value.value();
-
-	std::lock_guard<std::mutex> lock(s_mutex);
-	if (s_value.has_value())
-		return s_value.value();
-
-	if (auto device = VKCONTEXT->GetDevice())
-		s_value = device->GetPhysicalDeviceProperties().properties.limits.maxSamplerAnisotropy;
-	else
-		return 1.0f;  // 返回默认值
-
-	return s_value.value();
-}
-
 void Texture2D::BlitImageAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, vk::Image dstImage, uint32_t dstWidth, uint32_t dstHeight, vk::Filter filterMode)
 {
 	vk::Image srcImage = src._image->GetHandle();
@@ -236,13 +216,13 @@ bool Texture2D::CopyTexture(const std::shared_ptr<Texture2D>& src, const std::sh
 	return CopyTexture(*src, *dest, srcLevel, destLevel);
 }
 
-Texture2D::Texture2D(const std::string& filepath, const Texture2DConfig& config, bool autoMipMaps)
+Texture2D::Texture2D(const std::string& filepath, const TextureConfig& config, bool autoMipMaps)
 	: m_Width(0), m_Height(0), m_MaxLevel(1u), m_config(config)
 {
 	LoadFromFile(filepath, autoMipMaps);
 }
 
-Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const Texture2DConfig& config, uint32_t level)
+Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const TextureConfig& config, uint32_t level)
 	: m_Width(width), m_Height(height), m_Format(format), m_MaxLevel(std::max(1u, level)), m_config(config)
 {
 	CreateImage();
@@ -250,7 +230,7 @@ Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const T
 	CreateSampler();
 }
 
-Texture2D::Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const Texture2DConfig& config)
+Texture2D::Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const TextureConfig& config)
 	: m_Width(sharedTexture->width), m_Height(sharedTexture->height), m_MaxLevel(1u), m_config(config)
 {
 	CreateFromDX11SharedHandle(sharedTexture);
@@ -493,7 +473,7 @@ glm::u32vec2 Texture2D::GetSize() const
 	return glm::u32vec2(m_Width, m_Height);
 }
 
-Texture2DConfig Texture2D::GetConfig() const
+TextureConfig Texture2D::GetConfig() const
 {
 	return m_config;
 }
@@ -618,7 +598,7 @@ bool Texture2D::CreateImage()
 	LockGuard guard(_mutex);
 
 	auto image = std::make_shared<VKWrapper::VmaImage>();
-	bool result = image->Create(VKCONTEXT->GetDevice().get(), m_Format, { m_Width ,m_Height }, m_MaxLevel);
+	bool result = image->Create(VKCONTEXT->GetDevice().get(), m_Format, { m_Width ,m_Height }, m_MaxLevel, 1);
 	if (!result)
 		return false;
 
@@ -655,7 +635,7 @@ bool Texture2D::CreateSampler()
 		.setUnnormalizedCoordinates(vk::False);
 
 	if (m_config.anisotropy)
-		samplerInfo.setMaxAnisotropy(GetAnisotropicTextureFiltering());
+		samplerInfo.setMaxAnisotropy(TextureGeneralDef::GetAnisotropicTextureFiltering());
 
 	auto sampler = std::make_shared<VKWrapper::VKSampler>();
 	vk::Result result = sampler->Create(VKCONTEXT->GetDevice().get(), samplerInfo);
@@ -706,19 +686,4 @@ bool Texture2D::CreateFromDX11SharedHandle(std::shared_ptr<SharedTexture> shared
 	_version++;
 
 	return true;
-}
-
-bool Texture2DConfig::operator==(const Texture2DConfig& other)
-{
-	return minFilter == other.minFilter
-		&& magFilter == other.magFilter
-		&& wrapU == other.wrapU
-		&& wrapV == other.wrapV
-		&& anisotropy == other.anisotropy
-		&& gammaCorrection == other.gammaCorrection;
-}
-
-bool Texture2DConfig::operator!=(const Texture2DConfig& other)
-{
-	return !(*this == other);
 }

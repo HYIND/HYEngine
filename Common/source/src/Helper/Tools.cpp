@@ -216,12 +216,12 @@ float Tool::RandomLinear(float minVal, float maxVal)
 
 float Tool::LinearLerp(float value1, float value2, float t)
 {
-	return glm::mix(value1, value2, 1.f - t);
+	return glm::mix(value1, value2, t);
 }
 
 glm::vec3 Tool::LinearLerp(const glm::vec3& value1, const glm::vec3& value2, float t)
 {
-	return glm::mix(value1, value2, 1.f - t);
+	return glm::mix(value1, value2, t);
 }
 
 glm::quat Tool::GetQuatFromRotate(float angle, const glm::vec3& axis)

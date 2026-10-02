@@ -81,6 +81,7 @@ namespace VKWrapper {
 		VKCore::VulkanDevice* m_device = nullptr;
 		vk::Image m_image = VK_NULL_HANDLE;
 
+		uint32_t m_layerCount = 1;
 		uint32_t m_mipLevels = 1;
 		vk::Extent3D m_extent = vk::Extent3D();
 		vk::Format m_format = vk::Format::eUndefined;

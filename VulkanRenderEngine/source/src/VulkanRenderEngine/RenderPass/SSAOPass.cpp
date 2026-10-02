@@ -2,8 +2,8 @@
 #include "VulkanRenderEngine/RenderPass/SSAOPass.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
+
+
 
 struct alignas(16) Params {
 	std::array<glm::vec4, 64> samples;
@@ -56,7 +56,7 @@ SSAOPass::SSAOPass(
 		std::vector<glm::vec4> ssaoNoise;
 		InitKernelAndNoise(params.samples, ssaoNoise);
 
-		Texture2DConfig config{
+		TextureConfig config{
 			.minFilter = vk::Filter::eNearest,
 			.magFilter = vk::Filter::eNearest,
 			.wrapU = vk::SamplerAddressMode::eRepeat,
@@ -71,8 +71,8 @@ SSAOPass::SSAOPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = ssaoComputeShaderPath;
 
 		config
@@ -90,8 +90,8 @@ SSAOPass::SSAOPass(
 
 	{
 		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", work_size_x);
-		config.AddDefineMacro("work_size_y", work_size_y);
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = ssaoBlurComputeShaderPath;
 
 		config
@@ -130,7 +130,7 @@ void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 	ssaoColorMap->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	_ssaoShader.Bind(cmd, ssaoBinding);
-	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((state.framebuffer.width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (state.framebuffer.height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	ssaoColorMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 
@@ -139,7 +139,7 @@ void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 	ssaoBlurBinding.SetUniformTexture(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 1);
 
 	_ssaoBlurShader.Bind(cmd, ssaoBlurBinding);
-	cmd->dispatch((state.framebuffer.width + work_size_x - 1) / work_size_x, (state.framebuffer.height + work_size_y - 1) / work_size_y, 1);
+	cmd->dispatch((state.framebuffer.width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (state.framebuffer.height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
 }

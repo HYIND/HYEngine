@@ -311,15 +311,14 @@ struct LinearAccelerationUpdater :public IAccelerationUpdater
 	float initAccelerationValue;
 	float goalAccelerationValue;
 	LinearAccelerationUpdater(const glm::vec3& accelerationDir, float initAccelerationValue, float goalAccelerationValue)
-		:accelerationDir(glm::normalize(accelerationDir)), initAccelerationValue(initAccelerationValue), goalAccelerationValue(goalAccelerationValue) {
-	}
+		:accelerationDir(glm::normalize(accelerationDir)), initAccelerationValue(initAccelerationValue), goalAccelerationValue(goalAccelerationValue) {}
 	std::shared_ptr<IAccelerationUpdater> Clone() override { return std::make_shared<LinearAccelerationUpdater>(accelerationDir, initAccelerationValue, goalAccelerationValue); }
 	glm::vec3 update(Particle* part, float deltaTime) override {
 		float t = 0.f;
 		if (part->maxLifeTime > 0.f && part->lifeTime > 0.f)
 			t = part->lifeTime / part->maxLifeTime;
 
-		return accelerationDir * Tool::LinearLerp(initAccelerationValue, goalAccelerationValue, t);
+		return accelerationDir * Tool::LinearLerp(initAccelerationValue, goalAccelerationValue, 1.0 - t);
 	}
 };
 
@@ -394,7 +393,7 @@ struct LinearOpacityUpdater :public IOpacityUpdater
 		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
 			t = particle->lifeTime / particle->maxLifeTime;
 
-		return Tool::LinearLerp(initOpacity, goalOpacity, t);
+		return Tool::LinearLerp(initOpacity, goalOpacity, 1.0 - t);
 	}
 };
 
@@ -417,7 +416,7 @@ struct LinearBaseColorUpdater :public IBaseColorUpdater
 		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
 			t = particle->lifeTime / particle->maxLifeTime;
 
-		return Tool::LinearLerp(initColor, goalColor, t);
+		return Tool::LinearLerp(initColor, goalColor, 1.0 - t);
 	}
 };
 
@@ -431,8 +430,7 @@ struct FireColorUpdater : public IBaseColorUpdater
 		const glm::vec3& inner = glm::vec3(1.0f, 0.8f, 0.2f),		// 黄白
 		const glm::vec3& mid = glm::vec3(0.7f, 0.3f, 0.05f),		// 亮橙
 		const glm::vec3& outer = glm::vec3(0.1f, 0.0f, 0.0f)		// 暗红
-	) : innerColor(inner), midColor(mid), outerColor(outer) {
-	}
+	) : innerColor(inner), midColor(mid), outerColor(outer) {}
 
 	std::shared_ptr<IBaseColorUpdater> Clone() override {
 		return std::make_shared<FireColorUpdater>(innerColor, midColor, outerColor);
@@ -448,11 +446,11 @@ struct FireColorUpdater : public IBaseColorUpdater
 		glm::vec3 color;
 		if (t <= 0.3f) {
 			float p = t / 0.3f;
-			color = Tool::LinearLerp(innerColor, midColor, 1 - p);
+			color = Tool::LinearLerp(innerColor, midColor, p);
 		}
 		else {
 			float p = (t - 0.3f) / 0.7f;
-			color = Tool::LinearLerp(midColor, outerColor, 1 - p);
+			color = Tool::LinearLerp(midColor, outerColor, p);
 		}
 
 		return color;
@@ -478,7 +476,7 @@ struct LinearScaleUpdater :public IScaleUpdater
 		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
 			t = particle->lifeTime / particle->maxLifeTime;
 
-		return Tool::LinearLerp(initScale, goalScale, t);
+		return Tool::LinearLerp(initScale, goalScale, 1.0 - t);
 	}
 };
 

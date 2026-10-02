@@ -20,6 +20,7 @@ layout (binding = 4) uniform sampler2D transmittanceLut;
 layout (binding = 5) uniform sampler2D skyViewLut;
 layout (binding = 6) uniform sampler2D atlasShadowMap;
 
+
 bool InShadow(vec3 fragPos)
 {
     DirLight light = dirLightMetaData.info[0];
@@ -134,7 +135,7 @@ vec3 GetExtinction(vec3 p)
     return extinction;
 }
 
-vec3 singleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir, vec3 fragColor)
+vec3 SingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lightColor, vec3 lightDir, vec3 fragColor)
 {
 
     vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
@@ -247,8 +248,8 @@ void main()
         vec3 startPosInPlanet = cameraPosInPlanet;
         vec3 targetPosInPlanet = worldPos + vec3(0, PlanetRadius, 0.f);
 
-        vec3 color = singleScatterToFrag(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir, fragColor);
-        result += color;
+        vec3 color = SingleScatterToFrag(startPosInPlanet, targetPosInPlanet, sunLightColor, sunLightDir, fragColor);
+        result += color;     
     }
     else if (sunLightDir.y < 0.2 && samplerDepth >= 0.99994) 
     {

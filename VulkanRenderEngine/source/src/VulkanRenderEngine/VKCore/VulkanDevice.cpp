@@ -1,6 +1,7 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine\VKCore\VulkanDevice.h"
 #include "CriticalSectionLock.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
 static void ExecuteCallbacks(std::vector<std::function<void()>>& callbacks)
 {
@@ -13,6 +14,31 @@ static void ExecuteCallbacks(std::vector<std::function<void()>>& callbacks)
 
 using namespace VKCore;
 
+
+void SetSuitableGlobalWorkSize(vk::PhysicalDeviceLimits& limits) {
+
+	static std::vector<glm::u32vec4> presets =
+	{
+		glm::u32vec4(8, 8, 1 , 64),
+		glm::u32vec4(16, 8, 1, 128),
+		glm::u32vec4(16, 16, 1, 256)
+		//glm::u32vec4(32, 16, 1, 512)
+		//glm::u32vec4(32, 32, 1, 1024)
+	};
+
+	uint32_t maxX = limits.maxComputeWorkGroupSize[0];
+	uint32_t maxY = limits.maxComputeWorkGroupSize[0];
+	uint32_t maxGroupSize = limits.maxComputeWorkGroupInvocations;
+
+	for (auto& set : presets)
+	{
+		if (set.x <= maxX && set.y <= maxY && set.w <= maxGroupSize)
+		{
+			GlobalConfig::Global_WorkSize_X = set.x;
+			GlobalConfig::Global_WorkSize_Y = set.y;
+		}
+	}
+}
 
 static void NeedDeviceProc(VkDevice device) {
 	static bool loaded = false;
@@ -241,8 +267,11 @@ vk::Result VulkanDevice::Create(
 		NeedDeviceProc(VkDevice(device));
 	}
 
-	if (info.physicalDeviceProperties.properties.limits.maxViewports < 16)
+	auto& limits = info.physicalDeviceProperties.properties.limits;
+	if (limits.maxViewports < 16)
 		std::cout << std::format("[ VulkanDevice Warning ] PhysicalDeviceLimits maxViewports < 16 , count = {}", info.physicalDeviceProperties.properties.limits.maxViewports);
+
+	SetSuitableGlobalWorkSize(limits);
 
 	if (info.graphicsQueueFamily != VK_QUEUE_FAMILY_IGNORED)
 		m_queue_graphics = m_device.getQueue(info.graphicsQueueFamily, 0);

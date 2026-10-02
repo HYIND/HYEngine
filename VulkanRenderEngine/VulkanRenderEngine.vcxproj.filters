@@ -345,6 +345,15 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\TemporalAccumulate.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IBLImageBuilder.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2DArray.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureGeneralDef.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -410,7 +419,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Pipeline.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2DArray.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp">
@@ -574,6 +583,15 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\IBLImageBuilder.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureGeneralDef.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

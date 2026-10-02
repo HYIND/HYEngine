@@ -282,8 +282,9 @@ bool VKWrapper::SharedImage::Create(VKCore::VulkanDevice* device, std::shared_pt
 	}
 
 	m_devicememory = importedMemory;
-	m_image = vkImage;
 	m_device = device;
+	m_image = vkImage;
+	m_layerCount = imageInfo.arrayLayers;
 	m_mipLevels = imageInfo.mipLevels;
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;

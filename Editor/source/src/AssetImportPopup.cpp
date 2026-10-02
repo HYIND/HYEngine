@@ -124,7 +124,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		case AssetType::StaticMesh:
 			break;
 		case AssetType::Texture:
-			DrawTexture2DConfig();
+			DrawTextureConfig();
 			break;
 		case AssetType::Material:
 			break;
@@ -187,7 +187,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 	}
 }
 
-void AssetImportPopup::DrawTexture2DConfig()
+void AssetImportPopup::DrawTextureConfig()
 {
 	if (ImGui::CollapsingHeader("Texture Configuration", ImGuiTreeNodeFlags_DefaultOpen))
 	{

@@ -141,7 +141,20 @@ struct RenderState
 
 	struct SkyBoxParams {
 		std::shared_ptr<TextureCube> cube;
-	}skybox;
+		bool hasSkyBoxPreData = false;
+		std::shared_ptr<TextureCube> skyCubeDiffuse;
+		std::shared_ptr<TextureCube> skyCubePrefilter;
+		std::shared_ptr<Texture2D> brdfLUT;
+	} skyboxParams;
+
+	struct SkyAtmosphereParams {
+		bool hasSkyAtmospherePreData = false;
+		std::shared_ptr<Texture2D> transmittanceLut;
+		std::shared_ptr<Texture2D> skyViewLut;
+		std::shared_ptr<TextureCube> skyCubeDiffuse;
+		std::shared_ptr<TextureCube> skyCubePrefilter;
+		std::shared_ptr<Texture2D> brdfLUT;
+	} skyAtmosphereParams;
 
 	// 渲染记录，由renderer填入
 	struct RenderRecord {

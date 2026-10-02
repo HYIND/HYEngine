@@ -1,9 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
 
-constexpr uint32_t work_size_x = 16;
-constexpr uint32_t work_size_y = 16;
-
 struct PushConstant {
 	int curPassIndex;
 };
@@ -11,8 +8,8 @@ struct PushConstant {
 AtrousBilateralFilter::AtrousBilateralFilter(const std::string& atrousComputeShaderPath)
 {
 	ComputePipelineConfig config;
-	config.AddDefineMacro("work_size_x", work_size_x);
-	config.AddDefineMacro("work_size_y", work_size_y);
+	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 	config.computePath = atrousComputeShaderPath;
 
 	config
@@ -91,7 +88,7 @@ void AtrousBilateralFilter::Execute(
 		_pipeline.SetPushConstants(cmd, &pc_params, sizeof(pc_params));
 
 		_pipeline.Bind(cmd, binding);
-		cmd->dispatch((imageSize.x + work_size_x - 1) / work_size_x, (imageSize.y + work_size_y - 1) / work_size_y, 1);
+		cmd->dispatch((imageSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (imageSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 		pc_params.curPassIndex++;
 		if (first_iteration)

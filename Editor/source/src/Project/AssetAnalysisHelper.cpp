@@ -22,7 +22,7 @@
 
 namespace fs = std::filesystem;
 
-static std::map<TextureType, Texture2DConfig> Texture2DConfigMap =
+static std::map<TextureType, TextureConfig> TextureConfigMap =
 {
 	// ========== 颜色类贴图（必须三线性，开启AF） ==========
 	{
@@ -215,7 +215,7 @@ private:
 	void processNode(aiNode* node, const aiScene* scene, AnalysisParams& params);
 	void processMesh(aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
 	void ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
-	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> findMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config);
+	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config);
 
 public:
 	const aiScene* _scene = nullptr;
@@ -399,7 +399,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		aiMaterial* ai_material = scene->mMaterials[mesh->mMaterialIndex];
 
 		auto loadTexture = [&](aiTextureType ai_type, TextureType type) -> bool {
-			auto metas = findMaterialTextures(ai_material, ai_type, Texture2DConfigMap[type]);
+			auto metas = findMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
 			if (metas.empty())
 				return false;
 
@@ -513,7 +513,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 	}
 }
 
-std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMaterialTextures(aiMaterial* mat, aiTextureType type, const Texture2DConfig& config)
+std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
 {
 	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> metas;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)
