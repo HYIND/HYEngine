@@ -15,17 +15,23 @@ layout(binding = 0, r32f) uniform image2D outputAO;
 
 layout(binding = 1) uniform sampler2D gPosition; 
 layout(binding = 2) uniform sampler2D gNormal;   
-layout(binding = 3) uniform sampler2D texNoise;  
+layout(binding = 3) uniform sampler2D depthMap;   
+layout(binding = 4) uniform sampler2D texNoise;
 
-layout(binding = 4) uniform KernelParams {
+layout(binding = 5) uniform KernelParams {
     vec4 samples[64];
     uint kernelSize;
 };
 
-layout(binding = 5) uniform Params {
+layout(binding = 6) uniform Params {
     float radius;
     float bias;
 };
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+}
 
 float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv)
 {
@@ -48,8 +54,10 @@ float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv)
         offset.xyz /= offset.w; // perspective divide
         offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
 
-        vec3 sampleWorldPos = texture(gPosition, offset.xy).xyz;
-        float sampleDepth = (camera.view * vec4(sampleWorldPos, 1.0f)).z;
+        float sampleDepth = -DepthBufferConvertToViewDepth(texture(depthMap, offset.xy).r);
+
+        // vec3 sampleWorldPos = texture(gPosition, offset.xy).xyz;
+        // float sampleDepth = (camera.view * vec4(sampleWorldPos, 1.0f)).z;
 
         // range check & accumulate
         float rangeCheck = smoothstep(0.0, 1.0, radius / abs(fragPos.z - sampleDepth));
