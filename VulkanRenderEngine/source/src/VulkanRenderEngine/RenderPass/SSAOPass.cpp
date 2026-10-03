@@ -9,8 +9,8 @@ struct alignas(16) KernelParams {
 };
 
 struct alignas(16) Params {
-	float radius = 25.f;
-	float bias = 0.01f;
+	float radius = 20.f;
+	float bias = 0.05f;
 };
 
 static float Lerp(float a, float b, float f)
@@ -79,8 +79,9 @@ SSAOPass::SSAOPass(
 			.AddUnifromTexture(1)
 			.AddUnifromTexture(2)
 			.AddUnifromTexture(3)
-			.AddUnifromBuffer(4)
+			.AddUnifromTexture(4)
 			.AddUnifromBuffer(5)
+			.AddUnifromBuffer(6)
 			.AddCameraUnifromDataBinding();
 
 		if (config.Validate())
@@ -114,11 +115,13 @@ void SSAOPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 		.bias = state.option.ssaoParams.bias
 	};
 
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 	paramsUBO->WriteData(&params, sizeof(params));
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
-	binding.SetUniformBlock(paramsUBO, 5);
+	binding.SetUniformBlock(_kernelParams, 5);
+	binding.SetUniformBlock(paramsUBO, 6);
 }
 
 void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -131,14 +134,15 @@ void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 	auto ssaoColorMap = ctx.GetTemp(0);
 	auto ssaoBlurColorMap = ctx.GetOutput(0);
 
+	auto gDepthStencil = ctx.GetFrameLocal(0);
+
 	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
-	binding.SetUniformBlock(state.camera.curUBO, GeneralBindingPoint::Camera_Cur);
-	binding.SetUniformBlock(state.camera.prevUBO, GeneralBindingPoint::Camera_Prev);
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetStorageImage(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 0);
 	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 1);
 	binding.SetUniformTexture(gNormal, vk::ImageAspectFlagBits::eColor, 2);
-	binding.SetUniformTexture(_noiseTexture, vk::ImageAspectFlagBits::eColor, 3);
-	binding.SetUniformBlock(_kernelParams, 4);
+	binding.SetUniformTexture(gDepthStencil, vk::ImageAspectFlagBits::eDepth, 3);
+	binding.SetUniformTexture(_noiseTexture, vk::ImageAspectFlagBits::eColor, 4);
 
 	auto cmd = cmdCtx.GetCmd();
 

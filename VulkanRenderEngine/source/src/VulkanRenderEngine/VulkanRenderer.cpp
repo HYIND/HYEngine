@@ -672,7 +672,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	// 不透明物体
 	auto preCalculateNode = _sceneRenderGraph->AddNode("preCalculateNode");
-	auto atmospherePreCaulateNode = _sceneRenderGraph->AddNode("atmospherePreCaulateNode");
+	auto atmospherePreCalculateNode = _sceneRenderGraph->AddNode("atmospherePreCalculateNode");
 	auto skyboxPreCalculateNode = _sceneRenderGraph->AddNode("skyboxPreCalculateNode");
 	auto hzbNode = _sceneRenderGraph->AddNode("hzbNode");
 	auto geometryNode = _sceneRenderGraph->AddNode("geometry");
@@ -723,7 +723,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	preCalculateNode->SetRenderPass(std::move(preCalculatePass));
 
-	atmospherePreCaulateNode->SetRenderPass(std::move(atmospherePreCalculatePass));
+	atmospherePreCalculateNode->SetRenderPass(std::move(atmospherePreCalculatePass));
 
 	skyboxPreCalculateNode->SetRenderPass(std::move(skyboxPreCalculatePass));
 
@@ -764,7 +764,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Temp(ResourceData{ resbuilder.CreateTexture(ssaoOutPut, "ssaoColorBuffer"), computeWriteLayout })
 		.Output(ResourceData{ ssaoOutPut, computeWriteLayout })
 		.After(geometryNode)
-		.Before(lightingNode);
+		.Before(lightingNode)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
 	lightingNode->SetRenderPass(std::move(lightingPass))
 		.Input(
@@ -777,7 +778,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gEmission, computeReadLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.After(atmospherePreCaulateNode, lightingShadowDepthNode, ssaoNode)
+		.After(atmospherePreCalculateNode, lightingShadowDepthNode, ssaoNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -807,7 +808,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyMomentTexture"), computeReadLayout }
 		)
-		.After(geometryNode, rayTraceGeneralNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, rayTraceGeneralNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -829,7 +830,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyMomentTexture"), computeReadLayout }
 		)
-		.After(geometryNode, rayTraceGeneralNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, rayTraceGeneralNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -853,7 +854,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyMomentTexture"), computeReadLayout }
 		)
-		.After(geometryNode, lightingNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -878,7 +879,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyMomentTexture"), computeReadLayout }
 		)
-		.After(geometryNode, lightingNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -917,7 +918,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ atlasShadowMap, computeReadLayout },
 			ResourceData{ gPosition, computeReadLayout }
 		)
-		.After(atmospherePreCaulateNode, opaqueFence, transprantFence)
+		.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
 		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atmosphereNode_TempColor"), {} })
 		.Before(postProcessFence)
