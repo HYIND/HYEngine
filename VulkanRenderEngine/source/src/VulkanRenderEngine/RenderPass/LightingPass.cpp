@@ -55,7 +55,7 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	auto target = ctx.GetExternal(0);
 
 
-	bool IBLEnable = false;
+	IBLParams params;
 	std::shared_ptr<TextureCube> IBLDiffuse;
 	std::shared_ptr<TextureCube> IBLPrefilter;
 	std::shared_ptr<Texture2D> IBLBrdfLUT;
@@ -77,7 +77,7 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 				&& !state.skyAtmosphereParams.brdfLUT->IsEmpty()
 				)
 			{
-				IBLEnable = true;
+				params.IBLEnable = true;
 				IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
 				IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
 				IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
@@ -94,17 +94,13 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 				&& !state.skyboxParams.brdfLUT->IsEmpty()
 				)
 			{
-				IBLEnable = true;
+				params.IBLEnable = true;
 				IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
 				IBLPrefilter = state.skyboxParams.skyCubePrefilter;
 				IBLBrdfLUT = state.skyboxParams.brdfLUT;
 			}
 		}
 	}
-
-	IBLParams params{
-		.IBLEnable = uint32_t(IBLEnable)
-	};
 
 	auto cmd = cmdCtx.GetCmd();
 
