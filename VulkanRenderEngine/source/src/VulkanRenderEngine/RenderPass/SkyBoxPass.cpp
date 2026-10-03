@@ -23,7 +23,7 @@ SkyBoxPreCalculatePass::SkyBoxPreCalculatePass()
 
 bool SkyBoxPreCalculatePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.cube;
+	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.skyCube;
 }
 
 void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -31,7 +31,7 @@ void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry
 	if (!ShouldExecute(registry, state))
 		return;
 
-	auto& skyCube = state.skyboxParams.cube;
+	auto& skyCube = state.skyboxParams.skyCube;
 
 	bool shouldUpdate = !_lastSkyCube || _lastSkyCube != skyCube;
 	bool shouldCaulateBRDFLUT = _brdfLUT == nullptr;
@@ -98,12 +98,12 @@ SkyBoxPass::~SkyBoxPass()
 
 bool SkyBoxPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.cube;
+	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.skyCube;
 }
 
 void SkyBoxPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	auto skyboxCubeMap = state.skyboxParams.cube;
+	auto skyboxCubeMap = state.skyboxParams.skyCube;
 	if (!skyboxCubeMap)
 		return;
 

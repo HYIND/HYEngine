@@ -4,9 +4,9 @@
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/Base/AtlasMap.h"
 
-struct LightingParams
+struct IBLParams
 {
-	uint32_t skyIBLEnable = 0;
+	uint32_t IBLEnable = 0;
 };
 
 LightingPass::LightingPass(const std::string& computeShaderPath)
@@ -54,28 +54,56 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 
 	auto target = ctx.GetExternal(0);
 
+
 	bool IBLEnable = false;
 	std::shared_ptr<TextureCube> IBLDiffuse;
 	std::shared_ptr<TextureCube> IBLPrefilter;
 	std::shared_ptr<Texture2D> IBLBrdfLUT;
 
-	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	// 如果没有开启间接光照相关的Pass，则在这里直接进行sky反射捕获
+	if (!state.option.flags.rayTraceReflectOn 
+		&& !state.option.flags.rayTraceGIOn 
+		&& !state.option.flags.ssrOn 
+		&& !state.option.flags.ssgiOn)
 	{
-		IBLEnable = true;
-		IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
-		IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
-		IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
-	}
-	else if (state.skyboxParams.hasSkyBoxPreData)
-	{
-		IBLEnable = true;
-		IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
-		IBLPrefilter = state.skyboxParams.skyCubePrefilter;
-		IBLBrdfLUT = state.skyboxParams.brdfLUT;
+		if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+		{
+			if (
+				state.skyAtmosphereParams.skyCubeDiffuse
+				&& !state.skyAtmosphereParams.skyCubeDiffuse->IsEmpty()
+				&& state.skyAtmosphereParams.skyCubePrefilter
+				&& !state.skyAtmosphereParams.skyCubePrefilter->IsEmpty()
+				&& state.skyAtmosphereParams.brdfLUT
+				&& !state.skyAtmosphereParams.brdfLUT->IsEmpty()
+				)
+			{
+				IBLEnable = true;
+				IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
+				IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
+				IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
+			}
+		}
+		else if (state.skyboxParams.hasSkyBoxPreData)
+		{
+			if (
+				state.skyboxParams.skyCubeDiffuse
+				&& !state.skyboxParams.skyCubeDiffuse->IsEmpty()
+				&& state.skyboxParams.skyCubePrefilter
+				&& !state.skyboxParams.skyCubePrefilter->IsEmpty()
+				&& state.skyboxParams.brdfLUT
+				&& !state.skyboxParams.brdfLUT->IsEmpty()
+				)
+			{
+				IBLEnable = true;
+				IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
+				IBLPrefilter = state.skyboxParams.skyCubePrefilter;
+				IBLBrdfLUT = state.skyboxParams.brdfLUT;
+			}
+		}
 	}
 
-	LightingParams params{
-		.skyIBLEnable = uint32_t(IBLEnable)
+	IBLParams params{
+		.IBLEnable = uint32_t(IBLEnable)
 	};
 
 	auto cmd = cmdCtx.GetCmd();
@@ -99,7 +127,7 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 8);
 	binding.SetUniformTexture(gDepthStencilMap, vk::ImageAspectFlagBits::eDepth, 9);
 
-	if (params.skyIBLEnable)
+	if (params.IBLEnable)
 	{
 		binding.SetUniformTextureCube(IBLDiffuse, vk::ImageAspectFlagBits::eColor, 10);
 		binding.SetUniformTextureCube(IBLPrefilter, vk::ImageAspectFlagBits::eColor, 11);

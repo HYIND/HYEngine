@@ -52,7 +52,7 @@ private:
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
 	};
 
-	bool DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
@@ -60,8 +60,6 @@ private:
 
 private:
 	ComputePipeline _ssrShader;
-
-	ComputeBindingRecord _ssrShaderBinding;
 
 	mutable bool _firstDrawTemporal;
 	mutable bool _enable;

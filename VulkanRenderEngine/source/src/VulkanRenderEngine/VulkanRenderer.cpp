@@ -705,7 +705,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto autoExposureNode = _sceneRenderGraph->AddNode("autoExposureNode");
 
 
-
 	using RenderGraphResource = RenderGraph::RenderGraphResource;
 	using TextureLayout = RenderGraph::TextureLayout;
 	using RenderGraphResourceLayout = RenderGraph::RenderGraphResourceLayout;

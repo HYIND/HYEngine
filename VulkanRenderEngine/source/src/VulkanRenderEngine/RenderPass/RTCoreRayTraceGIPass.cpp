@@ -3,8 +3,9 @@
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
-
-
+struct CubeParams {
+	uint32_t CubeEnable = 0;
+};
 
 struct RayTraceParams
 {
@@ -53,15 +54,17 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 			.AddStorageBuffer(1)
 			.AddStorageBuffer(2)
 			.AddStorageBuffer(3)
-			.AddUnifromBuffer(5)							// Param
-			.AddStorageImage(6)								// outputImage
-			.AddUnifromTexture(7)                           // gPosition
-			.AddUnifromTexture(8)                           // gNormal
-			.AddUnifromTexture(9)                           // gAlbedoOpacity
-			.AddUnifromTexture(10)                          // gMetallicRoughness
-			.AddUnifromTexture(11)                          // depthMap
-			.AddUnifromTexture(12)                          // atlasShadowMap
-			.AddUnifromTexture(13);                         // SSAOMap
+			.AddUnifromBuffer(5)
+			.AddUnifromBuffer(6)
+			.AddStorageImage(7)
+			.AddUnifromTexture(8)
+			.AddUnifromTexture(9)
+			.AddUnifromTexture(10)
+			.AddUnifromTexture(11)
+			.AddUnifromTexture(12)
+			.AddUnifromTexture(13)
+			.AddUnifromTexture(14)
+			.AddUnifromTexture(15);
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -83,8 +86,6 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 	}
 
 	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
-
-	_rayTraceShaderBinding.SetUniformBlock(_RayTraceParamsUBO, 5);
 }
 
 RTCoreRayTraceGIPass::~RTCoreRayTraceGIPass()
@@ -131,7 +132,7 @@ void RTCoreRayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 
 	auto cmd = cmdCtx.GetCmd();
 
-	if (!DrawRayTraceGI(cmd, data, state)) return;
+	if (!DrawRayTraceGI(cmd, data, registry, state)) return;
 
 	if (!DrawTemporalAccumulate(cmd, data, state)) return;
 
@@ -154,6 +155,8 @@ void RTCoreRayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 	if (!ShouldExecute(registry, state))
 		return;
 
+	auto& binding = *registry.Get<RayTracingBindingRecord>("binding");
+
 	{
 		//光追参数
 		RayTraceParams params{
@@ -166,6 +169,7 @@ void RTCoreRayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 			.frameIndex = state.renderRecord.frameIndex % 100000
 		};
 		_RayTraceParamsUBO->WriteData(&params, sizeof(RayTraceParams));
+		binding.SetUniformBlock(_RayTraceParamsUBO, 5);
 	}
 
 }
@@ -174,7 +178,7 @@ void RTCoreRayTraceGIPass::SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGenera
 	_buffers = buffer;
 }
 
-bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto& target = data.originTexture;
 
@@ -193,8 +197,31 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
-	auto& rayTraceShader = _rayTraceShader;
-	auto& binding = _rayTraceShaderBinding;
+	auto& binding = *registry.Get<RayTracingBindingRecord>("binding");
+
+	CubeParams cubeParams;
+	std::shared_ptr<TextureCube> cubeMap;
+	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	{
+		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyAtmosphereParams.skyCube;
+		}
+	}
+	else if (state.option.flags.skyboxOn)
+	{
+		if (state.skyboxParams.skyCube && !state.skyboxParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyboxParams.skyCube;
+		}
+	}
+
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(cubeParams));
+	paramsUBO->WriteDataAsync(cmd, &cubeParams, sizeof(cubeParams));
+	paramsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
+
 	if (!BindAccelerationStructure(binding))
 		return false;
 
@@ -207,17 +234,21 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 6);
-	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 7);
-	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
-	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
-	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
-	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 11);
-	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
-	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
+	binding.SetUniformBlock(paramsUBO, 6);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 10);
+	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 11);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 12);
+	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 13);
+	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 14);
 
-	rayTraceShader.Bind(cmd, binding);
-	auto regionData = rayTraceShader.GetSBTData();
+	if (cubeParams.CubeEnable)
+		binding.SetUniformTextureCube(cubeMap, vk::ImageAspectFlagBits::eColor, 15);
+
+	_rayTraceShader.Bind(cmd, binding);
+	auto regionData = _rayTraceShader.GetSBTData();
 	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
 
 	cmd->SubmitToQueue();
@@ -276,7 +307,7 @@ bool RTCoreRayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrappe
 		params,
 		state.camera.curUBO,
 		state.camera.prevUBO
-		);
+	);
 
 	cmd->SubmitToQueue();
 

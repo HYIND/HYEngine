@@ -30,17 +30,24 @@ layout (binding = 0) uniform Params
     uint frameIndex;
 };
 
-layout (binding = 1, rgba16f) uniform image2D outputImage;
-layout (binding = 2) uniform sampler2D gPosition;
-layout (binding = 3) uniform sampler2D gNormal;
-layout (binding = 4) uniform sampler2D gAlbedoOpacity;
-layout (binding = 5) uniform sampler2D gMetallicRoughness;
-layout (binding = 6) uniform sampler2D colorMap;
-layout (binding = 7) uniform sampler2D depthMap;
-layout (binding = 8) uniform sampler2D SSAOMap;
-layout (binding = 9) uniform sampler2D hzbDepthMap;
+layout (binding = 1) uniform CubeParams
+{
+    bool CubeEnable;
+};
+
+layout (binding = 2, rgba16f) uniform image2D outputImage;
+layout (binding = 3) uniform sampler2D gPosition;
+layout (binding = 4) uniform sampler2D gNormal;
+layout (binding = 5) uniform sampler2D gAlbedoOpacity;
+layout (binding = 6) uniform sampler2D gMetallicRoughness;
+layout (binding = 7) uniform sampler2D colorMap;
+layout (binding = 8) uniform sampler2D depthMap;
+layout (binding = 9) uniform sampler2D SSAOMap;
+layout (binding = 10) uniform sampler2D hzbDepthMap;
+layout (binding = 11) uniform samplerCube cubeMap;
 
 #include "shader/Helper/bdrfHelper.comp"
+#define SAMPLER_MAX_DIS
 #include "shader/ssr/SSGIGeneral.comp"
 
 const float RussianRouletteFactor = 0.8f;
@@ -76,6 +83,8 @@ vec3 traceRay(
         vec2 uv;
         vec3 hitPosition, hitNormal;
 
+        bool captureCube = false;
+
         // 根据材质，随机选取走高光采样还是漫反射采样
         float p_spec = calc_P_Spec(prop);
         bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
@@ -85,18 +94,29 @@ vec3 traceRay(
             vec2 random = getRandom(seed);
             ray.direction = ImportanceSampleGGX(prop.roughness, fragNormal, normalize(ray.origin - viewPos), random);
 
-            if(!traceScene(ray, screenSize, RayMarchingMaxStep, uv))
-                break;
+            if (!traceScene(ray, screenSize, RayMarchingMaxStep, uv))
+            {
+                if (CubeEnable)
+                    captureCube = true;
+                else 
+                    break;
+            }
 
-            hitPosition = texture(gPosition, uv).rgb;
-            hitNormal = normalize(texture(gNormal, uv).rgb);
+            if (!captureCube)
+            {
+                hitPosition = texture(gPosition, uv).rgb;
+                hitNormal = normalize(texture(gNormal, uv).rgb);
 
-            float dist = distance(hitPosition, ray.origin);
-            if(dist > tMax || dist < tMin)
-                break;
-
-            // 计算该点向前一个点高光传递贡献
-            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hitPosition - ray.origin), prop.albedo, prop.metallic, prop.roughness) / p_spec;
+                float dist = distance(hitPosition, ray.origin);
+                if(dist > tMax || dist < tMin)
+                    break;
+                // 计算该点向前一个点高光传递贡献
+                contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hitPosition - ray.origin), prop.albedo, prop.metallic, prop.roughness) / p_spec;
+            }
+            else 
+            {
+                contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - fragPos), ray.direction, prop.albedo, prop.metallic, prop.roughness) / p_spec;
+            }
         }
         else 
         {
@@ -104,41 +124,56 @@ vec3 traceRay(
             vec2 random = getRandom(seed);
             ray.direction = ImportanceSampleCosine(fragNormal, random);
 
-            if(!traceScene(ray, screenSize, RayMarchingMaxStep, uv))
-                break;
-    
-            hitPosition = texture(gPosition, uv).rgb;
-            hitNormal = normalize(texture(gNormal, uv).rgb);
+            if (!traceScene(ray, screenSize, RayMarchingMaxStep, uv))
+            {
+                if (CubeEnable)
+                    captureCube = true;
+                else 
+                    break;
+            }
 
-            float dist = distance(hitPosition, ray.origin);
-            if(dist > tMax || dist < tMin)
-                break;
+            if (!captureCube)
+            {
+                hitPosition = texture(gPosition, uv).rgb;
+                hitNormal = normalize(texture(gNormal, uv).rgb);
 
+                float dist = distance(hitPosition, ray.origin);
+                if(dist > tMax || dist < tMin)
+                    break;
+            }
+            
             // 计算该点向前一个点漫反射传递贡献
             vec3 diffuse = vec3(0.0);
             CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
             contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
         }
 
-	    getPBRProperties(uv, prop);
+        if (!captureCube)
+        {
+	        getPBRProperties(uv, prop);
 
-        float dist = distance(ray.origin, hitPosition);
-        float attenuation = 1.0 / (1.0 + dist * DistanceFactor);
-        vec3 lightingColor = texture(colorMap, uv).rgb;
-        vec3 lightEnergy = lightingColor / (prop.albedo + 1e-4) * attenuation;
-        vec3 indirectColor = prop.albedo * min(lightEnergy, SampleIndirectClampValue);        //钳制入射光强
+            float dist = distance(ray.origin, hitPosition);
+            float attenuation = 1.0 / (1.0 + dist * DistanceFactor);
+            vec3 lightingColor = texture(colorMap, uv).rgb;
+            vec3 lightEnergy = lightingColor / (prop.albedo + 1e-4) * attenuation;
+            vec3 indirectColor = prop.albedo * min(lightEnergy, SampleIndirectClampValue);        //钳制入射光强
 
-        colors[hitCount] = indirectColor;
+            colors[hitCount] = indirectColor;
 
-        viewPos = ray.origin;
-        fragPos = hitPosition;
-        fragNormal = hitNormal;
+            viewPos = ray.origin;
+            fragPos = hitPosition;
+            fragNormal = hitNormal;
+        }
+        else 
+        {
+         vec3 indirectColor = texture(cubeMap, ray.direction).rgb;
+            colors[hitCount] = indirectColor;
+        }
 
         contributeFacts[hitCount] = contributeFacts[hitCount] / throughput;
-
         hitCount++;
 
-        if ((pcg_float(seed * 72789645u + 29157653u) >= RussianRouletteFactor))
+        if (captureCube || (pcg_float(seed * 72789645u + 29157653u) >= RussianRouletteFactor))
             break;
         throughput *= RussianRouletteFactor;
     }
