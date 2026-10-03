@@ -44,17 +44,13 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 		std::iota(renderIndex.oneSideIndex.begin(), renderIndex.oneSideIndex.end(), 0);
 	}
 
-	std::vector<size_t> oneSideZeroMetaIndices;
-	std::vector<size_t> twoSideZeroMetaIndices;
-
 	struct ProcessDatas {
 		std::vector<size_t>& sideIndex;
 		std::vector<IndirectDrawCommand>& commands;
-		std::vector<size_t>& zeroIndices;
 	};
 	std::vector<ProcessDatas> processDatas = {
-		{ renderIndex.oneSideIndex,oneSideCommands,oneSideZeroMetaIndices },
-		{ renderIndex.twoSideIndex,twoSideCommands,twoSideZeroMetaIndices }
+		{ renderIndex.oneSideIndex,oneSideCommands},
+		{ renderIndex.twoSideIndex,twoSideCommands}
 	};
 
 	size_t startInedx = 0;
@@ -65,9 +61,6 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 	{
 		auto& sideIndex = data.sideIndex;
 		auto& commands = data.commands;
-		auto& zeroIndices = data.zeroIndices;
-
-		SpinLock mutex_zeroIndices;
 
 		if (sideIndex.empty())
 			continue;
@@ -95,8 +88,6 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 					if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta))
 					{
 						command.instanceCount = 0;
-						LockGuard guard(mutex_zeroIndices);
-						zeroIndices.push_back(index);
 					}
 					else
 					{
