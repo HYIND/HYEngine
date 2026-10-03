@@ -22,15 +22,24 @@ layout (binding = 5) uniform Params
     uint frameIndex;
 };
 
-layout(binding = 6, rgba16f) uniform image2D outputImage;
-layout (binding = 7) uniform sampler2D gPosition;
-layout (binding = 8) uniform sampler2D gNormal;
-layout (binding = 9) uniform sampler2D gAlbedoOpacity;
-layout (binding = 10) uniform sampler2D gMetallicRoughness;
-layout (binding = 11) uniform sampler2D depthMap;
-layout (binding = 12) uniform sampler2D atlasShadowMap;
-layout (binding = 13) uniform sampler2D SSAOMap;
+layout (binding = 6) uniform CubeParams
+{
+    bool CubeEnable;
+    bool IBLEnable;
+};
 
+layout(binding = 7, rgba16f) uniform image2D outputImage;
+layout (binding = 8) uniform sampler2D gPosition;
+layout (binding = 9) uniform sampler2D gNormal;
+layout (binding = 10) uniform sampler2D gAlbedoOpacity;
+layout (binding = 11) uniform sampler2D gMetallicRoughness;
+layout (binding = 12) uniform sampler2D depthMap;
+layout (binding = 13) uniform sampler2D atlasShadowMap;
+layout (binding = 14) uniform sampler2D SSAOMap;
+layout (binding = 15) uniform samplerCube cubeMap;
+layout (binding = 16) uniform samplerCube IBLDiffuse;
+layout (binding = 17) uniform samplerCube IBLPrefilter;
+layout (binding = 18) uniform sampler2D IBLBrdfLUT;
 
 const float RussianRouletteFactor = 0.8f;
 
@@ -65,54 +74,50 @@ vec3 traceRay(
         HitInfo hit;
         hit.t = ray.tMax;
 
-        // 根据材质，随机选取走高光采样还是漫反射采样
-        // float p_spec = calc_P_Spec(prop);
-        // bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
-        // if (spec)
+        bool captureCube = false;
+
         {
             // GGX重要性采样specular
             vec2 random = getRandom(seed);
             ray.direction = ImportanceSampleGGX(prop.roughness, fragNormal, normalize(ray.origin - viewPos), random);
 
             if(!traceScene(ray, hit))
-                break;
+            {
+                if (CubeEnable)
+                    captureCube = true;
+                else 
+                    break;
+            }
 
             // 计算该点向前一个点高光传递贡献
-            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin),  normalize(hit.position - ray.origin), prop.albedo, prop.metallic, prop.roughness);
+            contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin), ray.direction, prop.albedo, prop.metallic, prop.roughness);
         }
-        // else 
-        // {
-        //     // 余弦加权重要性采样diffuse
-        //     vec2 random = getRandom(seed);
-        //     ray.direction = ImportanceSampleCosine(fragNormal, random);
 
-        //     if(!traceScene(ray, hit))
-        //         break;
-    
-        //     // 计算该点向前一个点漫反射传递贡献
-        //     vec3 diffuse = vec3(0.0);
-        //     CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
-        //     contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
-        // }
+        if (!captureCube)
+        {
+            //计算该点光照颜色
+            getPBRProperties(hit.materialdata, hit.texCoords, prop);
 
-        //计算该点光照颜色
-	    getPBRProperties(hit.materialdata, hit.texCoords, prop);
+            vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
 
-        vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
+            vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
+            vec3 lightingColor = CalcLightingWithShadowRay(ray.origin, hit.position, normal, prop);
+            colors[hitCount] = lightingColor + emission;
 
-        vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
-        vec3 lightingColor = CalcLightingWithShadowRay(ray.origin, hit.position, normal, prop);
-        colors[hitCount] = lightingColor + emission;
-
-        viewPos = ray.origin;
-        fragPos = hit.position;
-        fragNormal = normal;
+            viewPos = ray.origin;
+            fragPos = hit.position;
+            fragNormal = normal;
+        }
+        else 
+        {
+            vec3 indirectColor = texture(cubeMap, ray.direction).rgb;
+            colors[hitCount] = indirectColor;
+        }
 
         contributeFacts[hitCount] = contributeFacts[hitCount] / throughput;
-
         hitCount++;
 
-        if ((pcg_float(seed * 72789645u + 29157653u) >= RussianRouletteFactor))
+        if (captureCube || prop.metallic < 0.15 || prop.roughness > 0.8 || (pcg_float(seed * 72789645u + 29157653u) >= RussianRouletteFactor))
             break;
         throughput *= RussianRouletteFactor;
     }
@@ -178,8 +183,20 @@ void main()
     prop.roughness = values.g;
     prop.ambientOcclusion = clamp(texture(SSAOMap, uv).r, 0.f, 1.f);
 
-    if (prop.metallic < 0.15 || prop.roughness > 0.77)
+    if (prop.metallic < 0.15 || prop.roughness > 0.8)
+    {
+        if (IBLEnable)
+        {
+            vec3 fragPos = texture(gPosition, uv).rgb;
+            vec3 fragNormal = normalize(texture(gNormal, uv).rgb);
+
+            vec3 viewDir = normalize(fragPos - camera.position);
+            vec3 color = CalculateIBLLighting(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT);
+            color = clamp(color, vec3(0.f), vec3(1000.f));
+            imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+        }
         return;
+    }
 
     HitInfo firstHit;
     calculateFirstHitInfo(firstHit, uv);

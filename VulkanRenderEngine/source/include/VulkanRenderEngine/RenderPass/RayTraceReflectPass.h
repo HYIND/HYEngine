@@ -54,7 +54,7 @@ private:
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
 	};
 
-	bool DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
@@ -67,7 +67,6 @@ private:
 	ComputePipeline _rayTraceShader;
 	ComputePipeline _scaleShader;
 
-	ComputeBindingRecord _rayTraceShaderBinding;
 	ComputeBindingRecord _scaleShaderBinding;
 
 	mutable bool _firstDrawTemporal;

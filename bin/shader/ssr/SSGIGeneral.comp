@@ -384,15 +384,8 @@ bool isNormalPass(vec2 texcoord, Ray ray)
 bool traceScene(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv) 
 {
     int result = RayTraceOnSceen(ray, screenSize, RayMarchingMaxStep, uv);
-    if (result == 0 || result == 2)
+    if (result != 1 || isEdge(uv, 0.001) || !isNormalPass(uv, ray))
         return false;
-    
-    if (isEdge(uv, 0.001))
-        return false;
-
-    if (!isNormalPass(uv, ray))
-        return false;
-
     return true;
 }
 

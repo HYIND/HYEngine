@@ -97,7 +97,7 @@ struct RenderOption
 	} atmosphereParams;
 
 	struct SSAOParams {
-		float radius = 2.0;
+		float radius = 25.f;
 		float bias = 0.01;
 	} ssaoParams;
 

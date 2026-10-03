@@ -192,6 +192,7 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 	state.skyAtmosphereParams.hasSkyAtmospherePreData = true;
 	state.skyAtmosphereParams.transmittanceLut = _transmittanceLut;
 	state.skyAtmosphereParams.skyViewLut = _skyViewLut;
+	state.skyAtmosphereParams.skyCube = _skyCube;
 	state.skyAtmosphereParams.skyCubeDiffuse = _skyCubeDiffuse;
 	state.skyAtmosphereParams.skyCubePrefilter = _skyCubePrefilter;
 	state.skyAtmosphereParams.brdfLUT = _brdfLUT;

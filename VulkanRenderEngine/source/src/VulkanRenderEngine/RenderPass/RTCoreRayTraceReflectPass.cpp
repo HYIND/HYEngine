@@ -4,7 +4,10 @@
 #include "VulkanRenderEngine/General/RenderHelp.h"
 
 
-
+struct CubeParams {
+	uint32_t CubeEnable = 0;
+	uint32_t IBLEnable = 0;
+};
 
 struct RayTraceParams
 {
@@ -52,15 +55,20 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 			.AddStorageBuffer(1)
 			.AddStorageBuffer(2)
 			.AddStorageBuffer(3)
-			.AddUnifromBuffer(5)							// Param
-			.AddStorageImage(6)								// outputImage
-			.AddUnifromTexture(7)                           // gPosition
-			.AddUnifromTexture(8)                           // gNormal
-			.AddUnifromTexture(9)                           // gAlbedoOpacity
-			.AddUnifromTexture(10)                          // gMetallicRoughness
-			.AddUnifromTexture(11)                          // depthMap
-			.AddUnifromTexture(12)                          // atlasShadowMap
-			.AddUnifromTexture(13);                         // SSAOMap
+			.AddUnifromBuffer(5)
+			.AddUnifromBuffer(6)
+			.AddStorageImage(7)
+			.AddUnifromTexture(8)
+			.AddUnifromTexture(9)
+			.AddUnifromTexture(10)
+			.AddUnifromTexture(11)
+			.AddUnifromTexture(12)
+			.AddUnifromTexture(13)
+			.AddUnifromTexture(14)
+			.AddUnifromTexture(15)
+			.AddUnifromTexture(16)
+			.AddUnifromTexture(17)
+			.AddUnifromTexture(18);
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -82,8 +90,6 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 	}
 
 	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
-
-	_rayTraceShaderBinding.SetUniformBlock(_RayTraceParamsUBO, 5);
 }
 
 RTCoreRayTraceReflectPass::~RTCoreRayTraceReflectPass()
@@ -130,7 +136,7 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 
 	auto cmd = cmdCtx.GetCmd();
 
-	if (!DrawRayTraceReflect(cmd, data, state)) return;
+	if (!DrawRayTraceReflect(cmd, data, registry, state)) return;
 
 	if (!DrawTemporalAccumulate(cmd, data, state)) return;
 
@@ -153,6 +159,8 @@ void RTCoreRayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& regis
 	if (!ShouldExecute(registry, state))
 		return;
 
+	auto& binding = *registry.Get<RayTracingBindingRecord>("binding");
+
 	{
 		//光追参数
 		RayTraceParams params{
@@ -164,6 +172,7 @@ void RTCoreRayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& regis
 			.frameIndex = state.renderRecord.frameIndex % 100000
 		};
 		_RayTraceParamsUBO->WriteData(&params, sizeof(RayTraceParams));
+		binding.SetUniformBlock(_RayTraceParamsUBO, 5);
 	}
 
 }
@@ -172,7 +181,7 @@ void RTCoreRayTraceReflectPass::SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceG
 	_buffers = buffer;
 }
 
-bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto& target = data.originTexture;
 
@@ -191,8 +200,64 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
-	auto& rayTraceShader = _rayTraceShader;
-	auto& binding = _rayTraceShaderBinding;
+	auto& binding = *registry.Get<RayTracingBindingRecord>("binding");
+
+	CubeParams cubeParams;
+	std::shared_ptr<TextureCube> cubeMap;
+	std::shared_ptr<TextureCube> IBLDiffuse;
+	std::shared_ptr<TextureCube> IBLPrefilter;
+	std::shared_ptr<Texture2D> IBLBrdfLUT;
+	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	{
+		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyAtmosphereParams.skyCube;
+		}
+
+		if (
+			state.skyAtmosphereParams.skyCubeDiffuse
+			&& !state.skyAtmosphereParams.skyCubeDiffuse->IsEmpty()
+			&& state.skyAtmosphereParams.skyCubePrefilter
+			&& !state.skyAtmosphereParams.skyCubePrefilter->IsEmpty()
+			&& state.skyAtmosphereParams.brdfLUT
+			&& !state.skyAtmosphereParams.brdfLUT->IsEmpty()
+			)
+		{
+			cubeParams.IBLEnable = true;
+			IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
+			IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
+			IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
+		}
+	}
+	else if (state.option.flags.skyboxOn)
+	{
+		if (state.skyboxParams.skyCube && !state.skyboxParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyboxParams.skyCube;
+		}
+
+		if (
+			state.skyboxParams.skyCubeDiffuse
+			&& !state.skyboxParams.skyCubeDiffuse->IsEmpty()
+			&& state.skyboxParams.skyCubePrefilter
+			&& !state.skyboxParams.skyCubePrefilter->IsEmpty()
+			&& state.skyboxParams.brdfLUT
+			&& !state.skyboxParams.brdfLUT->IsEmpty()
+			)
+		{
+			cubeParams.IBLEnable = true;
+			IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
+			IBLPrefilter = state.skyboxParams.skyCubePrefilter;
+			IBLBrdfLUT = state.skyboxParams.brdfLUT;
+		}
+	}
+
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(cubeParams));
+	paramsUBO->WriteDataAsync(cmd, &cubeParams, sizeof(cubeParams));
+	paramsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
+
 	if (!BindAccelerationStructure(binding))
 		return false;
 
@@ -205,17 +270,28 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
-	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 6);
-	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 7);
-	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 8);
-	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 9);
-	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 10);
-	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 11);
-	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 12);
-	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 13);
+	binding.SetUniformBlock(paramsUBO, 6);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 10);
+	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 11);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 12);
+	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 13);
+	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 14);
 
-	rayTraceShader.Bind(cmd, binding);
-	auto regionData = rayTraceShader.GetSBTData();
+	if (cubeParams.CubeEnable)
+		binding.SetUniformTextureCube(cubeMap, vk::ImageAspectFlagBits::eColor, 15);
+
+	if (cubeParams.IBLEnable)
+	{
+		binding.SetUniformTextureCube(IBLDiffuse, vk::ImageAspectFlagBits::eColor, 16);
+		binding.SetUniformTextureCube(IBLPrefilter, vk::ImageAspectFlagBits::eColor, 17);
+		binding.SetUniformTexture(IBLBrdfLUT, vk::ImageAspectFlagBits::eColor, 18);
+	}
+
+	_rayTraceShader.Bind(cmd, binding);
+	auto regionData = _rayTraceShader.GetSBTData();
 	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
 
 	cmd->SubmitToQueue();

@@ -1,6 +1,8 @@
 
-#include "shader/dataDef/lightingssboDef.comp"
 #include "shader/Helper/bdrfHelper.comp"
+
+#ifndef OnlyIBLHelper
+#include "shader/dataDef/lightingssboDef.comp"
 
 const float linera_radius_factor = 0.8;	//距离到底0.8光照半径改用线性衰减，使光强平滑衰减至0，消除截断
 const float linera_radius_factor2 = linera_radius_factor * linera_radius_factor;
@@ -475,6 +477,7 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 
 	return result;
 }
+#endif 
 
 vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, samplerCube IBLDiffuse, samplerCube IBLPrefilter, sampler2D IBLBrdfLUT)
 {

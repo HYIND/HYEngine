@@ -9,7 +9,7 @@ struct alignas(16) KernelParams {
 };
 
 struct alignas(16) Params {
-	float radius = 2.0f;
+	float radius = 25.f;
 	float bias = 0.01f;
 };
 
@@ -106,7 +106,7 @@ SSAOPass::SSAOPass(
 SSAOPass::~SSAOPass()
 {}
 
-void SSAOPass::FrameBegin(RenderGraph::FrameDataRegistry & registry, RenderState & state) 
+void SSAOPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 
 	Params params{

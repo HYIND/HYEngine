@@ -140,7 +140,7 @@ struct RenderState
 	} indirectCommands;
 
 	struct SkyBoxParams {
-		std::shared_ptr<TextureCube> cube;
+		std::shared_ptr<TextureCube> skyCube;
 		bool hasSkyBoxPreData = false;
 		std::shared_ptr<TextureCube> skyCubeDiffuse;
 		std::shared_ptr<TextureCube> skyCubePrefilter;
@@ -151,6 +151,7 @@ struct RenderState
 		bool hasSkyAtmospherePreData = false;
 		std::shared_ptr<Texture2D> transmittanceLut;
 		std::shared_ptr<Texture2D> skyViewLut;
+		std::shared_ptr<TextureCube> skyCube;
 		std::shared_ptr<TextureCube> skyCubeDiffuse;
 		std::shared_ptr<TextureCube> skyCubePrefilter;
 		std::shared_ptr<Texture2D> brdfLUT;

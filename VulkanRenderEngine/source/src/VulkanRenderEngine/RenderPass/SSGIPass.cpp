@@ -3,8 +3,9 @@
 #include "VulkanRenderEngine/GlobalConfig.h"
 
 
-
-
+struct CubeParams {
+	uint32_t CubeEnable = 0;
+};
 
 struct SSGIParams
 {
@@ -44,23 +45,23 @@ SSGIPass::SSGIPass(
 		config
 			.AddCameraUnifromDataBinding()
 			.AddUnifromBuffer(0)
-			.AddStorageImage(1)
-			.AddUnifromTexture(2)
+			.AddUnifromBuffer(1)
+			.AddStorageImage(2)
 			.AddUnifromTexture(3)
 			.AddUnifromTexture(4)
 			.AddUnifromTexture(5)
 			.AddUnifromTexture(6)
 			.AddUnifromTexture(7)
 			.AddUnifromTexture(8)
-			.AddUnifromTexture(9);
+			.AddUnifromTexture(9)
+			.AddUnifromTexture(10)
+			.AddUnifromTexture(11);
 
 		if (config.Validate())
 			_ssgiShader.Create(config);
 	}
 
 	_SSGIParamsUBO = std::make_shared<UniformBlock>(sizeof(SSGIParams));
-
-	_ssgiShaderBinding.SetUniformBlock(_SSGIParamsUBO, 0);
 }
 
 bool SSGIPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -108,7 +109,7 @@ void SSGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 
 	auto cmd = cmdCtx.GetCmd();
 
-	if (!DrawSSGI(cmd, data, state)) return;
+	if (!DrawSSGI(cmd, data, registry, state)) return;
 
 	if (!DrawTemporalAccumulate(cmd, data, state)) return;
 
@@ -130,6 +131,8 @@ void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 	if (!ShouldExecute(registry, state))
 		return;
 
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+
 	{
 
 		SSGIParams params{
@@ -146,6 +149,7 @@ void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 			.frameIndex = state.renderRecord.frameIndex % 100000
 		};
 		_SSGIParamsUBO->WriteData(&params, sizeof(SSGIParams));
+		binding.SetUniformBlock(_SSGIParamsUBO, 0);
 	}
 }
 
@@ -158,7 +162,7 @@ void SSGIPass::SetEnable(bool enable) const
 		_firstDrawTemporal = true;
 }
 
-bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto& target = data.originTexture;
 
@@ -176,18 +180,49 @@ bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, 
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	_ssgiShaderBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-	_ssgiShaderBinding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 1);
-	_ssgiShaderBinding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 2);
-	_ssgiShaderBinding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 3);
-	_ssgiShaderBinding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 4);
-	_ssgiShaderBinding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 5);
-	_ssgiShaderBinding.SetUniformTexture(data.sceneColorMap, vk::ImageAspectFlagBits::eColor, 6);
-	_ssgiShaderBinding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 7);
-	_ssgiShaderBinding.SetUniformTexture(data.ssaoTexture, vk::ImageAspectFlagBits::eColor, 8);
-	_ssgiShaderBinding.SetUniformTexture(data.hzbDepthMap, vk::ImageAspectFlagBits::eDepth, 9);
+	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
 
-	_ssgiShader.Bind(cmd, _ssgiShaderBinding);
+	CubeParams cubeParams;
+	std::shared_ptr<TextureCube> cubeMap;
+	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	{
+		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyAtmosphereParams.skyCube;
+		}
+	}
+	else if (state.option.flags.skyboxOn)
+	{
+		if (state.skyboxParams.skyCube && !state.skyboxParams.skyCube->IsEmpty())
+		{
+			cubeParams.CubeEnable = true;
+			cubeMap = state.skyboxParams.skyCube;
+		}
+	}
+
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(cubeParams));
+	paramsUBO->WriteDataAsync(cmd, &cubeParams, sizeof(cubeParams));
+	paramsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
+
+
+	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+	binding.SetUniformBlock(paramsUBO, 1);
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 4);
+	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 5);
+	binding.SetUniformTexture(data.gMetallicRoughness, vk::ImageAspectFlagBits::eColor, 6);
+	binding.SetUniformTexture(data.sceneColorMap, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 8);
+	binding.SetUniformTexture(data.ssaoMap, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(data.hzbDepthMap, vk::ImageAspectFlagBits::eDepth, 10);
+
+	if (cubeParams.CubeEnable)
+		binding.SetUniformTextureCube(cubeMap, vk::ImageAspectFlagBits::eColor, 11);
+
+
+	_ssgiShader.Bind(cmd, binding);
 	cmd->dispatch((data.drawSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (data.drawSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
