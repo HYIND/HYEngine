@@ -359,6 +359,7 @@ SpinLock& VKCore::VulkanDevice::GetComputeQueueMutex()
 const std::vector<std::string>& VulkanDevice::GetDeviceExtensions() const { return m_deviceExtensions; }
 
 void VulkanDevice::AddDeviceExtension(const std::string& extensionName) { m_deviceExtensions.push_back(extensionName); }
+void VulkanDevice::AddDeviceExtension(const std::vector<std::string>& extensionNames) { m_deviceExtensions.append_range(extensionNames); }
 
 void VulkanDevice::AddCallback_CreateDevice(std::function<void()> func) {
 	m_callbacks_createDevice.push_back(func);

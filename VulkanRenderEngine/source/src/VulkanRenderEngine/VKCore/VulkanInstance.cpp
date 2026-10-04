@@ -192,8 +192,32 @@ uint32_t VulkanInstance::GetAvailablePhysicalDeviceCount() const {
 	return uint32_t(m_availablePhysicalDevices.size());
 }
 
+static bool HasDeviceExtension(
+	const std::vector<vk::ExtensionProperties>& extensions,
+	const std::vector<std::string>& checkExts)
+{
+	for (auto& name : checkExts)
+	{
+		bool result = std::ranges::any_of(
+			extensions,
+			[&](const auto& ext) {
+				return std::strcmp(ext.extensionName, name.c_str()) == 0;
+			});
+		if (!result)
+			return false;
+	}
+	return true;
+}
+
 static void GetPhysicalDeviceProp(VulkanPhysicalDeviceInfo& info)
 {
+	auto [result, extensions] = info.physicalDevice.enumerateDeviceExtensionProperties();
+	if (result == vk::Result::eSuccess)
+	{
+		GlobalConfig::RTCoreEnable = HasDeviceExtension(extensions, VKCore::RTCoreExtension);
+		GlobalConfig::RTCoreReorderEnable = HasDeviceExtension(extensions, VKCore::RTCoreReorderExtension);
+	}
+
 	if (GlobalConfig::RTCoreEnable)
 	{
 		using ChainType = vk::StructureChain<

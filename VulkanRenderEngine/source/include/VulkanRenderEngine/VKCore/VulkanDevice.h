@@ -52,6 +52,7 @@ namespace VKCore
 		const std::vector<std::string>& GetDeviceExtensions() const;
 
 		void AddDeviceExtension(const std::string& extensionName);
+		void AddDeviceExtension(const std::vector<std::string>& extensionNames);
 
 		void AddCallback_CreateDevice(std::function<void()> func);
 		void AddCallback_DestroyDevice(std::function<void()> func);
