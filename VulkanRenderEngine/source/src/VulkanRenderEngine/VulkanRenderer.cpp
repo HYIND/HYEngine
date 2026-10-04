@@ -45,7 +45,7 @@ static void NeedVulkanBaseInitlized()
 		});
 }
 
-std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VKCore::VulkanPhysicalDeviceInfo info)
+static std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VKCore::VulkanPhysicalDeviceInfo& info)
 {
 	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
 	vulkanDevice->AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -58,14 +58,9 @@ std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::Vul
 
 	if (GlobalConfig::RTCoreEnable)
 	{
-		vulkanDevice->AddDeviceExtension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_KHR_RAY_QUERY_EXTENSION_NAME);
-		vulkanDevice->AddDeviceExtension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
-		//vulkanDevice->AddDeviceExtension(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
-		//vulkanDevice->AddDeviceExtension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+		vulkanDevice->AddDeviceExtension(VKCore::RTCoreExtension);
+		if (GlobalConfig::RTCoreReorderEnable)
+			vulkanDevice->AddDeviceExtension(VKCore::RTCoreReorderExtension);
 	}
 
 	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
@@ -574,7 +569,27 @@ void VulkanRenderer::InitSceneRenderGraph()
 	std::unique_ptr<RenderPassBase> reflectPass;
 	std::unique_ptr<RenderPassBase> giPass;
 
-	if (!GlobalConfig::RTCoreEnable)
+	if (GlobalConfig::RTCoreEnable)
+	{
+
+		auto t_generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
+		auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
+			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+			"", "", "",
+			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+		auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
+			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+			"", "", "",
+			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+
+		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+
+		generalPass = std::move(t_generalPass);
+		reflectPass = std::move(t_reflectPass);
+		giPass = std::move(t_giPass);
+	}
+	else
 	{
 		auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
 		auto t_reflectPass = std::make_unique<RayTraceReflectPass>(
@@ -589,26 +604,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 			"shader/RayTrace/TemporalAccumulate.comp",
 			"shader/General/imagescale.comp"
 		);
-
-		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
-		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
-
-		generalPass = std::move(t_generalPass);
-		reflectPass = std::move(t_reflectPass);
-		giPass = std::move(t_giPass);
-	}
-	else
-	{
-
-		auto t_generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
-		auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
-			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-			"", "", "",
-			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
-		auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
-			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-			"", "", "",
-			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());

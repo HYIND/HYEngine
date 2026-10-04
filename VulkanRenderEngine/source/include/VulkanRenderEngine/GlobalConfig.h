@@ -18,10 +18,10 @@ namespace GlobalConfig
 	inline constexpr float AutoExposure_MAX_EV = 12.0;
 	inline constexpr float AutoExposure_EV_RANGE = AutoExposure_MAX_EV - AutoExposure_MIN_EV;
 
-	inline bool RTCoreEnable = true;
-
 	inline constexpr uint32_t MaxFramesInFlight = 2;
 
+	inline bool RTCoreEnable = false;
+	inline bool RTCoreReorderEnable = false;
 
 	inline uint32_t Global_WorkSize_X = 8;
 	inline uint32_t Global_WorkSize_Y = 8;
