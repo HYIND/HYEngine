@@ -41,7 +41,6 @@ namespace RenderGraph
 		PassNode& Persistent(const ResourceData& resource);
 		PassNode& External(const ExternalResourceData& resource);
 		PassNode& FrameLocal(const ResourceData& resource);
-		PassNode& FramePersistent(const ResourceData& resource);
 
 		// 顺序依赖声明
 		PassNode& After(PassNode* node);
