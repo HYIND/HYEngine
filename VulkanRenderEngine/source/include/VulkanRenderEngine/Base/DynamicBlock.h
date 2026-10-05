@@ -51,16 +51,24 @@ public:
 	static BufferUsageInfo GetBufferUsageInfo(BufferUsage usage);
 
 public:
+	static bool MemCopyAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, DynamicBlock& src, DynamicBlock& dst, uint32_t size, uint32_t srcOffset = 0, uint32_t dstOffset = 0);
+	static bool MemCopyAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, std::shared_ptr<DynamicBlock> src, std::shared_ptr<DynamicBlock> dst, uint32_t size, uint32_t srcOffset = 0, uint32_t dstOffset = 0);
+	static bool MemCopy(std::shared_ptr<DynamicBlock> src, std::shared_ptr<DynamicBlock> dst, uint32_t size, uint32_t srcOffset = 0, uint32_t dstOffset = 0);
+
+public:
 	DynamicBlock(uint64_t size = 0, VKWrapper::VmaBuffer::Usage usage = VKWrapper::VmaBuffer::Usage::None, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get());
 	~DynamicBlock();
 
-	void SetSize(uint64_t newsize);
+	void SetSize(uint64_t newsize, bool remainData = true);
 	void WriteData(const void* data, uint64_t size, uint64_t offset = 0);
 	void CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
 
-	void SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize);
+	void SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize, bool remainData = true);
 	void WriteDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const void* data, uint64_t size, uint64_t offset = 0);
 	void CopySelfDataAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t destFirst, uint64_t srcFirst, uint64_t length); //buffer内部数据之间拷贝
+
+	bool Readback(void* outData, size_t size, size_t offset = 0);
+	bool Readback(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset = 0);
 
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
@@ -87,8 +95,8 @@ protected:
 class UniformBlock : public DynamicBlock
 {
 public:
-	UniformBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::UniformBuffer, device) {}
+	UniformBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::UniformBuffer | extraUsage, device) {}
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::UniformRead,
@@ -100,8 +108,8 @@ public:
 class StorageBlock : public DynamicBlock
 {
 public:
-	StorageBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::StorageBuffer, device) {}
+	StorageBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::StorageBuffer | extraUsage, device) {}
 
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
@@ -114,10 +122,8 @@ public:
 class VertexBufferBlock : public StorageBlock
 {
 public:
-	VertexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: StorageBlock(size, device) {
-		_usage = _usage | VKWrapper::VmaBuffer::Usage::VertexBuffer;
-	}
+	VertexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: StorageBlock(size, device, VKWrapper::VmaBuffer::Usage::VertexBuffer | extraUsage) {}
 
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
@@ -130,10 +136,9 @@ public:
 class IndexBufferBlock : public StorageBlock
 {
 public:
-	IndexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: StorageBlock(size, device) {
-		_usage = _usage | VKWrapper::VmaBuffer::Usage::IndexBuffer;
-	}
+	IndexBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: StorageBlock(size, device, VKWrapper::VmaBuffer::Usage::IndexBuffer | extraUsage) {}
+
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::IndexRead | BufferUsage::StorageRead | BufferUsage::StorageWrite,
@@ -142,14 +147,15 @@ public:
 	}
 };
 
-class IndirectBufferBlock : public DynamicBlock
+class IndirectBufferBlock : public StorageBlock
 {
 public:
-	IndirectBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::IndirectBuffer, device) {}
+	IndirectBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: StorageBlock(size, device, VKWrapper::VmaBuffer::Usage::IndirectBuffer | extraUsage) {}
+
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
-		BufferUsage cur = BufferUsage::IndirectRead,
+		BufferUsage cur = BufferUsage::IndirectRead | BufferUsage::StorageRead | BufferUsage::StorageWrite,
 		vk::DependencyFlags flags = {}) {
 		DynamicBlock::Barrier(cmd, pre, cur, flags);
 	}
@@ -158,8 +164,8 @@ public:
 class SBTBufferBlock : public DynamicBlock
 {
 public:
-	SBTBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get())
-		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::SBTBuffer, device) {}
+	SBTBufferBlock(uint64_t size = 0, VKCore::VulkanDevice* device = VKCONTEXT->GetDevice().get(), VKWrapper::VmaBuffer::Usage extraUsage = VKWrapper::VmaBuffer::Usage::None)
+		: DynamicBlock(size, VKWrapper::VmaBuffer::Usage::SBTBuffer | extraUsage, device) {}
 	void Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		BufferUsage pre,
 		BufferUsage cur = BufferUsage::ShaderBindingTableRead,

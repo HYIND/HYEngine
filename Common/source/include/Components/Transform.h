@@ -21,7 +21,7 @@ struct Transform : public IComponent
 	) : position(pos), rotation(rot), scale(scl) {
 	}
 
-	void setMatrix(const glm::mat4& matrix)
+	void SetMatrix(const glm::mat4& matrix)
 	{
 		glm::vec3 scale;
 		glm::quat rotation;
@@ -36,14 +36,14 @@ struct Transform : public IComponent
 		}
 	}
 
-	glm::mat4 getMatrix() const
+	glm::mat4 GetMatrix() const
 	{
 		return glm::translate(glm::mat4(1.0f), position)
 			* glm::toMat4(rotation)
 			* glm::scale(glm::mat4(1.0f), scale);
 	}
 
-	glm::vec3 getDirection() const
+	glm::vec3 GetDirection() const
 	{
 		return glm::normalize(rotation * glm::vec3(0.0f, 0.0f, 1.0f));
 	}

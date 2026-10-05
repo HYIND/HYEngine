@@ -94,8 +94,8 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 
 	AtmosphereParams params
 	{
-		.DirLightColor = dirLight->getColor() * dirLight->getIntensity(),
-		.DirLightDir = dirLight->getDirection(),
+		.DirLightColor = dirLight->GetColor() * dirLight->GetIntensity(),
+		.DirLightDir = dirLight->GetDirection(),
 		.CubeCapturePosition = state.option.atmosphereParams.CubeCapturePosition,
 		.PlanetRadius = state.option.atmosphereParams.PlanetRadius,
 		.AtmosphereHeight = state.option.atmosphereParams.AtmosphereHeight,
@@ -282,8 +282,8 @@ void AtmospherePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 
 	AtmosphereParams params
 	{
-		.DirLightColor = dirLight->getColor() * dirLight->getIntensity(),
-		.DirLightDir = dirLight->getDirection(),
+		.DirLightColor = dirLight->GetColor() * dirLight->GetIntensity(),
+		.DirLightDir = dirLight->GetDirection(),
 		.CubeCapturePosition = state.option.atmosphereParams.CubeCapturePosition,
 		.PlanetRadius = state.option.atmosphereParams.PlanetRadius,
 		.AtmosphereHeight = state.option.atmosphereParams.AtmosphereHeight,

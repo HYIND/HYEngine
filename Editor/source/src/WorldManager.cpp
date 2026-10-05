@@ -98,7 +98,7 @@ void SetNameTag(Entity entity, const std::string& name)
 void LoadInitScene(World& world)
 {
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000, 3000);
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
 		AddPickProxy(entity);
 	}
 

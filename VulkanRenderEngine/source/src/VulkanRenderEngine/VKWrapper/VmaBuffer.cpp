@@ -474,18 +474,6 @@ bool VKWrapper::VmaBuffer::CopyBufferAsync(const std::shared_ptr<VKWrapper::VKCo
 
 		// 临时缓冲区 → 原缓冲区
 		cmd->copyBuffer(tempBuffer, dst, copyRegion2);
-
-		//{
-		//	vk::BufferMemoryBarrier barrier;
-		//	barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-		//		.setDstAccessMask(vk::AccessFlagBits::eTransferRead)
-		//		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-		//		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-		//		.setBuffer(dst.GetHandle())  // 临时缓冲区
-		//		.setOffset(0)
-		//		.setSize(size);
-		//	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
-		//}
 	}
 
 	return true;

@@ -18,17 +18,21 @@ void PreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderG
 {
 	//auto start = Tool::GetTimestampMircoseconds();
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
-	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices);
+	std::vector<AABB> staticMesh_AABB;
+	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices, staticMesh_AABB);
 	//std::cout << std::format("cost {}us\n", Tool::GetTimestampMircoseconds() - start);
 
 	auto cmd = cmdCtx.GetCmd();
 	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
 		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
 	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteDataAsync(cmd, staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
+	if (!state.indirectCommands.ssbo_StaticMesh_WorldAABB)
+		state.indirectCommands.ssbo_StaticMesh_WorldAABB = std::make_shared<StorageBlock>();
+	state.indirectCommands.ssbo_StaticMesh_WorldAABB->WriteDataAsync(cmd, staticMesh_AABB.data(), staticMesh_AABB.size() * sizeof(AABB));
 	cmd->SubmitToQueue();
 }
 
-void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices)
+void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices, std::vector<AABB>& worldAABBs)
 {
 	auto indirectManager = IndirectDrawManager::Instance();
 
@@ -56,6 +60,7 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 	size_t startInedx = 0;
 
 	staticMesh_TransformAndMaterialIndices.resize(renderIndex.oneSideIndex.size() + renderIndex.twoSideIndex.size());
+	worldAABBs.resize(renderIndex.oneSideIndex.size() + renderIndex.twoSideIndex.size());
 
 	for (auto& data : processDatas)
 	{
@@ -82,6 +87,10 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 					auto& data = staticMesh_TransformAndMaterialIndices[startInedx + index];
 					data.model = item.transform;
 
+					auto& aabb = worldAABBs[startInedx + index];
+					aabb = mesh->GetAABB();
+					aabb.MakeTransform(data.model);
+
 					indirectManager->GetMaterialIndex_LockFree(*material, data.materialIndex);
 
 					IndirectDrawMeta meta;
@@ -106,3 +115,19 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 void PreCalculatePass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {}
+
+void PreCalculatePass::Execute(RenderState & state)
+{
+	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
+	std::vector<AABB> staticMesh_AABB;
+	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices, staticMesh_AABB);
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
+		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
+	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteDataAsync(cmd, staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
+	if (!state.indirectCommands.ssbo_StaticMesh_WorldAABB)
+		state.indirectCommands.ssbo_StaticMesh_WorldAABB = std::make_shared<StorageBlock>();
+	state.indirectCommands.ssbo_StaticMesh_WorldAABB->WriteDataAsync(cmd, staticMesh_AABB.data(), staticMesh_AABB.size() * sizeof(AABB));
+	cmd->SubmitNowAndWait();
+}

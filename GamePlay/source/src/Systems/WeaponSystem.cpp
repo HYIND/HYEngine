@@ -188,7 +188,7 @@ void WeaponSystem::fireBullet(Entity& shooter, WeaponBasic& basic, WeaponState& 
 		auto& trans = shooter.getComponent<Transform>();
 
 		glm::vec3 origin = trans.position;
-		glm::vec3 forward = trans.getDirection();
+		glm::vec3 forward = trans.GetDirection();
 		glm::vec3 end = origin + std::max(0.f, basic.range) * forward;
 
 		fireRayCast(origin, end);

@@ -261,11 +261,11 @@ int VulkanMain()
 
 		auto dirInfo = std::make_shared<DirLightInfo>();
 		dirInfo->light = std::make_shared<DirLight>(glm::vec3(-1, 0, -1));
-		dirInfo->light->setCascadeLevel(4);
+		dirInfo->light->SetCascadeLevel(4);
 
 		auto pointInfo = std::make_shared<PointLightInfo>();
 		pointInfo->light = std::make_shared<PointLight>(glm::vec3(2, 2, 6));
-		pointInfo->light->setIntensity(50);
+		pointInfo->light->SetIntensity(50);
 
 		state->lights.dirLightInfos.push_back(dirInfo);
 		state->lights.pointLightInfos.push_back(pointInfo);

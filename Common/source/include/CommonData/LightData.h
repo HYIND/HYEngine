@@ -17,8 +17,7 @@ struct DirectionalLightData
 	// 阴影参数
 	bool castShadow = true;
 	uint32_t cascadeLevel = __LightDataDefault::__default_cascadeLevel;	//阴影级联
-	uint32_t shadowMapWidth = __LightDataDefault::__default_shadow_side;
-	uint32_t shadowMapHeight = __LightDataDefault::__default_shadow_side;
+	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
 struct PointLightData
@@ -27,8 +26,7 @@ struct PointLightData
 	float cdIntensity = 300.f;
 
 	bool castShadow = true;
-	uint32_t shadowMapWidth = __LightDataDefault::__default_shadow_side;
-	uint32_t shadowMapHeight = __LightDataDefault::__default_shadow_side;
+	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
 struct SpotLightData
@@ -40,8 +38,7 @@ struct SpotLightData
 	float outercutOffAngle = 30.f;
 
 	bool castShadow = true;
-	uint32_t shadowMapWidth = __LightDataDefault::__default_shadow_side;
-	uint32_t shadowMapHeight = __LightDataDefault::__default_shadow_side;
+	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
 enum class LightType {

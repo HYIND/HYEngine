@@ -27,7 +27,7 @@ Frustum::Frustum(const glm::mat4& viewProj)
 	glm::vec4 row2 = GetRow(viewProj, 2);
 	glm::vec4 row3 = GetRow(viewProj, 3);
 
-	auto GetPlane = [&](glm::vec4 coeff) -> Plane
+	static auto GetPlane = [](glm::vec4 coeff) -> Plane
 		{
 			glm::vec3 normal = glm::vec3(coeff);
 			float len = glm::length(normal);
@@ -60,7 +60,7 @@ Frustum::Frustum(const glm::mat4& viewProj)
 	{
 		glm::vec4 world = invViewProj * ndcCorners[i];
 		world /= world.w;  // 透视除法
-		corners[i] = glm::vec3(world);
+		corners[i] = world;
 	}
 
 }

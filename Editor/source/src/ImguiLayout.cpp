@@ -1214,7 +1214,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				glm::mat4 projOG = projection;
 				projOG[1][1] *= -1;
 
-				auto transformMatrix = transform->getMatrix();
+				auto transformMatrix = transform->GetMatrix();
 				glm::mat4 deltaMatrix = glm::mat4(1.0f);
 
 				// 显示 Gizmo 并操作
@@ -1237,7 +1237,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 							if (!transform)
 								return;
 
-							transform->setMatrix(newMatrix);
+							transform->SetMatrix(newMatrix);
 
 							if (physics)
 							{

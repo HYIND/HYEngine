@@ -12,27 +12,24 @@ public:
 	Light(const glm::vec3& color);
 
 public:
-	void setColor(const glm::vec3& c);
-	void setColor(float r, float g, float b);
-	void setColorTemperature(float temp);
+	void SetColor(const glm::vec3& c);
+	void SetColor(float r, float g, float b);
+	void SetColorTemperature(float temp);
 
-	void setShadowMapWidth(uint32_t w);
-	void setShadowMapHeight(uint32_t h);
+	void SetShadowMapSize(uint32_t w);
 
-	void setCastShadow(bool value);
+	void SetCastShadow(bool value);
 
 public:
-	glm::vec3 getColor() const;
+	glm::vec3 GetColor() const;
 
-	uint32_t getShadowMapWidth() const;
-	uint32_t getShadowMapHeight() const;
+	uint32_t GetShadowMapSize() const;
 
-	bool getCastShadow();
+	bool GetCastShadow() const;
 
 protected:
 	glm::vec3 _color = glm::vec3(1.0f);
-	uint32_t _shadowMapWidth = __default_shadow_side;
-	uint32_t _shadowMapHeight = __default_shadow_side;
+	uint32_t _shadowMapSize = __default_shadow_side;
 	bool _castShadow = true;
 };
 
@@ -49,21 +46,21 @@ public:
 
 	~DirLight();
 
-	void setDirection(const glm::vec3& dir);
-	void setDirection(float x, float y, float z);
-	void setIntensity(float lux);
-	void setCascadeLevel(int level);
+	void SetDirection(const glm::vec3& dir);
+	void SetDirection(float x, float y, float z);
+	void SetIntensity(float lux);
+	void SetCascadeLevel(uint32_t level);
 
-	glm::vec3 getDirection() const;
-	float getIntensity() const;
-	glm::mat4 getLightSpaceMatrix() const;
-	glm::mat4 getLightSpaceMatrixWithFrustumCorners(const glm::mat4& projection, const glm::mat4& view, glm::vec3* center = nullptr, float* radius = nullptr) const;
-	int getCascadeLevel();
+	glm::vec3 GetDirection() const;
+	float GetIntensity() const;
+	glm::mat4 GetLightSpaceMatrix() const;
+	glm::mat4 GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& projection, const glm::mat4& view, glm::vec3* center = nullptr, float* radius = nullptr) const;
+	uint32_t GetCascadeLevel() const;
 
 private:
 	glm::vec3 _direction;
 	float _luxIntensity = 1000.f;
-	int _cascadeLevel;	//阴影级联
+	uint32_t _cascadeLevel;	//阴影级联
 };
 
 class PointLight :public Light
@@ -82,13 +79,13 @@ public:
 
 	~PointLight();
 
-	void setPosition(const glm::vec3& pos);
-	void setPosition(float x, float y, float z);
-	void setIntensity(float cd);
+	void SetPosition(const glm::vec3& pos);
+	void SetPosition(float x, float y, float z);
+	void SetIntensity(float cd);
 
-	glm::vec3 getPosition() const;
-	float getIntensity() const;
-	float getRadius() const;
+	glm::vec3 GetPosition() const;
+	float GetIntensity() const;
+	float GetRadius() const;
 
 private:
 	glm::vec3 _position;
@@ -117,25 +114,25 @@ public:
 
 	~SpotLight();
 
-	void setPosition(const glm::vec3& pos);
-	void setPosition(float x, float y, float z);
-	void setIntensity(float cd);
+	void SetPosition(const glm::vec3& pos);
+	void SetPosition(float x, float y, float z);
+	void SetIntensity(float cd);
 
-	void setDirection(const glm::vec3& dir);
-	void setDirection(float x, float y, float z);
+	void SetDirection(const glm::vec3& dir);
+	void SetDirection(float x, float y, float z);
 
-	void setCutOffAngle(float cut);
-	void setOuterCutOffAngle(float outerCut);
+	void SetCutOffAngle(float cut);
+	void SetOuterCutOffAngle(float outerCut);
 
-	glm::vec3 getPosition() const;
-	glm::vec3 getColor() const;
-	float getIntensity() const;
-	glm::vec3 getDirection() const;
-	float getCutOffAngle() const;
-	float getOuterCutOffAngle() const;
+	glm::vec3 GetPosition() const;
+	glm::vec3 GetColor() const;
+	float GetIntensity() const;
+	glm::vec3 GetDirection() const;
+	float GetCutOffAngle() const;
+	float GetOuterCutOffAngle() const;
 
-	glm::mat4 getLightSpaceMatrix() const;
-	float getRadius() const;
+	glm::mat4 GetLightSpaceMatrix() const;
+	float GetRadius() const;
 
 private:
 	glm::vec3 _position;

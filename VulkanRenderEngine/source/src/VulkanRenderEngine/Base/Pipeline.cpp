@@ -369,8 +369,10 @@ DynamicRenderInfo& DynamicRenderInfo::AddDepthAttachment(vk::ImageView imageView
 		.setImageView(imageView)
 		.setImageLayout(vk::ImageLayout::eDepthAttachmentOptimal)
 		.setLoadOp(loadOp)
-		.setStoreOp(vk::AttachmentStoreOp::eStore)
-		.setClearValue(clearValue);
+		.setStoreOp(vk::AttachmentStoreOp::eStore);
+
+	if (loadOp == vk::AttachmentLoadOp::eClear)
+		attachment.setClearValue(clearValue);
 
 	renderingInfo.setPDepthAttachment(depthAttachment);
 	return *this;

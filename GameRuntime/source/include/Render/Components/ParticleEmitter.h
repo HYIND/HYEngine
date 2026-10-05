@@ -192,7 +192,7 @@ struct RadialDirectionGenerator : IDirectionGenerator {
 			return glm::normalize(Tool::RandomSpread(emitterTrans.rotation, spreadAngle) * glm::vec3(0, 0, -1));	//退化成发射器方向
 		glm::vec3 radial = glm::normalize(pos);
 		glm::quat baseQuat = Tool::SafeQuatLookAt(pos);
-		return emitterTrans.getMatrix() * glm::vec4(glm::normalize(Tool::RandomSpread(baseQuat, spreadAngle) * glm::vec3(0, 0, -1)), 0.f);
+		return emitterTrans.GetMatrix() * glm::vec4(glm::normalize(Tool::RandomSpread(baseQuat, spreadAngle) * glm::vec3(0, 0, -1)), 0.f);
 	}
 };
 

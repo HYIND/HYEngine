@@ -7,9 +7,9 @@
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
-struct Plane {
+struct alignas(16) Plane {
 	glm::vec3 normal;
-	float     distance;
+	float distance;
 
 	Plane() = default;
 	Plane(const glm::vec3& pointOnPlane, const glm::vec3& n);
@@ -17,7 +17,7 @@ struct Plane {
 	float getSignedDistanceToPlane(const glm::vec3& point) const;
 };
 
-struct Frustum
+struct alignas(16) Frustum
 {
 	Plane nearFace;
 	Plane farFace;
@@ -26,7 +26,7 @@ struct Frustum
 	Plane topFace;
 	Plane bottomFace;
 
-	std::array<glm::vec3, 8> corners;
+	std::array<glm::vec4, 8> corners;
 
 	Frustum() = default;
 	Frustum(const glm::mat4& viewProj);
@@ -137,6 +137,7 @@ struct RenderState
 		std::vector<IndirectDrawCommand> staticMesh_OneSideCommand;
 		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommand;
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_TransformAndMaterialIndices;
+		std::shared_ptr<StorageBlock> ssbo_StaticMesh_WorldAABB;
 	} indirectCommands;
 
 	struct SkyBoxParams {

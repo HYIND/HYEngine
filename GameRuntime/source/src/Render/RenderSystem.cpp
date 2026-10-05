@@ -179,7 +179,7 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneModelRenderData>();
 		auto& writeBuffer = renderModel.renderView.transformTripleBuffer->acquireWriteBuffer();
-		writeBuffer = transform.getMatrix() * renderModel.trans;
+		writeBuffer = transform.GetMatrix() * renderModel.trans;
 		renderModel.renderView.transformTripleBuffer->submitWriteBuffer();
 
 		renderdata->transformView = renderModel.renderView;
@@ -301,14 +301,13 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 			if (auto data = renderLight.GetData<DirectionalLightData>())
 			{
 				auto postion = transform.position;
-				auto direction = transform.getDirection();
+				auto direction = transform.GetDirection();
 
 				auto renderdata = std::make_shared<VKRenderContext::DirLightRenderData>();
 				renderdata->light = std::make_shared<DirLight>(direction, data->color, data->luxIntensity);
-				renderdata->light->setCascadeLevel(data->cascadeLevel);
-				renderdata->light->setShadowMapWidth(data->shadowMapWidth);
-				renderdata->light->setShadowMapHeight(data->shadowMapHeight);
-				renderdata->light->setCastShadow(data->castShadow);
+				renderdata->light->SetCascadeLevel(data->cascadeLevel);
+				renderdata->light->SetShadowMapSize(data->shadowMapSize);
+				renderdata->light->SetCastShadow(data->castShadow);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -324,13 +323,12 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 			if (auto data = renderLight.GetData<PointLightData>())
 			{
 				auto position = transform.position;
-				auto direction = transform.getDirection();
+				auto direction = transform.GetDirection();
 
 				auto renderdata = std::make_shared<VKRenderContext::PointLightRenderData>();
 				renderdata->light = std::make_shared<PointLight>(position, data->color, data->cdIntensity);
-				renderdata->light->setShadowMapWidth(data->shadowMapWidth);
-				renderdata->light->setShadowMapHeight(data->shadowMapHeight);
-				renderdata->light->setCastShadow(data->castShadow);
+				renderdata->light->SetShadowMapSize(data->shadowMapSize);
+				renderdata->light->SetCastShadow(data->castShadow);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -346,13 +344,12 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 			if (auto data = renderLight.GetData<SpotLightData>())
 			{
 				auto position = transform.position;
-				auto direction = transform.getDirection();
+				auto direction = transform.GetDirection();
 
 				auto renderdata = std::make_shared<VKRenderContext::SpotLightRenderData>();
 				renderdata->light = std::make_shared<SpotLight>(position, direction, data->cutOffAngle, data->outercutOffAngle, data->color, data->cdIntensity);
-				renderdata->light->setShadowMapWidth(data->shadowMapWidth);
-				renderdata->light->setShadowMapHeight(data->shadowMapHeight);
-				renderdata->light->setCastShadow(data->castShadow);
+				renderdata->light->SetShadowMapSize(data->shadowMapSize);
+				renderdata->light->SetCastShadow(data->castShadow);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();

@@ -123,7 +123,7 @@ void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, 
 				particle->velocity = particleInitDirection * params.speedGenerator->generate();
 				particle->lifeTime = params.lifeTimeGenerator->generate();
 				particle->maxLifeTime = particle->lifeTime;
-				particle->position = transform.getMatrix() * glm::vec4(particleInitPosition + (params.posOffsetGenerator ? params.posOffsetGenerator->generate(particle) : glm::vec3(0)), 1.0f);
+				particle->position = transform.GetMatrix() * glm::vec4(particleInitPosition + (params.posOffsetGenerator ? params.posOffsetGenerator->generate(particle) : glm::vec3(0)), 1.0f);
 
 				if (params.opacityUpdater) particle->opacityUpdater = params.opacityUpdater->Clone();
 				if (params.baseColorUpdater) particle->baseColorUpdater = params.baseColorUpdater->Clone();

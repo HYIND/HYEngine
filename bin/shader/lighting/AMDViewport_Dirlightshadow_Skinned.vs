@@ -9,13 +9,19 @@ layout (location = 4) in vec3 aBitangent;
 layout (location = 5) in ivec4 aBoneIds[2]; 
 layout (location = 7) in vec4 aWeights[2];
 
-layout (location = 0)  flat out int Index;
-layout (location = 2) out vec2 FragTextureCoords;
-layout (location = 3) flat out uint dataIndex;
+layout (location = 0) out vec2 FragTextureCoords;
+layout (location = 1) flat out uint viewIndex;
+layout (location = 2) flat out uint dataIndex;
 
 #include "shader/Helper/animationHelper.comp"
 
-layout(set = 0, binding = 4) buffer ShadowMatrices
+
+layout(binding = 3) uniform Params
+{
+	uint commandsPerView;
+};
+
+layout(binding = 4) buffer ShadowMatrices
 {
 	mat4 shadowMatrices[];
 };
@@ -26,7 +32,7 @@ struct TransMatIndex
     uint materialIndex;
 };
 
-layout(set = 0, binding = 5) buffer Transforms
+layout(binding = 5) buffer Transforms
 {
     TransMatIndex data[];
 };
