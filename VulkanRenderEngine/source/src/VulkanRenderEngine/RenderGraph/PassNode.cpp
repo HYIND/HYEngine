@@ -55,11 +55,6 @@ PassNode& RenderGraph::PassNode::FrameLocal(const ResourceData& resource)
 	return *this;
 }
 
-PassNode& RenderGraph::PassNode::FramePersistent(const ResourceData& resource)
-{
-	// TODO: 在此处插入 return 语句
-}
-
 PassNode& PassNode::After(PassNode* node) {
 	if (node != this)
 		_afters.insert(node);
