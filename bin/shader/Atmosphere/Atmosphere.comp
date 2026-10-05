@@ -21,7 +21,6 @@ layout (binding = 5) uniform sampler2D skyViewLut;
 layout (binding = 6) uniform sampler2D atlasShadowMap;
 layout (binding = 7) uniform sampler2D gPosition;
 
-
 bool InShadow(vec3 fragPos)
 {
     DirLight light = dirLightMetaData.info[0];
@@ -31,9 +30,9 @@ bool InShadow(vec3 fragPos)
     vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), -light.direction, 0.1);
     DirLightCascade cascade = GetCascade(camera.view * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
     vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-    float shadow = DirLightShadowCalculation(fragPosLightSpace, atlasShadowMap, 
-                                            vec2(cascade.atlasX, cascade.atlasY),
-                                            vec2(cascade.atlasWidth, cascade.atlasHeight));
+    float shadow = DirLightFastShadowCalculation(fragPosLightSpace, atlasShadowMap, 
+                                                vec2(cascade.atlasX, cascade.atlasY),
+                                                vec2(cascade.atlasWidth, cascade.atlasHeight));
     shadow = clamp(shadow, 0.f, 1.f);
     return shadow > 0.1;
 }

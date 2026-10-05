@@ -18,7 +18,6 @@ struct DirLightCascade
 	int atlasY;
 	int atlasWidth;
 	int atlasHeight;
-	float cascadePlaneDistance;
 };
 
 struct PointLight {
@@ -77,3 +76,8 @@ layout(set = 3, binding = 3) buffer SpotLightMetaData
     uint spotLightCount;
     SpotLight info[];
 } spotLightMetaData;
+
+layout(set = 3, binding = 4) buffer DirLightCascadeDistanceData
+{
+	float values[];
+} cascadeDistances;

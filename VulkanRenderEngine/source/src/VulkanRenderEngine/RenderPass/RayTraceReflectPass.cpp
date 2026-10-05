@@ -258,7 +258,8 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
-		state.lights.ssbo_spotLightMeta
+		state.lights.ssbo_spotLightMeta,
+		state.lights.ssbo_dirLightCascadeDistances
 	);
 
 

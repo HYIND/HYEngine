@@ -341,7 +341,8 @@ void AtmospherePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
-		state.lights.ssbo_spotLightMeta
+		state.lights.ssbo_spotLightMeta,
+		state.lights.ssbo_dirLightCascadeDistances
 	);
 
 	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);

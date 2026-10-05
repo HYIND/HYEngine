@@ -132,6 +132,8 @@ shaderc::SpvCompilationResult CompileSourceCodeToSPIRV(const std::string& source
 	shaderc::Compiler compiler;
 	shaderc::CompileOptions options;
 
+	options.SetGenerateDebugInfo();
+
 	shaderc_shader_kind shaderKind;
 
 	if (type == ShaderType::Vertex)
@@ -318,7 +320,8 @@ PipelineConfig& PipelineConfig::AddLightDataBinding()
 	this->AddStorageBuffer(GeneralBindingPoint::Light_DirLightMetaData.binding, GeneralBindingPoint::Light_DirLightMetaData.set)
 		.AddStorageBuffer(GeneralBindingPoint::Light_DirLightCascadeData.binding, GeneralBindingPoint::Light_DirLightCascadeData.set)
 		.AddStorageBuffer(GeneralBindingPoint::Light_PointLightMetaData.binding, GeneralBindingPoint::Light_PointLightMetaData.set)
-		.AddStorageBuffer(GeneralBindingPoint::Light_SpotLightMetaData.binding, GeneralBindingPoint::Light_SpotLightMetaData.set);
+		.AddStorageBuffer(GeneralBindingPoint::Light_SpotLightMetaData.binding, GeneralBindingPoint::Light_SpotLightMetaData.set)
+		.AddStorageBuffer(GeneralBindingPoint::Light_DirLightCascadeDistanceData.binding, GeneralBindingPoint::Light_DirLightCascadeDistanceData.set);
 	return *this;
 }
 
@@ -989,13 +992,15 @@ void BindingRecord::SetLightStorageData(
 	const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta,
 	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade,
 	const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
-	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta
-)
+	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta,
+	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascadeDistances
+	)
 {
 	if (_ssbo_dirLightMeta) SetStorageBlock(_ssbo_dirLightMeta, GeneralBindingPoint::Light_DirLightMetaData);
 	if (_ssbo_dirLightCascade) SetStorageBlock(_ssbo_dirLightCascade, GeneralBindingPoint::Light_DirLightCascadeData);
 	if (_ssbo_pointLightMeta) SetStorageBlock(_ssbo_pointLightMeta, GeneralBindingPoint::Light_PointLightMetaData);
 	if (_ssbo_spotLightMeta) SetStorageBlock(_ssbo_spotLightMeta, GeneralBindingPoint::Light_SpotLightMetaData);
+	if (_ssbo_dirLightCascadeDistances) SetStorageBlock(_ssbo_dirLightCascadeDistances, GeneralBindingPoint::Light_DirLightCascadeDistanceData);
 }
 
 void BindingRecord::BindAllEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage)
