@@ -4,9 +4,6 @@
 
 constexpr uint32_t batch_max = 16;
 
-constexpr uint32_t maxUpdateDeltaMs = 25;
-constexpr float maxUpdateDeltaTime = maxUpdateDeltaMs * 1000.f;
-
 struct alignas(16) DirLightMetaInfo {
 	alignas(16) glm::vec3 direction;
 	alignas(16) glm::vec3 color;
@@ -102,12 +99,12 @@ static void SetupDirLightData(
 		auto& light = info->light;
 
 		DirLightMetaInfo metainfo;
-		metainfo.direction = light->getDirection();
-		metainfo.color = light->getColor();
+		metainfo.direction = light->GetDirection();
+		metainfo.color = light->GetColor();
 
-		metainfo.luxIntensity = light->getIntensity();
+		metainfo.luxIntensity = light->GetIntensity();
 
-		metainfo.castShadow = info->light->getCastShadow() || !info->cascades.empty();
+		metainfo.castShadow = info->light->GetCastShadow() || !info->cascades.empty();
 		if (metainfo.castShadow)
 		{
 			std::vector<DirLightCascadeInfo> cascadeInfos;
@@ -169,18 +166,18 @@ static void SetupPointLightData(
 	for (auto& info : pointLights)
 	{
 		auto light = info->light;
-		bool castShadow = light->getCastShadow();
+		bool castShadow = light->GetCastShadow();
 
 		std::array<DynamicViewport, 6> viewports;
 		if (castShadow && !GetCubeViewPorts(viewports, info, *atlasShadowMap))
 			continue;
 
 		PointLightMetaInfo metainfo;
-		metainfo.position = light->getPosition();
-		metainfo.color = light->getColor();
+		metainfo.position = light->GetPosition();
+		metainfo.color = light->GetColor();
 		metainfo.castShadow = castShadow;
-		metainfo.cdIntensity = light->getIntensity();
-		metainfo.radius = light->getRadius();
+		metainfo.cdIntensity = light->GetIntensity();
+		metainfo.radius = light->GetRadius();
 		for (int i = 0; i < 6; i++)
 		{
 			auto& viewport = viewports[i];
@@ -210,22 +207,22 @@ static void SetupSpotLightData(
 			continue;
 
 		auto light = info->light;
-		bool castShadow = light->getCastShadow();
+		bool castShadow = light->GetCastShadow();
 
 		AtlasMap::AtlasRect rect;
 		if (castShadow && (!info->atlas || !atlasShadowMap->GetSpace(info->atlas->id, rect)))
 			continue;
 
 		SpotLightMetaInfo metainfo;
-		metainfo.position = light->getPosition();
-		metainfo.color = light->getColor();
-		metainfo.cdIntensity = light->getIntensity();
+		metainfo.position = light->GetPosition();
+		metainfo.color = light->GetColor();
+		metainfo.cdIntensity = light->GetIntensity();
 		metainfo.castShadow = castShadow;
-		metainfo.direction = light->getDirection();
-		metainfo.cutOff = glm::cos(glm::radians(light->getCutOffAngle()));
-		metainfo.outerCutOff = glm::cos(glm::radians(light->getOuterCutOffAngle()));
-		metainfo.lightSpaceMatrix = light->getLightSpaceMatrix();
-		metainfo.radius = light->getRadius();
+		metainfo.direction = light->GetDirection();
+		metainfo.cutOff = glm::cos(glm::radians(light->GetCutOffAngle()));
+		metainfo.outerCutOff = glm::cos(glm::radians(light->GetOuterCutOffAngle()));
+		metainfo.lightSpaceMatrix = light->GetLightSpaceMatrix();
+		metainfo.radius = light->GetRadius();
 		metainfo.atlasX = rect.x;
 		metainfo.atlasY = rect.y;
 		metainfo.atlasWidth = rect.width;
@@ -252,8 +249,9 @@ static std::vector<CascadeSplit> CalculateCascadeSplit(
 	float aspect,
 	float nearPlane,
 	float farPlane,
-	int cascadeCount,
-	float lambda = 0.75f)  // lambda控制对数/均匀混合，0.5常用
+	uint32_t cascadeCount,
+	float lambda = 0.65f // lambda控制对数/均匀混合，0.5常用
+)
 {
 	if (cascadeCount <= 0)
 		return {};
@@ -261,7 +259,7 @@ static std::vector<CascadeSplit> CalculateCascadeSplit(
 	std::vector<CascadeSplit> splits;
 	splits.reserve(cascadeCount);
 
-	for (int i = 0; i < cascadeCount; ++i) {
+	for (uint32_t i = 0; i < cascadeCount; ++i) {
 		float t0 = static_cast<float>(i) / cascadeCount;
 		float t1 = static_cast<float>(i + 1) / cascadeCount;
 
@@ -313,6 +311,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 
 		config
 			.AddBindlessMaterialTextureBinding()
+			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5);
 
@@ -338,6 +337,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config
 			.AddBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
+			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5);
 
@@ -362,6 +362,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 
 		config
 			.AddBindlessMaterialTextureBinding()
+			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5)
 			.AddStorageBuffer(6);
@@ -388,6 +389,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config
 			.AddBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
+			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5)
 			.AddStorageBuffer(6);
@@ -398,67 +400,141 @@ LightShadowDepthPass::LightShadowDepthPass(
 			_pointLightShadowDepthSkinnedShader->Create(config);
 	}
 
+	{
+		_frustumCullingShader = std::make_shared<ComputePipeline>();
+
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y);
+		config.computePath = "shader/lighting/FrustumCulling.comp";
+
+		config
+			.AddUnifromBuffer(0)
+			.AddStorageBuffer(1)
+			.AddStorageBuffer(2)
+			.AddStorageBuffer(3);
+
+		if (config.Validate())
+			_frustumCullingShader->Create(config);
+	}
+
 }
 
 LightShadowDepthPass::~LightShadowDepthPass()
 {}
 
-bool LightShadowDepthPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
-	return true;
-}
-
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	auto selfctx = registry.Get<SelfContext>("context");
-	state.lights.shadowAtlas = selfctx->atlas;
+	if (state.lights.dirLightInfos.empty()
+		&& state.lights.spotLightInfos.empty()
+		&& state.lights.pointLightInfos.empty()
+		&& !state.indirectCommands.staticMesh_OneSideCommand.empty()
+		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
+		return;
 
-	CalculateShadowAtlas(state, *selfctx->atlas);
+	auto& selfctx = *registry.Get<SelfContext>("context");
+	state.lights.shadowAtlas = selfctx.atlas;
+
+	CalculateShadowAtlas(state, *selfctx.atlas);
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	SetupLightingData(*selfctx, cmd, state);
+	SetupLightingData(selfctx, cmd, state);
+
+	selfctx.oneSideCommandSize = state.indirectCommands.staticMesh_OneSideCommand.size();
+	selfctx.twoSideCommandSize = state.indirectCommands.staticMesh_TwoSideCommand.size();
+	selfctx.ssbo_StaticMesh_TransformAndMaterialIndices = state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices;
+	selfctx.ssbo_StaticMesh_WorldAABB = state.indirectCommands.ssbo_StaticMesh_WorldAABB;
+
+	selfctx.oneSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_OneSideCommand.data(), state.indirectCommands.staticMesh_OneSideCommand.size() * sizeof(IndirectDrawCommand));
+	selfctx.twoSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_TwoSideCommand.data(), state.indirectCommands.staticMesh_TwoSideCommand.size() * sizeof(IndirectDrawCommand));
+
 	if (cmd->IsRecording())
 		cmd->SubmitNowAndWait();
 
-	state.lights.ssbo_dirLightMeta = selfctx->ssbo_dirLightMeta;
-	state.lights.ssbo_dirLightCascade = selfctx->ssbo_dirLightCascade;
-	state.lights.ssbo_pointLightMeta = selfctx->ssbo_pointLightMeta;
-	state.lights.ssbo_spotLightMeta = selfctx->ssbo_spotLightMeta;
+	state.lights.ssbo_dirLightMeta = selfctx.ssbo_dirLightMeta;
+	state.lights.ssbo_dirLightCascade = selfctx.ssbo_dirLightCascade;
+	state.lights.ssbo_pointLightMeta = selfctx.ssbo_pointLightMeta;
+	state.lights.ssbo_spotLightMeta = selfctx.ssbo_spotLightMeta;
+
+	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
+	PreRecordDirAndSpotLight(datas, selfctx, state);
+	PreRecordPointLight(datas, selfctx, state);
 }
 
 void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
+
 	auto shadowAtlas = ctx.GetOutput(0);
 	if (!shadowAtlas)
 		return;
 
-	if (state.lights.dirLightInfos.empty() && state.lights.spotLightInfos.empty() && state.lights.pointLightInfos.empty())
+	if (state.lights.dirLightInfos.empty()
+		&& state.lights.spotLightInfos.empty()
+		&& state.lights.pointLightInfos.empty()
+		&& !state.indirectCommands.staticMesh_OneSideCommand.empty()
+		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
 		return;
 
-	auto selfctx = registry.Get<SelfContext>("context");
-
-	selfctx->staticMesh_OneSideCommands = state.indirectCommands.staticMesh_OneSideCommand;
-	selfctx->staticMesh_TwoSideCommands = state.indirectCommands.staticMesh_TwoSideCommand;
-
-	glm::u32vec2 size = glm::max(selfctx->atlas->GetSize(), glm::u32vec2(16, 16));
-	shadowAtlas->Resize(size.x, size.y);
-
+	auto& selfctx = *registry.Get<SelfContext>("context");
 
 	auto cmd = cmdCtx.GetCmd();
+
+	glm::u32vec2 size = glm::max(selfctx.atlas->GetSize(), glm::u32vec2(16, 16));
+	shadowAtlas->Resize(size.x, size.y);
 	shadowAtlas->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
 
 	DynamicRenderInfo renderInfo;
 	renderInfo
 		.SetRenderArea(shadowAtlas->GetWidth(), shadowAtlas->GetHeight())
-		.AddDepthAttachment(shadowAtlas->GetImageView(vk::ImageAspectFlagBits::eDepth));
+		.AddDepthAttachment(shadowAtlas->GetImageView(vk::ImageAspectFlagBits::eDepth), vk::AttachmentLoadOp::eLoad);
 
-	processDirAndSpotLight(*selfctx, state, cmd, renderInfo);
-	processPointLight(*selfctx, state, cmd, renderInfo);
+	//processDirAndSpotLight(selfctx, state, cmd, renderInfo);
+	//processPointLight(selfctx, state, cmd, renderInfo);
+
+	GraphicsBindingRecord dirLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord dirLightShadowDepthSkinnedBinding;
+	GraphicsBindingRecord pointLightShadowDepthStaticMeshBinding;
+	GraphicsBindingRecord pointLightShadowDepthSkinnedBinding;
+
+	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
+	dirLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+
+	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
+	pointLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+
+	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
+	for (auto& data : datas)
+	{
+		if (data.type == PreRecordLightType::Dir)
+		{
+			dirLightShadowDepthStaticMeshBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
+			dirLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
+
+			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
+				_dirLightShadowDepthStaticMeshShader, _dirLightShadowDepthSkinnedShader,
+				dirLightShadowDepthStaticMeshBinding, dirLightShadowDepthSkinnedBinding
+			);
+			if (cmd->IsRecording())
+				cmd->SubmitNow();
+		}
+		else if (data.type == PreRecordLightType::Point)
+		{
+			pointLightShadowDepthStaticMeshBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
+			pointLightShadowDepthStaticMeshBinding.SetStorageBlock(data.ssbo_LightProps, 6);
+			pointLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
+			pointLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_LightProps, 6);
+
+			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
+				_pointLightShadowDepthStaticMeshShader, _pointLightShadowDepthSkinnedShader,
+				pointLightShadowDepthStaticMeshBinding, pointLightShadowDepthSkinnedBinding
+			);
+			if (cmd->IsRecording())
+				cmd->SubmitNow();
+		}
+	}
+
 }
-
-void LightShadowDepthPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
 
 void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& atlas)
 {
@@ -468,12 +544,15 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& at
 
 	for (auto& info : dirLightInfos)
 	{
-		if (!info || !info->light || !info->light->getCastShadow())continue;
+		if (!info || !info->light || !info->light->GetCastShadow())continue;
 		auto& light = info->light;
-		for (int i = 0; i < light->getCascadeLevel(); i++)
+		uint32_t cascadeLevel = light->GetCascadeLevel();
+		uint32_t maxSize = light->GetShadowMapSize();
+		for (uint32_t i = 0; i < cascadeLevel; i++)
 		{
+			uint32_t size = std::max(1u, uint32_t((float(cascadeLevel - i) / float(cascadeLevel)) * maxSize));
 			uint32_t id;
-			if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
+			if (atlas.AllocateSpace(size, size, id))
 				info->cascades.push_back({ id ,0 });
 			else
 				break;
@@ -484,17 +563,17 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& at
 
 		for (int i = 0; i < cascadeSplit.size(); i++)
 		{
-			info->cascades[i].lightSpaceMatrix = info->light->getLightSpaceMatrixWithFrustumCorners(cascadeSplit[i].projection, state.camera.view, &info->cascades[i].center, &info->cascades[i].radius);
+			info->cascades[i].lightSpaceMatrix = info->light->GetLightSpaceMatrixWithFrustumCorners(cascadeSplit[i].projection, state.camera.view, &info->cascades[i].center, &info->cascades[i].radius);
 			info->cascades[i].cascadePlaneDistance = cascadeSplit[i].farPlane;
 		}
 	}
 
 	for (auto& info : spotLightInfos)
 	{
-		if (!info || !info->light || !info->light->getCastShadow())continue;
+		if (!info || !info->light || !info->light->GetCastShadow())continue;
 		auto& light = info->light;
 		uint32_t id;
-		if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), id))
+		if (atlas.AllocateSpace(light->GetShadowMapSize(), light->GetShadowMapSize(), id))
 		{
 			info->atlas = std::make_shared<SpotLightInfo::Atlas>();
 			info->atlas->id = id;
@@ -503,21 +582,40 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& at
 
 	for (auto& info : pointLightInfos)
 	{
-		if (!info || !info->light || !info->light->getCastShadow())continue;
+		if (!info || !info->light || !info->light->GetCastShadow())continue;
 		auto& light = info->light;
 		uint32_t id;
 
 		info->atlas = std::make_shared<PointLightInfo::Atlas>();
 		for (int i = 0; i < 6; i++)
 		{
-			if (atlas.AllocateSpace(light->getShadowMapWidth(), light->getShadowMapHeight(), info->atlas->ids[i]))
+			if (atlas.AllocateSpace(light->GetShadowMapSize(), light->GetShadowMapSize(), info->atlas->ids[i]))
 				info->atlas->enable[i] = true;
 		}
 	}
 
 }
 
-void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState& state, const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd, DynamicRenderInfo& renderInfo)
+struct FrustumCullingParams {
+	uint32_t commandCount = 0;
+	uint32_t commandsPerView = 0;
+	uint32_t baseAABBIndex = 0;
+	FrustumCullingParams(uint32_t commandCount, uint32_t commandsPerView, uint32_t baseAABBIndex)
+		:commandCount(commandCount), commandsPerView(commandsPerView), baseAABBIndex(baseAABBIndex) {}
+};
+
+struct DrawParams {
+	uint32_t commandsPerView = 0;
+};
+
+void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
+{
+	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, state.lights.dirLightInfos, ctx.atlas);
+	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
+	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
+}
+
+void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& datas, SelfContext& ctx, RenderState& state)
 {
 	auto& dirLightsInfo = state.lights.dirLightInfos;
 	auto& spotLightsInfo = state.lights.spotLightInfos;
@@ -525,50 +623,41 @@ void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState&
 	if (dirLightsInfo.empty() && spotLightsInfo.empty())
 		return;
 
-	GraphicsBindingRecord dirLightShadowDepthStaticMeshBinding;
-	GraphicsBindingRecord dirLightShadowDepthSkinnedBinding;
+	std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> cullingCmds;
+	std::vector<std::shared_ptr<VKWrapper::VKFence>> cullingSyncs;
 
-	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
-	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
-	dirLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	PreRecordData data(PreRecordLightType::Dir);
 
-	dirLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
+	std::vector<bool> shouldCullings;
 
-	std::vector<glm::mat4> shadowMatrices;
-	shadowMatrices.reserve(batch_max);
-	std::vector<DynamicViewport> viewPorts;
-	viewPorts.reserve(batch_max);
+	data.shadowMatrices.reserve(batch_max);
+	data.viewPorts.reserve(batch_max);
+	shouldCullings.reserve(batch_max);
 
 	uint32_t count = 0;
 
 	auto render = [&]()->void {
-		ctx.ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
-		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
-		RenderSceneLightShadowPassSceneInstance(
-			ctx,
-			cmd,
-			state,
-			_dirLightShadowDepthStaticMeshShader,
-			_dirLightShadowDepthSkinnedShader,
-			dirLightShadowDepthStaticMeshBinding,
-			dirLightShadowDepthSkinnedBinding,
-			count,
-			state.objects.sceneRenderData.opaqueMesh,
-			state.objects.sceneRenderData.opaqueSkinnedModel,
-			renderInfo,
-			viewPorts
-		);
-		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
-		if (cmd->IsRecording())
-			cmd->SubmitNow();
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
+
+		data.ssbo_ShadowMatrices->WriteDataAsync(cmd, data.shadowMatrices.data(), data.shadowMatrices.size() * sizeof(glm::mat4));
+
+		PreRecordCulling(cmd, ctx, data, shouldCullings);
+		cmd->SubmitNow({}, fence);
+
+		cullingCmds.push_back(std::move(cmd));
+		cullingSyncs.push_back(std::move(fence));
+		datas.push_back(std::move(data));
+
+		data.shadowMatrices.reserve(batch_max);
+		data.viewPorts.reserve(batch_max);
 		count = 0;
-		shadowMatrices.clear();
-		viewPorts.clear();
+		shouldCullings.clear();
 		};
 
 	for (auto& info : dirLightsInfo)
 	{
-		if (!info || !info->light || info->cascades.empty() || !info->light->getCastShadow())
+		if (!info || !info->light || info->cascades.empty() || !info->light->GetCastShadow())
 			continue;
 
 		for (auto& cascade : info->cascades)
@@ -577,10 +666,9 @@ void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState&
 			if (!ctx.atlas->GetSpace(cascade.id, rect))
 				continue;
 
-			int level = info->light->getCascadeLevel();
-
-			shadowMatrices.push_back(cascade.lightSpaceMatrix);
-			viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
+			data.shadowMatrices.push_back(cascade.lightSpaceMatrix);
+			data.viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
+			shouldCullings.push_back(false);
 
 			count++;
 			if (count >= batch_max)
@@ -590,15 +678,15 @@ void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState&
 
 	for (auto& info : spotLightsInfo)
 	{
-		if (!info || !info->light || !info->atlas || !info->light->getCastShadow())
+		if (!info || !info->light || !info->atlas || !info->light->GetCastShadow())
 			continue;
 
 		auto& light = info->light;
 
-		if (!state.camera.frustum.IsSphereOnFrustum(light->getPosition(), light->getRadius()))
+		if (!state.camera.frustum.IsSphereOnFrustum(light->GetPosition(), light->GetRadius()))
 			continue;
 
-		auto mat = light->getLightSpaceMatrix();
+		auto mat = light->GetLightSpaceMatrix();
 		Frustum lightFrustm(mat);
 		if (!state.camera.frustum.IsIntersectsFrustum(lightFrustm))
 			continue;
@@ -607,8 +695,9 @@ void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState&
 		if (!ctx.atlas->GetSpace(info->atlas->id, rect))
 			continue;
 
-		shadowMatrices.push_back(mat);
-		viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
+		data.shadowMatrices.push_back(mat);
+		data.viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
+		shouldCullings.push_back(true);
 
 		count++;
 		if (count >= batch_max)
@@ -617,67 +706,56 @@ void LightShadowDepthPass::processDirAndSpotLight(SelfContext& ctx, RenderState&
 
 	if (count > 0)
 		render();
+
+	for (auto& fence : cullingSyncs)
+		fence->Wait();
 }
 
-void LightShadowDepthPass::processPointLight(SelfContext& ctx, RenderState& state, const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd, DynamicRenderInfo& renderInfo)
+void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas, SelfContext& ctx, RenderState& state)
 {
 	auto& pointLightsInfo = state.lights.pointLightInfos;
 
 	if (pointLightsInfo.empty())
 		return;
 
-	GraphicsBindingRecord pointLightShadowDepthStaticMeshBinding;
-	GraphicsBindingRecord pointLightShadowDepthSkinnedBinding;
+	std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> cullingCmds;
+	std::vector<std::shared_ptr<VKWrapper::VKFence>> cullingSyncs;
 
-	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
-	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
-	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(ctx.ssbo_LightProps, 6);
-	pointLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	PreRecordData data(PreRecordLightType::Point);
 
-	pointLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_ShadowMatrices, 4);
-	pointLightShadowDepthSkinnedBinding.SetStorageBlock(ctx.ssbo_LightProps, 6);
-
-	std::vector<glm::mat4> shadowMatrices;
-	shadowMatrices.reserve(batch_max);
-	std::vector<DynamicViewport> viewPorts;
-	viewPorts.reserve(batch_max);
+	std::vector<bool> shouldCullings;
 	std::vector<LightProp> lightProps;
+
+	data.shadowMatrices.reserve(batch_max);
+	data.viewPorts.reserve(batch_max);
+	shouldCullings.resize(batch_max, true);
 	lightProps.reserve(batch_max);
 
 	uint32_t count = 0;
 
 	auto render = [&]()->void {
-		ctx.ssbo_ShadowMatrices->WriteDataAsync(cmd, shadowMatrices.data(), shadowMatrices.size() * sizeof(glm::mat4));
-		ctx.ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
-		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
-		ctx.ssbo_LightProps->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
-		RenderSceneLightShadowPassSceneInstance(
-			ctx,
-			cmd,
-			state,
-			_pointLightShadowDepthStaticMeshShader,
-			_pointLightShadowDepthSkinnedShader,
-			pointLightShadowDepthStaticMeshBinding,
-			pointLightShadowDepthSkinnedBinding,
-			count,
-			state.objects.sceneRenderData.opaqueMesh,
-			state.objects.sceneRenderData.opaqueSkinnedModel,
-			renderInfo,
-			viewPorts
-		);
-		ctx.ssbo_ShadowMatrices->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
-		ctx.ssbo_LightProps->Barrier(cmd, BufferUsage::StorageRead, BufferUsage::TransferWrite);
-		if (cmd->IsRecording())
-			cmd->SubmitNow();
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
+
+		data.ssbo_ShadowMatrices->WriteDataAsync(cmd, data.shadowMatrices.data(), data.shadowMatrices.size() * sizeof(glm::mat4));
+		data.ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
+
+		PreRecordCulling(cmd, ctx, data, shouldCullings);
+		cmd->SubmitNow({}, fence);
+
+		cullingCmds.push_back(std::move(cmd));
+		cullingSyncs.push_back(std::move(fence));
+		datas.push_back(std::move(data));
+
+		data.shadowMatrices.reserve(batch_max);
+		data.viewPorts.reserve(batch_max);
 		count = 0;
-		shadowMatrices.clear();
-		viewPorts.clear();
 		lightProps.clear();
 		};
 
 	for (auto& info : pointLightsInfo)
 	{
-		if (!info || !info->light || !info->light->getCastShadow())
+		if (!info || !info->light || !info->light->GetCastShadow())
 			continue;
 
 		std::array<DynamicViewport, 6> viewports;
@@ -686,17 +764,15 @@ void LightShadowDepthPass::processPointLight(SelfContext& ctx, RenderState& stat
 
 		auto light = info->light;
 
-		if (!state.camera.frustum.IsSphereOnFrustum(light->getPosition(), light->getRadius()))
+		if (!state.camera.frustum.IsSphereOnFrustum(light->GetPosition(), light->GetRadius()))
 			continue;
 
-		float shadowMapWidth = light->getShadowMapWidth(),
-			shadowMapHeight = light->getShadowMapHeight();
+		float shadowMapSize = light->GetShadowMapSize();
 
-		float aspect = (float)shadowMapWidth / (float)shadowMapHeight;
 		float near_plane = 0.1f;
-		float far_plane = light->getRadius();
-		glm::mat4 shadowProj = vkPerspective(glm::radians(90.0f), aspect, near_plane, far_plane);
-		glm::vec3 lightPos = light->getPosition();
+		float far_plane = light->GetRadius();
+		glm::mat4 shadowProj = vkPerspective(glm::radians(90.0f), 1.0, near_plane, far_plane);
+		glm::vec3 lightPos = light->GetPosition();
 
 		std::vector<glm::mat4> shadowTransforms;
 		shadowTransforms.push_back(shadowProj *
@@ -718,9 +794,9 @@ void LightShadowDepthPass::processPointLight(SelfContext& ctx, RenderState& stat
 			if (!state.camera.frustum.IsIntersectsFrustum(faceFrustm))
 				continue;
 
-			shadowMatrices.push_back(shadowTransforms[face]);
+			data.shadowMatrices.push_back(shadowTransforms[face]);
 			lightProps.push_back({ lightPos ,far_plane });
-			viewPorts.push_back(viewports[face]);
+			data.viewPorts.push_back(viewports[face]);
 
 			count++;
 			if (count >= batch_max)
@@ -730,120 +806,221 @@ void LightShadowDepthPass::processPointLight(SelfContext& ctx, RenderState& stat
 
 	if (count > 0)
 		render();
+
+	for (auto& fence : cullingSyncs)
+		fence->Wait();
 }
 
-void LightShadowDepthPass::RenderSceneLightShadowPassSceneInstance(
+void LightShadowDepthPass::PreRecordCulling(
+	const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	SelfContext& ctx,
-	const std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
-	RenderState& state,
+	PreRecordData& data,
+	std::vector<bool>& shouldCullings
+)
+{
+	auto& shadowMatrices = data.shadowMatrices;
+	if (shadowMatrices.empty())
+		return;
+
+	bool renderStaticMesh = ctx.oneSideCommandSize > 0 || ctx.twoSideCommandSize > 0;
+
+	const uint32_t fustumWorksize = GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y;
+
+	static bool skipCulling = false;
+	static bool skipRender = false;
+	static bool skipAll = false;
+
+	if (skipAll)
+		return;
+
+	if (false)
+	{
+		skipCulling = true;
+		skipRender = true;
+	}
+
+	if (renderStaticMesh)
+	{
+		std::shared_ptr<IndirectBufferBlock>& oneSideInidrectCommands = data.oneSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock>& twoSideInidrectCommands = data.twoSideInidrectCommands;
+
+		auto ssbo_Frustums = std::make_shared<StorageBlock>(shadowMatrices.size() * sizeof(Frustum));
+		std::vector<Frustum> frustums;
+		frustums.reserve(shadowMatrices.size());
+		for (auto& mat : shadowMatrices)
+			frustums.push_back(std::move(Frustum(mat)));
+		ssbo_Frustums->WriteDataAsync(cmd, frustums.data(), frustums.size() * sizeof(Frustum));
+		ssbo_Frustums->Barrier(cmd, BufferUsage::TransferWrite);
+
+		if (ctx.oneSideCommandSize > 0)
+		{
+			oneSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.oneSideCommandSize * sizeof(IndirectDrawCommand));
+
+			FrustumCullingParams params(shadowMatrices.size() * ctx.oneSideCommandSize, ctx.oneSideCommandSize, 0);
+			auto paramsUBO = std::make_shared<UniformBlock>(sizeof(FrustumCullingParams));
+			paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
+			paramsUBO->Barrier(cmd, BufferUsage::TransferWrite);
+
+			for (uint32_t i = 0; i < shadowMatrices.size(); i++)
+			{
+				DynamicBlock::MemCopyAsync(cmd,
+					ctx.oneSideIndirectCommandBuffer,
+					oneSideInidrectCommands,
+					ctx.oneSideCommandSize * sizeof(IndirectDrawCommand),
+					0,
+					i * ctx.oneSideCommandSize * sizeof(IndirectDrawCommand)
+				);
+			}
+
+			if (!skipCulling)
+			{
+				oneSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
+
+				ComputeBindingRecord fustumCullingBinding;
+				fustumCullingBinding.SetUniformBlock(paramsUBO, 0);
+				fustumCullingBinding.SetStorageBlock(oneSideInidrectCommands, 1);
+				fustumCullingBinding.SetStorageBlock(ctx.ssbo_StaticMesh_WorldAABB, 2);
+				fustumCullingBinding.SetStorageBlock(ssbo_Frustums, 3);
+
+				_frustumCullingShader->Bind(cmd, fustumCullingBinding);
+				cmd->dispatch((params.commandCount + fustumWorksize - 1) / fustumWorksize, 1, 1);
+			}
+
+		}
+		if (ctx.twoSideCommandSize > 0)
+		{
+			twoSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.twoSideCommandSize * sizeof(IndirectDrawCommand));
+
+			FrustumCullingParams params(shadowMatrices.size() * ctx.twoSideCommandSize, ctx.twoSideCommandSize, ctx.oneSideCommandSize);
+			auto paramsUBO = std::make_shared<UniformBlock>(sizeof(FrustumCullingParams));
+			paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
+			paramsUBO->Barrier(cmd, BufferUsage::TransferWrite);
+
+			for (uint32_t i = 0; i < shadowMatrices.size(); i++)
+			{
+				DynamicBlock::MemCopyAsync(cmd,
+					ctx.twoSideIndirectCommandBuffer,
+					twoSideInidrectCommands,
+					ctx.twoSideCommandSize * sizeof(IndirectDrawCommand),
+					0,
+					i * ctx.twoSideCommandSize * sizeof(IndirectDrawCommand)
+				);
+			}
+
+			if (!skipCulling)
+			{
+				twoSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
+
+				ComputeBindingRecord fustumCullingBinding;
+				fustumCullingBinding.SetUniformBlock(paramsUBO, 0);
+				fustumCullingBinding.SetStorageBlock(twoSideInidrectCommands, 1);
+				fustumCullingBinding.SetStorageBlock(ctx.ssbo_StaticMesh_WorldAABB, 2);
+				fustumCullingBinding.SetStorageBlock(ssbo_Frustums, 3);
+
+				_frustumCullingShader->Bind(cmd, fustumCullingBinding);
+				cmd->dispatch((params.commandCount + fustumWorksize - 1) / fustumWorksize, 1, 1);
+			}
+		}
+	}
+}
+
+void LightShadowDepthPass::PreRecordRenderScene(
+	const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+	SelfContext& ctx,
+	PreRecordData& data,
+	DynamicRenderInfo& renderInfo,
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
 	std::shared_ptr<GraphicsPipeline>& shader_Skinned,
 	GraphicsBindingRecord& shader_StaticMesh_Binding,
-	GraphicsBindingRecord& shader_Skinned_Binding,
-	uint32_t count,
-	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& opaqueMeshes,
-	std::vector<VKRenderObjectData::SceneRenderData::OpaqueSkinnedModelItem>& opaqueSinnedModels,
-	DynamicRenderInfo& renderInfo,
-	std::vector<DynamicViewport>& viewPorts
+	GraphicsBindingRecord& shader_Skinned_Binding
 )
 {
-	auto manager = IndirectDrawManager::Instance();
+	std::shared_ptr<UniformBlock> sideParamsUBO = std::make_shared<UniformBlock>(sizeof(DrawParams));
 
-	if (!opaqueMeshes.empty())
+	auto& viewPorts = data.viewPorts;
+
+	std::vector<vk::ClearRect> clearRects;
+	clearRects.reserve(viewPorts.size());
+	for (const auto& vp : viewPorts)
 	{
-		auto& oneSideCommands = ctx.staticMesh_OneSideCommands;
-		auto& twoSideCommands = ctx.staticMesh_TwoSideCommands;
-
-		if (!oneSideCommands.empty() || !twoSideCommands.empty())
-		{
-			auto& shader = shader_StaticMesh;
-
-			shader->Bind(cmd, shader_StaticMesh_Binding);
-
-			if (!oneSideCommands.empty())
-			{
-				std::for_each(std::execution::par_unseq, oneSideCommands.begin(), oneSideCommands.end(),
-					[&](IndirectDrawCommand& command)->void {
-						if (command.instanceCount > 0)
-							command.instanceCount = count;
-					}
-				);
-				ctx.oneSideCommandBuffer.WriteDataAsync(cmd, oneSideCommands.data(), oneSideCommands.size() * sizeof(IndirectDrawCommand));
-				ctx.oneSideCommandBuffer.Barrier(cmd, BufferUsage::TransferWrite);
+		vk::ClearRect rect;
+		rect.rect = vk::Rect2D{
+			vk::Offset2D{
+				static_cast<int32_t>(vp.x),
+				static_cast<int32_t>(vp.y)
+			},
+			vk::Extent2D{
+				static_cast<uint32_t>(vp.width),
+				static_cast<uint32_t>(vp.height)
 			}
+		};
 
-			if (!twoSideCommands.empty())
-			{
-				std::for_each(std::execution::par_unseq, twoSideCommands.begin(), twoSideCommands.end(),
-					[&](IndirectDrawCommand& command)->void {
-						if (command.instanceCount > 0)
-							command.instanceCount = count;
-					}
-				);
-				ctx.twoSideCommandBuffer.WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
-				ctx.twoSideCommandBuffer.Barrier(cmd, BufferUsage::TransferWrite);
-			}
+		rect.baseArrayLayer = 0;
+		rect.layerCount = 1;
 
-			cmd->setDynamicViewports(viewPorts);
-			cmd->beginRendering(renderInfo);
-			if (renderInfo.depthAttachment->loadOp == vk::AttachmentLoadOp::eClear)
-				renderInfo.depthAttachment->loadOp = vk::AttachmentLoadOp::eLoad;
-
-			cmd->bindVertexBuffers(manager->GetVertexBlock());
-			cmd->bindIndexBuffer(manager->GetIndexBlock());
-			cmd->setCullMode(vk::CullModeFlagBits::eNone);
-
-
-			if (!oneSideCommands.empty())
-			{
-				cmd->drawIndexedIndirect(ctx.oneSideCommandBuffer, oneSideCommands.size());
-				ctx.oneSideCommandBuffer.Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
-			}
-
-			if (!twoSideCommands.empty())
-			{
-				cmd->drawIndexedIndirect(ctx.twoSideCommandBuffer, twoSideCommands.size());
-				ctx.twoSideCommandBuffer.Barrier(cmd, BufferUsage::IndirectRead, BufferUsage::TransferWrite);
-			}
-
-			cmd->endRendering();
-		}
+		clearRects.push_back(rect);
 	}
 
-	//if (!opaqueSinnedModels.empty())
-	//{
-	//  cmd2 = VKCONTEXT->GetCommandBuffer();
-	// 	fence2 = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
-	//	auto& shader = shader_Skinned;
+	static vk::ClearAttachment clearAttachment;
+	clearAttachment
+		.setAspectMask(vk::ImageAspectFlagBits::eDepth)
+		.setClearValue(
+			vk::ClearValue{
+				vk::ClearDepthStencilValue{1.0f, 0}
+			});
 
-	//	shader.Use();
-	//	RenderHelp::SetupAnimatorGroupData(shader, {});
+	bool hasClear = false;
 
-	//	glm::mat4 cur_Model = glm::mat4(1.0f);
-	//	shader.setMat4("model", cur_Model);
+	shader_StaticMesh_Binding.SetUniformBlock(sideParamsUBO, 3);
+	shader_StaticMesh->Bind(cmd, shader_StaticMesh_Binding);
 
-	//	for (size_t i = 0; i < opaqueSinnedModels.size(); i++)
-	//	{
-	//		auto& model = opaqueSinnedModels[i];
+	auto manager = IndirectDrawManager::Instance();
 
-	//		if (cur_Model != model.transform)
-	//		{
-	//			shader.setMat4("model", model.transform);
-	//			cur_Model = model.transform;
-	//		}
-	//		RenderHelp::SetupAnimatorGroupData(shader, *model.animators);
+	if (ctx.oneSideCommandSize > 0)
+	{
+		DrawParams sideParams{ .commandsPerView = ctx.oneSideCommandSize };
+		sideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
+		sideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite);
 
-	//		for (auto& meshinfo : model.models)
-	//		{
-	//			meshinfo.DrawGeometryInstanced(shader, count);
-	//		}
-	//	}
-	//}
-}
+		cmd->beginRendering(renderInfo);
+		cmd->setDynamicViewports(viewPorts);
+		cmd->setCullMode(vk::CullModeFlagBits::eNone);
 
-void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
-{
-	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, state.lights.dirLightInfos, ctx.atlas);
-	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
-	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
+		if (!hasClear)
+		{
+			cmd->clearAttachments(clearAttachment, clearRects);
+			hasClear = true;
+		}
+
+		cmd->bindVertexBuffers(manager->GetVertexBlock());
+		cmd->bindIndexBuffer(manager->GetIndexBlock());
+		cmd->drawIndexedIndirect(data.oneSideInidrectCommands, data.shadowMatrices.size() * ctx.oneSideCommandSize);
+		cmd->endRendering();
+
+		if (ctx.twoSideCommandSize > 0)
+			sideParamsUBO->Barrier(cmd, BufferUsage::UniformRead);
+	}
+
+	if (ctx.twoSideCommandSize > 0)
+	{
+		DrawParams sideParams{ .commandsPerView = ctx.twoSideCommandSize };
+		sideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
+		sideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite);
+
+		cmd->beginRendering(renderInfo);
+		cmd->setDynamicViewports(viewPorts);
+		cmd->setCullMode(vk::CullModeFlagBits::eNone);
+
+		if (!hasClear)
+		{
+			cmd->clearAttachments(clearAttachment, clearRects);
+			hasClear = true;
+		}
+
+		cmd->bindVertexBuffers(manager->GetVertexBlock());
+		cmd->bindIndexBuffer(manager->GetIndexBlock());
+		cmd->drawIndexedIndirect(data.twoSideInidrectCommands, data.shadowMatrices.size() * ctx.twoSideCommandSize);
+		cmd->endRendering();
+	}
+
 }

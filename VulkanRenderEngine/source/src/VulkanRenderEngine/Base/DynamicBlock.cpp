@@ -16,19 +16,34 @@ DynamicBlock::BufferUsageInfo DynamicBlock::GetBufferUsageInfo(BufferUsage usage
 		}
 		};
 
-	add(BufferUsage::TransferWrite,					PS::eTransfer, AF::eTransferWrite);
-	add(BufferUsage::TransferRead,					PS::eTransfer, AF::eTransferRead);
-	add(BufferUsage::StorageWrite,					PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eShaderWrite);
-	add(BufferUsage::StorageRead,					PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eShaderRead);
-	add(BufferUsage::UniformRead,					PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eUniformRead);
-	add(BufferUsage::VertexAttributeRead,			PS::eVertexInput, AF::eVertexAttributeRead);
-	add(BufferUsage::IndexRead,						PS::eVertexInput, AF::eIndexRead);
-	add(BufferUsage::IndirectRead,					PS::eDrawIndirect, AF::eIndirectCommandRead);
-	add(BufferUsage::AccelerationStructureRead,		PS::eRayTracingShaderKHR, AF::eAccelerationStructureReadKHR);
-	add(BufferUsage::AccelerationStructureWrite,	PS::eAccelerationStructureBuildKHR, AF::eAccelerationStructureWriteKHR);
-	add(BufferUsage::ShaderBindingTableRead,		PS::eRayTracingShaderKHR, AF::eShaderBindingTableReadKHR);
+	add(BufferUsage::TransferWrite, PS::eTransfer, AF::eTransferWrite);
+	add(BufferUsage::TransferRead, PS::eTransfer, AF::eTransferRead);
+	add(BufferUsage::StorageWrite, PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eShaderWrite);
+	add(BufferUsage::StorageRead, PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eShaderRead);
+	add(BufferUsage::UniformRead, PS::eVertexShader | PS::eFragmentShader | PS::eComputeShader | PS::eRayTracingShaderKHR, AF::eUniformRead);
+	add(BufferUsage::VertexAttributeRead, PS::eVertexInput, AF::eVertexAttributeRead);
+	add(BufferUsage::IndexRead, PS::eVertexInput, AF::eIndexRead);
+	add(BufferUsage::IndirectRead, PS::eDrawIndirect, AF::eIndirectCommandRead);
+	add(BufferUsage::AccelerationStructureRead, PS::eRayTracingShaderKHR, AF::eAccelerationStructureReadKHR);
+	add(BufferUsage::AccelerationStructureWrite, PS::eAccelerationStructureBuildKHR, AF::eAccelerationStructureWriteKHR);
+	add(BufferUsage::ShaderBindingTableRead, PS::eRayTracingShaderKHR, AF::eShaderBindingTableReadKHR);
 
 	return info;
+}
+
+bool DynamicBlock::MemCopyAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, DynamicBlock& src, DynamicBlock& dst, uint32_t size, uint32_t srcOffset, uint32_t dstOffset)
+{
+	return VKWrapper::VmaBuffer::CopyBufferAsync(cmd, *(src._curBuffer), *(dst._curBuffer), size, srcOffset, dstOffset);
+}
+
+bool DynamicBlock::MemCopyAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, std::shared_ptr<DynamicBlock> src, std::shared_ptr<DynamicBlock> dst, uint32_t size, uint32_t srcOffset, uint32_t dstOffset)
+{
+	return VKWrapper::VmaBuffer::CopyBufferAsync(cmd, *(src->_curBuffer), *(dst->_curBuffer), size, srcOffset, dstOffset);
+}
+
+bool DynamicBlock::MemCopy(std::shared_ptr<DynamicBlock> src, std::shared_ptr<DynamicBlock> dst, uint32_t size, uint32_t srcOffset, uint32_t dstOffset)
+{
+	return VKWrapper::VmaBuffer::CopyBuffer(*(src->_curBuffer), *(dst->_curBuffer), size, srcOffset, dstOffset);
 }
 
 DynamicBlock::DynamicBlock(uint64_t size, VKWrapper::VmaBuffer::Usage usage, VKCore::VulkanDevice* device)
@@ -44,7 +59,7 @@ DynamicBlock::~DynamicBlock()
 	_size = 0;
 }
 
-void DynamicBlock::SetSize(uint64_t newsize)
+void DynamicBlock::SetSize(uint64_t newsize, bool remainData)
 {
 	LockGuard guard(_mutex);
 
@@ -53,7 +68,7 @@ void DynamicBlock::SetSize(uint64_t newsize)
 		return;
 
 	auto newBuffer = std::make_shared<VKWrapper::VmaBuffer>(_device, newsize, _usage);
-	if (_size > 0 && _curBuffer)
+	if (remainData && _size > 0 && _curBuffer)
 		VKWrapper::VmaBuffer::CopyBuffer(*_curBuffer, *newBuffer, _size);
 
 	_curBuffer = newBuffer;
@@ -82,7 +97,7 @@ void DynamicBlock::CopySelfData(uint64_t destFirst, uint64_t srcFirst, uint64_t 
 	VKWrapper::VmaBuffer::CopyBuffer(*_curBuffer, *_curBuffer, _size, srcFirst, destFirst);
 }
 
-void DynamicBlock::SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize)
+void DynamicBlock::SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, uint64_t newsize, bool remainData)
 {
 	LockGuard guard(_mutex);
 
@@ -91,7 +106,7 @@ void DynamicBlock::SetSizeAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer
 		return;
 
 	auto newBuffer = std::make_shared<VKWrapper::VmaBuffer>(_device, newsize, _usage);
-	if (_size > 0 && _curBuffer)
+	if (remainData && _size > 0 && _curBuffer)
 		VKWrapper::VmaBuffer::CopyBufferAsync(cmd, *_curBuffer, *newBuffer, _size);
 
 	_curBuffer = newBuffer;
@@ -118,6 +133,18 @@ void DynamicBlock::CopySelfDataAsync(const std::shared_ptr<VKWrapper::VKCommandB
 		return;
 
 	VKWrapper::VmaBuffer::CopyBufferAsync(cmd, *_curBuffer, *_curBuffer, _size, srcFirst, destFirst);
+}
+
+bool DynamicBlock::Readback(void* outData, size_t size, size_t offset)
+{
+	if (!_curBuffer) return false;
+	return _curBuffer->Readback(outData, size, offset);
+}
+
+bool DynamicBlock::Readback(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, void* outData, size_t size, size_t offset)
+{
+	if (!_curBuffer) return false;
+	return _curBuffer->Readback(cmd, outData, size, offset);
 }
 
 void DynamicBlock::Barrier(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, BufferUsage pre, BufferUsage cur, vk::DependencyFlags flags)

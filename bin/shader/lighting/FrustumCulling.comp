@@ -1,0 +1,115 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 256
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = 1, local_size_z = 1) in;
+
+struct Plane {
+	vec3 normal;
+	float distance;
+};
+
+struct Frustum
+{
+	Plane nearFace;
+	Plane farFace;
+	Plane rightFace;
+	Plane leftFace;
+	Plane topFace;
+	Plane bottomFace;
+
+	vec3 corners[8];
+};
+
+struct Command{
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+struct TransMatIndex
+{
+    mat4 model;
+    uint materialIndex;
+};
+
+struct AABB
+{
+    vec3 minPos;
+    vec3 maxPos;
+};
+
+layout (binding = 0) uniform Params
+{
+    uint commandCount;
+	uint commandsPerView;
+    uint baseAABBIndex;
+};
+
+layout(binding = 1) buffer IndirectCommands
+{
+	uint commandsData[];
+};
+
+layout(binding = 2) buffer MeshAABB{
+    AABB aabbdata[];
+};
+
+layout(binding = 3) buffer Frustums
+{
+	Frustum cameraFrustums[];
+};
+
+float getSignedDistanceToPlane(Plane plane, vec3 point){
+	return dot(plane.normal, point) + plane.distance;
+}
+
+bool IsAABBOnOrForwardPlane(vec3 center, vec3 extents, Plane plane)
+{
+	float r = extents.x * abs(plane.normal.x)
+		+ extents.y * abs(plane.normal.y)
+		+ extents.z * abs(plane.normal.z);
+	return getSignedDistanceToPlane(plane, center) > -r;
+}
+
+bool IsAABBOnFrustum(Frustum frustum, AABB aabb)
+{
+	vec3 extents = aabb.maxPos - aabb.minPos;
+	vec3 center = aabb.minPos + extents * 0.5f;
+	return IsAABBOnOrForwardPlane(center, extents, frustum.nearFace)
+		&& IsAABBOnOrForwardPlane(center, extents, frustum.farFace)
+		&& IsAABBOnOrForwardPlane(center, extents, frustum.leftFace)
+		&& IsAABBOnOrForwardPlane(center, extents, frustum.rightFace)
+		&& IsAABBOnOrForwardPlane(center, extents, frustum.topFace)
+		&& IsAABBOnOrForwardPlane(center, extents, frustum.bottomFace);
+}
+
+void WriteCountByIndex(uint index, uint value)
+{
+    const uint COMMAND_STRIDE = 5;
+
+    // uint indexCount      = commandsData[index * COMMAND_STRIDE + 0];
+    // uint instanceCount   = commandsData[index * COMMAND_STRIDE + 1];
+    // uint firstIndex      = commandsData[index * COMMAND_STRIDE + 2];
+    // int  vertexOffset    = int(commandsData[index * COMMAND_STRIDE + 3]);
+    // uint firstInstance   = commandsData[index * COMMAND_STRIDE + 4];
+
+    commandsData[index * COMMAND_STRIDE + 1] = value;
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= commandCount)
+        return;
+
+    uint viewIndex = index / commandsPerView;
+    uint dataIndex = index % commandsPerView;
+
+    if (!IsAABBOnFrustum(cameraFrustums[viewIndex], aabbdata[baseAABBIndex + dataIndex]))
+        WriteCountByIndex(index, 0);
+}

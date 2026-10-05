@@ -10,13 +10,18 @@ layout (location = 5) in ivec4 aBoneIds[2];
 layout (location = 7) in vec4 aWeights[2];
 
 
-layout (location = 0) flat out int Index;
-layout (location = 1) out vec3 WorldPos;
-layout (location = 2) out vec2 FragTextureCoords;
-layout (location = 3) flat out uint dataIndex;
+layout (location = 0) out vec2 FragTextureCoords;
+layout (location = 1) flat out uint viewIndex;
+layout (location = 2) flat out uint dataIndex;
+layout (location = 3) out vec3 WorldPos;
 
 
-layout(set = 0, binding = 4) buffer ShadowMatrices
+layout(binding = 3) uniform Params
+{
+	uint commandsPerView;
+};
+
+layout(binding = 4) buffer ShadowMatrices
 {
 	mat4 shadowMatrices[];
 };
@@ -27,21 +32,20 @@ struct TransMatIndex
     uint materialIndex;
 };
 
-layout(set = 0, binding = 5) buffer Transforms
+layout(binding = 5) buffer Transforms
 {
     TransMatIndex data[];
 };
 
 void main()
 {
-    int InstanceID = gl_InstanceIndex - gl_BaseInstance;
-
     dataIndex = gl_BaseInstance;
+    viewIndex = gl_DrawID / commandsPerView;
+
     vec4 worldPos = data[dataIndex].model * vec4(aPos, 1.0);
-         
-    Index = InstanceID;
-    gl_ViewportIndex = Index;
-    WorldPos = worldPos.xyz;
+
+    gl_ViewportIndex = int(viewIndex);
     FragTextureCoords = aTexCoords;
-    gl_Position = shadowMatrices[Index] * worldPos;
+    gl_Position = shadowMatrices[viewIndex] * worldPos;
+    WorldPos = worldPos.xyz;
 }

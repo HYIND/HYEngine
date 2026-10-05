@@ -7,7 +7,7 @@ struct LightProp{
     float farPlane;
 };
 
-layout(set = 0, binding = 6) buffer LightProps
+layout(binding = 6) buffer LightProps
 {
 	LightProp lightProp[];
 };
@@ -18,15 +18,15 @@ struct TransMatIndex
     uint materialIndex;
 };
 
-layout(set = 0, binding = 5) buffer Transforms
+layout(binding = 5) buffer Transforms
 {
     TransMatIndex data[];
 };
 
-layout (location = 0) flat in int Index;
-layout (location = 1) in vec3 WorldPos;
-layout (location = 2) in vec2 FragTextureCoords;
-layout (location = 3) flat in uint dataIndex;
+layout (location = 0) in vec2 FragTextureCoords;
+layout (location = 1) flat in uint viewIndex;
+layout (location = 2) flat in uint dataIndex;
+layout (location = 3) in vec3 WorldPos;
 
 void main()
 {
@@ -35,6 +35,6 @@ void main()
     if (opacity < 0.01)
         discard;
 
-    float lightDistance = length(WorldPos - lightProp[Index].lightPos);
-    gl_FragDepth = lightDistance / lightProp[Index].farPlane;
+    float lightDistance = length(WorldPos - lightProp[viewIndex].lightPos);
+    gl_FragDepth = lightDistance / lightProp[viewIndex].farPlane;
 }

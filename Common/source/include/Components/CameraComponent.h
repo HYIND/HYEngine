@@ -18,7 +18,7 @@ struct CameraComponent : public IComponent
 
 	void SetTransForm(Transform& trans){
 		camera.SetPosition(trans.position);
-		camera.SetDirection(trans.getDirection());
+		camera.SetDirection(trans.GetDirection());
 	}
 	void SetPosition(const glm::vec3& pos){
 		camera.SetPosition(pos);

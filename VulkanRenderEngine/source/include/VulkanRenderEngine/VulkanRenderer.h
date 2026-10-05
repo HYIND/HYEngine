@@ -6,6 +6,7 @@
 #include "VulkanRenderEngine/RenderGraph/RenderGraph.h"
 
 //#include "VulkanRenderEngine/RenderPass/FirstPersonPass.h"
+#include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/BloomPass.h"
 #include "VulkanRenderEngine/RenderPass/CombinPass.h"
 #include "VulkanRenderEngine/RenderPass/GlobalPostProcessPass.h"
@@ -146,7 +147,7 @@ private:
 	//// FirstPersonLayer
 	//std::unique_ptr<FirstPersonPass> _firstPersonPass;
 
-	CriticalSectionLock _globalMutex;
+	std::unique_ptr<PreCalculatePass> _preCalculatePass;
 	std::unique_ptr<CombinPass> _combinPass;
 	std::unique_ptr<BloomPass> _globalBloomPass;
 	std::unique_ptr<GlobalPostProcessPass> _globalPostProcessPass;

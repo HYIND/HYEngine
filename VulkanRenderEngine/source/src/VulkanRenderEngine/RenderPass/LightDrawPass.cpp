@@ -124,9 +124,9 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		auto& light = info->light;
 
 		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, state.camera.position - light->getDirection() * state.camera.farPlane * 0.95f);
+		model = glm::translate(model, state.camera.position - light->GetDirection() * state.camera.farPlane * 0.95f);
 		model = glm::scale(model, glm::vec3(30.f * (state.camera.farPlane / 500.f)));
-		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->getColor() });
+		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->GetColor() });
 		addSphereCommand(index++);
 	}
 	for (auto& info : state.lights.pointLightInfos)
@@ -137,9 +137,9 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		auto& light = info->light;
 
 		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, light->getPosition());
+		model = glm::translate(model, light->GetPosition());
 		model = glm::scale(model, glm::vec3(0.15f));
-		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->getColor() });
+		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->GetColor() });
 		addCubeCommand(index++);
 	}
 	for (auto& info : state.lights.spotLightInfos)
@@ -150,9 +150,9 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		auto& light = info->light;
 
 		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, light->getPosition());
+		model = glm::translate(model, light->GetPosition());
 		model = glm::scale(model, glm::vec3(0.02f));
-		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->getColor() });
+		transAndColors.push_back(TransformAndColor{ .model = model, .color = info->light->GetColor() });
 		addCubeCommand(index++);
 	}
 

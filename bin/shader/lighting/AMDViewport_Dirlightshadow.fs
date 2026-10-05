@@ -2,9 +2,9 @@
 
 #include "shader/dataDef/MaterialTextureDef.comp"
 
-layout (location = 0) flat in int Index;
-layout (location = 2) in vec2 FragTextureCoords;
-layout (location = 3) flat in uint dataIndex;
+layout (location = 0) in vec2 FragTextureCoords;
+layout (location = 1) flat in uint viewIndex;
+layout (location = 2) flat in uint dataIndex;
 
 struct TransMatIndex
 {
@@ -12,7 +12,7 @@ struct TransMatIndex
     uint materialIndex;
 };
 
-layout(set = 0, binding = 5) buffer Transforms
+layout(binding = 5) buffer Transforms
 {
     TransMatIndex data[];
 };

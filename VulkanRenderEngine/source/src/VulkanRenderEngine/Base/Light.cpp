@@ -41,50 +41,40 @@ Light::Light(const glm::vec3& color)
 {
 }
 
-void Light::setColor(const glm::vec3& c) {
+void Light::SetColor(const glm::vec3& c) {
 	_color = c;
 }
 
-void Light::setColor(float r, float g, float b) {
+void Light::SetColor(float r, float g, float b) {
 	_color = glm::vec3(r, g, b);
 }
 
-void Light::setColorTemperature(float temp)
+void Light::SetColorTemperature(float temp)
 {
 	_color = Tool::ColorTemperatureToRGB(temp);
 }
 
-void Light::setShadowMapWidth(uint32_t w)
+void Light::SetShadowMapSize(uint32_t s)
 {
-	_shadowMapWidth = w;
+	_shadowMapSize = s;
 }
 
-void Light::setShadowMapHeight(uint32_t h)
-{
-	_shadowMapHeight = h;
-}
-
-void Light::setCastShadow(bool value)
+void Light::SetCastShadow(bool value)
 {
 	_castShadow = value;
 }
 
-glm::vec3 Light::getColor() const
+glm::vec3 Light::GetColor() const
 {
 	return _color;
 }
 
-uint32_t Light::getShadowMapWidth() const
+uint32_t Light::GetShadowMapSize() const
 {
-	return _shadowMapWidth;
+	return _shadowMapSize;
 }
 
-uint32_t Light::getShadowMapHeight() const
-{
-	return _shadowMapHeight;
-}
-
-bool Light::getCastShadow()
+bool Light::GetCastShadow() const
 {
 	return _castShadow;
 }
@@ -93,35 +83,35 @@ DirLight::~DirLight()				// 析构函数
 {
 }
 
-void DirLight::setDirection(const glm::vec3& dir) {
+void DirLight::SetDirection(const glm::vec3& dir) {
 	_direction = glm::normalize(dir);
 }
 
-void DirLight::setDirection(float x, float y, float z) {
+void DirLight::SetDirection(float x, float y, float z) {
 	_direction = glm::normalize(glm::vec3(x, y, z));
 }
 
-void DirLight::setIntensity(float lux)
+void DirLight::SetIntensity(float lux)
 {
 	_luxIntensity = lux;
 }
 
-void DirLight::setCascadeLevel(int level)
+void DirLight::SetCascadeLevel(uint32_t level)
 {
-	_cascadeLevel = std::max(int(1), level);
+	_cascadeLevel = std::max(1u, level);
 }
 
-glm::vec3 DirLight::getDirection() const {
+glm::vec3 DirLight::GetDirection() const {
 	return _direction;
 }
 
-float DirLight::getIntensity() const
+float DirLight::GetIntensity() const
 {
 	return _luxIntensity;
 }
 
 
-glm::mat4 DirLight::getLightSpaceMatrix() const
+glm::mat4 DirLight::GetLightSpaceMatrix() const
 {
 	float virtual_distance = 800.f;
 	glm::vec3 center = glm::vec3(0.f);
@@ -139,7 +129,7 @@ glm::mat4 DirLight::getLightSpaceMatrix() const
 	return lightSpaceMatrix;
 }
 
-glm::mat4 DirLight::getLightSpaceMatrixWithFrustumCorners(const glm::mat4& cameraProjection, const glm::mat4& cameraView, glm::vec3* center, float* radius) const
+glm::mat4 DirLight::GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& cameraProjection, const glm::mat4& cameraView, glm::vec3* center, float* radius) const
 {
 	std::vector<glm::vec3> frustumCorners = GetFrustumCornersWorldSpace(cameraProjection * cameraView);
 	glm::vec3 frustumCenter = glm::vec3(0.0f);
@@ -191,7 +181,7 @@ glm::mat4 DirLight::getLightSpaceMatrixWithFrustumCorners(const glm::mat4& camer
 	return lightSpaceMatrix;
 }
 
-int DirLight::getCascadeLevel()
+uint32_t DirLight::GetCascadeLevel() const
 {
 	return _cascadeLevel;
 }
@@ -200,29 +190,29 @@ PointLight::~PointLight()				// 析构函数
 {
 }
 
-void PointLight::setPosition(const glm::vec3& pos) {
+void PointLight::SetPosition(const glm::vec3& pos) {
 	_position = pos;
 }
 
-void PointLight::setPosition(float x, float y, float z) {
+void PointLight::SetPosition(float x, float y, float z) {
 	_position = glm::vec3(x, y, z);
 }
 
-void PointLight::setIntensity(float cd)
+void PointLight::SetIntensity(float cd)
 {
 	_cdIntensity = cd;
 }
 
-glm::vec3 PointLight::getPosition() const {
+glm::vec3 PointLight::GetPosition() const {
 	return _position;
 }
 
-float PointLight::getIntensity() const
+float PointLight::GetIntensity() const
 {
 	return _cdIntensity;
 }
 
-float PointLight::getRadius() const
+float PointLight::GetRadius() const
 {
 	return sqrt(_cdIntensity / (PI * radius_threshold));
 }
@@ -236,65 +226,65 @@ SpotLight::~SpotLight()
 {
 }
 
-void SpotLight::setPosition(const glm::vec3& pos) {
+void SpotLight::SetPosition(const glm::vec3& pos) {
 	_position = pos;
 }
 
-void SpotLight::setPosition(float x, float y, float z) {
+void SpotLight::SetPosition(float x, float y, float z) {
 	_position = glm::vec3(x, y, z);
 }
 
-void SpotLight::setIntensity(float cd)
+void SpotLight::SetIntensity(float cd)
 {
 	_cdIntensity = cd;
 }
 
-void SpotLight::setDirection(const glm::vec3& dir) {
+void SpotLight::SetDirection(const glm::vec3& dir) {
 	_direction = glm::normalize(dir);
 }
 
-void SpotLight::setDirection(float x, float y, float z) {
+void SpotLight::SetDirection(float x, float y, float z) {
 	_direction = glm::normalize(glm::vec3(x, y, z));
 }
 
-void SpotLight::setCutOffAngle(float cut) {
+void SpotLight::SetCutOffAngle(float cut) {
 	_cutOffAngle = cut;
 }
 
-void SpotLight::setOuterCutOffAngle(float outerCut) {
+void SpotLight::SetOuterCutOffAngle(float outerCut) {
 	_outercutOffAngle = outerCut;
 }
 
-glm::vec3 SpotLight::getPosition() const {
+glm::vec3 SpotLight::GetPosition() const {
 	return _position;
 }
 
-glm::vec3 SpotLight::getColor() const
+glm::vec3 SpotLight::GetColor() const
 {
 	return _color;
 }
 
-float SpotLight::getIntensity() const
+float SpotLight::GetIntensity() const
 {
 	return _cdIntensity;
 }
 
-glm::vec3 SpotLight::getDirection() const {
+glm::vec3 SpotLight::GetDirection() const {
 	return _direction;
 }
 
-float SpotLight::getCutOffAngle() const {
+float SpotLight::GetCutOffAngle() const {
 	return _cutOffAngle;
 }
 
-float SpotLight::getOuterCutOffAngle() const {
+float SpotLight::GetOuterCutOffAngle() const {
 	return _outercutOffAngle;
 }
 
-glm::mat4 SpotLight::getLightSpaceMatrix() const
+glm::mat4 SpotLight::GetLightSpaceMatrix() const
 {
-	float near_plane = 0.1f, far_plane = getRadius();
-	glm::mat4 lightProjection = vkPerspective(glm::radians(_outercutOffAngle * 2), (float)_shadowMapWidth / (float)_shadowMapHeight, 0.1f, far_plane);
+	float near_plane = 0.1f, far_plane = GetRadius();
+	glm::mat4 lightProjection = vkPerspective(glm::radians(_outercutOffAngle * 2), 1.0, 0.1f, far_plane);
 	glm::vec3 up = glm::vec3(0.0, 1.0, 0.0);
 	if (glm::abs(glm::dot(_direction, up)) > 0.9999f)
 		up = glm::vec3(0.0, 0.0, 1.0);	// 视线方向与 Y 轴平行，改用 Z 轴作为 Up
@@ -304,7 +294,7 @@ glm::mat4 SpotLight::getLightSpaceMatrix() const
 	return lightSpaceMatrix;
 }
 
-float SpotLight::getRadius() const
+float SpotLight::GetRadius() const
 {
 	return sqrt(_cdIntensity / (PI * radius_threshold));
 }

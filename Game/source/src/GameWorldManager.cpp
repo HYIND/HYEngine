@@ -220,7 +220,7 @@ void SetupDustLight(World& world)
 {
 	for (int i = 0; i < 1; i++)
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 4.f, true, 6, 2000, 2000);
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 4.f, true, 6, 2000);
 		auto& renderlight = entity.getComponent<RenderLight>();
 		renderlight.renderCube = true;
 	}
@@ -470,7 +470,7 @@ void SetupeTestGameLight(World& world)
 	//	light->setSpecularStrength(1.0f);
 	//	light->setShadowMapWidth(2048);
 	//	light->setShadowMapHeight(2048);
-	//	light->setCascadeLevel(4);
+	//	light->SetCascadeLevel(4);
 	//	auto& renderlight = entity.addComponent<RenderLight>(light);
 	//}
 }
@@ -934,7 +934,7 @@ void CreateTestSponzaScene(World& world)
 
 	for (int i = 0; i < 1; i++)
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(-0.4, -1, 0.35), glm::vec3(1.0f), 3.5f, true, 4, 3000, 3000);
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(-0.4, -1, 0.35), glm::vec3(1.0f), 3.5f, true, 4, 3000);
 		auto& renderlight = entity.getComponent<RenderLight>();
 		renderlight.renderCube = true;
 	}

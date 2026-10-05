@@ -12,4 +12,10 @@
     <LocalDebuggerCommandArguments>-console</LocalDebuggerCommandArguments>
     <LocalDebuggerCommandArgumentsHistory>-console|</LocalDebuggerCommandArgumentsHistory>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <LocalDebuggerWorkingDirectory>$(TargetDir)</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>-console</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>-console|</LocalDebuggerCommandArgumentsHistory>
+  </PropertyGroup>
 </Project>

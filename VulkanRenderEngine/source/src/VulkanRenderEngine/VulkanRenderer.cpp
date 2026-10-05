@@ -13,11 +13,11 @@
 #include "VulkanRenderEngine/RenderPass/SkyBoxPass.h"
 #include "VulkanRenderEngine/RenderPass/SSAOPass.h"
 //#include "VulkanRenderEngine/RenderPass/EffectPass.h"
+//#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGIPass.h"
 #include "VulkanRenderEngine/RenderPass/DepthFogPass.h"
-//#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
 #include "VulkanRenderEngine/RenderPass/AutoExposurePass.h"
 #include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
@@ -527,7 +527,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	_sceneRenderGraph = std::make_unique<RenderGraph::Graph>("SceneRenderGraph");
 
-	auto preCalculatePass = std::make_unique<PreCalculatePass>();
+	_preCalculatePass = std::make_unique<PreCalculatePass>();
 
 	auto atmospherePreCalculatePass = std::make_unique<AtmospherePreCalculatePass>(
 		"shader/Atmosphere/TransmittanceLut.comp",
@@ -716,7 +716,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto rayTracingWriteLayout = RenderGraph::RenderGraphResourceLayout{ .data = TextureLayout{.stage = ImageLayout::BindStage::RayTracing, .usage = ImageLayout::BindUsage::Write} };
 
 
-	preCalculateNode->SetRenderPass(std::move(preCalculatePass));
+	//preCalculateNode->SetRenderPass(std::move(preCalculatePass));
 
 	atmospherePreCalculateNode->SetRenderPass(std::move(atmospherePreCalculatePass));
 
@@ -957,6 +957,11 @@ void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
 	{
 		auto guard = sync->MakeProgressGuard();
 		SetupIndirectDrawData(state);
+	}
+
+	{
+		auto guard = sync->MakeProgressGuard();
+		_preCalculatePass->Execute(*state);
 	}
 
 	{

@@ -10,8 +10,7 @@ Entity LightFactory::CreateDirLight(
 	float luxIntensity,
 	bool castShadow,
 	uint32_t cascadeLevel,
-	uint32_t shadowMapWidth,
-	uint32_t shadowMapHeight
+	uint32_t shadowMapSize
 )
 {
 	Entity entity = world.createEntityWithTag<TagLight>();
@@ -19,8 +18,7 @@ Entity LightFactory::CreateDirLight(
 	light.color = color;
 	light.luxIntensity = luxIntensity;
 	light.cascadeLevel = cascadeLevel;
-	light.shadowMapWidth = shadowMapWidth;
-	light.shadowMapHeight = shadowMapHeight;
+	light.shadowMapSize = shadowMapSize;
 	light.castShadow = castShadow;
 	auto& renderlight = entity.addComponent<RenderLight>(light);
 	renderlight.renderCube = false;
@@ -39,8 +37,7 @@ Entity LightFactory::CreateSpotLight(
 	float outercutOffAngle,
 	const glm::vec3& color,
 	bool castShadow,
-	uint32_t shadowMapWidth,
-	uint32_t shadowMapHeight
+	uint32_t shadowMapSize
 )
 {
 	Entity entity = world.createEntityWithTag<TagLight>();
@@ -49,8 +46,7 @@ Entity LightFactory::CreateSpotLight(
 	light.cdIntensity = cdIntensity;
 	light.cutOffAngle = cutOffAngle;
 	light.outercutOffAngle = outercutOffAngle;
-	light.shadowMapWidth = shadowMapWidth;
-	light.shadowMapHeight = shadowMapHeight;
+	light.shadowMapSize = shadowMapSize;
 	light.castShadow = castShadow;
 	auto& renderlight = entity.addComponent<RenderLight>(light);
 	renderlight.renderCube = false;
@@ -67,16 +63,14 @@ Entity LightFactory::CreatePointLight(
 	float cdIntensity,
 	const glm::vec3& color,
 	bool castShadow,
-	uint32_t shadowMapWidth,
-	uint32_t shadowMapHeight
+	uint32_t shadowMapSize
 )
 {
 	Entity entity = world.createEntityWithTag<TagLight>();
 	PointLightData light;
 	light.color = color;
 	light.cdIntensity = cdIntensity;
-	light.shadowMapWidth = shadowMapWidth;
-	light.shadowMapHeight = shadowMapHeight;
+	light.shadowMapSize = shadowMapSize;
 	light.castShadow = castShadow;
 	auto& renderlight = entity.addComponent<RenderLight>(light);
 	renderlight.renderCube = false;

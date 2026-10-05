@@ -150,7 +150,9 @@ void Graph::FindReadyNodeAndExcute(
 			{
 				executeHandle = _executeParallelPool.submit(
 					[&, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
+						//auto start = Tool::GetTimestampMircoseconds();
 						ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, _cmdMutex);
+						//std::cout << std::format("ExecutePass {} ,cost {}ms\n", ctx.node->GetName(), Tool::GetTimestampMircoseconds() - start);
 						for (auto& next : ctx.nextIndexs)
 							--passCtxs[next].dependency;
 						doneCounter++;

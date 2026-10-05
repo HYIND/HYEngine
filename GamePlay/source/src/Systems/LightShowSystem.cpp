@@ -65,14 +65,14 @@ bool LightShowSystem::isEntityLighting(Entity& entity, Entity& lightEntity)
 
 	ModelProxyData::AABB aabb = modelProxy.data->GetAABB();
 	glm::vec3 center = aabb.min + (aabb.max - aabb.min) / 2.f;
-	center = trans.getMatrix() * glm::vec4(center, 1.0f);
+	center = trans.GetMatrix() * glm::vec4(center, 1.0f);
 
 	auto& lightTrans = lightEntity.getComponent<Transform>();
 	auto& light = lightEntity.getComponent<RenderLight>();
 	if (light.type == LightType::Directional)
 	{
 		float virtual_distance = 800.f;
-		glm::vec3 virtual_lightPos = center - virtual_distance * lightTrans.getDirection();
+		glm::vec3 virtual_lightPos = center - virtual_distance * lightTrans.GetDirection();
 		auto res = physicsSystem->raycast(center, virtual_lightPos);
 		if (res.hitEntity == entity)
 			return true;
@@ -94,7 +94,7 @@ bool LightShowSystem::isEntityLighting(Entity& entity, Entity& lightEntity)
 		float outerCutOff = glm::cos(glm::radians(outerCutOffAngle));
 		glm::vec3 lightDir = glm::normalize(center - lightTrans.position);
 
-		float theta = glm::dot(lightDir, lightTrans.getDirection());
+		float theta = glm::dot(lightDir, lightTrans.GetDirection());
 		if (theta < outerCutOff)
 			return false;
 
