@@ -114,7 +114,7 @@ struct RenderOption
 		bool drawTransparent = true;
 		bool ssrOn = false;
 		bool ssgiOn = false;
-		bool skyboxOn = false;
+		bool skyboxOn = true;
 		bool depthFogOn = false;
 		bool atmosphereOn = true;
 		bool rayTraceReflectOn = false;

@@ -23,7 +23,8 @@ SkyBoxPreCalculatePass::SkyBoxPreCalculatePass()
 
 bool SkyBoxPreCalculatePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.skyCube;
+	return (!state.option.flags.atmosphereOn || state.lights.dirLightInfos.empty())
+		&& state.option.flags.skyboxOn && state.skyboxParams.skyCube;
 }
 
 void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -98,7 +99,9 @@ SkyBoxPass::~SkyBoxPass()
 
 bool SkyBoxPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return !state.option.flags.atmosphereOn && state.option.flags.skyboxOn && state.skyboxParams.skyCube;
+	return 
+		(!state.option.flags.atmosphereOn || state.lights.dirLightInfos.empty())
+		&& state.option.flags.skyboxOn && state.skyboxParams.skyCube;
 }
 
 void SkyBoxPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
