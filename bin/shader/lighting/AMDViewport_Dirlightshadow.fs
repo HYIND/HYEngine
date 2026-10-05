@@ -20,7 +20,6 @@ layout(binding = 5) buffer Transforms
 void main()
 {
     MaterialData material = materials[data[dataIndex].materialIndex];
-    float opacity = calculateOpacity(material, FragTextureCoords);
-    if (opacity < 0.01)
+    if (calculateOpacity(material, FragTextureCoords) < 0.02)
         discard;
 }

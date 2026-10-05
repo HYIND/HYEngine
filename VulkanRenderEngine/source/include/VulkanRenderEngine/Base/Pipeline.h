@@ -105,6 +105,7 @@ namespace GeneralBindingPoint
 	static const BindingPoint Light_DirLightCascadeData = BindingPoint{ .binding = 1, .set = 3 };
 	static const BindingPoint Light_PointLightMetaData = BindingPoint{ .binding = 2, .set = 3 };
 	static const BindingPoint Light_SpotLightMetaData = BindingPoint{ .binding = 3, .set = 3 };
+	static const BindingPoint Light_DirLightCascadeDistanceData = BindingPoint{ .binding = 4, .set = 3 };
 
 	static const BindingPoint Animation_MetaData = BindingPoint{ .binding = 0, .set = 4 };
 	static const BindingPoint Animation_MatData = BindingPoint{ .binding = 1, .set = 4 };
@@ -349,7 +350,13 @@ public:
 public:
 	void SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO);
 	void SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
-	void SetLightStorageData(const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta, const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta);
+	void SetLightStorageData(
+		const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, 
+		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, 
+		const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta, 
+		const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta,
+		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascadeDistances
+	);
 
 private:
 	void BindAllEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage);

@@ -27,6 +27,7 @@ private:
 
 		std::shared_ptr<StorageBlock> ssbo_dirLightMeta = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_dirLightCascade = std::make_shared<StorageBlock>();
+		std::shared_ptr<StorageBlock> ssbo_dirLightCascadeDistances = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_pointLightMeta = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_spotLightMeta = std::make_shared<StorageBlock>();
 	};

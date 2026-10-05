@@ -134,7 +134,8 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
-		state.lights.ssbo_spotLightMeta
+		state.lights.ssbo_spotLightMeta,
+		state.lights.ssbo_dirLightCascadeDistances
 	);
 
 	_shader.Bind(cmd, binding);

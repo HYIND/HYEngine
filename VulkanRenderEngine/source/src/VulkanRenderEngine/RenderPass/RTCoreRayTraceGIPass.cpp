@@ -229,7 +229,8 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 		state.lights.ssbo_dirLightMeta,
 		state.lights.ssbo_dirLightCascade,
 		state.lights.ssbo_pointLightMeta,
-		state.lights.ssbo_spotLightMeta
+		state.lights.ssbo_spotLightMeta,
+		state.lights.ssbo_dirLightCascadeDistances
 	);
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);

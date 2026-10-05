@@ -368,8 +368,8 @@ bool findHitPointOnMeshData(int index, inout Ray worldRay, inout HitInfo hit)
                         tri_ext = triangleExtBuffer.triangleExts[meshdata.triangleFirst + idx];
 
                         vec2 texCoords = (1.0 - u - v) * tri_ext.v0.texCoords + u * tri_ext.v1.texCoords + v * tri_ext.v2.texCoords;
-                        float opacity = calculateOpacity(materialdata, texCoords);
-                        if (opacity < 0.01) continue;
+                        if (calculateOpacity(materialdata, texCoords) < 0.02)
+                            discard;
 
                         vec3 localNormal = normalize((1.0 - u - v) * tri_ext.v0.normal + u * tri_ext.v1.normal + v * tri_ext.v2.normal);
                         vec3 localTangent = normalize((1.0 - u - v) * tri_ext.v0.Tangent + u * tri_ext.v1.Tangent + v * tri_ext.v2.Tangent);

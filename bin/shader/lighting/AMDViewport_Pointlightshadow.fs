@@ -31,10 +31,9 @@ layout (location = 3) in vec3 WorldPos;
 void main()
 {
     MaterialData material = materials[data[dataIndex].materialIndex];
-    float opacity = calculateOpacity(material, FragTextureCoords);
-    if (opacity < 0.01)
+    if (calculateOpacity(material, FragTextureCoords) < 0.02)
         discard;
-
+        
     float lightDistance = length(WorldPos - lightProp[viewIndex].lightPos);
     gl_FragDepth = lightDistance / lightProp[viewIndex].farPlane;
 }

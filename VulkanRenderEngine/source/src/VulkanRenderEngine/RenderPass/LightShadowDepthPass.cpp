@@ -21,7 +21,6 @@ struct alignas(16) DirLightCascadeInfo {
 	int atlasY;
 	int atlasWidth;
 	int atlasHeight;
-	float cascadePlaneDistance;
 };
 
 struct SpotLightMetaInfo {
@@ -83,6 +82,7 @@ static void SetupDirLightData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<StorageBlock>& meta_ssbo,
 	std::shared_ptr<StorageBlock>& cascade_ssbo,
+	std::shared_ptr<StorageBlock>& cascadeDstances_ssbo,
 	const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
 	const std::shared_ptr<AtlasMap>& atlasShadowMap
 )
@@ -91,6 +91,7 @@ static void SetupDirLightData(
 	uint32_t cascadeOffset = 0;
 	std::vector<DirLightMetaInfo> dirLightMetaInfos;
 	std::vector<DirLightCascadeInfo> dirLightCascadeInfos;
+	std::vector<float> dirLightCascadeDistances;
 	for (auto& info : dirLights)
 	{
 		if (!info || !info->light)
@@ -121,10 +122,10 @@ static void SetupDirLightData(
 				cascadeinfo.atlasY = rect.y;
 				cascadeinfo.atlasWidth = rect.width;
 				cascadeinfo.atlasHeight = rect.height;
-				cascadeinfo.cascadePlaneDistance = cascade.cascadePlaneDistance;
 				cascadeinfo.lightSpaceMatrix = cascade.lightSpaceMatrix;
 
 				cascadeInfos.push_back(cascadeinfo);
+				dirLightCascadeDistances.push_back(cascade.cascadePlaneDistance);
 			}
 
 			metainfo.cascadeFirst = cascadeOffset;
@@ -153,6 +154,8 @@ static void SetupDirLightData(
 	writePaddingCount(cmd, dirLightCascadeInfos.size(), cascade_ssbo);
 	cascade_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
 	cascade_ssbo->WriteDataAsync(cmd, dirLightCascadeInfos.data(), dirLightCascadeInfos.size() * sizeof(DirLightCascadeInfo), 16);
+
+	cascadeDstances_ssbo->WriteDataAsync(cmd, dirLightCascadeDistances.data(), dirLightCascadeDistances.size() * sizeof(float));
 }
 
 static void SetupPointLightData(
@@ -451,6 +454,7 @@ void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 
 	state.lights.ssbo_dirLightMeta = selfctx.ssbo_dirLightMeta;
 	state.lights.ssbo_dirLightCascade = selfctx.ssbo_dirLightCascade;
+	state.lights.ssbo_dirLightCascadeDistances = selfctx.ssbo_dirLightCascadeDistances;
 	state.lights.ssbo_pointLightMeta = selfctx.ssbo_pointLightMeta;
 	state.lights.ssbo_spotLightMeta = selfctx.ssbo_spotLightMeta;
 
@@ -610,7 +614,7 @@ struct DrawParams {
 
 void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
 {
-	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, state.lights.dirLightInfos, ctx.atlas);
+	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, ctx.ssbo_dirLightCascadeDistances, state.lights.dirLightInfos, ctx.atlas);
 	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
 	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
 }
