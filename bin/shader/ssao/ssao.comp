@@ -33,7 +33,12 @@ float DepthBufferConvertToViewDepth(float depth)
     return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
-float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv)
+float FastDepthBufferConvertToViewDepth(float depth, float near, float far)
+{
+    return far * near / (far - depth * (far - near)); 
+}
+
+float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv, float near, float far)
 {
     // create TBN change-of-basis matrix: from tangent-space to view-space
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
@@ -54,7 +59,7 @@ float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv)
         offset.xyz /= offset.w; // perspective divide
         offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
 
-        float sampleDepth = -DepthBufferConvertToViewDepth(texture(depthMap, offset.xy).r);
+        float sampleDepth = -FastDepthBufferConvertToViewDepth(texture(depthMap, offset.xy).r, near, far);
 
         // vec3 sampleWorldPos = texture(gPosition, offset.xy).xyz;
         // float sampleDepth = (camera.view * vec4(sampleWorldPos, 1.0f)).z;
@@ -88,7 +93,7 @@ void main()
 
     vec3 randomVec = normalize(texture(texNoise, TexCoords * noiseScale).xyz);
 
-    float ao = getOcclusion(viewFragPos, viewNormal, randomVec, TexCoords);
+    float ao = getOcclusion(viewFragPos, viewNormal, randomVec, TexCoords, camera.nearPlane, camera.farPlane);
     
     imageStore(outputAO, coord, vec4(ao, 0.0, 0.0, 1.0));
 }
