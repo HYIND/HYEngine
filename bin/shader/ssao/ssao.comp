@@ -54,8 +54,7 @@ float getOcclusion(vec3 fragPos, vec3 normal, vec3 randomVec, vec2 uv, float nea
         samplePos = fragPos + samplePos * radius;
 
         // project sample position (to sample texture) (to get position on screen/texture)
-        vec4 offset = vec4(samplePos, 1.0);
-        offset = camera.projection * offset; // from view to clip-space
+        vec4 offset = camera.projection * vec4(samplePos, 1.0); // from view to clip-space
         offset.xyz /= offset.w; // perspective divide
         offset.xyz = offset.xyz * 0.5 + 0.5; // transform to range 0.0 - 1.0
 

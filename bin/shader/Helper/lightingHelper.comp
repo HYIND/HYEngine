@@ -128,7 +128,7 @@ float SamplerAtlasCubeMap(vec3 dir, sampler2D atlasMap, vec2 atlasSize, vec2 sub
 
  	// === 2. 计算 UV 坐标 (映射到 0-1) ===
 	// sc.y = -sc.y;
-	vec2 uv = (sc / ma + 1.0) * 0.5;
+	vec2 uv = sc / ma * 0.5 + 0.5;
 	uv.y = 1.0f - uv.y;
 
 	return SamplerAtlasMap(uv, atlasMap, atlasSize, subStart[faceIndex], subSize[faceIndex]);
