@@ -67,27 +67,46 @@ void main()
 
     float samplerDepth = texture(depthMap, TexCoords).r;
     vec3 worldPos = vec3(0);
+    float distanceToSurface = distance(camera.position, worldPos);
     if (samplerDepth < 0.99994)
+    {
         worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
-    else 
+        distanceToSurface = distance(camera.position, worldPos);
+    }
+    else
+    {
         worldPos = camera.position + GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y)) * MAX_DISTANCE;
+        distanceToSurface = MAX_DISTANCE;
+    }
 
-    float distanceDiff = distance(camera.position, worldPos);
-    if (distanceDiff <= fogStartDistance)
+    if (distanceToSurface <= fogStartDistance)
         return;
 
     vec3 scrColor = texture(colorMap, TexCoords).rgb;
 
-    float fogHeightDiff = worldPos.y - fogStartHeight;
-    float fogDensity = globalDensity * exp(-fogHeightFalloff * fogHeightDiff);
+    vec3 rayDir = normalize(worldPos - camera.position);
 
-    // float effectZ = camera.position.z - worldPos.z;
-    // float falloff = fogHeightFalloff * effectZ;
-    // float fogFactor = (1 - exp2(-falloff)) / falloff;
+    float startDistance = fogStartDistance;
+    vec3 rayStart = camera.position + rayDir * startDistance;
+    float rayLength = max(distanceToSurface - startDistance, 0.0);
 
-    float fog = fogDensity * max(distanceDiff - fogStartDistance, 0);
-    fog = clamp(fog, 0.0, 1.0);
-    
-    vec3 result = mix(scrColor, fogColor, fog);
+    float densityAtStart = globalDensity * exp(-fogHeightFalloff * (rayStart.y - fogStartHeight));
+
+    float exponent = fogHeightFalloff * rayDir.y;
+
+    float opticalDepth;
+
+    if (abs(exponent) < 1e-5)
+    {
+        opticalDepth = densityAtStart * rayLength;
+    }
+    else
+    {
+        opticalDepth = densityAtStart * (1.0 - exp(-exponent * rayLength)) / exponent;
+    }
+
+    float fogFactor = 1.0 - exp(-opticalDepth);
+
+    vec3 result = mix(scrColor, fogColor, fogFactor);
     imageStore(outputImage, coord, vec4(result, 1.0));
 }
