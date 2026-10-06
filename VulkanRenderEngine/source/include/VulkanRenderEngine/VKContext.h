@@ -63,6 +63,9 @@ public:
 
 	void ProcessPendingCommandAndWait();
 
+public:
+	SpinLock& GetDescriptorPoolRequestMutex();
+
 private:
 	VKContext();
 	~VKContext();

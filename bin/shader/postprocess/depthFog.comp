@@ -14,8 +14,9 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 layout (binding = 0) uniform Params
 {
     vec3 fogColor;
-    float fogHeight;
-    float fogDistanceFalloff;   // 距离衰减
+    float globalDensity;        // 全局雾浓度
+    float fogStartHeight;       // 雾起始高度
+    float fogStartDistance;     // 雾起始距离
     float fogHeightFalloff;     // 高度衰减系数
 };
 
@@ -41,6 +42,19 @@ vec3 ReconstructWorldPosition(float depth, vec2 texCoords)
     return worldPos.xyz;
 }
 
+vec3 GetViewDir(vec2 uv, float aspect)
+{    
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.x *= aspect;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(camera.fov) * 0.5);
+    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
+    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
+    return worldRayDir;
+}
+
+const float MAX_DISTANCE = 1e5;
+
 void main()
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
@@ -51,22 +65,29 @@ void main()
 
     vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
 
-    vec3 scrColor = texture(colorMap, TexCoords).rgb;
     float samplerDepth = texture(depthMap, TexCoords).r;
+    vec3 worldPos = vec3(0);
+    if (samplerDepth < 0.99994)
+        worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
+    else 
+        worldPos = camera.position + GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y)) * MAX_DISTANCE;
 
-    float viewDepth = DepthBufferConvertToViewDepth(samplerDepth);
-    vec3 worldPos = ReconstructWorldPosition(samplerDepth, TexCoords);
+    float distanceDiff = distance(camera.position, worldPos);
+    if (distanceDiff <= fogStartDistance)
+        return;
+
+    vec3 scrColor = texture(colorMap, TexCoords).rgb;
+
+    float fogHeightDiff = worldPos.y - fogStartHeight;
+    float fogDensity = globalDensity * exp(-fogHeightFalloff * fogHeightDiff);
+
+    // float effectZ = camera.position.z - worldPos.z;
+    // float falloff = fogHeightFalloff * effectZ;
+    // float fogFactor = (1 - exp2(-falloff)) / falloff;
+
+    float fog = fogDensity * max(distanceDiff - fogStartDistance, 0);
+    fog = clamp(fog, 0.0, 1.0);
     
-    float heightDiff = max(0.0, fogHeight - worldPos.y);
-    float heightFactor = 1.0 - exp(-heightDiff * fogHeightFalloff);
-
-    float distanceDiff = max(0.0, viewDepth - camera.farPlane * 0.3);
-    float distanceFactor = 1.0 - exp(-distanceDiff * fogDistanceFalloff);
-
-    float fogFactor = distanceFactor * 0.3 + heightFactor * 0.7;
-    fogFactor = clamp(fogFactor, 0.0, 1.0);
-    
-    vec3 result = mix(scrColor, fogColor, fogFactor);
-
+    vec3 result = mix(scrColor, fogColor, fog);
     imageStore(outputImage, coord, vec4(result, 1.0));
 }

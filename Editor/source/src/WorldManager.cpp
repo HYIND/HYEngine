@@ -135,9 +135,9 @@ void LoadInitScene(World& world)
 			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetFOV(80.f);
+			cameracom.camera.SetNearPlane(0.1f);
+			cameracom.camera.SetFarPlane(800.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;

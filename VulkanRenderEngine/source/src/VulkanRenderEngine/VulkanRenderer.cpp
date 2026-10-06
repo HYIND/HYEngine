@@ -295,7 +295,7 @@ void VulkanRenderer::InitRenderTarget()
 	_renderTargets.clear();
 
 	const TextureConfig config
-	{
+	{ 
 		.minFilter = vk::Filter::eLinear,
 		.magFilter = vk::Filter::eLinear,
 		.wrapU = vk::SamplerAddressMode::eClampToEdge,

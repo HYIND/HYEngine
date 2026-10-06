@@ -51,6 +51,7 @@ ImTextureID IconManager::GetIcon(const std::string& name) const
 	auto& icon = it->second;
 	if (icon.descSet == VK_NULL_HANDLE && icon.tex && !icon.tex->IsEmpty())
 	{
+		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
 		icon.descSet = ImGui_ImplVulkan_AddTexture(
 			icon.tex->GetImageView(vk::ImageAspectFlagBits::eColor),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL

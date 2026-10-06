@@ -1960,20 +1960,20 @@ void ImGui_ImplVulkanH_CreateOrResizeWindow(VkInstance instance, VkPhysicalDevic
     check_vk_result(err);
 
     // Transition the images to the correct layout for rendering
-    for (uint32_t i = 0; i < wd->ImageCount; i++)
-    {
-        VkImageMemoryBarrier barrier = {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.image = wd->Frames[i].Backbuffer;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.layerCount = 1;
-        vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    }
+    //for (uint32_t i = 0; i < wd->ImageCount; i++)
+    //{
+    //    VkImageMemoryBarrier barrier = {};
+    //    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    //    barrier.image = wd->Frames[i].Backbuffer;
+    //    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    //    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    //    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    //    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    //    barrier.subresourceRange.levelCount = 1;
+    //    barrier.subresourceRange.layerCount = 1;
+    //    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    //}
 
     err = vkEndCommandBuffer(command_buffer);
     check_vk_result(err);
