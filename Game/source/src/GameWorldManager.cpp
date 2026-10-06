@@ -557,34 +557,25 @@ void CreateTestGameScene(World& world)
 	for (int i = 0; i < 2; i++)
 	{
 		float floorSize = 40.f;
-		auto model = ResFactory->GetModelRes(ResName::Quad)->Clone(true, true, false);
-
-		auto& meshInfo = model->getMeshInfos();
-		if (!meshInfo.empty())
-			//meshInfo[0].material->SetBaseColor(glm::vec3(51, 255, 153) / 255.f);
-			meshInfo[0].material->SetAlbedo(glm::vec3(1, 0, 0));
-
-		AABB aabb = model->GetAABB();
-		float Half_SizeX = (aabb.max.x - aabb.min.x) / 2.f;
-		float Half_SizeZ = (aabb.max.z - aabb.min.z) / 2.f;
-
-		float target_half_width = floorSize / 4.f;
-		float target_half_height = floorSize / 2.f;
+		float halfSize = floorSize / 2.0;
 
 		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
-		trans.position = glm::vec3(i == 0 ? target_half_height : -target_half_height, target_half_width, 100);
-		trans.rotation = Tool::GetQuatFromRotate(i == 0 ? 90 : -90, glm::vec3(0, 0, 1));
-		trans.scale = glm::vec3(target_half_width / Half_SizeX, 1.0f, target_half_height / Half_SizeZ);
+		trans.position = glm::vec3(i == 0 ? halfSize : -halfSize, halfSize / 2.0, 100);
+		trans.scale = glm::vec3(0.1f, halfSize / 2.0, halfSize);
 
 		auto& physics = floor.addComponent<Physics>();
 		physics.bodyType = Physics::BodyType::Static;
 		physics.isSensor = false;
 		physics.isBullet = true;
-		physics.collisionShape.AddBoxShape(glm::vec3(Half_SizeX, 0.2f, Half_SizeZ));
+		physics.collisionShape.AddBoxShape();
 
 		auto& rendermodel = floor.addComponent<RenderModel>();
-		rendermodel.model = model;
+		rendermodel.model = ResFactory->GetModelRes(ResName::Cube)->Clone(true, true, false);
+
+		auto& meshInfo = rendermodel.model->getMeshInfos();
+		if (!meshInfo.empty())
+			meshInfo[0].material->SetAlbedo(glm::vec3(1, 0, 0));
 
 		//if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
 		//{
@@ -596,73 +587,56 @@ void CreateTestGameScene(World& world)
 	for (int i = 0; i < 1; i++)
 	{
 		float floorSize = 40.f;
-		auto model = ResFactory->GetModelRes(ResName::Quad)->Clone(true, true, false);
-
-		auto& meshInfo = model->getMeshInfos();
-		if (!meshInfo.empty())
-			//meshInfo[0].material->SetBaseColor(glm::vec3(51, 255, 153) / 255.f);
-			meshInfo[0].material->SetAlbedo(glm::vec3(0, 0, 1));
-
-		AABB aabb = model->GetAABB();
-		float Half_SizeX = (aabb.max.x - aabb.min.x) / 2.f;
-		float Half_SizeZ = (aabb.max.z - aabb.min.z) / 2.f;
-
-		float target_half_width = floorSize / 2.f;
-		float target_half_height = floorSize / 4.f;
+		float halfSize = floorSize / 2.0;
 
 		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
-		trans.position = glm::vec3(0, target_half_height, 100 + (i == 0 ? target_half_width : -target_half_width));
-		trans.rotation = Tool::GetQuatFromRotate(i == 0 ? -90 : 90, glm::vec3(1, 0, 0));
-		trans.scale = glm::vec3(target_half_width / Half_SizeX, 1.0f, target_half_height / Half_SizeZ);
+		trans.position = glm::vec3(0, halfSize / 2.f, 100 + (i == 0 ? halfSize : -halfSize));
+		trans.scale = glm::vec3(halfSize, halfSize / 2.f, 0.1f);
 
 		auto& physics = floor.addComponent<Physics>();
 		physics.bodyType = Physics::BodyType::Static;
 		physics.isSensor = false;
 		physics.isBullet = true;
-		physics.collisionShape.AddBoxShape(glm::vec3(Half_SizeX, 0.2f, Half_SizeZ));
+		physics.collisionShape.AddBoxShape();
 
 		auto& rendermodel = floor.addComponent<RenderModel>();
-		rendermodel.model = model;
+		rendermodel.model = ResFactory->GetModelRes(ResName::Cube)->Clone(true, true, false);
 
-		if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
-		{
-			auto& material = model->getMeshInfos()[0].material;
-			//material->SetMetallic(0.9);
-			//material->SetRoughness(0.0f);
-		}
+		auto& meshInfo = rendermodel.model->getMeshInfos();
+		if (!meshInfo.empty())
+			meshInfo[0].material->SetAlbedo(glm::vec3(0, 0, 1));
+
+		//if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
+		//{
+		//	auto& material = model->getMeshInfos()[0].material;
+		//	material->SetMetallic(0.9);
+		//	material->SetRoughness(0.0f);
+		//}
 	}
 
 	for (int i = 0; i < 1; i++)
 	{
 		float floorSize = 40.f;
-		auto model = ResFactory->GetModelRes(ResName::Quad)->Clone(true, true, false);
-
-		auto& meshInfo = model->getMeshInfos();
-		if (!meshInfo.empty())
-			meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
-
-		AABB aabb = model->GetAABB();
-		float Half_SizeX = (aabb.max.x - aabb.min.x) / 2.f;
-		float Half_SizeZ = (aabb.max.z - aabb.min.z) / 2.f;
-
-		float target_half_width = floorSize / 2.f;
-		float target_half_height = floorSize / 2.f;
+		float halfSize = floorSize / 2.0;
 
 		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
-		trans.position = glm::vec3(0, i == 0 ? 0 : target_half_width, 100);
-		trans.rotation = i == 0 ? glm::identity<glm::quat>() : Tool::GetQuatFromRotate(180.f, glm::vec3(1, 0, 0));
-		trans.scale = glm::vec3(target_half_width / Half_SizeX, 1.0, target_half_height / Half_SizeZ);
+		trans.position = glm::vec3(0, i == 0 ? 0 : halfSize, 100);
+		trans.scale = glm::vec3(halfSize, 0.1f, halfSize);
 
 		auto& physics = floor.addComponent<Physics>();
 		physics.bodyType = Physics::BodyType::Static;
 		physics.isSensor = false;
 		physics.isBullet = true;
-		physics.collisionShape.AddBoxShape(glm::vec3(Half_SizeX, 0.2f, Half_SizeZ), glm::vec3(0, -0.2, 0));
+		physics.collisionShape.AddBoxShape();
 
 		auto& rendermodel = floor.addComponent<RenderModel>();
-		rendermodel.model = model;
+		rendermodel.model = ResFactory->GetModelRes(ResName::Cube)->Clone(true, true, false);
+
+		auto& meshInfo = rendermodel.model->getMeshInfos();
+		if (!meshInfo.empty())
+			meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
 
 		//if (i == 0)
 		//{
