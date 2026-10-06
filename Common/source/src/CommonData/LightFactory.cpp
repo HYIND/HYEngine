@@ -1,7 +1,5 @@
-#include "Factory/LightFactory.h"
+#include "CommonData/LightFactory.h"
 #include "CommonComponent.h"
-#include "GameRuntimeComponents.h"
-#include "GamePlayComponents.h"
 
 Entity LightFactory::CreateDirLight(
 	World& world,

@@ -5,7 +5,7 @@
 #include "ECSCore/Entity.h"
 #include "ECSCore/World.h"
 #include "VulkanRenderEngine/Base/Model.h"
-#include "LightFactory.h"
+#include "CommonData/LightFactory.h"
 
 class ParticleEmitterFactory
 {

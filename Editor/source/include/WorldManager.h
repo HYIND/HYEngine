@@ -5,6 +5,7 @@
 #include "RenderEngine/RenderFrameManager.h"
 #include "CommonSystems.h"
 #include "Helper/DynamicFpsController.h"
+#include "CommonData/LightData.h"
 
 struct EditorPick :public IComponent
 {};
@@ -14,6 +15,8 @@ struct NameTag :public IComponent
 	std::string name;
 };
 void SetNameTag(Entity entity, const std::string& name);
+
+enum class GeometryType { Cube = 0, Sphere };
 
 class WorldManager
 {
@@ -60,7 +63,10 @@ public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);
 	bool DuplicateEntity(Entity oriEntity, Entity& newEntity);
 
-public:
+	void AddLight(LightType type, const glm::vec3& position);
+	void AddGeometry(GeometryType type, const glm::vec3& position);
+
+private:
 	DynamicFpsController controller;
 	DynamicFpsEstimate estimate;
 

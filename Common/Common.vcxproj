@@ -145,6 +145,7 @@
     <ClInclude Include="source\include\CommonComponent.h" />
     <ClInclude Include="source\include\CommonData\Camera.h" />
     <ClInclude Include="source\include\CommonData\LightData.h" />
+    <ClInclude Include="source\include\CommonData\LightFactory.h" />
     <ClInclude Include="source\include\CommonData\ModelProxyData.h" />
     <ClInclude Include="source\include\CommonData\VariableMaterialData.h" />
     <ClInclude Include="source\include\CommonEventDef.h" />
@@ -188,6 +189,7 @@
   <ItemGroup>
     <ClCompile Include="source\src\Common.cpp" />
     <ClCompile Include="source\src\CommonData\Camera.cpp" />
+    <ClCompile Include="source\src\CommonData\LightFactory.cpp" />
     <ClCompile Include="source\src\ECSCore\Entity.cpp" />
     <ClCompile Include="source\src\ECSCore\EntityManager.cpp" />
     <ClCompile Include="source\src\ECSCore\System.cpp" />

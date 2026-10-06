@@ -5,7 +5,7 @@
 #include "ECSCore\World.h"
 #include "Helper/DynamicFpsController.h"
 
-#include "Factory/LightFactory.h"
+#include "CommonData/LightFactory.h"
 #include "Factory/ParticleEmitterFactory.h"
 #include "Factory/CharacterFactory.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
@@ -599,6 +599,90 @@ bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
 	).get();
 
 	return isSuccess && newEntity;
+}
+
+void WorldManager::AddLight(LightType type, const glm::vec3& position)
+{
+	if (type == LightType::Directional)
+	{
+		_world->SubmitCommand([&, position = position](World& world)-> void {
+			Entity entity = LightFactory::CreateDirLight(world, glm::vec3(0, -1, 0));
+			if (auto* trans = entity.tryGetComponent<Transform>())
+				trans->position = position;
+			AddPickProxy(entity);
+			});
+	}
+	else if (type == LightType::Point)
+	{
+		_world->SubmitCommand([&, position = position](World& world)-> void {
+			Entity entity = LightFactory::CreatePointLight(world, position);
+			if (auto* trans = entity.tryGetComponent<Transform>())
+				trans->position = position;
+			AddPickProxy(entity);
+			});
+	}
+	else if (type == LightType::Spot)
+	{
+		_world->SubmitCommand([&, position = position](World& world)-> void {
+			Entity entity = LightFactory::CreateSpotLight(world, position, glm::vec3(0, -1, 0));
+			if (auto* trans = entity.tryGetComponent<Transform>())
+				trans->position = position;
+			AddPickProxy(entity);
+			});
+	}
+}
+
+void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position)
+{
+	if (type == GeometryType::Cube)
+	{
+		_world->SubmitCommand([&, position = position](World& world)-> void {
+			Entity cube = world.createEntity();
+			auto& trans = cube.addComponent<Transform>();
+			trans.position = position;
+
+			auto& physics = cube.addComponent<Physics>();
+			physics.bodyType = Physics::BodyType::Static;
+			physics.isSensor = false;
+			physics.isBullet = true;
+			physics.friction = 0.1;
+			physics.restitution = 0.8;
+			physics.mass = 5.f;
+			physics.collisionShape.AddBoxShape();
+
+			auto& rendermodel = cube.addComponent<RenderModel>();
+			rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f);
+
+			AddPickProxy(cube);
+			AddVariableMaterial(cube);
+			});
+	}
+	else if (type == GeometryType::Sphere)
+	{
+		_world->SubmitCommand([&, position = position](World& world)-> void {
+
+			Entity sphere = world.createEntity();
+			auto& trans = sphere.addComponent<Transform>();
+			trans.position = position;
+
+			auto& physics = sphere.addComponent<Physics>();
+			physics.bodyType = Physics::BodyType::Static;
+			physics.isSensor = false;
+			physics.isBullet = true;
+			physics.friction = 0.1;
+			physics.restitution = 0.8;
+			physics.mass = 5.f;
+			physics.collisionShape.AddSphereShape(0.5f);
+
+			auto model = GetSphereModel(0.5, 72, 36);
+
+			auto& rendermodel = sphere.addComponent<RenderModel>();
+			rendermodel.model = model;
+
+			AddPickProxy(sphere);
+			AddVariableMaterial(sphere);
+			});
+	}
 }
 
 std::shared_ptr<VulkanRenderer> WorldManager::GetVulkanRener()

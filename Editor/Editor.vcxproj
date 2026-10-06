@@ -187,9 +187,6 @@
     <ClInclude Include="source\include\WorldManager.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Game\source\src\CharacterFactory.cpp" />
-    <ClCompile Include="..\Game\source\src\LightFactory.cpp" />
-    <ClCompile Include="..\Game\source\src\ParticleEmitterFactory.cpp" />
     <ClCompile Include="ImguiInit\VulkanInit.cpp" />
     <ClCompile Include="Imguizmo\GraphEditor.cpp" />
     <ClCompile Include="Imguizmo\ImCurveEdit.cpp" />

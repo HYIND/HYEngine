@@ -160,7 +160,6 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="source\include\BusyLoaderDialog.h" />
     <ClInclude Include="source\include\Factory\CharacterFactory.h" />
-    <ClInclude Include="source\include\Factory\LightFactory.h" />
     <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h" />
     <ClInclude Include="source\include\Manager\BGMManager.h" />
     <ClInclude Include="source\include\Manager\GameWorldManager.h" />
@@ -198,7 +197,6 @@
     <ClCompile Include="source\src\BGMManager.cpp" />
     <ClCompile Include="source\src\BusyLoaderDialog.cpp" />
     <ClCompile Include="source\src\GameWorldManager.cpp" />
-    <ClCompile Include="source\src\LightFactory.cpp" />
     <ClCompile Include="source\src\LobbyManager.cpp" />
     <ClCompile Include="source\src\main.cpp" />
     <ClCompile Include="source\src\ConnectManager.cpp" />

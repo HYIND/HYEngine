@@ -170,15 +170,6 @@
     <ClCompile Include="source\src\WorldManager.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="..\Game\source\src\ParticleEmitterFactory.cpp">
-      <Filter>源文件\Factory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Game\source\src\LightFactory.cpp">
-      <Filter>源文件\Factory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Game\source\src\CharacterFactory.cpp">
-      <Filter>源文件\Factory</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\ImguiLayout.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

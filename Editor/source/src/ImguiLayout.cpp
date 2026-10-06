@@ -41,6 +41,12 @@ std::string m_renameTarget;
 bool        m_renameIsFolder = false;
 
 
+static bool WantToAddDirLight = false;
+static bool WantToAddPointLight = false;
+static bool WantToAddSpotLight = false;
+static bool WantToAddCube = false;
+static bool WantToAddSphere = false;
+
 const char* GetOpName(ImGuizmo::OPERATION operation)
 {
 	// 注意：OPERATION 是位标志，需要按位检查
@@ -789,10 +795,43 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManage
 
 		if (ImGui::BeginMenu("窗口"))
 		{
-			ImGui::MenuItem("场景", nullptr, true);
-			ImGui::MenuItem("场景对象", nullptr, true);
-			ImGui::MenuItem("对象属性", nullptr, true);
-			ImGui::MenuItem("项目管理", nullptr, true);
+			ImGui::MenuItem("场景");
+			ImGui::MenuItem("场景对象");
+			ImGui::MenuItem("对象属性");
+			ImGui::MenuItem("项目管理");
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("添加"))
+		{
+			if (ImGui::BeginMenu("光源"))
+			{
+				if (ImGui::MenuItem("平行光"))
+				{
+					WantToAddDirLight = true;
+				}
+				if (ImGui::MenuItem("点光源"))
+				{
+					WantToAddPointLight = true;
+				}
+				if (ImGui::MenuItem("聚光"))
+				{
+					WantToAddSpotLight = true;
+				}
+				ImGui::EndMenu();
+			}
+			if (ImGui::BeginMenu("几何体"))
+			{
+				if (ImGui::MenuItem("立方体"))
+				{
+					WantToAddCube = true;
+				}
+				if (ImGui::MenuItem("球体"))
+				{
+					WantToAddSphere = true;
+				}
+				ImGui::EndMenu();
+			}
 			ImGui::EndMenu();
 		}
 
@@ -1109,6 +1148,42 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 	ImVec2 viewportSize = ImGui::GetContentRegionAvail();
 	ImGuizmo::SetRect(viewportPos.x, viewportPos.y,
 		viewportSize.x, viewportSize.y);
+
+	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere)
+	{
+		auto triBuffer = worldManager->GetTriBuffer();
+		auto rayOrigin = triBuffer->acquireReadBuffer()->position;
+		auto rayDirection = triBuffer->acquireReadBuffer()->direction;
+
+		auto result = worldManager->RayCast(rayOrigin, rayDirection);
+		glm::vec3 position = result.hit ? result.hitPoint : rayOrigin + rayDirection * 15.f;
+
+		if (WantToAddDirLight)
+		{
+			worldManager->AddLight(LightType::Directional, position);
+			WantToAddDirLight = false;
+		}
+		if (WantToAddPointLight)
+		{
+			worldManager->AddLight(LightType::Point, position);
+			WantToAddPointLight = false;
+		}
+		if (WantToAddSpotLight)
+		{
+			worldManager->AddLight(LightType::Spot, position);
+			WantToAddSpotLight = false;
+		}
+		if (WantToAddCube)
+		{
+			worldManager->AddGeometry(GeometryType::Cube, position);
+			WantToAddCube = false;
+		}
+		if (WantToAddSphere)
+		{
+			worldManager->AddGeometry(GeometryType::Sphere, position);
+			WantToAddSphere = false;
+		}
+	}
 
 	// 显示场景渲染
 	if (viewportSize.x > 0 && viewportSize.y > 0)

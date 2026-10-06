@@ -55,9 +55,6 @@
     <ClCompile Include="source\src\ParticleEmitterFactory.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\LightFactory.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="source\include\RenderProcess.h">
@@ -127,9 +124,6 @@
       <Filter>头文件\Factory</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h">
-      <Filter>头文件\Factory</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Factory\LightFactory.h">
       <Filter>头文件\Factory</Filter>
     </ClInclude>
   </ItemGroup>
