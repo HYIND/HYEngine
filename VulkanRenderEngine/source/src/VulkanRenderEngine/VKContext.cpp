@@ -467,3 +467,6 @@ void VKContext::NeedDescriptorPool()
 		_descriptorPool = descriptorPool;
 }
 
+SpinLock& VKContext::GetDescriptorPoolRequestMutex() {
+	return _descriptorPoolRequestMutex;
+}

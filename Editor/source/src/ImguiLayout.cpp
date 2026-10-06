@@ -47,6 +47,9 @@ static bool WantToAddSpotLight = false;
 static bool WantToAddCube = false;
 static bool WantToAddSphere = false;
 
+extern VkDevice g_Device;
+
+
 const char* GetOpName(ImGuizmo::OPERATION operation)
 {
 	// 注意：OPERATION 是位标志，需要按位检查
@@ -1206,10 +1209,14 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 		if (worldManager->GetVulkanRener()->GetWidth() != 0 && worldManager->GetVulkanRener()->GetHeight() != 0)
 		{
 			auto prevClear = [&]() {
-				for (auto& [view, textureId] : imguiRegisterTexture)
 				{
-					if (textureId != VK_NULL_HANDLE)
-						ImGui_ImplVulkan_RemoveTexture(textureId);
+					LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+					vkDeviceWaitIdle(g_Device);
+					for (auto& [view, textureId] : imguiRegisterTexture)
+					{
+						if (textureId != VK_NULL_HANDLE)
+							ImGui_ImplVulkan_RemoveTexture(textureId);
+					}
 				}
 				imguiRegisterTexture.clear();
 				};
@@ -1223,25 +1230,26 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				if (view == VK_NULL_HANDLE)
 					return;
 
-				VkDescriptorSet texureId;
+				VkDescriptorSet textureId;
 				auto it = imguiRegisterTexture.find(view);
 				if (it == imguiRegisterTexture.end())
 				{
-					texureId =
+					LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+					textureId =
 						ImGui_ImplVulkan_AddTexture(
 							view,
 							VK_IMAGE_LAYOUT_GENERAL
 						);
 
-					imguiRegisterTexture[view] = texureId;
+					imguiRegisterTexture[view] = textureId;
 				}
 				else
 				{
-					texureId = it->second;
+					textureId = it->second;
 				}
 
 				ImGui::Image(
-					(ImTextureID)texureId,
+					(ImTextureID)textureId,
 					viewportSize,
 					ImVec2(0, 0),
 					ImVec2(1, 1)

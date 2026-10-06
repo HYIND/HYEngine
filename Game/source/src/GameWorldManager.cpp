@@ -269,7 +269,7 @@ void CreateTestDustScene(World& world)
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(90.f);
 			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetFarPlane(800.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
@@ -334,8 +334,8 @@ void CreateTestDustScene(World& world)
 			auto& trans = cameraEntity.addComponent<Transform>();
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetNearPlane(0.1f);
+			cameracom.camera.SetFarPlane(800.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = character;
@@ -535,8 +535,8 @@ void CreateTestGameScene(World& world)
 			auto& trans = cameraEntity.addComponent<Transform>();
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetNearPlane(0.1f);
+			cameracom.camera.SetFarPlane(800.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = character;
@@ -857,8 +857,8 @@ void CreateTestSponzaScene(World& world)
 			trans.position = glm::vec3(-32.7, 3.8, 0.7);
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(350.f);
+			cameracom.camera.SetNearPlane(0.1f);
+			cameracom.camera.SetFarPlane(800.f);
 			cameracom.SetTransForm(trans);
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;

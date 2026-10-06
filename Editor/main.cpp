@@ -279,7 +279,12 @@ int ImGuiMain()
 	init_info.PipelineInfoMain.Subpass = 0;
 	init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 	init_info.CheckVkResultFn = check_vk_result;
-	ImGui_ImplVulkan_Init(&init_info);
+
+	{
+		LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+		ImGui_ImplVulkan_Init(&init_info);
+	}
 
 	ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
 	ImGuizmo::Enable(true);
@@ -348,7 +353,8 @@ int ImGuiMain()
 
 		bool minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
 
-		LockGuard guard1(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+		LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
 
 		// 渲染主窗口
 		if (!minimized) {

@@ -551,10 +551,11 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& at
 		if (!info || !info->light || !info->light->GetCastShadow())continue;
 		auto& light = info->light;
 		uint32_t cascadeLevel = light->GetCascadeLevel();
-		uint32_t maxSize = light->GetShadowMapSize();
+		uint32_t maxSize = std::max(1u, light->GetShadowMapSize());
+		uint32_t halfSize = std::max(1u, maxSize / 2);
 		for (uint32_t i = 0; i < cascadeLevel; i++)
 		{
-			uint32_t size = std::max(1u, uint32_t((float(cascadeLevel - i) / float(cascadeLevel)) * maxSize));
+			uint32_t size = std::max(halfSize, uint32_t((float(cascadeLevel - i) / float(cascadeLevel)) * maxSize));
 			uint32_t id;
 			if (atlas.AllocateSpace(size, size, id))
 				info->cascades.push_back({ id ,0 });

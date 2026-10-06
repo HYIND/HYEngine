@@ -2,17 +2,6 @@
 #include "VulkanRenderEngine/RenderPass/DepthFogPass.h"
 
 
-
-
-struct DepthFogParams
-{
-	glm::vec3 fogColor;
-	float fogHeight;
-	float fogDistanceFalloff;   // 距离衰减
-	float fogHeightFalloff;     // 高度衰减系数
-};
-
-
 DepthFogPass::DepthFogPass(const std::string& computeShaderPath)
 {
 	ComputePipelineConfig config;
@@ -43,17 +32,9 @@ void DepthFogPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderSt
 		return;
 
 	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
-	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(DepthFogParams));
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(RenderOption::DepthFogParams));
 
-	DepthFogParams params
-	{
-		.fogColor = state.option.depthFogParams.fogColor,
-		.fogHeight = state.option.depthFogParams.fogHeight,
-		.fogDistanceFalloff = state.option.depthFogParams.fogDistanceFalloff,
-		.fogHeightFalloff = state.option.depthFogParams.fogHeightFalloff
-	};
-
-	paramsUBO->WriteData(&params, sizeof(DepthFogParams));
+	paramsUBO->WriteData(&state.option.depthFogParams, sizeof(RenderOption::DepthFogParams));
 	binding.SetUniformBlock(paramsUBO, 0);
 }
 
