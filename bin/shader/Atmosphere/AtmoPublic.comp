@@ -43,9 +43,19 @@ vec3 MieCoefficient(float h)
     return sigma * rho_h;
 }
 
-float MiePhase(float cos_theta)
+float HenyeyGreenstein(float cos_theta, float g)
 {
-    float g = MieAnisotropy;
+    float g2 = g * g;
+
+    const float a = 1.0 / (4.0 * PI);
+    float b = 1 - g2;
+    float d = pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
+
+    return a * b / d;
+}
+
+float CornetteShanks(float cos_theta, float g)
+{
     float g2 = g * g;
 
     const float a = 3.0 / (8.0 * PI);
@@ -54,6 +64,12 @@ float MiePhase(float cos_theta)
     float d = pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
 
     return a * b * (c / d);
+}
+
+float MiePhase(float cos_theta)
+{
+    float g = MieAnisotropy;
+    return CornetteShanks(cos_theta, g);
 }
 
 vec3 Scattering(vec3 p, vec3 toLightDir, vec3 viewDir)
