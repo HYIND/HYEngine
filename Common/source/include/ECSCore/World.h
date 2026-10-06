@@ -147,6 +147,7 @@ public:	//Camera
 
 public:	// 异步Command流，在每轮循环前统一处理
 	std::future<void> SubmitCommand(std::function<void()> command);
+	std::future<void> SubmitCommand(std::function<void(World&)> command);
 	void ProcessCommands();
 
 private:

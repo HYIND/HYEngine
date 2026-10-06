@@ -247,6 +247,16 @@ std::future<void> World::SubmitCommand(std::function<void()> command)
 	return future;
 }
 
+std::future<void> World::SubmitCommand(std::function<void(World&)> command)
+{
+	std::promise<void> promise;
+	auto future = promise.get_future();
+	auto labdma = [this, command = std::move(command)]()-> void { command(*this); };
+	std::lock_guard<std::mutex> lock(m_commandMutex);
+	m_commandQueue.push({ std::move(labdma), std::move(promise) });
+	return future;
+}
+
 void World::ProcessCommands()
 {
 	if (m_commandQueue.empty())
