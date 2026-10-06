@@ -2,7 +2,6 @@
 
 #include "ECSCore/IComponent.h"
 
-struct TagLight :public IComponent {};
 struct TagSkyBox :public IComponent {};
 
 struct TagLightShowLight :public IComponent {};

@@ -171,6 +171,9 @@
     <ClInclude Include="source\include\Helper\Log.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\CommonData\LightFactory.h">
+      <Filter>头文件\CommonData</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp">
@@ -214,6 +217,9 @@
     </ClCompile>
     <ClCompile Include="source\src\Helper\DynamicFpsController.cpp">
       <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\CommonData\LightFactory.cpp">
+      <Filter>源文件\CommonData</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
