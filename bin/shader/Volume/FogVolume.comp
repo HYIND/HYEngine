@@ -7,6 +7,7 @@ layout (binding = 1) uniform FogParams
     float fogStartDistance;     // 雾起始距离
     float fogHeightFalloff;     // 高度衰减系数
     bool VolumeFogEnable;
+    float FogMaxOpacity;
 };
 
 
@@ -48,7 +49,6 @@ const float LightTransmittanceMinHeightSize = 20.0;
 
 vec3 LightVolumeTransmittance(vec3 p1, vec3 p2)
 {
-    // 光源到采样点的路径不使用相机侧的 FogStartDistance。
     return vec3(exp(-IntegrateFogOpticalDepth(p1, p2, 0.0)));
 }
 

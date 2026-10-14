@@ -49,9 +49,10 @@ struct alignas(16) ExponentialHeightFogShaderParams
 	float fogStartDistance;
 	float fogHeightFalloff;
 	uint32_t VolumeFogEnable;
+	float FogMaxOpacity;
 };
 
-static_assert(sizeof(ExponentialHeightFogShaderParams) == 32);
+static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
 
 void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
@@ -102,7 +103,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 		.fogStartHeight = fogOptions.fogStartHeight,
 		.fogStartDistance = fogOptions.fogStartDistance,
 		.fogHeightFalloff = fogOptions.fogHeightFalloff / 100.0f,
-		.VolumeFogEnable = volumeFogEnable
+		.VolumeFogEnable = volumeFogEnable,
+		.FogMaxOpacity = std::clamp(fogOptions.fogMaxOpacity, 0.0f, 1.0f)
 	};
 	auto fogParamsUBO = std::make_shared<UniformBlock>(sizeof(fogParams));
 	fogParamsUBO->WriteDataAsync(cmd, &fogParams, sizeof(fogParams));

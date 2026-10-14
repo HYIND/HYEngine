@@ -83,6 +83,7 @@ struct RenderOption
 		float fogStartDistance = 100.f;		// 雾起始距离
 		float fogHeightFalloff = 0.5;		// 高度衰减系数
 		bool volumeFogOn = false;
+		float fogMaxOpacity = 1.0f;			// 非体积高度雾的最大不透明度
 	} exponentialHeightFogParams;
 
 	struct AtmosphereParams {
