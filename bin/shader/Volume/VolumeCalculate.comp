@@ -63,7 +63,7 @@ bool InSpotShadow(SpotLight light, vec3 fragPos)
 }
 
 #include "shader/Volume/AtmoVolume.comp"
-#include "shader/Volume/LightVolume.comp"
+#include "shader/Volume/FogVolume.comp"
 
 void CalculateAtmoVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor)
 {
@@ -133,7 +133,7 @@ void main()
         if (ExponentialHeightFogEnable && !VolumeFogEnable)
         {
             float fogFactor = 1.0 - exp(-GetFogExtinction(camera.position, worldPos));
-            result = mix(result, fogAlbedo, clamp(fogFactor, 0.0, 1.0));
+            result = mix(result, fogAlbedo, clamp(fogFactor, 0.0, FogMaxOpacity));
         }
     }
     else 
@@ -158,11 +158,15 @@ void main()
         {
             vec3 farPos = camera.position + vireDir * camera.farPlane;
             float T_far = exp(-GetFogExtinction(farPos, farPos + vireDir * MAX_DISTANCE));
-            farResult = mix(fogAlbedo, fragColor, clamp(T_far, 0.0, 1.0));
+            float farTransmittance = clamp(T_far, 0.0, 1.0);
+            if (!VolumeFogEnable)
+                farTransmittance = max(farTransmittance, 1.0 - FogMaxOpacity);
+            farResult = mix(fogAlbedo, fragColor, farTransmittance);
             if (!VolumeFogEnable)
             {
                 float T_view = exp(-GetFogExtinction(camera.position, farPos + vireDir * MAX_DISTANCE));
-                farResult = mix(fogAlbedo, fragColor, clamp(T_view, 0.0, 1.0));
+                float viewTransmittance = max(clamp(T_view, 0.0, 1.0), 1.0 - FogMaxOpacity);
+                farResult = mix(fogAlbedo, fragColor, viewTransmittance);
             }
         }
 
