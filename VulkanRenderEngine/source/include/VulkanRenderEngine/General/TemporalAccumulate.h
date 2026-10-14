@@ -12,7 +12,7 @@ public:
 	};
 
 public:
-	TemporalAccumulate(const std::string& temporalAccumulateShaderPath);
+	TemporalAccumulate(const std::string& temporalAccumulateShaderPath = "shader/Temporal/TemporalAccumulate.comp");
 
 	void Execute(
 		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,

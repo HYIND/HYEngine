@@ -17,8 +17,6 @@ public:
 		const std::string& anyHitPath,
 		const std::string& intersectionPath,
 		const std::string& callablePath,
-		const std::string& spatialDenoisingComputerShaderPath,
-		const std::string& temporalAccumulateComputerShaderPath,
 		const std::string& scaleComputerShaderPath
 	);
 	~RTCoreRayTraceReflectPass();

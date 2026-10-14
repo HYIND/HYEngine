@@ -26,15 +26,11 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 	const std::string& anyHitPath,
 	const std::string& intersectionPath,
 	const std::string& callablePath,
-	const std::string& atrousComputerShaderPath,
-	const std::string& temporalAccumulateComputerShaderPath,
 	const std::string& scaleComputerShaderPath
 )
 	:
 	_firstDrawTemporal(true),
-	_enable(false),
-	_temporalAccumulate(temporalAccumulateComputerShaderPath),
-	_spatialDenoisingFilter(atrousComputerShaderPath)
+	_enable(false)
 {
 
 	{

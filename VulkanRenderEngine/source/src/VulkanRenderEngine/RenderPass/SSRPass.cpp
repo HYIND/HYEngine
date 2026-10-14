@@ -22,16 +22,10 @@ struct SSRParams
 };
 
 
-SSRPass::SSRPass(
-	const std::string& computerShaderPath,
-	const std::string& atrousComputerShaderPath,
-	const std::string& temporalAccumulateComputerShaderPath
-)
+SSRPass::SSRPass(const std::string& computerShaderPath)
 	:
 	_firstDrawTemporal(true),
-	_enable(false),
-	_temporalAccumulate(temporalAccumulateComputerShaderPath),
-	_spatialDenoisingFilter(atrousComputerShaderPath)
+	_enable(false)
 {
 
 	{

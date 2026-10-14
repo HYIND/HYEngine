@@ -9,12 +9,7 @@
 class RayTraceGIPass :public RenderPassBase
 {
 public:
-	RayTraceGIPass(
-		const std::string& rayTraceComputerShaderPath,
-		const std::string& atrousComputerShaderPath,
-		const std::string& temporalAccumulateComputerShaderPath,
-		const std::string& scaleComputerShaderPath
-	);
+	RayTraceGIPass(const std::string& rayTraceComputerShaderPath, const std::string& scaleComputerShaderPath);
 	~RayTraceGIPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);

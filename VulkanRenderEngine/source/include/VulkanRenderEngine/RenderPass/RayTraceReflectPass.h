@@ -11,8 +11,6 @@ class RayTraceReflectPass :public RenderPassBase
 public:
 	RayTraceReflectPass(
 		const std::string& rayTraceComputerShaderPath,
-		const std::string& atrousComputerShaderPath,
-		const std::string& temporalAccumulateComputerShaderPath,
 		const std::string& scaleComputerShaderPath
 	);
 	~RayTraceReflectPass();
