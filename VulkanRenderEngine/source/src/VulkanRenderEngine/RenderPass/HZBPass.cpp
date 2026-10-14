@@ -89,8 +89,7 @@ HZBPass::HZBPass(
 		config.computePath = HZBComputerShaderPath;
 
 		config
-			.AddStorageVariableImageArray(0, 16)
-			.AddStorageVariableImageArray(1, 16)
+			.AddStorageVariableImageArray(0, 32)
 			.AddPushConstant(sizeof(LevelData));
 
 		if (config.Validate())
@@ -322,13 +321,11 @@ void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Re
 	auto height = depthMap->GetHeight();
 
 	std::vector<BindingRecord::StorageImageEntry> entrys;
-	std::vector<BindingRecord::StorageImageEntry> minEntrys;
-	entrys.reserve(_maxLevel);
-	minEntrys.reserve(_maxLevel);
+	entrys.reserve(_maxLevel * 2);
 	for (uint32_t level = 0; level < _maxLevel; level++)
 	{
 		entrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
-		minEntrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMinMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
+		entrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMinMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
 	}
 
 	LevelData data;
@@ -336,7 +333,6 @@ void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Re
 	ComputeBindingRecord HZBShaderBinding;
 
 	HZBShaderBinding.SetStorageImageArray(entrys, 0);
-	HZBShaderBinding.SetStorageImageArray(minEntrys, 1);
 	_HZBShader->Bind(cmd, HZBShaderBinding);
 
 	for (uint32_t level = 1; level < _maxLevel; level++) {

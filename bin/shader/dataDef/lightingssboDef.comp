@@ -8,6 +8,7 @@ struct DirLight {
 	bool castShadow;
 	int cascadeFirst;
 	int cascadeCount;
+	float volumetricScatteringIntensity;
 };
 
 struct DirLightCascade
@@ -30,6 +31,7 @@ struct PointLight {
 	bool castShadow;
 	float cdIntensity;
 	float radius;
+	float volumetricScatteringIntensity;
 };
 
 struct SpotLight {
@@ -49,6 +51,7 @@ struct SpotLight {
 	int atlasY;
 	int atlasWidth;
 	int atlasHeight;
+	float volumetricScatteringIntensity;
 
 	mat4 lightSpaceMatrix;
 };

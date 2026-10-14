@@ -79,6 +79,16 @@ bool Light::GetCastShadow() const
 	return _castShadow;
 }
 
+void Light::SetVolumetricScatteringIntensity(float value)
+{
+	_volumetricScatteringIntensity = std::max(value, 0.0f);
+}
+
+float Light::GetVolumetricScatteringIntensity() const
+{
+	return _volumetricScatteringIntensity;
+}
+
 DirLight::~DirLight()				// 析构函数
 {
 }

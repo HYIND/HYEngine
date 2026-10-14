@@ -180,6 +180,7 @@
     <ClInclude Include="source\include\Helper\DynamicPacker.h" />
     <ClInclude Include="source\include\Helper\FileIO.h" />
     <ClInclude Include="source\include\Helper\Log.h" />
+    <ClInclude Include="source\include\Helper\SharedObjectPool.h" />
     <ClInclude Include="source\include\Helper\Tools.h" />
     <ClInclude Include="source\include\Helper\TripleBuffer.h" />
     <ClInclude Include="source\include\Systems\DestroySystem.h" />
