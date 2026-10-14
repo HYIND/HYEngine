@@ -108,7 +108,7 @@ vk::Result VKTimelineSemaphore::Create(VKCore::VulkanDevice* device, const uint6
 	vk::SemaphoreTypeCreateInfo typeInfo;
 	typeInfo
 		.setSemaphoreType(vk::SemaphoreType::eTimeline)
-		.setInitialValue(0);
+		.setInitialValue(initialValue);
 
 	vk::SemaphoreCreateInfo createInfo;
 	createInfo.setPNext(&typeInfo);

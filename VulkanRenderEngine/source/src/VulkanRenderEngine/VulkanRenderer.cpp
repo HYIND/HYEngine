@@ -17,12 +17,12 @@
 #include "VulkanRenderEngine/RenderPass/RayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGIPass.h"
-#include "VulkanRenderEngine/RenderPass/DepthFogPass.h"
 #include "VulkanRenderEngine/RenderPass/AutoExposurePass.h"
 #include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
-#include "VulkanRenderEngine/RenderPass/AtmospherePass.h"
+#include "VulkanRenderEngine/RenderPass/AtmospherePreCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
@@ -258,7 +258,7 @@ void VulkanRenderer::InitForWindow(uint32_t width, uint32_t height)
 
 	_imageAcquiredSemaphores.clear();
 	_renderFinishedSemaphores.clear();
-	for (int i = 0; i < _vulkanSwapchain->GetSwapchainImageCount(); i++)
+	for (uint32_t i = 0; i < _vulkanSwapchain->GetSwapchainImageCount(); i++)
 	{
 		_imageAcquiredSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
 		_renderFinishedSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
@@ -625,9 +625,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto atmospherePass = std::make_unique<AtmospherePass>("shader/Atmosphere/Atmosphere.comp");
-
-	auto depthFogPass = std::make_unique<DepthFogPass>("shader/postprocess/depthFog.comp");
+	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeCalculate.comp");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
@@ -691,8 +689,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	transprantFence->After(opaqueFence);
 
 	// 后处理
-	auto depthFogNode = _sceneRenderGraph->AddNode("depthFogNode");
-	auto atmosphereNode = _sceneRenderGraph->AddNode("atmosphereNode");
+	auto volumeCalculateNode = _sceneRenderGraph->AddNode("volumeCalculateNode");
 	auto postProcessFence = _sceneRenderGraph->AddFence("postProcessFence");
 	postProcessFence->After(transprantFence);
 
@@ -908,21 +905,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.After(opaqueFence, effectPass)
 	//	.Before(transprantFence);
 
-	atmosphereNode->SetRenderPass(std::move(atmospherePass))
+	volumeCalculateNode->SetRenderPass(std::move(volumeCalculatePass))
 		.Input(
 			ResourceData{ atlasShadowMap, computeReadLayout },
 			ResourceData{ gPosition, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "atmosphereNode_TempColor"), {} })
-		.Before(postProcessFence)
-		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
-
-	depthFogNode->SetRenderPass(std::move(depthFogPass))
-		.After(atmosphereNode, opaqueFence, transprantFence)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "depthFogPass_TempColor"), {} })
+		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempColor"), {} })
 		.Before(postProcessFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -933,7 +923,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	_sceneRenderGraph->Compile();
 }
 
-void VulkanRenderer::DrawOffScreen(std::shared_ptr<FrameData> data)
+void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 {
 	if (!data)
 		return;

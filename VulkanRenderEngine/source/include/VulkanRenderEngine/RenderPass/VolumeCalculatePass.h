@@ -1,17 +1,15 @@
 #pragma once
 
-#include "glm\glm.hpp"
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
-#include "VulkanRenderEngine/General/RenderItem.h"
-#include "VulkanRenderEngine/General/RenderState.h"
-#include "VulkanRenderEngine/Base/DynamicBlock.h"
 #include "RenderPassBase.h"
+#include "AtmospherePreCalculatePass.h"
 
-class DepthFogPass :public RenderPassBase
+class VolumeCalculatePass :public RenderPassBase
 {
+
 public:
-	DepthFogPass(const std::string& computeShaderPath);
-	virtual ~DepthFogPass() = default;
+	VolumeCalculatePass(const std::string& computeShaderPath);
+	virtual ~VolumeCalculatePass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);

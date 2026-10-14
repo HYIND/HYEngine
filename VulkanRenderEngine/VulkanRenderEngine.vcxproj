@@ -185,11 +185,10 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\TexturePool.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderOption.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AutoExposurePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\BloomPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CombinPass.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DepthFogPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EffectPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\FirstPersonPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\GeometryPass.h" />
@@ -211,6 +210,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSGIPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSRPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\TransparentPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\VolumeCalculatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\SharedTexture.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKCore\CoreGeneral.h" />
@@ -278,11 +278,10 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CombinPass.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DepthFogPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GeometryPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\HZBPass.cpp" />
@@ -300,6 +299,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\VolumeCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\SharedTexture.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKContext.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKCore\CoreGeneral.cpp" />
