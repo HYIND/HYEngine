@@ -473,9 +473,9 @@ void Graph::CleanGraphIdleResource()
 }
 
 void Graph::FilghtSync::WaitForNextProgress() {
+	++curProgress;
 	if (preFrameTimeLine)
-		preFrameTimeLine->Wait(curProgress + 1);
-	curProgress++;
+		preFrameTimeLine->Wait(curProgress);
 }
 
 void Graph::FilghtSync::SignalDoneProgress() {

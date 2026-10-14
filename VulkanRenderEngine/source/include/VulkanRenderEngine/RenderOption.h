@@ -76,13 +76,14 @@ struct RenderOption
 		uint32_t filterCount = 5;
 	} ssgiTraceParams;
 
-	struct alignas(16) DepthFogParams {
-		glm::vec3 fogColor = glm::vec3(0.25, 0.3, 0.6);
-		float globalDensity = 0.01;			// 全局雾浓度
+	struct alignas(16) ExponentialHeightFogParams {
+		glm::vec3 fogColor = glm::vec3(0.8, 0.8, 0.8);
+		float globalDensity = 0.02;			// 全局雾浓度
 		float fogStartHeight = -45.f;       // 雾起始高度
 		float fogStartDistance = 100.f;		// 雾起始距离
-		float fogHeightFalloff = 0.05;		// 高度衰减系数
-	} depthFogParams;
+		float fogHeightFalloff = 0.5;		// 高度衰减系数
+		bool volumeFogOn = false;
+	} exponentialHeightFogParams;
 
 	struct AtmosphereParams {
 		glm::vec3 CubeCapturePosition = glm::vec3(0, 500, 0);
@@ -116,7 +117,7 @@ struct RenderOption
 		bool ssrOn = false;
 		bool ssgiOn = false;
 		bool skyboxOn = true;
-		bool depthFogOn = false;
+		bool exponentialHeightFogOn = false;
 		bool atmosphereOn = true;
 		bool rayTraceReflectOn = false;
 		bool rayTraceGIOn = false;

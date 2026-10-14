@@ -1,5 +1,5 @@
 
-layout (binding = 0) uniform Params
+layout (binding = 0) uniform AtmoParams
 {
     vec3 DirLightColor;
     vec3 DirLightDir;
@@ -66,10 +66,19 @@ float CornetteShanks(float cos_theta, float g)
     return a * b * (c / d);
 }
 
+float MiePhase_HenyeyGreenstein(float cos_theta, float g)
+{
+    return HenyeyGreenstein(cos_theta, g);
+}
+
+float MiePhase_CornetteShanks(float cos_theta, float g)
+{
+    return CornetteShanks(cos_theta, g);
+}
+
 float MiePhase(float cos_theta)
 {
-    float g = MieAnisotropy;
-    return CornetteShanks(cos_theta, g);
+    return MiePhase_CornetteShanks(cos_theta, MieAnisotropy);
 }
 
 vec3 Scattering(vec3 p, vec3 toLightDir, vec3 viewDir)

@@ -60,17 +60,3 @@ private:
 
 	std::shared_ptr<Atmo::AtmosphereParams> _lastParams;
 };
-
-class AtmospherePass :public RenderPassBase
-{
-
-public:
-	AtmospherePass(const std::string& computeShaderPath);
-	virtual ~AtmospherePass() = default;
-	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
-
-private:
-	ComputePipeline _shader;
-};

@@ -228,9 +228,6 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CombinPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DepthFogPass.h">
-      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EffectPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
@@ -336,7 +333,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePass.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousBilateralFilter.h">
@@ -353,6 +350,9 @@
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureGeneralDef.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\VolumeCalculatePass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -542,9 +542,6 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RayTraceReflectPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DepthFogPass.cpp">
-      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
@@ -575,7 +572,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphContext.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePass.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousBilateralFilter.cpp">
@@ -592,6 +589,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\VolumeCalculatePass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

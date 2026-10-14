@@ -22,7 +22,7 @@ float DirLightShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2
 float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
 
 float DirLightFastShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize);
-float PointLightFastShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
+float PointLightFastShadowCalculation(vec3 cameraPos, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
 
 //lightingWithoutShadow
 vec3 CalcDirLightWithoutShadow(DirLight light, vec3 normal, vec3 viewDir, PBRProperties prop);
@@ -238,7 +238,7 @@ float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fra
     return 1.0f - shadow / float(sumsamplecount);
 }
 
-float PointLightFastShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
+float PointLightFastShadowCalculation(vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
 {
 	vec3 lightToFrag = fragPos - lightPos;
     float currentDepth = length(fragPos - lightPos);
@@ -412,19 +412,24 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
 		shadow = clamp(shadow, 0.f, 1.f);
 	}
 
+#ifdef Virtual_Ambient_Enable
 	float linera_radius = light.radius * linera_radius_factor;
     float attenuation = dist <= linera_radius ?
 						1.0 / (dist * dist + 1) 
 						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
     vec3 radiance = light.color * light.cdIntensity * attenuation;
 	if (shadow >= 1.0f)
-	{
-#ifdef Virtual_Ambient_Enable
 		return vec3(0.015) * radiance * prop.albedo * prop.ambientOcclusion;
 #else
+	if (shadow >= 1.0f)
 		return vec3(0.f);
+
+	float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+    vec3 radiance = light.color * light.cdIntensity * attenuation;	
 #endif 
-	}
 
 	float NdotL;
 	vec3 diffuse = vec3(0.0);

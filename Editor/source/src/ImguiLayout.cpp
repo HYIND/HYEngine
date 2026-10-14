@@ -1474,7 +1474,7 @@ static bool PropertiesHelper::DrawData(RenderOption& option)
 	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessParams", option.postProcessParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("AtmosphereParams", option.atmosphereParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSAOParams", option.ssaoParams);
-	anyChange |= PropertiesHelper::DrawWithTitle("DepthFogParams", option.depthFogParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("ExponentialHeightFog", option.exponentialHeightFogParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGeneralParams", option.rayTraceGeneralParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceReflectParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);

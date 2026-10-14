@@ -116,7 +116,7 @@ private:
 		std::shared_ptr<ThreadPool::SubmitHandle<void>> handle;
 	};
 
-	void DrawOffScreen(std::shared_ptr<FrameData> data);
+	void DrawOffScreen(const std::shared_ptr<FrameData>& data);
 
 	void PresentImage(std::shared_ptr<FrameData>& data);
 

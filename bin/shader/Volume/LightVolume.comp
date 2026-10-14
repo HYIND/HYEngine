@@ -1,0 +1,197 @@
+
+layout (binding = 1) uniform FogParams
+{
+    vec3 fogAlbedo;
+    float globalDensity;        // 全局雾浓度
+    float fogStartHeight;       // 雾起始高度
+    float fogStartDistance;     // 雾起始距离
+    float fogHeightFalloff;     // 高度衰减系数
+    bool VolumeFogEnable;
+};
+
+
+float IntegrateFogOpticalDepth(vec3 startPos, vec3 endPos, float startOffset)
+{
+    float rayLength = distance(startPos, endPos);
+    if (rayLength <= 0.0)
+        return 0.0;
+
+    vec3 rayDir = normalize(endPos - startPos); 
+	float startDistance = clamp(startOffset, 0.0, rayLength);
+	vec3 rayStart = startPos + rayDir * startDistance;
+	rayLength -= startDistance;
+	if (rayLength <= 0.0)
+		return 0.0;
+
+    float densityAtStart = max(globalDensity, 0.0) * exp(clamp(-fogHeightFalloff * (rayStart.y - fogStartHeight), -80.0, 80.0));
+    float exponent = fogHeightFalloff * rayDir.y;
+    float opticalDepth;
+
+    if (abs(exponent) < 1e-5)
+    {
+        opticalDepth = densityAtStart * rayLength;
+    }
+    else
+    {
+        opticalDepth = densityAtStart * (1.0 - exp(-exponent * rayLength)) / exponent;
+    }
+
+    return opticalDepth;
+}
+
+float GetFogExtinction(vec3 startPos, vec3 endPos)
+{
+    return IntegrateFogOpticalDepth(startPos, endPos, fogStartDistance);
+}
+
+const float LightTransmittanceMinHeightSize = 20.0;
+
+vec3 LightVolumeTransmittance(vec3 p1, vec3 p2)
+{
+    // 光源到采样点的路径不使用相机侧的 FogStartDistance。
+    return vec3(exp(-IntegrateFogOpticalDepth(p1, p2, 0.0)));
+}
+
+float GetFogDensity(vec3 p)
+{
+    float exponent = clamp(-fogHeightFalloff * (p.y - fogStartHeight), -80.0, 80.0);
+    return max(globalDensity, 0.0) * exp(exponent);
+}
+
+vec3 LightVolumeScattering(vec3 p, vec3 toLightDir, vec3 viewDir)
+{
+    float cos_theta = dot(toLightDir, viewDir);
+
+    float phase = MiePhase_HenyeyGreenstein(cos_theta, 0.2);
+
+    float density = GetFogDensity(p);
+
+    return fogAlbedo * density * phase;
+}   
+
+vec3 CalcDirLightEffect(DirLight light, vec3 testPoint, vec3 viewDir)
+{
+    if (InDirShadow(light, testPoint))
+        return vec3(0.f);
+
+    vec3 toLightDir = -light.direction;
+    // vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, testPoint + toLightDir * 1e4);          // 光源到采样点之间的透光率
+    vec3 tramsmittanceLightToTest = vec3(1.0);
+    vec3 scattering = LightVolumeScattering(testPoint, toLightDir, viewDir);                                    // 散射光比例
+
+    return tramsmittanceLightToTest * scattering * light.color * light.luxIntensity;
+}
+
+vec3 CalcPointLightEffect(PointLight light, vec3 testPoint, vec3 viewDir)
+{
+	float dist = length(light.position - testPoint);
+    if(dist >= light.radius)
+		return vec3(0.f);
+
+    if (InPointShadow(light, testPoint))
+        return vec3(0.f);
+
+	float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+    vec3 radiance = light.color * light.cdIntensity * attenuation;
+
+    vec3 toLightDir = normalize(light.position - testPoint);
+    vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, light.position);    // 光源到采样点之间的透光率
+    vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                     // 散射光比例
+
+    return tramsmittanceLightToTest * scattering * radiance;
+}
+
+vec3 CalcSpotLightEffect(SpotLight light, vec3 testPoint, vec3 viewDir)
+{
+	float dist = length(light.position - testPoint);
+    if(dist >= light.radius)
+		return vec3(0.f);
+
+    if (InSpotShadow(light, testPoint))
+        return vec3(0.f);
+
+	float intensity = 1.0f;
+	float outerCutOff = min(light.cutOff ,light.outerCutOff);
+	vec3 lightDir = normalize(testPoint - light.position);
+
+	float theta = dot(lightDir, normalize(light.direction));
+	if(theta < outerCutOff)
+	{
+		return vec3(0.f);
+	}
+	else if (theta < light.cutOff)
+	{
+		float epsilon  = light.cutOff - outerCutOff;
+		intensity = clamp((theta - outerCutOff) / epsilon, 0.0f, 1.0f); 
+	}
+
+  	float linera_radius = light.radius * linera_radius_factor;
+    float attenuation = dist <= linera_radius ?
+						1.0 / (dist * dist + 1) 
+						: mix(1.0 / (linera_radius_factor2 * light.radius * light.radius + 1), 0.0, (dist - linera_radius) / (one_minus_linera_radius_factor * light.radius));
+	vec3 radiance = light.color * light.cdIntensity * attenuation;
+
+    vec3 toLightDir = normalize(light.position - testPoint);
+    vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, light.position);    // 光源到采样点之间的透光率
+    vec3 scattering = LightVolumeScattering(testPoint, toLightDir, viewDir);                     // 散射光比例
+
+    return tramsmittanceLightToTest * scattering * radiance;
+}
+
+vec3 CalcLightEffect(vec3 testPoint, vec3 viewDir){
+    vec3 dirColor = vec3(0);
+    vec3 pointColor = vec3(0);
+    vec3 spotColor = vec3(0);
+    for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
+        dirColor += CalcDirLightEffect(dirLightMetaData.info[i], testPoint, viewDir);
+    for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
+        pointColor += CalcPointLightEffect(pointLightMetaData.info[i], testPoint, viewDir);
+    for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
+        spotColor += CalcSpotLightEffect(spotLightMetaData.info[i], testPoint, viewDir);
+    return dirColor + pointColor + spotColor;
+}
+
+const float LightScatterMinStpeSize = 0.1;
+
+void LightSingleScatterToFrag(vec3 startPos, vec3 targetPos,
+                            inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor)
+{
+    vec3 viewDir = normalize(targetPos - startPos);
+
+    float dstToTarget = distance(startPos, targetPos);
+    if (dstToTarget <= fogStartDistance)
+    {
+        atomTramsmittanceFragToCam = vec3(1.0);
+        return;
+    }
+
+    uint sampleCount = max(1u, min(uint(ceil(dstToTarget / LightScatterMinStpeSize)), ScatterPathSampleCount));
+    // float stepSize = dstToTarget / float(sampleCount);
+    
+    float nearDistance = max(min(0.1, dstToTarget), min(max(fogStartDistance, 0.0), dstToTarget));
+    float farDistance = dstToTarget;
+
+    for (uint i = 0; i < sampleCount; i++) {
+
+        float t0 = float(i) / float(sampleCount);
+        float t1 = float(i + 1) / float(sampleCount);
+
+		float d0 = nearDistance * pow(farDistance / nearDistance, t0);
+		float d1 = nearDistance * pow(farDistance / nearDistance, t1);
+
+        float d = (d0 + d1) / 2.0;
+
+        float segmentLength = d1 - d0;
+        vec3 testPoint = startPos + viewDir * d;
+
+        vec3 lightScatteringColor = CalcLightEffect(testPoint, viewDir);
+        vec3 viewTransmittance = vec3(exp(-GetFogExtinction(startPos, testPoint)));
+        vec3 inScattering = viewTransmittance * lightScatteringColor * segmentLength;    // 采样点的光照计算
+        scatterColor += inScattering;
+    }
+
+    atomTramsmittanceFragToCam = vec3(exp(-GetFogExtinction(startPos, targetPos)));
+}
