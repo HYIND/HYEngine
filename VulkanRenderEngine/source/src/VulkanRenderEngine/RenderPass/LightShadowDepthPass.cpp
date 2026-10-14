@@ -13,6 +13,7 @@ struct alignas(16) DirLightMetaInfo {
 	uint32_t castShadow;
 	int cascadeFirst;
 	int cascadeCount;
+	float volumetricScatteringIntensity;
 };
 
 struct alignas(16) DirLightCascadeInfo {
@@ -40,6 +41,7 @@ struct SpotLightMetaInfo {
 	int atlasY;
 	int atlasWidth;
 	int atlasHeight;
+	float volumetricScatteringIntensity;
 
 	alignas(16) glm::mat4 lightSpaceMatrix;
 };
@@ -52,6 +54,7 @@ struct alignas(16) PointLightMetaInfo {
 	uint32_t castShadow;
 	float cdIntensity;
 	float radius;
+	float volumetricScatteringIntensity;
 };
 
 static bool GetCubeViewPorts(std::array<DynamicViewport, 6>& viewports, const std::shared_ptr<PointLightInfo>& info, const AtlasMap& atlasShadowMap)
@@ -104,6 +107,7 @@ static void SetupDirLightData(
 		metainfo.color = light->GetColor();
 
 		metainfo.luxIntensity = light->GetIntensity();
+		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 
 		metainfo.castShadow = info->light->GetCastShadow() || !info->cascades.empty();
 		if (metainfo.castShadow)
@@ -181,6 +185,7 @@ static void SetupPointLightData(
 		metainfo.castShadow = castShadow;
 		metainfo.cdIntensity = light->GetIntensity();
 		metainfo.radius = light->GetRadius();
+		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 		for (int i = 0; i < 6; i++)
 		{
 			auto& viewport = viewports[i];
@@ -226,6 +231,7 @@ static void SetupSpotLightData(
 		metainfo.outerCutOff = glm::cos(glm::radians(light->GetOuterCutOffAngle()));
 		metainfo.lightSpaceMatrix = light->GetLightSpaceMatrix();
 		metainfo.radius = light->GetRadius();
+		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 		metainfo.atlasX = rect.x;
 		metainfo.atlasY = rect.y;
 		metainfo.atlasWidth = rect.width;

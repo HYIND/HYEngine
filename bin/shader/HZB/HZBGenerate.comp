@@ -10,18 +10,19 @@
 
 layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
 
-layout(set = 0, binding = 0, r32f) uniform image2D mipMapDepthMap[16];
-layout(set = 0, binding = 1, r32f) uniform image2D mipMapMinDepthMap[16];
+layout(binding = 0, r32f) uniform image2D mipMapMaxAndMinDepthMap[32];
 
 layout(push_constant) uniform PushConsts {
     uint inputLevel;
-    uint outPutLevel;
+    uint outputLevel;
 };
 
 void main() 
 {
-    ivec2 inputSize = imageSize(mipMapDepthMap[inputLevel]);
-    ivec2 outPutSize = imageSize(mipMapDepthMap[outPutLevel]);
+    uint inputIndex = 2 * inputLevel;
+    uint outputIndex = 2 * outputLevel;
+    ivec2 inputSize = imageSize(mipMapMaxAndMinDepthMap[inputIndex]);
+    ivec2 outPutSize = imageSize(mipMapMaxAndMinDepthMap[outputIndex]);
     
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
     if (pixelCoord.x >= outPutSize.x || pixelCoord.y >= outPutSize.y) {
@@ -39,12 +40,12 @@ void main()
     for (int y = 0; y < samplerCountY; y++) {
         for (int x = 0; x < samplerCountX; x++) {
             ivec2 sampleCoord = inCoord + ivec2(x, y);
-            float maxSample = imageLoad(mipMapDepthMap[inputLevel], sampleCoord).r;
-            float minSample = imageLoad(mipMapMinDepthMap[inputLevel], sampleCoord).r;
+            float maxSample = imageLoad(mipMapMaxAndMinDepthMap[inputIndex], sampleCoord).r;
+            float minSample = imageLoad(mipMapMaxAndMinDepthMap[inputIndex + 1], sampleCoord).r;
             maxDepth = max(maxDepth, maxSample);
             minDepth = min(minDepth, minSample);
         }
     }
-    imageStore(mipMapDepthMap[outPutLevel], pixelCoord, vec4(maxDepth));
-    imageStore(mipMapMinDepthMap[outPutLevel], pixelCoord, vec4(minDepth));
+    imageStore(mipMapMaxAndMinDepthMap[outputIndex], pixelCoord, vec4(maxDepth));
+    imageStore(mipMapMaxAndMinDepthMap[outputIndex + 1], pixelCoord, vec4(minDepth));
 }

@@ -5,6 +5,8 @@
 #include "RenderEngine/RenderFrameManager.h"
 #include "RenderEngine/Renderer.h"
 #include "SpinLock.h"
+#include "Helper/SharedObjectPool.h"
+#include "VulkanRenderEngine/Base/Light.h"
 
 struct Line2
 {
@@ -48,7 +50,7 @@ private:
 	std::vector<Line2> _DebugLines;
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> _triBuffer;
 	std::shared_ptr<VulkanRenderer> _render;
-	ThreadPool _pool;
+	ThreadPool _threadPool;
 	SpinLock _GL_SpinLock;
 	SpinLock _D2D_SpinLock;
 };

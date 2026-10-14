@@ -7,7 +7,8 @@
 using namespace Render;
 
 RenderSystem::RenderSystem()
-	:_pool(0)
+	:
+	_threadPool(0)
 {
 }
 
@@ -32,27 +33,27 @@ void RenderSystem::postUpdate(float deltaTime)
 	if (!bufferframe)
 		return;
 
-	if (!_pool.running())
-		_pool.start();
+	if (!_threadPool.running())
+		_threadPool.start();
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> tasks;
 
-	tasks.push_back(std::move(_pool.submit([&] {processSprite(bufferframe); })));
-	tasks.push_back(std::move(_pool.submit([&] {processGIFAnimation(bufferframe); })));
-	tasks.push_back(std::move(_pool.submit([&] {processDebugLines(bufferframe); })));
+	tasks.push_back(std::move(_threadPool.submit([&] {processSprite(bufferframe); })));
+	tasks.push_back(std::move(_threadPool.submit([&] {processGIFAnimation(bufferframe); })));
+	tasks.push_back(std::move(_threadPool.submit([&] {processDebugLines(bufferframe); })));
 
 	auto entities = m_world->getEntitiesWith<TagMainCamera, Transform, CameraComponent>();
 	if (!entities.empty())
 	{
 		Entity maincamera = entities[0];
 
-		tasks.push_back(_pool.submit([&] {processModel(bufferframe, maincamera); }));
-		tasks.push_back(_pool.submit([&] {processLight(bufferframe, maincamera); }));
-		tasks.push_back(_pool.submit([&] {processParticle(bufferframe, maincamera); }));
-		tasks.push_back(_pool.submit([&] {processLaserBeam(bufferframe, maincamera); }));
-		//tasks.push_back(_pool.submit([&] {processFirstPersonVisual(bufferframe, maincamera); }));
-		tasks.push_back(_pool.submit([&] {processSkybox(bufferframe, maincamera); }));
-		tasks.push_back(_pool.submit([&] {SyncGLCamera(render, bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {processModel(bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {processLight(bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {processParticle(bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {processLaserBeam(bufferframe, maincamera); }));
+		//tasks.push_back(_threadPool.submit([&] {processFirstPersonVisual(bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {processSkybox(bufferframe, maincamera); }));
+		tasks.push_back(_threadPool.submit([&] {SyncGLCamera(render, bufferframe, maincamera); }));
 	}
 
 	for (auto& task : tasks)
@@ -308,6 +309,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light->SetCascadeLevel(data->cascadeLevel);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -329,6 +331,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light = std::make_shared<PointLight>(position, data->color, data->cdIntensity);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -350,6 +353,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light = std::make_shared<SpotLight>(position, direction, data->cutOffAngle, data->outercutOffAngle, data->color, data->cdIntensity);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();

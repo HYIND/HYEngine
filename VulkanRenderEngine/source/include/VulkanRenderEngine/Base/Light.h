@@ -19,6 +19,7 @@ public:
 	void SetShadowMapSize(uint32_t w);
 
 	void SetCastShadow(bool value);
+	void SetVolumetricScatteringIntensity(float value);
 
 public:
 	glm::vec3 GetColor() const;
@@ -26,11 +27,13 @@ public:
 	uint32_t GetShadowMapSize() const;
 
 	bool GetCastShadow() const;
+	float GetVolumetricScatteringIntensity() const;
 
 protected:
 	glm::vec3 _color = glm::vec3(1.0f);
 	uint32_t _shadowMapSize = __default_shadow_side;
 	bool _castShadow = true;
+	float _volumetricScatteringIntensity = 1.0f;
 };
 
 class DirLight :public Light

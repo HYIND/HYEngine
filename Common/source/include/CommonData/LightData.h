@@ -13,6 +13,7 @@ struct DirectionalLightData
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float luxIntensity = 3.5f;
+	float volumetricScatteringIntensity = 1.0f;
 
 	// 阴影参数
 	bool castShadow = true;
@@ -24,6 +25,7 @@ struct PointLightData
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float cdIntensity = 300.f;
+	float volumetricScatteringIntensity = 1.0f;
 
 	bool castShadow = true;
 	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
@@ -33,6 +35,7 @@ struct SpotLightData
 {
 	glm::vec3 color = glm::vec3(1.0f);
 	float cdIntensity = 300.f;
+	float volumetricScatteringIntensity = 1.0f;
 
 	float cutOffAngle = 15.f;
 	float outercutOffAngle = 30.f;
