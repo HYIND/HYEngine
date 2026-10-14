@@ -8,11 +8,7 @@
 class SSRPass :public RenderPassBase
 {
 public:
-	SSRPass(
-		const std::string& computerShaderPath,
-		const std::string& atrousComputerShaderPath,
-		const std::string& temporalAccumulateComputerShaderPath
-	);
+	SSRPass(const std::string& computerShaderPath);
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);

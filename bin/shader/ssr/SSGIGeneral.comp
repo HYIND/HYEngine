@@ -228,12 +228,6 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec
     float hitT = 0.0;
 	float hitThicknessDiff = uintBitsToFloat(0x7F7FFFFFu);
 
-#ifdef SAMPLER_MAX_DIS
-	bool samplerMax = false;
-	vec2 samplerMaxTexcoord = vec2(0);
-#endif
-
-
 	for(uint i = 1;i <= steps; i++)
 	{
 		float t = float(i) / float(steps); //步进比例
@@ -241,9 +235,6 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec
         vec2 screenCurrent = mix(screenStart, screenEnd, t);
 		if(screenCurrent.x >= screenSize.x || screenCurrent.x <= 0.f || screenCurrent.y >= screenSize.y || screenCurrent.y <= 0.f)
 		{
-#ifdef SAMPLER_MAX_DIS
-			samplerMax = false;
-#endif
 			break;
 		}
 
@@ -273,16 +264,6 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec
 				hitThicknessDiff = thicknessDiff;
 			}
 		}
-#ifdef SAMPLER_MAX_DIS
-		else 
-		{
-			if (samplerDepth >= 1.0f - delta)
-			{
-				samplerMax = true;
-				samplerMaxTexcoord = texcoord;
-			}
-		}
-#endif
 		lastHit = hitDiff > 0.f;
 	}
 
@@ -339,15 +320,177 @@ int RayTraceOnSceen(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec
             return 1;
         }
     }
-#ifdef SAMPLER_MAX_DIS
-	else if(samplerMax)
-    {
-        uv = samplerMaxTexcoord;
-        return 2;
-    }
-#endif
-
 	return 0;
+}
+
+float GetRayViewDepth(float t, float zStart, float zEnd)
+{
+    float invZ = (1.0 - t) / zStart + t / zEnd;
+    return 1.0 / invZ;
+}
+
+float GetRayDepthDifference(float t, vec2 screenStart, vec2 screenEnd, vec2 screenSize, float zStart, float zEnd)
+{
+    vec2 pixelPos = mix(screenStart, screenEnd, t);
+    ivec2 pixelCoord = clamp(ivec2(pixelPos), ivec2(0), ivec2(screenSize) - 1);
+    float sceneDepth = texelFetch(depthMap, pixelCoord, 0).r;
+    if (sceneDepth >= 1.0 - 1e-6)
+        return -camera.farPlane;
+
+    float sceneViewDepth = DepthBufferConvertToViewDepth(sceneDepth);
+    return GetRayViewDepth(t, zStart, zEnd) - sceneViewDepth;
+}
+
+// HZB stores the minimum conventional depth for each tile. A ray can skip a
+// tile only while it remains in front of every surface represented by it.
+int RayTraceOnSceenHZB(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv)
+{
+    vec3 dirView = normalize(camera.invTransView * ray.direction);
+    vec3 startViewPos = vec3(camera.view * vec4(ray.origin, 1.0));
+    float maxDistance = min(camera.farPlane, ray.tMax);
+
+    if (dirView.z > 0.0)
+    {
+        float distToNear = -startViewPos.z / dirView.z;
+        if (distToNear <= 0.0)
+            return 0;
+        maxDistance = min(maxDistance, distToNear * 0.99);
+    }
+    if (maxDistance <= max(ray.tMin, 0.001))
+        return 0;
+
+    vec3 endViewPos = startViewPos + dirView * maxDistance;
+    vec4 startClip = camera.projection * vec4(startViewPos, 1.0);
+    vec4 endClip = camera.projection * vec4(endViewPos, 1.0);
+    if (startClip.w <= 0.0 || endClip.w <= 0.0)
+        return 0;
+
+    vec2 screenStart = (startClip.xy / startClip.w * 0.5 + 0.5) * screenSize;
+    vec2 screenEnd = (endClip.xy / endClip.w * 0.5 + 0.5) * screenSize;
+    vec2 screenDelta = screenEnd - screenStart;
+    float pixelLength = length(screenDelta);
+
+    float zStart = -startViewPos.z;
+    float zEnd = -endViewPos.z;
+    if (zStart <= 0.0 || zEnd <= 0.0)
+        return 0;
+
+    int maxMip = max(textureQueryLevels(hzbMinDepthMap) - 1, 0);
+    int mip = clamp(int(floor(log2(max(pixelLength, 1.0)))), 0, maxMip);
+    float t = clamp(ray.tMin / maxDistance, 0.0, 0.999999);
+    float lastSafeT = t;
+    float tEpsilon = 1e-6;
+
+    // HZB traversal spends extra iterations descending/ascending the hierarchy;
+    // the old per-pixel step limit is therefore not a suitable traversal budget.
+    uint traversalBudget = max(RayMarchingMaxStep * 4u, 64u);
+    for (uint stepIndex = 0; stepIndex < traversalBudget; ++stepIndex)
+    {
+        if (t >= 1.0)
+            break;
+
+        vec2 screenPos = mix(screenStart, screenEnd, t);
+        if (screenPos.x < 0.0 || screenPos.y < 0.0 || screenPos.x >= screenSize.x || screenPos.y >= screenSize.y)
+            return 0;
+
+        ivec2 mipSize = textureSize(hzbMinDepthMap, mip);
+        vec2 cellScale = exp2(vec2(float(mip)));
+        vec2 probePos = screenPos + sign(screenDelta) * 1e-4;
+        ivec2 cell = clamp(ivec2(floor(probePos / cellScale)), ivec2(0), mipSize - 1);
+
+        vec2 boundary;
+        for (int axis = 0; axis < 2; ++axis)
+        {
+            float delta = screenDelta[axis];
+            if (abs(delta) < 1e-6)
+            {
+                boundary[axis] = 1e30;
+            }
+            else if (delta > 0.0)
+            {
+                boundary[axis] = cell[axis] == mipSize[axis] - 1
+                    ? screenSize[axis]
+                    : float(cell[axis] + 1) * cellScale[axis];
+            }
+            else
+            {
+                boundary[axis] = float(cell[axis]) * cellScale[axis];
+            }
+        }
+
+        vec2 axisT = vec2(1e30);
+        for (int axis = 0; axis < 2; ++axis)
+        {
+            if (abs(screenDelta[axis]) >= 1e-6)
+                axisT[axis] = t + (boundary[axis] - screenPos[axis]) / screenDelta[axis];
+        }
+        float nextT = min(min(axisT.x, axisT.y), 1.0);
+        if (nextT <= t + tEpsilon)
+            nextT = min(t + tEpsilon * 4.0, 1.0);
+
+        float tileMinDepth = texelFetch(hzbMinDepthMap, cell, mip).r;
+        float tileMinViewDepth = DepthBufferConvertToViewDepth(tileMinDepth);
+        float rayDepthAtStart = GetRayViewDepth(t, zStart, zEnd);
+        float rayDepthAtEnd = GetRayViewDepth(nextT, zStart, zEnd);
+        float rayFarthestDepth = max(rayDepthAtStart, rayDepthAtEnd);
+
+        if (rayFarthestDepth + 1e-4 < tileMinViewDepth)
+        {
+            lastSafeT = nextT;
+            t = nextT;
+            mip = min(mip + 1, maxMip);
+            if (t >= 1.0)
+                break;
+            continue;
+        }
+
+        if (mip > 0)
+        {
+            --mip;
+            continue;
+        }
+
+        float startDiff = GetRayDepthDifference(t, screenStart, screenEnd, screenSize, zStart, zEnd);
+        float endDiff = GetRayDepthDifference(nextT, screenStart, screenEnd, screenSize, zStart, zEnd);
+        if (max(startDiff, endDiff) > 0.0)
+        {
+            // Refine only inside the current mip-0 pixel interval. Extending
+            // this bracket back to lastSafeT can cross unrelated pixels and
+            // converge to a false hit (visible as isolated black speckles).
+            float lowT = t;
+            float highT = nextT;
+            for (int refine = 0; refine < 8; ++refine)
+            {
+                float midT = (lowT + highT) * 0.5;
+                float midDiff = GetRayDepthDifference(midT, screenStart, screenEnd, screenSize, zStart, zEnd);
+                if (midDiff > 0.0)
+                    highT = midT;
+                else
+                    lowT = midT;
+            }
+
+            vec2 hitPixelPos = mix(screenStart, screenEnd, highT);
+            vec2 hitUV = hitPixelPos / screenSize;
+            ivec2 hitPixel = clamp(ivec2(hitPixelPos), ivec2(0), ivec2(screenSize) - 1);
+            float hitDepth = texelFetch(depthMap, hitPixel, 0).r;
+            float hitViewDepth = DepthBufferConvertToViewDepth(hitDepth);
+            float hitGap = GetRayViewDepth(highT, zStart, zEnd) - hitViewDepth;
+            float thicknessLimit = 0.05 + 0.015 * hitViewDepth;
+            if (hitDepth < 1.0 - 1e-6 && hitGap >= -1e-4 && hitGap <= thicknessLimit)
+            {
+                uv = hitUV;
+                return 1;
+            }
+        }
+
+        lastSafeT = nextT;
+        t = nextT;
+        mip = min(mip + 1, maxMip);
+        if (t >= 1.0)
+            break;
+    }
+
+    return 0;
 }
 
 bool isEdge(vec2 texcoord, float depthThreshold)
@@ -383,7 +526,8 @@ bool isNormalPass(vec2 texcoord, Ray ray)
 
 bool traceScene(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv) 
 {
-    int result = RayTraceOnSceen(ray, screenSize, RayMarchingMaxStep, uv);
+	// int result = RayTraceOnSceenHZB(ray, screenSize, RayMarchingMaxStep, uv);
+	int result = RayTraceOnSceen(ray, screenSize, RayMarchingMaxStep, uv);
     if (result != 1 || isEdge(uv, 0.001) || !isNormalPass(uv, ray))
         return false;
     return true;

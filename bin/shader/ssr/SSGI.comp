@@ -43,11 +43,10 @@ layout (binding = 6) uniform sampler2D gMetallicRoughness;
 layout (binding = 7) uniform sampler2D colorMap;
 layout (binding = 8) uniform sampler2D depthMap;
 layout (binding = 9) uniform sampler2D SSAOMap;
-layout (binding = 10) uniform sampler2D hzbDepthMap;
+layout (binding = 10) uniform sampler2D hzbMinDepthMap;
 layout (binding = 11) uniform samplerCube cubeMap;
 
 #include "shader/Helper/bdrfHelper.comp"
-#define SAMPLER_MAX_DIS
 #include "shader/ssr/SSGIGeneral.comp"
 
 const float RussianRouletteFactor = 0.8f;

@@ -23,16 +23,10 @@ struct SSGIParams
 };
 
 
-SSGIPass::SSGIPass(
-	const std::string& computerShaderPath,
-	const std::string& atrousComputerShaderPath,
-	const std::string& temporalAccumulateComputerShaderPath
-)
+SSGIPass::SSGIPass(const std::string& computerShaderPath)
 	:
 	_firstDrawTemporal(true),
-	_enable(false),
-	_temporalAccumulate(temporalAccumulateComputerShaderPath),
-	_spatialDenoisingFilter(atrousComputerShaderPath)
+	_enable(false)
 {
 
 	{

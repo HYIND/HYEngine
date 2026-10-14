@@ -141,23 +141,23 @@ void main()
     float historyM2 = historyMoments.y;
     uint accumulateLength = uint(historyMoments.w);
 
-    // // AABB 钳制（消除拖影）
-    // vec4 minColor = currentColor;
-    // vec4 maxColor = currentColor;
+    // AABB 钳制（消除拖影）
+    vec4 minColor = currentColor;
+    vec4 maxColor = currentColor;
 
-    // // 取周围 11x11 的最小最大值
-    // for (int x = -5; x <= 5; x++) {
-    //     for (int y = -5; y <= 5; y++) {
-    //         ivec2 sampleCoord = coord + ivec2(x, y);
-    //         sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
-    //         vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
+    // 取周围 11x11 的最小最大值
+    for (int x = -5; x <= 5; x++) {
+        for (int y = -5; y <= 5; y++) {
+            ivec2 sampleCoord = coord + ivec2(x, y);
+            sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
+            vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
 
-    //         vec4 neighbor = texture(rawTexture, uv).rgba;
-    //         minColor = min(minColor, neighbor);
-    //         maxColor = max(maxColor, neighbor);
-    //     }
-    // }
-    // historyColor  = clamp(historyColor, minColor, maxColor);
+            vec4 neighbor = texture(rawTexture, uv).rgba;
+            minColor = min(minColor, neighbor);
+            maxColor = max(maxColor, neighbor);
+        }
+    }
+    historyColor  = clamp(historyColor, minColor, maxColor);
 
     uint blendlenth = min(accumulateLength + 1, maxAccumulateCount);
     float blendFactor = float(blendlenth - 1) / float(blendlenth);

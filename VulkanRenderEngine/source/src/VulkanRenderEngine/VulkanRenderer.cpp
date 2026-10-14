@@ -295,7 +295,7 @@ void VulkanRenderer::InitRenderTarget()
 	_renderTargets.clear();
 
 	const TextureConfig config
-	{ 
+	{
 		.minFilter = vk::Filter::eLinear,
 		.magFilter = vk::Filter::eLinear,
 		.wrapU = vk::SamplerAddressMode::eClampToEdge,
@@ -576,11 +576,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
 			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
 			"", "", "",
-			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+			"shader/General/imagescale.comp");
 		auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
 			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
 			"", "", "",
-			"shader/RayTrace/Atrous-BilateralFilter.comp", "shader/RayTrace/TemporalAccumulate.comp", "shader/General/imagescale.comp");
+			"shader/General/imagescale.comp");
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
@@ -594,14 +594,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
 		auto t_reflectPass = std::make_unique<RayTraceReflectPass>(
 			"shader/RayTrace/RayTraceReflect.comp",
-			"shader/RayTrace/Atrous-BilateralFilter.comp",
-			"shader/RayTrace/TemporalAccumulate.comp",
 			"shader/General/imagescale.comp"
 		);
 		auto t_giPass = std::make_unique<RayTraceGIPass>(
 			"shader/RayTrace/RayTraceGI.comp",
-			"shader/RayTrace/Atrous-BilateralFilter.comp",
-			"shader/RayTrace/TemporalAccumulate.comp",
 			"shader/General/imagescale.comp"
 		);
 
@@ -613,9 +609,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 		giPass = std::move(t_giPass);
 	}
 
-	auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp", "shader/ssr/Atrous-BilateralFilter.comp", "shader/ssr/TemporalAccumulate.comp");
+	auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp");
 
-	auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp", "shader/ssr/Atrous-BilateralFilter.comp", "shader/ssr/TemporalAccumulate.comp");
+	auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp");
 
 	auto combinIndirectLightingPass = MakeConbinIndirectLightingPass();
 
@@ -637,6 +633,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	ResourceBuilder resbuilder(_sceneRenderGraph);
 
 	auto hzbMap = resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "HZBMap", hzbPass->GetMaxLevel());
+	auto hzbMinDepthMap = resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "HZBMinDepthMap", hzbPass->GetMaxLevel());
 
 	auto gPosition = resbuilder.CreateTexture(width, height, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gPosition");
 	auto gNormal = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gNormal");
@@ -721,7 +718,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	hzbNode->SetRenderPass(std::move(hzbPass))
 		.Temp(ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "hzbPass_temp"), graphicsWriteLayout })
-		.Output(ResourceData{ hzbMap , computeWriteLayout })
+		.Output(ResourceData{ hzbMap, computeWriteLayout }, ResourceData{ hzbMinDepthMap, computeWriteLayout })
 		.After(preCalculateNode)
 		.Before(geometryNode);
 
@@ -832,7 +829,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
 			ResourceData{ gMotionVector, computeReadLayout },
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
-			ResourceData{ hzbMap, computeReadLayout }
+			ResourceData{ hzbMinDepthMap, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"), computeWriteLayout },
@@ -856,7 +853,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
 			ResourceData{ gMotionVector, computeReadLayout },
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
-			ResourceData{ hzbMap, computeReadLayout },
+			ResourceData{ hzbMinDepthMap, computeReadLayout },
 			ResourceData{ ssaoOutPut, computeReadLayout }
 		)
 		.Temp(

@@ -90,6 +90,7 @@ HZBPass::HZBPass(
 
 		config
 			.AddStorageVariableImageArray(0, 16)
+			.AddStorageVariableImageArray(1, 16)
 			.AddPushConstant(sizeof(LevelData));
 
 		if (config.Validate())
@@ -123,13 +124,14 @@ void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 {
 	auto depthMap = ctx.GetTemp(0);
 	auto HZBMap = ctx.GetOutput(0);
+	auto HZBMinMap = ctx.GetOutput(1);
 
 	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
 
 	auto cmd = cmdCtx.GetCmd();
 
 	DrawDepthMap(cmd, registry, depthMap, state);
-	DrawHZB(cmd, registry, depthMap, HZBMap, state);
+	DrawHZB(cmd, registry, depthMap, HZBMap, HZBMinMap, state);
 
 	if (state.option.flags.calculateOcclusionCulling)
 	{
@@ -311,23 +313,30 @@ void HZBPass::DrawDepthMap(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cm
 	cmd->endRendering();
 }
 
-void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
+void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, std::shared_ptr<Texture2D>& HZBMap, std::shared_ptr<Texture2D>& HZBMinMap, RenderState& state)
 {
 	Texture2D::CopyTextureAsync(cmd, depthMap, HZBMap);
+	Texture2D::CopyTextureAsync(cmd, depthMap, HZBMinMap);
 
 	auto width = depthMap->GetWidth();
 	auto height = depthMap->GetHeight();
 
 	std::vector<BindingRecord::StorageImageEntry> entrys;
+	std::vector<BindingRecord::StorageImageEntry> minEntrys;
 	entrys.reserve(_maxLevel);
+	minEntrys.reserve(_maxLevel);
 	for (uint32_t level = 0; level < _maxLevel; level++)
+	{
 		entrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
+		minEntrys.push_back(BindingRecord::StorageImageEntry{ .texture = HZBMinMap, .aspect = vk::ImageAspectFlagBits::eDepth, .baseLevel = level ,.levelCount = 1 });
+	}
 
 	LevelData data;
 
 	ComputeBindingRecord HZBShaderBinding;
 
 	HZBShaderBinding.SetStorageImageArray(entrys, 0);
+	HZBShaderBinding.SetStorageImageArray(minEntrys, 1);
 	_HZBShader->Bind(cmd, HZBShaderBinding);
 
 	for (uint32_t level = 1; level < _maxLevel; level++) {
@@ -343,7 +352,10 @@ void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Re
 		cmd->dispatch((currW + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (currH + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 		if (level < _maxLevel - 1)
+		{
 			HZBMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+			HZBMinMap->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+		}
 	}
 
 	//for (uint32_t level = 0; level < _maxLevel; level++)

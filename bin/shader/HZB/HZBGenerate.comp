@@ -11,6 +11,7 @@
 layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
 
 layout(set = 0, binding = 0, r32f) uniform image2D mipMapDepthMap[16];
+layout(set = 0, binding = 1, r32f) uniform image2D mipMapMinDepthMap[16];
 
 layout(push_constant) uniform PushConsts {
     uint inputLevel;
@@ -34,11 +35,16 @@ void main()
     int samplerCountY = ((pixelCoord.y == outPutSize.y - 1) && (inputSize.y % 2 != 0)) ? 3 : 2;
 
     float maxDepth = 0.0;
+    float minDepth = 1.0;
     for (int y = 0; y < samplerCountY; y++) {
         for (int x = 0; x < samplerCountX; x++) {
-            float d = imageLoad(mipMapDepthMap[inputLevel], inCoord + ivec2(x, y)).r;
-            maxDepth = max(maxDepth, d);
+            ivec2 sampleCoord = inCoord + ivec2(x, y);
+            float maxSample = imageLoad(mipMapDepthMap[inputLevel], sampleCoord).r;
+            float minSample = imageLoad(mipMapMinDepthMap[inputLevel], sampleCoord).r;
+            maxDepth = max(maxDepth, maxSample);
+            minDepth = min(minDepth, minSample);
         }
     }
     imageStore(mipMapDepthMap[outPutLevel], pixelCoord, vec4(maxDepth));
+    imageStore(mipMapMinDepthMap[outPutLevel], pixelCoord, vec4(minDepth));
 }
