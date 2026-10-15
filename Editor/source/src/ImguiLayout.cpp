@@ -619,9 +619,21 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 	if (!pendingDeletePath.empty())
 	{
 		try {
-			fs::remove_all(fs::path(pendingDeletePath));
-			if (pendingDeleteIsAsset && !pendingDeleteGuid.empty())
-				projectManager->DeleteAsset(pendingDeleteGuid);
+			auto path = fs::path(pendingDeletePath);
+			if (fs::exists(path))
+			{
+				if (fs::is_directory(path))
+				{
+					projectManager->DeleteAssetsInFolder(path);
+					fs::remove_all(path);
+				}
+				else
+				{
+					fs::remove_all(path);
+					if (pendingDeleteIsAsset && !pendingDeleteGuid.empty())
+						projectManager->DeleteAsset(pendingDeleteGuid);
+				}
+			}
 		}
 		catch (const fs::filesystem_error& e) {
 			// 可以记录日志 / 弹窗

@@ -24,8 +24,7 @@ class ProjectAssetPathProvider :public IAssetFullPathProvider
 {
 public:
 	ProjectAssetPathProvider(const std::string& projectPath)
-		:m_projectPath(projectPath) {
-	}
+		:m_projectPath(projectPath) {}
 	virtual std::string GetFullPath(const AssetPath& assetPath) {
 		return (m_projectPath / fs::path(assetPath)).string();
 	}
@@ -388,6 +387,12 @@ std::vector<AssetMeta> ProjectManager::GetAssetMetasInFolder(const AssetPath& fo
 	return m_database->GetAssetMetasInFolder(folder, GetProjectFolderFullPath());
 }
 
+void ProjectManager::DeleteAssetsInFolder(const fs::path& folderPath)
+{
+	DeleteAssetsInFolderPrivate(folderPath);
+	SaveProject();
+}
+
 std::shared_ptr<AssetObject> ProjectManager::LoadAsset(AssetGUID guid)
 {
 	return m_loader->LoadAsset(guid);
@@ -424,4 +429,27 @@ void ProjectManager::EnsureDirectories() {
 	fs::create_directories(fs::path(m_projectPath) / "Assets/Materials");
 	fs::create_directories(fs::path(m_projectPath) / "Assets/Scenes");
 	fs::create_directories(fs::path(m_projectPath) / "Assets/Others");
+}
+
+void ProjectManager::DeleteAssetsInFolderPrivate(const fs::path& folderPath)
+{
+	if (!fs::exists(folderPath) || !fs::is_directory(folderPath))
+		return;
+
+	// 先递归处理子目录
+	for (const auto& entry : fs::directory_iterator(folderPath))
+	{
+		if (entry.is_directory())
+		{
+			DeleteAssetsInFolderPrivate(entry.path());
+		}
+	}
+
+	auto relativeFolder = fs::relative(
+		folderPath,
+		GetProjectFolderFullPath()
+	);
+	auto metas = GetAssetMetasInFolder(relativeFolder.string());
+	for (auto& meta : metas)
+		m_database->RemoveAssetMeta(meta.guid);
 }

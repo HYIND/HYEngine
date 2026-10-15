@@ -33,6 +33,7 @@ public:
 	bool RenameAsset(const AssetGUID& guid, const AssetPath& newAssetPath);
 
 	std::vector<AssetMeta> GetAssetMetasInFolder(const AssetPath& folder);
+	void DeleteAssetsInFolder(const fs::path& folderPath);
 
 public:
 	std::shared_ptr<AssetObject> LoadAsset(AssetGUID guid);
@@ -42,6 +43,7 @@ private:
 	std::string GenerateAssetMetaPath(const AssetPath& path, AssetType type);
 	bool CopyToProject(const std::string& filePathStr, const AssetPath& assetPath);
 	void EnsureDirectories();
+	void DeleteAssetsInFolderPrivate(const fs::path& folderPath);
 
 private:
 	ProjectManager();
