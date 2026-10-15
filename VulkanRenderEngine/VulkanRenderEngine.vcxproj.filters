@@ -342,6 +342,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\TemporalAccumulate.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\TAAFilter.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\IBLImageBuilder.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
@@ -579,6 +582,9 @@
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\TAAFilter.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\IBLImageBuilder.cpp">

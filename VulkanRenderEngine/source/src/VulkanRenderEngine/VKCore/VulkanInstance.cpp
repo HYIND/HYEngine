@@ -216,6 +216,8 @@ static void GetPhysicalDeviceProp(VulkanPhysicalDeviceInfo& info)
 	{
 		GlobalConfig::RTCoreEnable = HasDeviceExtension(extensions, VKCore::RTCoreExtension);
 		GlobalConfig::RTCoreReorderEnable = HasDeviceExtension(extensions, VKCore::RTCoreReorderExtension);
+		GlobalConfig::VK_DESCRIPTOR_HEAP_Enable = HasDeviceExtension(extensions, VKCore::VK_DESCRIPTOR_HEAP_Extension);
+		GlobalConfig::VK_DESCRIPTOR_HEAP_Enable = false;
 	}
 
 	if (GlobalConfig::RTCoreEnable)

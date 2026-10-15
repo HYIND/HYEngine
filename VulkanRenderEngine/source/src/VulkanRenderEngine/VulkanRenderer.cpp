@@ -63,6 +63,9 @@ static std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCo
 			vulkanDevice->AddDeviceExtension(VKCore::RTCoreReorderExtension);
 	}
 
+	if (GlobalConfig::VK_DESCRIPTOR_HEAP_Enable)
+		vulkanDevice->AddDeviceExtension(VKCore::VK_DESCRIPTOR_HEAP_Extension);
+
 	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
 		return nullptr;
 

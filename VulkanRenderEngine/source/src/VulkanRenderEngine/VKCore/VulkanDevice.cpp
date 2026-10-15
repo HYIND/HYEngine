@@ -207,7 +207,9 @@ vk::Result VulkanDevice::Create(
 		vk::PhysicalDeviceVulkan14Features,
 		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+		vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR,
+		vk::PhysicalDeviceDescriptorHeapFeaturesEXT
 	>;
 
 	ChainType chain =
@@ -219,7 +221,9 @@ vk::Result VulkanDevice::Create(
 		vk::PhysicalDeviceVulkan14Features,
 		//vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+		vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR,
+		vk::PhysicalDeviceDescriptorHeapFeaturesEXT
 		>();
 
 	auto& deviceFeatures2 = chain.get<vk::PhysicalDeviceFeatures2>();
@@ -248,6 +252,24 @@ vk::Result VulkanDevice::Create(
 	if (!features13.shaderDemoteToHelperInvocation)
 		std::cerr << std::format("shaderDemoteToHelperInvocation not support!\n");
 
+	auto& features_UntypedPoint = chain.get<vk::PhysicalDeviceShaderUntypedPointersFeaturesKHR>();
+	auto& features_DescriptorHeap = chain.get<vk::PhysicalDeviceDescriptorHeapFeaturesEXT>();
+	
+	if (GlobalConfig::VK_DESCRIPTOR_HEAP_Enable)
+	{
+		if (!features_UntypedPoint.shaderUntypedPointers || !features_DescriptorHeap.descriptorHeap)
+		{
+			std::cerr << std::format("shaderUntypedPointers or descriptorHeap not support!\n");
+			features_DescriptorHeap.descriptorHeap = vk::False;
+			features_DescriptorHeap.descriptorHeapCaptureReplay = vk::False;
+			GlobalConfig::VK_DESCRIPTOR_HEAP_Enable = false;
+		}
+	}
+	else
+	{
+		features_DescriptorHeap.descriptorHeap = vk::False;
+		features_DescriptorHeap.descriptorHeapCaptureReplay = vk::False;
+	}
 
 	vk::DeviceCreateInfo deviceCreateInfo;
 	deviceCreateInfo.setFlags(flags)

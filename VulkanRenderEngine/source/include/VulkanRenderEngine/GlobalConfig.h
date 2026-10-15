@@ -23,6 +23,8 @@ namespace GlobalConfig
 	inline bool RTCoreEnable = false;
 	inline bool RTCoreReorderEnable = false;
 
+	inline bool VK_DESCRIPTOR_HEAP_Enable = false;
+
 	inline uint32_t Global_WorkSize_X = 8;
 	inline uint32_t Global_WorkSize_Y = 8;
 }
