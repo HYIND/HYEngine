@@ -62,19 +62,9 @@ void PropertiesHelper::DrawAllProperties(Entity entity, const std::vector<Compon
 			auto& registry = GetRegistry();
 			auto it = registry.find(data.typeID);
 			if (it != registry.end())
-			{
 				it->second(entity, data.component);
-			}
 			ImGui::PopID();
 		}
-	}
-
-	auto fields = rfl::fields<Transform>();
-
-	for (auto& field : fields)
-	{
-		std::string fieldName = field.name();
-
 	}
 }
 
