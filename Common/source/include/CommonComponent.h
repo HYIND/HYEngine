@@ -10,8 +10,7 @@
 // ================ 渲染基础 ===============
 #include "Components/Renderable.h"
 
-// ================ 渲染数据代理 ===============
-#include "Components/VariableMaterial.h"
+// ================ 渲染数据/代理 ===============
 #include "Components/ModelProxy.h"
 #include "Components/RenderLight.h"
 

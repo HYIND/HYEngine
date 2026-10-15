@@ -1074,7 +1074,7 @@ void ImguiLayout::DrawSceneObjectList(WorldManager* worldManager)
 	ImGui::End();
 }
 
-void ImguiLayout::DrawObjectProperties()
+void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 {
 	ImGui::Begin("Properties");
 	ImGui::Text("属性");
@@ -1085,7 +1085,7 @@ void ImguiLayout::DrawObjectProperties()
 		ImGui::Text("已选择: %d", selectedEntity.getId());
 		ImGui::Separator();
 		auto components = PropertiesHelper::GetAllComponents(selectedEntity);	// 获取所有组件
-		PropertiesHelper::DrawAllProperties(selectedEntity, components);		// 绘制所有属性
+		PropertiesHelper::DrawAllProperties(selectedEntity, components, projectManager);		// 绘制所有属性
 	}
 	else
 	{

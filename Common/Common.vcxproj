@@ -148,7 +148,6 @@
     <ClInclude Include="source\include\CommonData\LightData.h" />
     <ClInclude Include="source\include\CommonData\LightFactory.h" />
     <ClInclude Include="source\include\CommonData\ModelProxyData.h" />
-    <ClInclude Include="source\include\CommonData\VariableMaterialData.h" />
     <ClInclude Include="source\include\CommonEventDef.h" />
     <ClInclude Include="source\include\CommonSystems.h" />
     <ClInclude Include="source\include\CommonTags.h" />
@@ -162,7 +161,6 @@
     <ClInclude Include="source\include\Components\RenderLight.h" />
     <ClInclude Include="source\include\Components\Transform.h" />
     <ClInclude Include="source\include\Components\Transform2D.h" />
-    <ClInclude Include="source\include\Components\VariableMaterial.h" />
     <ClInclude Include="source\include\ECSCore\ComponentArray.h" />
     <ClInclude Include="source\include\ECSCore\ComponentManager.h" />
     <ClInclude Include="source\include\ECSCore\ComponentTypes.h" />

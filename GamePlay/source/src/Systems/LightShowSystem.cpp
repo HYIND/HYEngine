@@ -8,7 +8,7 @@
 void LightShowSystem::update(float deltaTime)
 {
 	auto lightEntities = m_world->getEntitiesWith<TagLightShowLight, TagLight, Transform, RenderLight>();
-	auto lightShowEntitiesView = m_world->getViewWith<TagLightShowEntity, LightShow, Transform, Physics, VariableMaterial, ModelProxy>();
+	auto lightShowEntitiesView = m_world->getViewWith<TagLightShowEntity, LightShow, Transform, Physics, ModelProxy>();
 
 	for (Entity entity : lightShowEntitiesView.getEntities())
 	{
@@ -39,16 +39,16 @@ void LightShowSystem::update(float deltaTime)
 		else if (lightshow.isExcited && lightshow.exposure == 0.f)
 			lightshow.isExcited = false;
 
-		auto& material = entity.getComponent<VariableMaterial>();
-		if (lightshow.isExcited)
-		{
-			material.SetAlpahMode(VariableMaterialData::AlphaMode::Blend);
-			material.SetOpacity(std::clamp(lightshow.exposure / (lightshow.thresold * 0.8f), 0.f, 1.f));
-		}
-		else {
-			material.SetAlpahMode(VariableMaterialData::AlphaMode::Opaque);
-			material.SetOpacity(0.0f);
-		}
+		//auto& material = entity.getComponent<VariableMaterial>();
+		//if (lightshow.isExcited)
+		//{
+		//	material.SetAlpahMode(VariableMaterialData::AlphaMode::Blend);
+		//	material.SetOpacity(std::clamp(lightshow.exposure / (lightshow.thresold * 0.8f), 0.f, 1.f));
+		//}
+		//else {
+		//	material.SetAlpahMode(VariableMaterialData::AlphaMode::Opaque);
+		//	material.SetOpacity(0.0f);
+		//}
 	}
 }
 

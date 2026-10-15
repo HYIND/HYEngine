@@ -77,7 +77,7 @@ struct RenderOption
 	} ssgiTraceParams;
 
 	struct alignas(16) ExponentialHeightFogParams {
-		glm::vec3 fogColor = glm::vec3(0.8, 0.8, 0.8);
+		glm::vec3 fogAlbedo = glm::vec3(1.0, 1.0, 1.0);
 		float globalDensity = 0.02;			// 全局雾浓度
 		float fogStartHeight = -45.f;       // 雾起始高度
 		float fogStartDistance = 100.f;		// 雾起始距离

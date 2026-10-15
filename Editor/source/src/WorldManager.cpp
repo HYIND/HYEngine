@@ -44,38 +44,6 @@ void AddPickProxy(Entity& entity)
 	entity.addComponent<EditorPick>();
 }
 
-void AddVariableMaterial(Entity& entity)
-{
-	if (!entity.hasComponent<RenderModel>())
-		return;
-
-	if (entity.hasComponent<VariableMaterial>())
-		return;
-
-	auto& renderModel = entity.getComponent<RenderModel>();
-	if (!renderModel.model)
-		return;
-
-	auto model = renderModel.model;
-	auto& info = model->getMeshInfos();
-	if (info.empty())
-		return;
-
-	auto& material = info[0].material;
-	if (!material)
-		return;
-
-	auto& variableMaterial = entity.addComponent<VariableMaterial>();
-	variableMaterial.data.albedo = material->GetAlbedo();
-	variableMaterial.data.metallic = material->GetMetallic();
-	variableMaterial.data.roughness = material->GetRoughness();
-	variableMaterial.data.opacity = material->GetOpacity();
-	variableMaterial.data.alphamode = (VariableMaterialData::AlphaMode)material->GetAlphaMode();
-	variableMaterial.data.twosided = material->GetTwoSided();
-	variableMaterial.data.emissionColor = material->GetEmissionColor();
-	variableMaterial.data.emissionStrength = material->GetEmissionStrength();
-}
-
 void SetNameTag(Entity entity, const std::string& name)
 {
 	if (!entity)
@@ -175,7 +143,6 @@ void LoadInitScene(WorldManager* manager)
 		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
 		AddPickProxy(cube);
-		AddVariableMaterial(cube);
 		SetNameTag(cube, "cube_1");
 	}
 
@@ -210,7 +177,6 @@ void LoadInitScene(WorldManager* manager)
 		}
 
 		AddPickProxy(sphere);
-		AddVariableMaterial(sphere);
 		SetNameTag(sphere, "sphere_1");
 	}
 
@@ -238,7 +204,6 @@ void LoadInitScene(WorldManager* manager)
 		rendermodel.model = model;
 
 		AddPickProxy(floor);
-		AddVariableMaterial(floor);
 		SetNameTag(floor, "floor");
 	}
 }
@@ -556,7 +521,6 @@ Entity WorldManager::CreateModelEntity(std::shared_ptr<Model> model)
 		rendermodel.model = model;
 
 		AddPickProxy(entity);
-		AddVariableMaterial(entity);
 		SetNameTag(entity, std::format("model_entity_{}", entity.getId()));
 		}).get();
 
@@ -650,7 +614,6 @@ void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position, con
 			rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
 			AddPickProxy(entity);
-			AddVariableMaterial(entity);
 			if (!name.empty())
 				SetNameTag(entity, name);
 			});
@@ -676,7 +639,6 @@ void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position, con
 			rendermodel.model = GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
 			AddPickProxy(entity);
-			AddVariableMaterial(entity);
 			if (!name.empty())
 				SetNameTag(entity, name);
 			});

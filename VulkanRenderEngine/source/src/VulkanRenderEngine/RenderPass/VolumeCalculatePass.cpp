@@ -98,7 +98,7 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	const auto& fogOptions = state.option.exponentialHeightFogParams;
 	ExponentialHeightFogShaderParams fogParams
 	{
-		.fogAlbedo = fogOptions.fogColor,
+		.fogAlbedo = fogOptions.fogAlbedo,
 		.globalDensity = fogOptions.globalDensity / 100.0f,
 		.fogStartHeight = fogOptions.fogStartHeight,
 		.fogStartDistance = fogOptions.fogStartDistance,

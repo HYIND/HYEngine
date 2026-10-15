@@ -10,6 +10,8 @@
 #include "GameRuntimeComponents.h"
 #include "GamePlayComponents.h"
 
+#include "VulkanRenderEngine/RenderOption.h"
+
 namespace rfl {
 
 	template <>
@@ -153,27 +155,6 @@ namespace rfl {
 	};
 
 	template <>
-	struct Reflector<VariableMaterial> {
-		using SrcType = VariableMaterial;
-		using ReflType = VariableMaterialData;
-
-		static ReflType from(const SrcType& src) noexcept {
-			return src.data;
-		}
-
-		static void modify(SrcType& src, const ReflType& ref) noexcept {
-			src.SetAlbedo(ref.albedo);
-			src.SetMetallic(ref.metallic);
-			src.SetRoughness(ref.roughness);
-			src.SetOpacity(ref.opacity);
-			src.SetAlpahMode(ref.alphamode);
-			src.SetTwoSide(ref.twosided);
-			src.SetEmissionColor(ref.emissionColor);
-			src.SetEmissionStrength(ref.emissionStrength);
-		}
-	};
-
-	template <>
 	struct Reflector<CameraComponent> {
 
 		struct CameraData {
@@ -196,3 +177,29 @@ namespace rfl {
 		}
 	};
 }
+
+enum class PropertyWidget
+{
+	Default,
+	Color
+};
+
+template<typename T>
+struct PropertyUI
+{
+	static PropertyWidget GetWidget(std::string_view)
+	{
+		return PropertyWidget::Default;
+	}
+};
+
+template<>
+struct PropertyUI<RenderOption::ExponentialHeightFogParams>
+{
+	static PropertyWidget GetWidget(std::string_view name)
+	{
+		if (name == "fogAlbedo")
+			return PropertyWidget::Color;
+		return PropertyWidget::Default;
+	}
+};
