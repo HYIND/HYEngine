@@ -513,12 +513,23 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 			!material->GetTextures().empty())
 			ai_baseColor = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
 
+		if (ai_baseColor.r == 0.6f &&
+			ai_baseColor.g == 0.6f &&
+			ai_baseColor.b == 0.6f &&
+			fs::path(_filepath).extension() == ".obj")
+		{
+			ai_baseColor.r = ai_baseColor.g = ai_baseColor.b = 1.0;
+		}
+
 		material->SetAlbedo(glm::vec3(ai_baseColor.r, ai_baseColor.g, ai_baseColor.b));
 		material->SetOpacity(ai_baseColor.a);
 	}
 
 	float metallic = 0.f;
-	if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic))
+	if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic) 
+		|| AI_SUCCESS == ai_material->Get(AI_MATKEY_SPECULAR_FACTOR, metallic)
+		|| AI_SUCCESS == ai_material->Get(AI_MATKEY_GLOSSINESS_FACTOR, metallic)
+		)
 		material->SetMetallic(metallic);
 
 	float roughness = 0.5f;
