@@ -31,15 +31,6 @@
     <ClInclude Include="source\include\WorldManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="..\Game\source\include\Factory\CharacterFactory.h">
-      <Filter>头文件\Factory</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Game\source\include\Factory\LightFactory.h">
-      <Filter>头文件\Factory</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Game\source\include\Factory\ParticleEmitterFactory.h">
-      <Filter>头文件\Factory</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\ImguiLayout.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -73,29 +64,8 @@
     <ClInclude Include="source\include\Reflect.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Project\AssetDataBase.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\ProjectManager.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\IconManager.h">
       <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\AssetLoader.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\AssetAnalysisHelper.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\AssetObject.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\AssetMeta.h">
-      <Filter>头文件\Project</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Project\AssetDescription.h">
-      <Filter>头文件\Project</Filter>
     </ClInclude>
     <ClInclude Include="source\include\AssetImportPopup.h">
       <Filter>头文件</Filter>
@@ -123,20 +93,8 @@
     <Filter Include="Imgui\backend">
       <UniqueIdentifier>{6b7b6e00-b2e8-40d1-b438-566cbc760d10}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Factory">
-      <UniqueIdentifier>{9a2dcbf5-a87a-4264-b3b7-dcd622b6b8b6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Factory">
-      <UniqueIdentifier>{7beb8b16-3015-490a-b1ff-6f1ef1624063}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Imguizmo">
       <UniqueIdentifier>{bbcc269d-2021-4071-83cf-c46bdbb7989e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Project">
-      <UniqueIdentifier>{47d2de23-2c33-47a0-b25a-754895ca5bae}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Project">
-      <UniqueIdentifier>{c3f66781-1b72-47a9-a9f0-38636ab24f5d}</UniqueIdentifier>
     </Filter>
     <Filter Include="源文件\ImguiInit">
       <UniqueIdentifier>{a6b6c389-f629-4f67-9879-19c0e97433b8}</UniqueIdentifier>
@@ -194,26 +152,8 @@
     <ClCompile Include="source\src\PropertiesHelper.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\Project\AssetDataBase.cpp">
-      <Filter>源文件\Project</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Project\ProjectManager.cpp">
-      <Filter>源文件\Project</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\IconManager.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Project\AssetLoader.cpp">
-      <Filter>源文件\Project</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Project\AssetAnalysisHelper.cpp">
-      <Filter>源文件\Project</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Project\AssetObject.cpp">
-      <Filter>源文件\Project</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\Project\AssetDescription.cpp">
-      <Filter>源文件\Project</Filter>
     </ClCompile>
     <ClCompile Include="source\src\AssetImportPopup.cpp">
       <Filter>源文件</Filter>

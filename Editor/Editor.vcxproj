@@ -133,7 +133,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)Game\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Imgui;$(ProjectDir)Imgui\backend;$(ProjectDir)Imguizmo;$(ProjectDir)reflect-cpp;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -150,9 +150,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Game\source\include\Factory\CharacterFactory.h" />
-    <ClInclude Include="..\Game\source\include\Factory\LightFactory.h" />
-    <ClInclude Include="..\Game\source\include\Factory\ParticleEmitterFactory.h" />
     <ClInclude Include="Editor.h" />
     <ClInclude Include="ImguiInit\VulkanInit.h" />
     <ClInclude Include="Imguizmo\GraphEditor.h" />
@@ -174,13 +171,6 @@
     <ClInclude Include="source\include\AssetImportPopup.h" />
     <ClInclude Include="source\include\IconManager.h" />
     <ClInclude Include="source\include\ImguiLayout.h" />
-    <ClInclude Include="source\include\Project\AssetAnalysisHelper.h" />
-    <ClInclude Include="source\include\Project\AssetDataBase.h" />
-    <ClInclude Include="source\include\Project\AssetLoader.h" />
-    <ClInclude Include="source\include\Project\AssetMeta.h" />
-    <ClInclude Include="source\include\Project\AssetObject.h" />
-    <ClInclude Include="source\include\Project\AssetDescription.h" />
-    <ClInclude Include="source\include\Project\ProjectManager.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />
     <ClInclude Include="source\include\Reflect.h" />
     <ClInclude Include="source\include\stdafx.h" />
@@ -205,12 +195,6 @@
     <ClCompile Include="source\src\AssetImportPopup.cpp" />
     <ClCompile Include="source\src\IconManager.cpp" />
     <ClCompile Include="source\src\ImguiLayout.cpp" />
-    <ClCompile Include="source\src\Project\AssetAnalysisHelper.cpp" />
-    <ClCompile Include="source\src\Project\AssetDataBase.cpp" />
-    <ClCompile Include="source\src\Project\AssetDescription.cpp" />
-    <ClCompile Include="source\src\Project\AssetLoader.cpp" />
-    <ClCompile Include="source\src\Project\AssetObject.cpp" />
-    <ClCompile Include="source\src\Project\ProjectManager.cpp" />
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
     <ClCompile Include="source\src\WorldManager.cpp" />
   </ItemGroup>
