@@ -21,7 +21,7 @@ enum class TextureType
 };
 
 // 使用透明纹理的方式
-enum class AlphaMode
+enum class AlphaMode : uint32_t
 {
 	Opaque = 0,		// 完全忽略透明纹理
 	Mask,			// 遮罩模式，根据阈值决定是否显示（0或1）
@@ -69,15 +69,15 @@ struct alignas(16) MaterialData
 
 	int twosided = 0;
 
-	int	texture_albedo_count = 0;
-	int	texture_metallic_count = 0;
-	int	texture_roughness_count = 0;
-	int	texture_normal_count = 0;
-	int	texture_ao_count = 0;
-	int	texture_emissive_count = 0;
-	int	texture_metallicroughness_count = 0;
-	int	texture_height_count = 0;
-	int	texture_opacity_count = 0;
+	uint32_t texture_albedo_count = 0;
+	uint32_t texture_metallic_count = 0;
+	uint32_t texture_roughness_count = 0;
+	uint32_t texture_normal_count = 0;
+	uint32_t texture_ao_count = 0;
+	uint32_t texture_emissive_count = 0;
+	uint32_t texture_metallicroughness_count = 0;
+	uint32_t texture_height_count = 0;
+	uint32_t texture_opacity_count = 0;
 
 	uint32_t texture_albedo;
 	uint32_t texture_metallic;
@@ -89,8 +89,22 @@ struct alignas(16) MaterialData
 	uint32_t texture_height;
 	uint32_t texture_opacity;
 
-	MaterialData();
 };
+
+struct alignas(16) ShadowMaterialData
+{
+	float opacity = 1.0f;
+	AlphaMode alphamode = AlphaMode::Opaque;
+	float maskthreshold = 0.5f;
+
+	uint32_t texture_albedo_count = 0;
+	uint32_t texture_opacity_count = 0;
+
+	uint32_t texture_albedo;
+	uint32_t texture_opacity;
+
+};
+
 
 class Material
 {
@@ -138,6 +152,9 @@ public:
 	const std::map<TextureType, std::shared_ptr<Texture2D>>& GetTextures() const;
 	MaterialData GetMaterialCompData();
 	void GetMaterialCompData(MaterialData& comp_data);
+
+	ShadowMaterialData GetShadowMaterialCompData();
+	void GetShadowMaterialCompData(ShadowMaterialData& comp_data);
 
 	// 克隆
 	std::shared_ptr<Material> Clone() const;

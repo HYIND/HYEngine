@@ -315,6 +315,13 @@ PipelineConfig& PipelineConfig::AddBindlessMaterialTextureBinding()
 	return *this;
 }
 
+PipelineConfig& PipelineConfig::AddShadowBindlessMaterialTextureBinding()
+{
+	this->AddStorageBuffer(GeneralBindingPoint::Shadow_Material_materials.binding, GeneralBindingPoint::Shadow_Material_materials.set)
+		.AddUnifromVariableTextureArray(GeneralBindingPoint::Shadow_Material_textures.binding, 5000, GeneralBindingPoint::Shadow_Material_textures.set);
+	return *this;
+}
+
 PipelineConfig& PipelineConfig::AddLightDataBinding()
 {
 	this->AddStorageBuffer(GeneralBindingPoint::Light_DirLightMetaData.binding, GeneralBindingPoint::Light_DirLightMetaData.set)
@@ -986,6 +993,12 @@ void BindingRecord::SetBindlessMaterialTexture(const std::shared_ptr<StorageBloc
 {
 	if (materials) SetStorageBlock(materials, GeneralBindingPoint::Material_materials);
 	if (textures) SetUniformTextureArray(textures, GeneralBindingPoint::Material_textures);
+}
+
+void BindingRecord::SetShadowBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures)
+{
+	if (materials) SetStorageBlock(materials, GeneralBindingPoint::Shadow_Material_materials);
+	if (textures) SetUniformTextureArray(textures, GeneralBindingPoint::Shadow_Material_textures);
 }
 
 void BindingRecord::SetLightStorageData(

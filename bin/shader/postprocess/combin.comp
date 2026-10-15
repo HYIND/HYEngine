@@ -62,7 +62,7 @@ void main()
 
 	for(uint i = 0; i < mapcount; i++)
 	{
-		vec4 color = texture(InputMap[i], TexCoords).rgba;
+		vec4 color = texture(InputMap[nonuniformEXT(i)], TexCoords).rgba;
 		result = combinColor(result, color);
 	}
 

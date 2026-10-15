@@ -66,7 +66,8 @@ public:
 	void RetireMaterial(Material& material);
 	bool GetMaterialIndex(Material& material, uint64_t& index) const;
 	bool GetMaterialIndex(Material& material, uint32_t& index) const;
-	std::shared_ptr<StorageBlock> GetMaterialSSBO();
+	std::shared_ptr<StorageBlock> GetMaterialSSBO() const;
+	std::shared_ptr<StorageBlock> GetShadowMaterialSSBO() const;
 
 public:
 	void WithMeshWriteLock(const std::function<void()>& call);
@@ -96,6 +97,7 @@ private:
 	mutable SharedLock _meshMutex;
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _MaterialManager;
+	SegmentBufferManager<StorageSegmentBuffer, std::string> _ShadowMaterialManager;
 	mutable SharedLock _materialMutex;
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _AnimatorManager;

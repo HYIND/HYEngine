@@ -187,14 +187,14 @@ inline bool PropertiesHelper::DrawComponent(Physics& physics)
 
 	anyChanged |= DrawPropertyField<Physics>("bodyType", &physics.bodyType);
 	anyChanged |= DrawPropertyField<Physics>("mass", &physics.mass);
-	anyChanged |=  DrawPropertyField<Physics>("friction", &physics.friction);
-	anyChanged |=  DrawPropertyField<Physics>("rollingFriction", &physics.rollingFriction);
-	anyChanged |=  DrawPropertyField<Physics>("restitution", &physics.restitution);
-	anyChanged |=  DrawPropertyField<Physics>("isSensor", &physics.isSensor);
-	anyChanged |=  DrawPropertyField<Physics>("fixedRotation", &physics.fixedRotation);
-	anyChanged |=  DrawPropertyField<Physics>("isBullet", &physics.isBullet);
-	anyChanged |=  DrawPropertyField<Physics>("isCharacter", &physics.isCharacter);
-	anyChanged |=  DrawPropertyField<Physics>("allowSleep", &physics.allowSleep);
+	anyChanged |= DrawPropertyField<Physics>("friction", &physics.friction);
+	anyChanged |= DrawPropertyField<Physics>("rollingFriction", &physics.rollingFriction);
+	anyChanged |= DrawPropertyField<Physics>("restitution", &physics.restitution);
+	anyChanged |= DrawPropertyField<Physics>("isSensor", &physics.isSensor);
+	anyChanged |= DrawPropertyField<Physics>("fixedRotation", &physics.fixedRotation);
+	anyChanged |= DrawPropertyField<Physics>("isBullet", &physics.isBullet);
+	anyChanged |= DrawPropertyField<Physics>("isCharacter", &physics.isCharacter);
+	anyChanged |= DrawPropertyField<Physics>("allowSleep", &physics.allowSleep);
 
 	if (physics.isCharacter) {
 		ImGui::Indent();
@@ -341,7 +341,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 				SetNextPropertyFieldWidth(130.0f, 0.55f);
 				if (ImGui::Combo("Alpha Mode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
 				{
-					properties.alphamode = static_cast<AlphaMode>(alphaMode);
+					properties.alphamode = static_cast<AlphaMode>((uint32_t)alphaMode);
 					slotChanged = true;
 				}
 				if (properties.alphamode == AlphaMode::Mask)

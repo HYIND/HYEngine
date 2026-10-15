@@ -41,6 +41,7 @@ struct RayTracingPipelineConfig :public PipelineConfig
 	RayTracingPipelineConfig& AddUnifromVariableTextureArray(uint32_t binding, uint32_t maxCount = 1, uint32_t set = 0) { PipelineConfig::AddUnifromVariableTextureArray(binding, maxCount, set); return *this; }
 	RayTracingPipelineConfig& AddCameraUnifromDataBinding() { PipelineConfig::AddCameraUnifromDataBinding(); return *this; }
 	RayTracingPipelineConfig& AddBindlessMaterialTextureBinding() { PipelineConfig::AddBindlessMaterialTextureBinding(); return *this; }
+	RayTracingPipelineConfig& AddShadowBindlessMaterialTextureBinding() { PipelineConfig::AddShadowBindlessMaterialTextureBinding(); return *this; }
 	RayTracingPipelineConfig& AddLightDataBinding() { PipelineConfig::AddLightDataBinding(); return *this; }
 	RayTracingPipelineConfig& AddAnimationDataBinding() { PipelineConfig::AddAnimationDataBinding(); return *this; }
 };

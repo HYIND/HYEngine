@@ -20,11 +20,8 @@
 
 struct MeshInfo
 {
-	mutable std::shared_ptr<Mesh> mesh;
-	mutable std::shared_ptr<Material> material;
-
-	MaterialData GetMaterialCompData() const;
-	void GetMaterialCompData(MaterialData& data) const;
+	std::shared_ptr<Mesh> mesh;
+	std::shared_ptr<Material> material;
 };
 
 struct LoadedTexture {

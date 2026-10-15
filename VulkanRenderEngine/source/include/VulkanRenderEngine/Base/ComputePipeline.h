@@ -31,6 +31,7 @@ struct ComputePipelineConfig :public PipelineConfig
 	ComputePipelineConfig& AddUnifromVariableTextureArray(uint32_t binding, uint32_t maxCount = 1, uint32_t set = 0) { PipelineConfig::AddUnifromVariableTextureArray(binding, maxCount, set); return *this; }
 	ComputePipelineConfig& AddCameraUnifromDataBinding() { PipelineConfig::AddCameraUnifromDataBinding(); return *this; }
 	ComputePipelineConfig& AddBindlessMaterialTextureBinding() { PipelineConfig::AddBindlessMaterialTextureBinding(); return *this; }
+	ComputePipelineConfig& AddShadowBindlessMaterialTextureBinding() { PipelineConfig::AddShadowBindlessMaterialTextureBinding(); return *this; }
 	ComputePipelineConfig& AddLightDataBinding() { PipelineConfig::AddLightDataBinding(); return *this; }
 	ComputePipelineConfig& AddAnimationDataBinding() { PipelineConfig::AddAnimationDataBinding(); return *this; }
 };

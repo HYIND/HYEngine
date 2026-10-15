@@ -319,7 +319,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
-			.AddBindlessMaterialTextureBinding()
+			.AddShadowBindlessMaterialTextureBinding()
 			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5);
@@ -344,7 +344,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
-			.AddBindlessMaterialTextureBinding()
+			.AddShadowBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
 			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
@@ -370,7 +370,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
-			.AddBindlessMaterialTextureBinding()
+			.AddShadowBindlessMaterialTextureBinding()
 			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
 			.AddStorageBuffer(5)
@@ -396,7 +396,7 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
 
 		config
-			.AddBindlessMaterialTextureBinding()
+			.AddShadowBindlessMaterialTextureBinding()
 			.AddAnimationDataBinding()
 			.AddUnifromBuffer(3)
 			.AddStorageBuffer(4)
@@ -508,10 +508,10 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	GraphicsBindingRecord pointLightShadowDepthSkinnedBinding;
 
 	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
-	dirLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	dirLightShadowDepthStaticMeshBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
 	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
-	pointLightShadowDepthStaticMeshBinding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
+	pointLightShadowDepthStaticMeshBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
 	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
 	for (auto& data : datas)

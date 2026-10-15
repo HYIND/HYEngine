@@ -3,10 +3,6 @@
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
 
-MaterialData::MaterialData()
-{
-}
-
 Material::Material()
 {
 	_uuid = Tool::GenerateSimpleUuid();
@@ -236,7 +232,7 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 	{
 		if (!tex) continue;
 
-		static auto writeTex = [](std::shared_ptr<Texture2D>& tex, uint32_t& socket, int& count)-> void {
+		static auto writeTex = [](std::shared_ptr<Texture2D>& tex, uint32_t& socket, uint32_t& count)-> void {
 			if (count > 0) return;
 			socket = BindlessTextureManager::Instance()->GetTextureIndex(tex);
 			count++;
@@ -267,6 +263,46 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 			break;
 		case TextureType::Height:
 			writeTex(tex, comp_data.texture_height, comp_data.texture_height_count);
+			break;
+		case TextureType::Opacity:
+			writeTex(tex, comp_data.texture_opacity, comp_data.texture_opacity_count);
+		default:
+			break;
+		}
+
+	}
+}
+
+ShadowMaterialData Material::GetShadowMaterialCompData()
+{
+	ShadowMaterialData comp_data;
+	GetShadowMaterialCompData(comp_data);
+	return comp_data;
+}
+
+void Material::GetShadowMaterialCompData(ShadowMaterialData& comp_data)
+{
+	auto& prop = _properties;
+
+	comp_data.opacity = prop.opacity;
+	comp_data.alphamode = prop.alphamode;
+	comp_data.maskthreshold = prop.maskthreshold;
+
+	auto& textures = _textures;
+	for (auto& [type, tex] : textures)
+	{
+		if (!tex) continue;
+
+		static auto writeTex = [](std::shared_ptr<Texture2D>& tex, uint32_t& socket, uint32_t& count)-> void {
+			if (count > 0) return;
+			socket = BindlessTextureManager::Instance()->GetTextureIndex(tex);
+			count++;
+			};
+
+		switch (type)
+		{
+		case TextureType::Albedo:
+			writeTex(tex, comp_data.texture_albedo, comp_data.texture_albedo_count);
 			break;
 		case TextureType::Opacity:
 			writeTex(tex, comp_data.texture_opacity, comp_data.texture_opacity_count);

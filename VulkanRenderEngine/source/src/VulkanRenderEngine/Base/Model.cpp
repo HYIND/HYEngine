@@ -128,19 +128,6 @@ inline std::string GetExt(const std::string& path)
 	return fs::path(path).extension().string();
 }
 
-MaterialData MeshInfo::GetMaterialCompData() const
-{
-	if (!material)
-		return MaterialData();
-	return material->GetMaterialCompData();
-}
-void MeshInfo::GetMaterialCompData(MaterialData& data) const
-{
-	if (!material)
-		return;
-	return material->GetMaterialCompData(data);
-}
-
 static void SetVertexBoneDataToDefault(Vertex& vertex)
 {
 	for (int i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; i++)
