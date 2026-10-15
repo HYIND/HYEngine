@@ -204,9 +204,9 @@ struct AnalysisParams
 class ModelFileAnalysis
 {
 public:
-	ModelFileAnalysis(const aiScene* scene, const std::string& filePath)
-		:_scene(scene), _filePath(filePath) {
-		_directory = fs::path(filePath).parent_path().string();
+	ModelFileAnalysis(const aiScene* scene, const std::string& filepath)
+		:_scene(scene), _filepath(filepath) {
+		_directory = fs::path(filepath).parent_path().string();
 	};
 
 	bool Excute(AnalysisParams& params);
@@ -219,7 +219,7 @@ private:
 
 public:
 	const aiScene* _scene = nullptr;
-	std::string _filePath;
+	std::string _filepath;
 	std::string _directory;
 };
 
@@ -442,10 +442,12 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		if (!hasMetal)
 			loadTexture(aiTextureType_SPECULAR, TextureType::Metallic);
 
+#ifdef _DEBUG
 		EnumerateMaterialTextures(ai_material);
+#endif // _DEBUG
 
 		Material temp;
-		if (GetExt(_filePath) == ".gltf")
+		if (GetExt(_filepath) == ".gltf")
 		{
 			aiString alphaMode;
 			if (AI_SUCCESS == ai_material->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode))
@@ -472,18 +474,29 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		if (AI_SUCCESS == ai_material->Get(AI_MATKEY_BASE_COLOR, ai_baseColor) || AI_SUCCESS == ai_material->Get(AI_MATKEY_COLOR_DIFFUSE, ai_baseColor))
 		{
 			// 颜色是黑色，但是有纹理，修正
-			if (ai_baseColor.r == 0.0f &&
-				ai_baseColor.g == 0.0f &&
-				ai_baseColor.b == 0.0f &&
-				!materialMeta->textures.empty())
+			if (ai_baseColor.r == 0.0f
+				&& ai_baseColor.g == 0.0f
+				&& ai_baseColor.b == 0.0f
+				&& !materialMeta->textures.empty())
 				ai_baseColor = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
+
+			if (ai_baseColor.r == 0.6f &&
+				ai_baseColor.g == 0.6f &&
+				ai_baseColor.b == 0.6f &&
+				fs::path(_filepath).extension() == ".obj")
+			{
+				ai_baseColor.r = ai_baseColor.g = ai_baseColor.b = 1.0;
+			}
 
 			temp.SetAlbedo(glm::vec3(ai_baseColor.r, ai_baseColor.g, ai_baseColor.b));
 			temp.SetOpacity(ai_baseColor.a);
 		}
 
 		float metallic = 0.f;
-		if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic))
+		if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic)
+			|| AI_SUCCESS == ai_material->Get(AI_MATKEY_SPECULAR_FACTOR, metallic)
+			|| AI_SUCCESS == ai_material->Get(AI_MATKEY_GLOSSINESS_FACTOR, metallic)
+			)
 			temp.SetMetallic(metallic);
 
 		float roughness = 0.5f;
