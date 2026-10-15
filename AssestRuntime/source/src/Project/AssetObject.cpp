@@ -5,6 +5,10 @@ AssetType AssetObject::GetType() const {
 	return _type;
 }
 
+const AssetGUID& AssetObject::GetAssetGUID() const {
+	return _assetGUID;
+}
+
 std::vector<std::shared_ptr<Mesh>> AssetObject::AsStaticMesh() { return {}; }
 
 std::shared_ptr<Texture2D> AssetObject::AsTexture() { return nullptr; }
@@ -34,6 +38,7 @@ MaterialAsset::MaterialAsset() { _type = AssetType::Material; }
 std::shared_ptr<Material> MaterialAsset::AsMaterial()
 {
 	auto material = std::make_shared<Material>();
+	material->SetAssetGUID(_assetGUID);
 	material->SetProperty(_properties);
 	if (auto loader = _loader.lock())
 	{
@@ -124,6 +129,7 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 	}
 
 	auto model = std::make_shared<Model>();
+	model->SetAssetGUID(_assetGUID);
 	for (auto& info : mesheInfos)
 		model->AddMesh(info->mesh, info->material);
 

@@ -13,6 +13,7 @@ class AssetObject
 {
 public:
 	AssetType GetType() const;
+	const AssetGUID& GetAssetGUID() const;
 
 public:
 	virtual ~AssetObject() = default;
@@ -26,6 +27,7 @@ public:
 
 protected:
 	AssetType _type;
+	AssetGUID _assetGUID;
 	std::weak_ptr<AssetLoader> _loader;
 	friend AssetLoader;
 	friend AssetLoadHelper;

@@ -177,7 +177,7 @@
     <ClInclude Include="source\include\Helper\SharedObjectPool.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\CommonData\AssestGUIDDef.h">
+    <ClInclude Include="source\include\CommonData\AssetGUIDDef.h">
       <Filter>头文件\CommonData</Filter>
     </ClInclude>
   </ItemGroup>

@@ -3,6 +3,7 @@
 #include "TextureGeneralDef.h"
 #include "VulkanRenderEngine/SharedTexture.h"
 #include "CriticalSectionLock.h"
+#include "CommonData/AssetGUIDDef.h"
 
 struct SharedTexture;
 
@@ -77,6 +78,8 @@ public:
 	vk::SamplerAddressMode GetWrapV() const;
 
 	TextureConfig GetConfig() const;
+	void SetAssetGUID(const AssetGUID& guid);
+	const AssetGUID& GetAssetGUID() const;
 
 	void GenerateTextureMipMaps();
 public:
@@ -106,6 +109,7 @@ private:
 	vk::Format m_Format;
 	uint32_t m_MaxLevel;
 	TextureConfig m_config;
+	AssetGUID m_assetGUID;
 };
 
 class ITextureArrayProvider

@@ -193,6 +193,16 @@ const std::string& Material::GetUUID() const
 	return _uuid;
 }
 
+void Material::SetAssetGUID(const AssetGUID& guid)
+{
+	_assetGUID = guid;
+}
+
+const AssetGUID& Material::GetAssetGUID() const
+{
+	return _assetGUID;
+}
+
 const std::map<TextureType, std::shared_ptr<Texture2D>>& Material::GetTextures() const
 {
 	return _textures;
@@ -270,6 +280,7 @@ void Material::GetMaterialCompData(MaterialData& comp_data)
 std::shared_ptr<Material> Material::Clone() const
 {
 	auto m = std::make_shared<Material>(_properties);
+	m->_assetGUID = _assetGUID;
 	for (auto& [type, tex] : _textures)
 		m->SetTexture(type, tex);
 	return m;

@@ -43,6 +43,7 @@ std::shared_ptr<AssetObject> AssetLoader::LoadAsset(const AssetGUID& guid)
 		{
 			if (auto asset = AssetLoadHelper::LoadAsset(*meta, pathProvider))
 			{
+				asset->_assetGUID = meta->guid;
 				auto guard = m_GuidToAsset.MakeLockGuard();
 				if (m_GuidToAsset.Find(guid, result))
 					return result;
@@ -101,6 +102,7 @@ std::shared_ptr<TextureAsset> AssetLoadHelper::LoadTexture(AssetMeta& meta, std:
 
 	auto config = desc.GetConfig();
 	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config, true);
+	asset->_texture->SetAssetGUID(meta.guid);
 
 	return asset;
 }

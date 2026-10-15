@@ -2,7 +2,7 @@
 #include "CommonSystems.h"
 #include "GamePlaySystems.h"
 #include "GameRuntimeSystems.h"
-#include "ECSCore\World.h"
+#include "ECSCore/World.h"
 #include "Helper/DynamicFpsController.h"
 
 #include "CommonData/LightFactory.h"
@@ -93,11 +93,14 @@ void SetNameTag(Entity entity, const std::string& name)
 	}
 }
 
-void LoadInitScene(World& world)
+void LoadInitScene(WorldManager* manager)
 {
+	auto world = manager->GetWorld();
+
 	{
-		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
+		Entity entity = LightFactory::CreateDirLight(*world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
 		AddPickProxy(entity);
+		SetNameTag(entity, "DirLight");
 	}
 
 	{
@@ -111,15 +114,15 @@ void LoadInitScene(World& world)
 			"Test/skybox/box2/back.png"
 		};
 		auto skyboxcube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
-		Entity entity = world.createEntityWithTag<TagSkyBox>();
+		Entity entity = world->createEntityWithTag<TagSkyBox>();
 		entity.addComponent<SkyBox>(skyboxcube);
 
-		SetNameTag(entity, "skybox");
+		SetNameTag(entity, "DefaultSkybox");
 	}
 
 	{
 
-		Entity freeEntity = world.createEntityWithTag<TagFreeCamera>();
+		Entity freeEntity = world->createEntityWithTag<TagFreeCamera>();
 		freeEntity.addComponent<Transform>();
 		freeEntity.addComponent<PlayerInput>();
 		auto& controller = freeEntity.addComponent<Controller>();
@@ -130,7 +133,7 @@ void LoadInitScene(World& world)
 		tag.velocity = 0.25;
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world->createEntityWithTag<TagCamera>();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
 			cameracom.camera.SetFOV(80.f);
@@ -140,7 +143,7 @@ void LoadInitScene(World& world)
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
 			camerafollow.offset = glm::vec3(0, 0, 0);
-			world.SetMainCamera(cameraEntity);
+			world->SetMainCamera(cameraEntity);
 
 			//if (freeEntity.hasComponent<TagCurrentControl>() && cameraEntity.hasComponent<TagMainCamera>())
 			//{
@@ -155,7 +158,7 @@ void LoadInitScene(World& world)
 	}
 
 	{
-		Entity cube = world.createEntity();
+		Entity cube = world->createEntity();
 		auto& trans = cube.addComponent<Transform>();
 		trans.position = { 0,3,0 };
 
@@ -169,7 +172,7 @@ void LoadInitScene(World& world)
 		physics.collisionShape.AddBoxShape();
 
 		auto& rendermodel = cube.addComponent<RenderModel>();
-		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f);
+		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
 		AddPickProxy(cube);
 		AddVariableMaterial(cube);
@@ -179,7 +182,7 @@ void LoadInitScene(World& world)
 	{
 		float radius = 3.0;
 
-		Entity sphere = world.createEntity();
+		Entity sphere = world->createEntity();
 		auto& trans = sphere.addComponent<Transform>();
 		trans.position = { 3,3,0 };
 		trans.scale = glm::vec3(radius / 0.5f);
@@ -193,7 +196,7 @@ void LoadInitScene(World& world)
 		physics.mass = 5.f;
 		physics.collisionShape.AddSphereShape(0.5f);
 
-		auto model = GetSphereModel(0.5, 72, 36);
+		auto model = GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
 		auto& rendermodel = sphere.addComponent<RenderModel>();
 		rendermodel.model = model;
@@ -214,13 +217,13 @@ void LoadInitScene(World& world)
 
 	{
 		float floorSize = 50.f;
-		auto model = GetCubeModel(glm::vec3(0.5f), 1.0f);
+		auto model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
 		auto& meshInfo = model->getMeshInfos();
 		if (!meshInfo.empty())
 			meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
 
-		Entity floor = world.createEntity();
+		Entity floor = world->createEntity();
 		auto& trans = floor.addComponent<Transform>();
 		trans.position = glm::vec3(0, 0, 0);
 		trans.scale = glm::vec3(floorSize, 1.f, floorSize);
@@ -233,16 +236,6 @@ void LoadInitScene(World& world)
 
 		auto& rendermodel = floor.addComponent<RenderModel>();
 		rendermodel.model = model;
-
-		//{
-		//	if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
-		//	{
-		//		auto& material = model->getMeshInfos()[0].material;
-		//		material->SetAlbedo(glm::vec3(0.85, 0.87, 0.89));
-		//		material->SetMetallic(0.93);
-		//		material->SetRoughness(0.05f);
-		//	}
-		//}
 
 		AddPickProxy(floor);
 		AddVariableMaterial(floor);
@@ -309,9 +302,10 @@ void WorldManager::InitWorld()
 	renderSystem.SetTriBuffer(_triBuffer);
 	renderSystem.SetOpenGLRender(_renderer);
 
-	LoadInitScene(*world);
-
 	_world = world;
+
+	LoadInitScene(this);
+
 	_world->update(16);
 }
 
@@ -599,20 +593,22 @@ bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
 	return isSuccess && newEntity;
 }
 
-void WorldManager::AddLight(LightType type, const glm::vec3& position)
+void WorldManager::AddLight(LightType type, const glm::vec3& position, const std::string& name)
 {
 	if (type == LightType::Directional)
 	{
-		_world->SubmitCommand([&, position = position](World& world)-> void {
+		_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
 			Entity entity = LightFactory::CreateDirLight(world, glm::vec3(0, -1, 0));
 			if (auto* trans = entity.tryGetComponent<Transform>())
 				trans->position = position;
 			AddPickProxy(entity);
+			if (!name.empty())
+				SetNameTag(entity, name);
 			});
 	}
 	else if (type == LightType::Point)
 	{
-		_world->SubmitCommand([&, position = position](World& world)-> void {
+		_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
 			Entity entity = LightFactory::CreatePointLight(world, position);
 			if (auto* trans = entity.tryGetComponent<Transform>())
 				trans->position = position;
@@ -621,25 +617,27 @@ void WorldManager::AddLight(LightType type, const glm::vec3& position)
 	}
 	else if (type == LightType::Spot)
 	{
-		_world->SubmitCommand([&, position = position](World& world)-> void {
+		_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
 			Entity entity = LightFactory::CreateSpotLight(world, position, glm::vec3(0, -1, 0));
 			if (auto* trans = entity.tryGetComponent<Transform>())
 				trans->position = position;
 			AddPickProxy(entity);
+			if (!name.empty())
+				SetNameTag(entity, name);
 			});
 	}
 }
 
-void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position)
+void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position, const std::string& name)
 {
 	if (type == GeometryType::Cube)
 	{
-		_world->SubmitCommand([&, position = position](World& world)-> void {
-			Entity cube = world.createEntity();
-			auto& trans = cube.addComponent<Transform>();
+		_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
+			Entity entity = world.createEntity();
+			auto& trans = entity.addComponent<Transform>();
 			trans.position = position;
 
-			auto& physics = cube.addComponent<Physics>();
+			auto& physics = entity.addComponent<Physics>();
 			physics.bodyType = Physics::BodyType::Static;
 			physics.isSensor = false;
 			physics.isBullet = true;
@@ -648,22 +646,24 @@ void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position)
 			physics.mass = 5.f;
 			physics.collisionShape.AddBoxShape();
 
-			auto& rendermodel = cube.addComponent<RenderModel>();
-			rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f);
+			auto& rendermodel = entity.addComponent<RenderModel>();
+			rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-			AddPickProxy(cube);
-			AddVariableMaterial(cube);
+			AddPickProxy(entity);
+			AddVariableMaterial(entity);
+			if (!name.empty())
+				SetNameTag(entity, name);
 			});
 	}
 	else if (type == GeometryType::Sphere)
 	{
-		_world->SubmitCommand([&, position = position](World& world)-> void {
+		_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
 
-			Entity sphere = world.createEntity();
-			auto& trans = sphere.addComponent<Transform>();
+			Entity entity = world.createEntity();
+			auto& trans = entity.addComponent<Transform>();
 			trans.position = position;
 
-			auto& physics = sphere.addComponent<Physics>();
+			auto& physics = entity.addComponent<Physics>();
 			physics.bodyType = Physics::BodyType::Static;
 			physics.isSensor = false;
 			physics.isBullet = true;
@@ -672,13 +672,13 @@ void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position)
 			physics.mass = 5.f;
 			physics.collisionShape.AddSphereShape(0.5f);
 
-			auto model = GetSphereModel(0.5, 72, 36);
+			auto& rendermodel = entity.addComponent<RenderModel>();
+			rendermodel.model = GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
-			auto& rendermodel = sphere.addComponent<RenderModel>();
-			rendermodel.model = model;
-
-			AddPickProxy(sphere);
-			AddVariableMaterial(sphere);
+			AddPickProxy(entity);
+			AddVariableMaterial(entity);
+			if (!name.empty())
+				SetNameTag(entity, name);
 			});
 	}
 }

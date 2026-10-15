@@ -3,6 +3,7 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "Animdata.h"
+#include "CommonData/AssetGUIDDef.h"
 
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -50,6 +51,9 @@ public:
 
 	std::shared_ptr<Skeleton>& GetSkeleton();
 
+	void SetAssetGUID(const AssetGUID& guid);
+	const AssetGUID& GetAssetGUID() const;
+
 
 public:
 	struct CloneConfig
@@ -83,4 +87,5 @@ private:
 
 	std::string _directory;
 	std::string _filepath;
+	AssetGUID _assetGUID;
 };

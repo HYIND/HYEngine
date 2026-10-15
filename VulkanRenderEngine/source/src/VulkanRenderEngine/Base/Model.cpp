@@ -321,6 +321,16 @@ std::shared_ptr<Skeleton>& Model::GetSkeleton()
 	return _skeleton;
 }
 
+void Model::SetAssetGUID(const AssetGUID& guid)
+{
+	_assetGUID = guid;
+}
+
+const AssetGUID& Model::GetAssetGUID() const
+{
+	return _assetGUID;
+}
+
 std::shared_ptr<Model> Model::Clone(bool clonemesh, bool clonematerial, bool cloneskeleton)
 {
 	return Clone(Model::CloneConfig(clonemesh, clonematerial, cloneskeleton));
@@ -329,6 +339,7 @@ std::shared_ptr<Model> Model::Clone(bool clonemesh, bool clonematerial, bool clo
 std::shared_ptr<Model> Model::Clone(const Model::CloneConfig& config)
 {
 	auto other = std::make_shared<Model>();
+	other->_assetGUID = _assetGUID;
 
 	if (config.cloneMaterial)
 	{

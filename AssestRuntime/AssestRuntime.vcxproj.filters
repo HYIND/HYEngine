@@ -21,7 +21,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="source\include\AssestRuntime.h">
+    <ClInclude Include="source\include\AssetRuntime.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Project\AssetDataBase.h">
@@ -47,7 +47,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\src\AssestRuntime.cpp">
+    <ClCompile Include="source\src\AssetRuntime.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Project\AssetAnalysisHelper.cpp">

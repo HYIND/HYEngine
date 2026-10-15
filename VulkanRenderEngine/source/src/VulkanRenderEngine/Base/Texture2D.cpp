@@ -478,6 +478,16 @@ TextureConfig Texture2D::GetConfig() const
 	return m_config;
 }
 
+void Texture2D::SetAssetGUID(const AssetGUID& guid)
+{
+	m_assetGUID = guid;
+}
+
+const AssetGUID& Texture2D::GetAssetGUID() const
+{
+	return m_assetGUID;
+}
+
 void Texture2D::GenerateTextureMipMaps()
 {
 	if (m_MaxLevel <= 1)
