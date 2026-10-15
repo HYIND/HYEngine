@@ -247,6 +247,8 @@ void IndirectDrawManager::SetupMaterial(Material& material)
 	{
 		auto data = material.GetMaterialCompData();
 		_MaterialManager.SetSegment(uuid, (void*)version, &data, sizeof(data));
+		auto shadowData = material.GetShadowMaterialCompData();
+		_ShadowMaterialManager.SetSegment(uuid, (void*)version, &shadowData, sizeof(shadowData));
 	}
 }
 
@@ -267,8 +269,12 @@ bool IndirectDrawManager::GetMaterialIndex(Material& material, uint32_t& index) 
 	return GetMaterialIndex_LockFree(material, index);
 }
 
-std::shared_ptr<StorageBlock> IndirectDrawManager::GetMaterialSSBO() {
+std::shared_ptr<StorageBlock> IndirectDrawManager::GetMaterialSSBO() const {
 	return _MaterialManager.GetBuffer()->GetBlock();
+}
+
+std::shared_ptr<StorageBlock> IndirectDrawManager::GetShadowMaterialSSBO() const {
+	return _ShadowMaterialManager.GetBuffer()->GetBlock();
 }
 
 void IndirectDrawManager::WithMeshWriteLock(const std::function<void()>& call)
@@ -331,6 +337,8 @@ void IndirectDrawManager::SetupMaterial_LockFree(Material& material)
 	{
 		auto data = material.GetMaterialCompData();
 		_MaterialManager.SetSegment(uuid, (void*)version, &data, sizeof(data));
+		auto shadowData = material.GetShadowMaterialCompData();
+		_ShadowMaterialManager.SetSegment(uuid, (void*)version, &shadowData, sizeof(shadowData));
 	}
 }
 
@@ -400,4 +408,5 @@ void IndirectDrawManager::DeleteMaterial(const std::string& uuid)
 {
 	auto guard = LockGuard(_materialMutex);
 	_MaterialManager.RemoveSegment(uuid);
+	_ShadowMaterialManager.RemoveSegment(uuid);
 }

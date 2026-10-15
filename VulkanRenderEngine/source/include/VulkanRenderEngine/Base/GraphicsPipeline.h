@@ -103,6 +103,7 @@ struct GraphicsPipelineConfig : public PipelineConfig
 	GraphicsPipelineConfig& AddUnifromVariableTextureArray(uint32_t binding, uint32_t maxCount = 1, uint32_t set = 0) { PipelineConfig::AddUnifromVariableTextureArray(binding, maxCount, set); return *this; }
 	GraphicsPipelineConfig& AddCameraUnifromDataBinding() { PipelineConfig::AddCameraUnifromDataBinding(); return *this; }
 	GraphicsPipelineConfig& AddBindlessMaterialTextureBinding() { PipelineConfig::AddBindlessMaterialTextureBinding(); return *this; }
+	GraphicsPipelineConfig& AddShadowBindlessMaterialTextureBinding() { PipelineConfig::AddShadowBindlessMaterialTextureBinding(); return *this; }
 	GraphicsPipelineConfig& AddLightDataBinding() { PipelineConfig::AddLightDataBinding(); return *this; }
 	GraphicsPipelineConfig& AddAnimationDataBinding() { PipelineConfig::AddAnimationDataBinding(); return *this; }
 };

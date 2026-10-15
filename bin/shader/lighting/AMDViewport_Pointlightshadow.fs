@@ -1,6 +1,6 @@
 #version 460 core
 
-#include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/dataDef/ShadowMaterialTextureDef.comp"
 
 struct LightProp{
     vec3 lightPos;
@@ -30,7 +30,7 @@ layout (location = 3) in vec3 WorldPos;
 
 void main()
 {
-    MaterialData material = materials[data[dataIndex].materialIndex];
+    ShadowMaterialData material = shadowMaterials[data[dataIndex].materialIndex];
     if (calculateOpacity(material, FragTextureCoords) < 0.02)
         discard;
         

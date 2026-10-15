@@ -1,0 +1,15 @@
+
+struct ShadowMaterialData
+{
+	float opacity;
+	uint alphamode;
+	float maskthreshold;
+
+	uint texture_albedo_count;
+	uint texture_opacity_count;
+
+	uint texture_albedo;
+    uint texture_opacity;
+
+	uint padding;
+};

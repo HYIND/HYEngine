@@ -162,15 +162,18 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		auto& meshInfo = item.meshinfo;
 		if (!meshInfo.mesh) continue;
 
-		AABB aabb = meshInfo.mesh->GetAABB();
+		auto& mesh = meshInfo.mesh;
+		auto& material = meshInfo.material;
+
+		AABB aabb = mesh->GetAABB();
 		aabb.MakeTransform(item.transform);
 		float dis_sqrt = aabb.DistancePointToAABBSqrt(state.camera.position);
 		if (dis_sqrt > maxCacheClearDistanceSqrt)
 		{
 			SegmentData data;
-			traiangleBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
-			traiangleExtBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
-			meshBVHNodeBufferManager.RemoveSegment(meshInfo.mesh->GetUUID(), data);
+			traiangleBufferManager.RemoveSegment(mesh->GetUUID(), data);
+			traiangleExtBufferManager.RemoveSegment(mesh->GetUUID(), data);
+			meshBVHNodeBufferManager.RemoveSegment(mesh->GetUUID(), data);
 			continue;
 		}
 		else if (dis_sqrt > maxDistanceSqrt)
@@ -184,11 +187,11 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		meshmatdata.mesh.normalMatRow1 = mat[0];
 		meshmatdata.mesh.normalMatRow2 = mat[1];
 		meshmatdata.mesh.normalMatRow3 = mat[2];
-		meshmatdata.mesh.triangleCount = (int)(meshInfo.mesh->GetIndices().size() / 3);
+		meshmatdata.mesh.triangleCount = (int)(mesh->GetIndices().size() / 3);
 
-		meshInfo.GetMaterialCompData(meshmatdata.material);
+		material->GetMaterialCompData(meshmatdata.material);
 
-		auto meshbvhdata = meshInfo.mesh->GetBVHData();
+		auto meshbvhdata = mesh->GetBVHData();
 
 		meshmatdata.mesh.bvhNodeCount = meshbvhdata->nodes.size();
 
@@ -196,15 +199,15 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		meshBVHNodeCount += meshbvhdata->nodes.size();
 		meshBVHIndicesCount += meshbvhdata->indices.size();
 
-		auto mesh_viNewVersion = meshInfo.mesh->GetVerticesIndicesVsrsion();
-		auto meshuuid = meshInfo.mesh->GetUUID();
+		auto mesh_viNewVersion = mesh->GetVerticesIndicesVsrsion();
+		auto meshuuid = mesh->GetUUID();
 
 		SegmentData triSegData;
 		if (!traiangleBufferManager.FindSegment(meshuuid, triSegData) || (uint32_t)triSegData.userData != mesh_viNewVersion)
 		{
 			std::vector<comp_Triangle> triangles;
 			std::vector<comp_Triangle_Extension> triangleExts;
-			getTriangleData(*meshInfo.mesh, triangles, triangleExts);
+			getTriangleData(*mesh, triangles, triangleExts);
 			resortTriangleByBVHData(meshbvhdata, triangles, triangleExts);
 			auto newSegmentTri = traiangleBufferManager.SetSegment(meshuuid, (void*)mesh_viNewVersion, (const char*)triangles.data(), triangles.size() * sizeof(comp_Triangle));
 			auto newSegmentTriExt = traiangleExtBufferManager.SetSegment(meshuuid, (void*)mesh_viNewVersion, (const char*)triangleExts.data(), triangleExts.size() * sizeof(comp_Triangle_Extension));

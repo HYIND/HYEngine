@@ -1,6 +1,6 @@
 #version 460 core
 
-#include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/dataDef/ShadowMaterialTextureDef.comp"
 
 layout (location = 0) in vec2 FragTextureCoords;
 layout (location = 1) flat in uint viewIndex;
@@ -19,7 +19,7 @@ layout(binding = 5) buffer Transforms
 
 void main()
 {
-    MaterialData material = materials[data[dataIndex].materialIndex];
+    ShadowMaterialData material = shadowMaterials[data[dataIndex].materialIndex];
     if (calculateOpacity(material, FragTextureCoords) < 0.02)
         discard;
 }

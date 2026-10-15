@@ -69,6 +69,7 @@ struct PipelineConfig {
 
 	PipelineConfig& AddCameraUnifromDataBinding();
 	PipelineConfig& AddBindlessMaterialTextureBinding();
+	PipelineConfig& AddShadowBindlessMaterialTextureBinding();
 	PipelineConfig& AddLightDataBinding();
 	PipelineConfig& AddAnimationDataBinding();
 
@@ -111,6 +112,9 @@ namespace GeneralBindingPoint
 	static const BindingPoint Animation_MatData = BindingPoint{ .binding = 1, .set = 4 };
 	static const BindingPoint Animation_PrevMetaData = BindingPoint{ .binding = 2, .set = 4 };
 	static const BindingPoint Animation_PrevMatData = BindingPoint{ .binding = 3, .set = 4 };
+
+	static const BindingPoint Shadow_Material_materials = BindingPoint{ .binding = 0, .set = 5 };
+	static const BindingPoint Shadow_Material_textures = BindingPoint{ .binding = 1, .set = 5 };
 }
 
 class BindingRecord;
@@ -350,6 +354,7 @@ public:
 public:
 	void SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO);
 	void SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
+	void SetShadowBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
 	void SetLightStorageData(
 		const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, 
 		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, 
