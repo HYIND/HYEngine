@@ -336,7 +336,7 @@ int ImGuiMain()
 		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
 		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());// 场景物体窗口 (左侧)
 		ImguiLayout::DrawOptions(WorldManager::Instance());	// 场景物体窗口 (左侧)
-		ImguiLayout::DrawObjectProperties();// 属性面板 (右侧)
+		ImguiLayout::DrawObjectProperties(ProjectManager::Get());// 属性面板 (右侧)
 		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());	// 资产管理 (底部)
 		ImguiLayout::DrawStatusBar(WorldManager::Instance());// 底部状态栏
 		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());// 场景视图 (中间)

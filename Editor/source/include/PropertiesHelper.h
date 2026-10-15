@@ -6,8 +6,12 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #include "Reflect.h"
+#include "Project/ProjectManager.h"
+
+class ProjectManager;
 
 struct ComponentData
 {
@@ -19,13 +23,13 @@ struct ComponentData
 class PropertiesHelper
 {
 public:
-	using DrawFunction = std::function<void(Entity, IComponent*)>;
+	using DrawFunction = std::function<void(Entity, IComponent*, ProjectManager*)>;
 
 	// 注册组件
 	template<typename T>
 	static void RegisterComponent(const std::string& displayName);
 	static std::vector<ComponentData> GetAllComponents(Entity entity);// 获取实体的所有组件
-	static void DrawAllProperties(Entity entity, const std::vector<ComponentData>& components);// 绘制所有组件
+	static void DrawAllProperties(Entity entity, const std::vector<ComponentData>& components, ProjectManager* assetManager);
 
 	// 通用绘制模板
 	template<typename T>
@@ -41,14 +45,22 @@ private:
 	// 通用绘制模板
 	template<typename T>
 	static bool DrawComponent(T& comp);
+	template<typename T>
+	static bool DrawComponent(T& comp, ProjectManager*) { return DrawComponent(comp); }
 
 	// 默认修改回调
 	template<typename T>
 	static void OnComponentChange(Entity entity, T& comp);
 
+	// 特定Owner类型的特定字段绘制，由Reflect中的PropertyUI决定绘制的PropertyWidget
+	template<typename Owner, typename FieldType>
+	static bool DrawPropertyField(const std::string& name, FieldType* value);
+
 	// 字段绘制辅助
 	template<typename FieldType>
-	static bool DrawField(const std::string& name, FieldType* value);
+	static bool DrawField(const std::string& name, FieldType* value, PropertyWidget widget);
+
+	static void SetNextPropertyFieldWidth(float maxWidth, float fraction = 0.5f);
 };
 
 template<typename T>

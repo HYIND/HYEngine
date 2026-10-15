@@ -13,7 +13,7 @@ public:
 	static void DrawMainMenu(GLFWwindow* window, ProjectManager* projectManager);
 	static void SetDockspace(bool firstFrame);
 	static void DrawSceneObjectList(WorldManager* worldManager);
-	static void DrawObjectProperties();
+	static void DrawObjectProperties(ProjectManager* projectManager);
 	static void DrawAssetBrowser(ProjectManager* projectManager);
 	static void DrawSceneView(WorldManager* worldManager, ProjectManager* projectManager);
 	static void DrawOptions(WorldManager* worldManager);

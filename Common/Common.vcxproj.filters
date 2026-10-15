@@ -60,9 +60,6 @@
     <ClInclude Include="source\include\CommonTags.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\CommonData\VariableMaterialData.h">
-      <Filter>头文件\CommonData</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\CommonEventDef.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -100,9 +97,6 @@
       <Filter>头文件\Components</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Components\Transform2D.h">
-      <Filter>头文件\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Components\VariableMaterial.h">
       <Filter>头文件\Components</Filter>
     </ClInclude>
     <ClInclude Include="source\include\ECSCore\ComponentArray.h">

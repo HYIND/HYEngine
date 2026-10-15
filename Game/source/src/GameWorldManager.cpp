@@ -703,7 +703,6 @@ void CreateTestGameScene(World& world)
 
 			cube_1.addComponent<LightShow>();
 			cube_1.addComponent<TagLightShowEntity>();
-			cube_1.addComponent<VariableMaterial>();
 			cube_1.addComponent<ModelProxy>(std::make_shared<ModelProxyData>());
 		}
 	}
