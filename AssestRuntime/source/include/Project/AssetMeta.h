@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <variant>
+#include "CommonData/AssestGUIDDef.h"
 
 // =================== 虚拟资产 ===================
 // 依赖于物理文件，记录物理文件 + 导入配置
@@ -22,7 +23,6 @@ enum class AssetType {
 	Unknown = 0, Texture, Audio, Material, StaticMesh, Model, Scene
 };
 
-using AssetGUID = std::string;
 using AssetPath = std::string;
 using AssetName = std::string;
 

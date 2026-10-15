@@ -143,6 +143,7 @@
   <ItemGroup>
     <ClInclude Include="source\include\Common.h" />
     <ClInclude Include="source\include\CommonComponent.h" />
+    <ClInclude Include="source\include\CommonData\AssestGUIDDef.h" />
     <ClInclude Include="source\include\CommonData\Camera.h" />
     <ClInclude Include="source\include\CommonData\LightData.h" />
     <ClInclude Include="source\include\CommonData\LightFactory.h" />
