@@ -5,9 +5,6 @@
 #include "SpinLock.h"
 
 
-void PreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
-
 PreCalculatePass::PreCalculatePass()
 {}
 
@@ -16,21 +13,27 @@ PreCalculatePass::~PreCalculatePass()
 
 void PreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	//auto start = Tool::GetTimestampMircoseconds();
+	auto cmd = cmdCtx.GetCmd();
+	Execute(cmd, state);
+	cmd->SubmitToQueue();
+}
+
+void PreCalculatePass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, RenderState& state)
+{
+	if (!cmd) return;
+
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
 	std::vector<AABB> staticMesh_AABB;
 	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices, staticMesh_AABB);
-	//std::cout << std::format("cost {}us\n", Tool::GetTimestampMircoseconds() - start);
 
-	auto cmd = cmdCtx.GetCmd();
 	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
 		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
 	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteDataAsync(cmd, staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
 	if (!state.indirectCommands.ssbo_StaticMesh_WorldAABB)
 		state.indirectCommands.ssbo_StaticMesh_WorldAABB = std::make_shared<StorageBlock>();
 	state.indirectCommands.ssbo_StaticMesh_WorldAABB->WriteDataAsync(cmd, staticMesh_AABB.data(), staticMesh_AABB.size() * sizeof(AABB));
-	cmd->SubmitToQueue();
 }
+
 
 void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<TransAndMaterialIndex>& staticMesh_TransformAndMaterialIndices, std::vector<AABB>& worldAABBs)
 {
@@ -111,23 +114,4 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 		startInedx += sideIndex.size();
 	}
-}
-
-void PreCalculatePass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
-
-void PreCalculatePass::Execute(RenderState & state)
-{
-	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
-	std::vector<AABB> staticMesh_AABB;
-	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices, staticMesh_AABB);
-
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
-		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();
-	state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices->WriteDataAsync(cmd, staticMesh_TransformAndMaterialIndices.data(), staticMesh_TransformAndMaterialIndices.size() * sizeof(TransAndMaterialIndex));
-	if (!state.indirectCommands.ssbo_StaticMesh_WorldAABB)
-		state.indirectCommands.ssbo_StaticMesh_WorldAABB = std::make_shared<StorageBlock>();
-	state.indirectCommands.ssbo_StaticMesh_WorldAABB->WriteDataAsync(cmd, staticMesh_AABB.data(), staticMesh_AABB.size() * sizeof(AABB));
-	cmd->SubmitNowAndWait();
 }
