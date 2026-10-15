@@ -81,6 +81,8 @@ public:
 	void SetAssetGUID(const AssetGUID& guid);
 	const AssetGUID& GetAssetGUID() const;
 
+	vk::ImageLayout GetLayout(uint32_t level = 0) const;
+
 	void GenerateTextureMipMaps();
 public:
 	std::shared_ptr<VKWrapper::BaseVKImage> GetImageSharedPtr() const;

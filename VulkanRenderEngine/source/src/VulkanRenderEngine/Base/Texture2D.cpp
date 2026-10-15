@@ -488,6 +488,11 @@ const AssetGUID& Texture2D::GetAssetGUID() const
 	return m_assetGUID;
 }
 
+vk::ImageLayout Texture2D::GetLayout(uint32_t level) const
+{
+	return _image->GetCurrentLayout(level);
+}
+
 void Texture2D::GenerateTextureMipMaps()
 {
 	if (m_MaxLevel <= 1)

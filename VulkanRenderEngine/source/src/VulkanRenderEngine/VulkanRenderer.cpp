@@ -951,7 +951,26 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 
 	{
 		auto guard = sync->MakeProgressGuard();
-		_preCalculatePass->Execute(*state);
+
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		_preCalculatePass->Execute(cmd, *state);
+
+		auto sceneColorBuffer = data->renderTarget->sceneColorBuffer;
+		auto image = sceneColorBuffer->GetImage();
+		auto layout = sceneColorBuffer->GetLayout(0);
+
+		if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
+			sceneColorBuffer->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+		vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		vk::ImageSubresourceRange range;
+		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1)
+			.setBaseMipLevel(0)
+			.setLevelCount(1);
+		cmd->clearColorImage(image, layout, clearColor, range);
+		cmd->SubmitNowAndWait();
 	}
 
 	{
