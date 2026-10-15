@@ -2,6 +2,7 @@
 
 #include "AssetMeta.h"
 #include "AssetObject.h"
+#include "SafeStl.h"
 
 class IAssetFullPathProvider
 {

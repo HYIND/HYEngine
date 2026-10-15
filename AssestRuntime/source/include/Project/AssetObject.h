@@ -3,10 +3,11 @@
 #include "AssetMeta.h"
 #include "AssetDescription.h"
 #include "VulkanRenderEngine/Base/Model.h"
-#include "GeneralManager/AudioDeviceManager.h"
 
 class AssetLoader;
 class AssetLoadHelper;
+
+class AudioInfo;
 
 class AssetObject
 {

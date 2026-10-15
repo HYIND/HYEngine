@@ -6,8 +6,6 @@
 #include "Helper/DynamicFpsController.h"
 
 #include "CommonData/LightFactory.h"
-#include "Factory/ParticleEmitterFactory.h"
-#include "Factory/CharacterFactory.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"
