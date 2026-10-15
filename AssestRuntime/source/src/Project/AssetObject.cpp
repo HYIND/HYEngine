@@ -63,9 +63,11 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 
 		for (auto& guid : _dependencyStaticMesh)
 		{
-			auto task = CoroTask::Run([guid, &loader]() ->auto {
-				auto meshes = loader->LoadAsset(guid)->AsStaticMesh();
-				return meshes;
+			auto task = CoroTask::Run([guid, &loader]() -> std::vector<std::shared_ptr<Mesh>> {
+				auto asset = loader->LoadAsset(guid);
+				if (asset)
+					return asset->AsStaticMesh();
+				return {};
 				});
 			staticMeshTask.push_back(std::move(task));
 		}
@@ -87,7 +89,9 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 				if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
 				{
 					auto& guid = _dependencyMaterial[i];
-					material = loader->LoadAsset(guid)->AsMaterial();
+					auto asset = loader->LoadAsset(guid);
+					if (asset)
+						material = asset->AsMaterial();
 				}
 
 				if (!material)
@@ -100,32 +104,6 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 
 		for (auto& task : materialTask)
 			task.sync_wait();
-
-		//for (auto& guid : _dependencyStaticMesh)
-		//{
-		//	auto meshes = loader->LoadAsset(guid)->AsStaticMesh();
-		//	for (auto& mesh : meshes)
-		//	{
-		//		auto meshInfo = std::make_shared<MeshInfo>();
-		//		meshInfo->mesh = mesh;
-		//		mesheInfos.push_back(std::move(meshInfo));
-		//	}
-		//}
-
-		//for (uint32_t i = 0; i < mesheInfos.size(); i++)
-		//{
-		//	std::shared_ptr<Material> material;
-		//	if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
-		//	{
-		//		auto& guid = _dependencyMaterial[i];
-		//		material = loader->LoadAsset(guid)->AsMaterial();
-		//	}
-
-		//	if (!material)
-		//		material = std::make_shared<Material>();
-
-		//	mesheInfos[i]->material = material;
-		//}
 	}
 
 	auto model = std::make_shared<Model>();
