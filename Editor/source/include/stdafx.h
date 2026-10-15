@@ -6,7 +6,7 @@
 
 
 #ifdef _DEBUG
-#pragma comment(lib, "AssestRuntime_d.lib")
+#pragma comment(lib, "AssetRuntime_d.lib")
 #pragma comment(lib, "GamePlay_d.lib")
 #pragma comment(lib, "GameRuntime_d.lib")
 #pragma comment(lib, "shaderc_combinedd.lib")
@@ -40,7 +40,7 @@
 #pragma comment(lib, "LinearMath_Debug.lib")
 
 #else
-#pragma comment(lib, "AssestRuntime.lib")
+#pragma comment(lib, "AssetRuntime.lib")
 #pragma comment(lib, "GamePlay.lib")
 #pragma comment(lib, "GameRuntime.lib")
 #pragma comment(lib, "shaderc_combined.lib")

@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include "CommonData/AssetGUIDDef.h"
 #include "Texture2D.h"
 
 enum class TextureType
@@ -131,6 +132,8 @@ public:
 
 	uint32_t GetVersion() const;
 	const std::string& GetUUID() const;
+	void SetAssetGUID(const AssetGUID& guid);
+	const AssetGUID& GetAssetGUID() const;
 
 	const std::map<TextureType, std::shared_ptr<Texture2D>>& GetTextures() const;
 	MaterialData GetMaterialCompData();
@@ -147,6 +150,7 @@ private:
 
 private:
 	std::string _uuid;
+	AssetGUID _assetGUID;
 	MaterialProperties _properties;
 	std::map<TextureType, std::shared_ptr<Texture2D>> _textures;
 

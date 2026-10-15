@@ -6,7 +6,7 @@
 #include <vector>
 #include <memory>
 #include <variant>
-#include "CommonData/AssestGUIDDef.h"
+#include "CommonData/AssetGUIDDef.h"
 
 // =================== 虚拟资产 ===================
 // 依赖于物理文件，记录物理文件 + 导入配置

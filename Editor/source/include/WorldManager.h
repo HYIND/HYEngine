@@ -63,8 +63,8 @@ public:
 	Entity CreateModelEntity(std::shared_ptr<Model> model);
 	bool DuplicateEntity(Entity oriEntity, Entity& newEntity);
 
-	void AddLight(LightType type, const glm::vec3& position);
-	void AddGeometry(GeometryType type, const glm::vec3& position);
+	void AddLight(LightType type, const glm::vec3& position, const std::string& name = "");
+	void AddGeometry(GeometryType type, const glm::vec3& position, const std::string& name = "");
 
 private:
 	DynamicFpsController controller;

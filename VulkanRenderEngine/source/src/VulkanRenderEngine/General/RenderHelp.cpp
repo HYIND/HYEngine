@@ -11,7 +11,7 @@
 #undef near
 #endif
 
-std::shared_ptr<Model> GetFloorModel(const glm::vec2& scale, float textureScale)
+std::shared_ptr<Model> GetFloorModel(const glm::vec2& scale, float textureScale, const AssetGUID& guid)
 {
 	float planeVertices[] = {
 		// positions        
@@ -62,10 +62,12 @@ std::shared_ptr<Model> GetFloorModel(const glm::vec2& scale, float textureScale)
 	auto floor_Model = std::make_shared<Model>();
 	floor_Model->AddMesh(floor_mesh, material);
 
+	floor_Model->SetAssetGUID(guid);
+
 	return floor_Model;
 }
 
-std::shared_ptr<Model> GetCubeModel(const glm::vec3& scale, float textureScale)
+std::shared_ptr<Model> GetCubeModel(const glm::vec3& scale, float textureScale, const AssetGUID& guid)
 {
 	static std::vector<glm::vec3> cube_vertices = {
 				glm::vec3(-1,-1,-1),
@@ -149,10 +151,12 @@ std::shared_ptr<Model> GetCubeModel(const glm::vec3& scale, float textureScale)
 	auto cube_Model = std::make_shared<Model>();
 	cube_Model->AddMesh(cube_mesh, material);
 
+	cube_Model->SetAssetGUID(guid);
+
 	return cube_Model;
 }
 
-std::shared_ptr<Model> GetSphereModel(float radius, int sectors, int stacks)
+std::shared_ptr<Model> GetSphereModel(float radius, int sectors, int stacks, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -259,10 +263,12 @@ std::shared_ptr<Model> GetSphereModel(float radius, int sectors, int stacks)
 	auto sphere_Model = std::make_shared<Model>();
 	sphere_Model->AddMesh(sphere_mesh, material);
 
+	sphere_Model->SetAssetGUID(guid);
+
 	return sphere_Model;
 }
 
-std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments)
+std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -414,6 +420,8 @@ std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments
 
 	auto model = std::make_shared<Model>();
 	model->AddMesh(mesh, material);
+
+	model->SetAssetGUID(guid);
 
 	return model;
 }
