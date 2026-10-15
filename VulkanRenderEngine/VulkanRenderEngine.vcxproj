@@ -169,6 +169,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\ImageLayoutWrapper.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\TemporalAccumulate.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\TAAFilter.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h" />
@@ -271,6 +272,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\TAAFilter.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Public.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\DependencySolver.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\PassNode.cpp" />

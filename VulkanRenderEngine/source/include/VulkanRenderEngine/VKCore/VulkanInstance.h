@@ -18,6 +18,11 @@ namespace VKCore
 		VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME
 	};
 
+	static std::vector<std::string> VK_DESCRIPTOR_HEAP_Extension = {
+		VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME,
+		VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME
+	};
+
 	struct VulkanInstanceConfig
 	{
 		uint32_t apiVersion = VK_API_VERSION_1_0;
