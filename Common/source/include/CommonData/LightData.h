@@ -44,8 +44,8 @@ struct SpotLightData
 	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
-enum class LightType {
-	Directional,
+enum class LightType :uint32_t {
+	Directional = 0,
 	Point,
 	Spot
 };

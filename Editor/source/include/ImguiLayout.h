@@ -5,6 +5,7 @@
 #include "WorldManager.h"
 #include "Project/ProjectManager.h"
 #include "AssetImportPopup.h"
+#include "CommonData/AssetGUIDDef.h"
 
 
 class ImguiLayout
@@ -29,6 +30,7 @@ private:
 	static void DrawFolderTree(const std::string& currentPath, const std::string& parentPathStr, const std::string& rootPathStr);
 	static void DrawFolderContent(ProjectManager* projectManager, const std::string& currentPath);
 	static std::string GetWindowAtPosition(const ImVec2& pos);
+	static bool SaveCurrentScene(ProjectManager* projectManager);
 
 public:
 	static ImGuizmo::OPERATION mCurrentGizmoOperation;
@@ -52,4 +54,5 @@ public:
 	static std::string m_selectedFolder;
 
 	static AssetImportPopup s_assetImportPopup;
+	static AssetGUID m_currentSceneAssetGuid;
 };

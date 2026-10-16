@@ -28,6 +28,98 @@ bool ImguiLayout::s_openNewProjectPopup = false;
 std::string ImguiLayout::m_selectedFolder;
 
 AssetImportPopup ImguiLayout::s_assetImportPopup;
+AssetGUID ImguiLayout::m_currentSceneAssetGuid;
+static std::string s_sceneSaveErrorMessage;
+
+bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
+{
+	if (!projectManager || !projectManager->IsProjectOpen())
+		return false;
+	auto worldManager = WorldManager::Instance();
+	auto world = worldManager ? worldManager->GetWorld() : nullptr;
+	if (!world)
+		return false;
+	WorldManager::RegisterSceneComponentCodecs();
+	auto serializeCurrentWorld = [world](SceneCodec& scene) {
+		auto serialize = [&scene](World& activeWorld) {
+			return scene.Serialize(activeWorld, [](Entity entity) {
+				return !entity.hasComponent<TagFreeCamera>() && !entity.hasComponent<TagCamera>();
+				});
+			};
+		if (!world->isRunning())
+			return serialize(*world);
+
+		bool result = false;
+		try
+		{
+			world->SubmitCommand([&](World& activeWorld) {
+				result = serialize(activeWorld);
+				}).get();
+		}
+		catch (const std::exception&)
+		{
+			return false;
+		}
+		return result;
+		};
+
+	if (!m_currentSceneAssetGuid.empty())
+	{
+		auto database = projectManager->GetDatabase();
+		auto meta = database ? database->GetAssetMetaByGuid(m_currentSceneAssetGuid) : nullptr;
+		if (meta && meta->type == AssetType::Scene)
+		{
+			if (auto asset = projectManager->LoadAsset(m_currentSceneAssetGuid))
+			{
+				if (auto scene = asset->AsScene())
+				{
+					if (!serializeCurrentWorld(*scene))
+					{
+						s_sceneSaveErrorMessage = "无法序列化当前场景。";
+						return false;
+					}
+
+					bool result = projectManager->SaveAsset(meta->guid);
+
+					if (!result)
+						s_sceneSaveErrorMessage = "无法写入当前场景资产文件。";
+
+					return result;
+				}
+			}
+		}
+	}
+	else
+	{
+		std::string filePath;
+		if (!FileIO::SaveOneFile(
+			filePath,
+			"Untitled.scene",
+			"scene",
+			{ {"场景文件", "scene"} },
+			projectManager->GetProjectFolderFullPath())
+			)
+			return false;
+
+		SceneCodec scene;
+		scene.SetName(fs::path(filePath).stem().string());
+		if (!serializeCurrentWorld(scene))
+		{
+			s_sceneSaveErrorMessage = "无法序列化当前场景。";
+			return false;
+		}
+		AssetMeta meta;
+		if (!projectManager->CreateSceneAsset(filePath, scene, &meta))
+		{
+			s_sceneSaveErrorMessage = "保存失败。请确认所选路径位于项目根目录内，且未与其他类型的资产冲突。";
+			return false;
+		}
+
+		m_currentSceneAssetGuid = meta.guid;
+		return true;
+	}
+
+}
 
 // 新建文件夹
 bool        m_showNewFolderPopup = false;
@@ -808,6 +900,13 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManage
 			ImGui::EndMenu();
 		}
 
+		if (ImGui::BeginMenu("场景"))
+		{
+			if (ImGui::MenuItem("保存场景", nullptr, false, projectManager && projectManager->IsProjectOpen()))
+				SaveCurrentScene(projectManager);
+			ImGui::EndMenu();
+		}
+
 		if (ImGui::BeginMenu("窗口"))
 		{
 			ImGui::MenuItem("场景");
@@ -858,6 +957,17 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManage
 	}
 	if (s_openNewProjectPopup) {
 		NewProjectPopup();
+	}
+	if (!s_sceneSaveErrorMessage.empty()) {
+		ImGui::OpenPopup("SceneSaveErrorPopup");
+		if (ImGui::BeginPopupModal("SceneSaveErrorPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::TextUnformatted(s_sceneSaveErrorMessage.c_str());
+			if (ImGui::Button("确定")) {
+				s_sceneSaveErrorMessage.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 	}
 	if (s_assetImportPopup.GetVisiable()) {
 		s_assetImportPopup.DrawPopup(projectManager);
@@ -1279,9 +1389,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				if (data && strlen(data) > 0) {
 					AssetGUID guid(data);
 					if (auto meta = projectManager->GetDatabase()->GetAssetMetaByGuid(guid))
-					{
 						HandleAssetDrop(*meta, worldManager, projectManager, viewportPos, viewportSize);
-					}
 				}
 			}
 			if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_FILE"))
@@ -1458,10 +1566,26 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 			}
 		}
 
+		std::string sceneLabel;
+		if (m_currentSceneAssetGuid.empty())
+		{
+			sceneLabel = "当前场景：临时场景（未保存）";
+		}
+		else if (projectManager && projectManager->IsProjectOpen())
+		{
+			if (auto database = projectManager->GetDatabase())
+			{
+				if (auto meta = database->GetAssetMetaByGuid(m_currentSceneAssetGuid))
+					sceneLabel = "当前场景：" + meta->path;
+			}
+		}
+		if (sceneLabel.empty())
+			sceneLabel = "当前场景资产未找到：" + m_currentSceneAssetGuid;
+
 		// ========== 显示信息 ==========
-		// 左上角显示操作模式
-		std::string text =
-			std::format("Gizmo: {} | {} {}", GetOpName(mCurrentGizmoOperation), GetModeName(mCurrentGizmoMode), useSnap ? "[Snap]" : "")
+		// 左上角显示场景信息和操作模式
+		std::string text = sceneLabel
+			+ std::format("\nGizmo: {} | {} {}", GetOpName(mCurrentGizmoOperation), GetModeName(mCurrentGizmoMode), useSnap ? "[Snap]" : "")
 			+ "\nShortcuts:"
 			+ "\nQ - Toggle Snap"
 			+ "\nL - Toggle World/Local"
@@ -1470,7 +1594,9 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 			+ "\nR - Scale";
 
 		ImGui::SetCursorPos(ImVec2(15, 15));
-		ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), text.c_str());
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+		ImGui::TextWrapped("%s", text.c_str());
+		ImGui::PopStyleColor();
 
 		ImGui::PopItemFlag();
 	}
@@ -1786,9 +1912,10 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	}
 	case AssetType::Scene:
 	{
-		if (auto scene = assetObject->AsScene())
+		if (auto scene = assetObject->AsScene(); scene && worldManager->LoadScene(scene))
 		{
-			//worldManager->LoadScene(scene);
+			m_currentSceneAssetGuid = meta.guid;
+			selectedEntity = Entity();
 		}
 		break;
 	}

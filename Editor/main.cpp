@@ -292,7 +292,7 @@ int ImGuiMain()
 	{
 
 		{
-			WorldManager::Instance()->InitWorld();
+			WorldManager::Instance()->InitDefaultWorld();
 			WorldManager::Instance()->RunWorld();
 			//WorldManager::Instance()->PauseWorld();
 		}

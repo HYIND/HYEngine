@@ -34,9 +34,6 @@ struct AssetMeta
 	AssetType type;
 };
 
-class Scene {
-};
-
 class IMetadataProvider {
 public:
 	virtual ~IMetadataProvider() = default;
