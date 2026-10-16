@@ -229,7 +229,12 @@ void WorldManager::SetRender(std::shared_ptr<VulkanRenderer> renderer)
 	pendingHeight = _renderer->GetHeight();
 }
 
-void WorldManager::InitWorld()
+void WorldManager::InitDefaultWorld()
+{
+	CreateWorld(true);
+}
+
+void WorldManager::CreateWorld(bool loadDefaultScene)
 {
 	auto world = std::make_shared<World>();
 
@@ -269,9 +274,72 @@ void WorldManager::InitWorld()
 
 	_world = world;
 
-	LoadInitScene(this);
+	if (loadDefaultScene)
+		LoadInitScene(this);
 
 	_world->update(16);
+}
+
+bool WorldManager::LoadScene(const std::shared_ptr<SceneCodec>& scene)
+{
+	if (!scene)
+		return false;
+	RegisterSceneComponentCodecs();
+
+	const bool wasRunning = _world && _world->isRunning();
+	if (_world || _worldThread)
+		StopWorld();
+
+	CreateWorld(false);
+	auto world = _world;
+	if (!world)
+		return false;
+
+	Entity freeEntity = world->createEntityWithTag<TagFreeCamera>();
+	freeEntity.addComponent<Transform>();
+	freeEntity.addComponent<PlayerInput>();
+	auto& controller = freeEntity.addComponent<Controller>();
+	controller.yaw = -90.f;
+	controller.pitch = -45.f;
+	freeEntity.addComponent<TagCurrentControl>();
+	freeEntity.getComponent<TagFreeCamera>().velocity = 0.25f;
+	SetNameTag(freeEntity, "freeEntity");
+
+	Entity cameraEntity = world->createEntityWithTag<TagCamera>();
+	auto& transform = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
+	auto& camera = cameraEntity.addComponent<CameraComponent>();
+	camera.camera.SetFOV(80.f);
+	camera.camera.SetNearPlane(0.1f);
+	camera.camera.SetFarPlane(800.f);
+	camera.SetTransForm(transform);
+	auto& follow = cameraEntity.addComponent<CameraFollow>();
+	follow.target = freeEntity;
+	follow.offset = glm::vec3(0.f);
+	world->SetMainCamera(cameraEntity);
+	SetNameTag(cameraEntity, "freeCameraEntity");
+
+	if (!scene->Deserialize(*world))
+		return false;
+
+	world->update(16);
+	if (wasRunning)
+		RunWorld();
+	return true;
+}
+
+void WorldManager::RegisterSceneComponentCodecs()
+{
+	NComponentCodec::RegisterComponentCodec<NameTag>(
+		"editor.name",
+		[](const NameTag& tag) { return nlohmann::json{ {"name", tag.name} }; },
+		[](NameTag& tag, const nlohmann::json& data) {
+			if (!data.is_object() || !data.contains("name") || !data["name"].is_string())
+				return false;
+			tag.name = data["name"].get<std::string>();
+			return true;
+		},
+		[](const NameTag& tag) { return tag.name; },
+		[](NameTag& tag, const std::string& name) { tag.name = name; });
 }
 
 void WorldManager::RunWorld()
@@ -399,7 +467,8 @@ void WorldManager::StopWorld()
 			_worldThread->join();
 		_worldThread.reset();
 	}
-	_world->stop();
+	if (_world)
+		_world->stop();
 	_world.reset();
 }
 

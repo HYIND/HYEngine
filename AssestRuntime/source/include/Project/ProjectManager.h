@@ -2,7 +2,7 @@
 
 #include "AssetDescription.h"
 #include "AssetDatabase.h"
-#include "AssetLoader.h"
+#include "AssetStroage.h"
 
 class ProjectManager
 {
@@ -36,7 +36,11 @@ public:
 	void DeleteAssetsInFolder(const fs::path& folderPath);
 
 public:
+	bool CreateSceneAsset(const std::string& fullPath, const SceneCodec& scene, AssetMeta* out = nullptr);
+
+public:
 	std::shared_ptr<AssetObject> LoadAsset(AssetGUID guid);
+	bool SaveAsset(AssetGUID guid);
 
 private:
 	std::string GenerateGUID();
@@ -49,7 +53,7 @@ private:
 	ProjectManager();
 
 	std::shared_ptr<AssetDatabase> m_database;
-	std::shared_ptr<AssetLoader> m_loader;
+	std::shared_ptr<AssetStroage> m_storage;
 
 	std::string m_projectPath;
 	std::string m_projectName;

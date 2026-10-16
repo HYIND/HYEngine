@@ -19,6 +19,12 @@
     <Filter Include="源文件\Project">
       <UniqueIdentifier>{fb86dd2d-7349-4416-b2cb-efeed90c2ce2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\SceneCodec">
+      <UniqueIdentifier>{9b30a176-7706-4109-a89e-e4af3711ff20}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\SceneCodec">
+      <UniqueIdentifier>{dcc7cc36-e4dc-4879-afb0-ace3a0c9e7f1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="source\include\AssetRuntime.h">
@@ -30,7 +36,7 @@
     <ClInclude Include="source\include\Project\AssetDescription.h">
       <Filter>头文件\Project</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Project\AssetLoader.h">
+    <ClInclude Include="source\include\Project\AssetStroage.h">
       <Filter>头文件\Project</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Project\AssetMeta.h">
@@ -44,6 +50,12 @@
     </ClInclude>
     <ClInclude Include="source\include\Project\AssetAnalysisHelper.h">
       <Filter>头文件\Project</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\SceneCodec\ComponentCodec.h">
+      <Filter>头文件\SceneCodec</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\SceneCodec\SceneCodec.h">
+      <Filter>头文件\SceneCodec</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -59,7 +71,7 @@
     <ClCompile Include="source\src\Project\AssetDescription.cpp">
       <Filter>源文件\Project</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\Project\AssetLoader.cpp">
+    <ClCompile Include="source\src\Project\AssetStroage.cpp">
       <Filter>源文件\Project</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Project\AssetObject.cpp">
@@ -67,6 +79,12 @@
     </ClCompile>
     <ClCompile Include="source\src\Project\ProjectManager.cpp">
       <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SceneCodec\ComponentCodec.cpp">
+      <Filter>源文件\SceneCodec</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SceneCodec\SceneCodec.cpp">
+      <Filter>源文件\SceneCodec</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

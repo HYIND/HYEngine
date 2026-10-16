@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "ECSCore/World.h"
 #include "VulkanRenderEngine/VulkanRenderer.h"
@@ -6,6 +6,7 @@
 #include "CommonSystems.h"
 #include "Helper/DynamicFpsController.h"
 #include "CommonData/LightData.h"
+#include "SceneCodec/SceneCodec.h"
 
 struct EditorPick :public IComponent
 {};
@@ -29,7 +30,9 @@ private:
 
 public:
 	void SetRender(std::shared_ptr<VulkanRenderer> renderer);
-	void InitWorld();
+	void InitDefaultWorld();
+	bool LoadScene(const std::shared_ptr<SceneCodec>& scene);
+	static void RegisterSceneComponentCodecs();
 
 
 	std::shared_ptr<VulkanRenderer> GetVulkanRener();
@@ -73,6 +76,7 @@ private:
 private:
 	void WorldLoop();
 	void PushFrameLoop();
+	void CreateWorld(bool loadDefaultScene);
 
 private:
 	std::shared_ptr<World> _world;

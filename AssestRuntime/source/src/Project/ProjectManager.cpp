@@ -6,6 +6,8 @@
 #include <random>
 #include <iomanip>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
 
 namespace fs = std::filesystem;
 
@@ -82,8 +84,8 @@ ProjectManager* ProjectManager::Get() {
 
 ProjectManager::ProjectManager() {
 	m_database = std::make_shared<AssetDatabase>();
-	m_loader = std::make_shared<AssetLoader>();
-	m_loader->SetMetadataProvider(m_database);
+	m_storage = std::make_shared<AssetStroage>();
+	m_storage->SetMetadataProvider(m_database);
 }
 
 bool ProjectManager::CreateProject(const std::string& path, const std::string& name)
@@ -97,8 +99,8 @@ bool ProjectManager::CreateProject(const std::string& path, const std::string& n
 
 	m_database->Clear();		// 初始化数据库
 
-	m_loader->ClearLoadedAsset();
-	m_loader->SetPathProvider(std::make_shared<ProjectAssetPathProvider>(GetProjectFolderFullPath()));
+	m_storage->ClearLoadedAsset();
+	m_storage->SetPathProvider(std::make_shared<ProjectAssetPathProvider>(GetProjectFolderFullPath()));
 
 	EnsureDirectories();		// 创建目录
 	SaveProject();				// 保存项目
@@ -138,8 +140,8 @@ bool ProjectManager::OpenProject(const std::string& filePath)
 		EnsureDirectories();
 	}
 
-	m_loader->ClearLoadedAsset();
-	m_loader->SetPathProvider(std::make_shared<ProjectAssetPathProvider>(GetProjectFolderFullPath()));
+	m_storage->ClearLoadedAsset();
+	m_storage->SetPathProvider(std::make_shared<ProjectAssetPathProvider>(GetProjectFolderFullPath()));
 
 	return true;
 }
@@ -162,8 +164,8 @@ bool ProjectManager::CloseProject()
 {
 	m_isOpen = false;
 	m_database->Clear();
-	m_loader->ClearLoadedAsset();
-	m_loader->SetPathProvider(nullptr);
+	m_storage->ClearLoadedAsset();
+	m_storage->SetPathProvider(nullptr);
 
 	return true;
 }
@@ -393,9 +395,79 @@ void ProjectManager::DeleteAssetsInFolder(const fs::path& folderPath)
 	SaveProject();
 }
 
+bool ProjectManager::CreateSceneAsset(const std::string& fullPath, const SceneCodec& scene, AssetMeta* out)
+{
+	if (!m_isOpen || fullPath.empty() || !Tool::IsSubDirectory(fullPath, m_projectPath))
+		return false;
+
+	try
+	{
+		fs::path absolutePath = fs::absolute(fullPath).lexically_normal();
+		fs::path relativePath = fs::relative(absolutePath, fs::path(m_projectPath));
+		if (relativePath.empty() || relativePath.string().find("..") == 0)
+			return false;
+
+		AssetPath assetPath = relativePath.string();
+		std::string extension = absolutePath.extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(),
+			[](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+		if (extension != ".scene")
+			return false;
+
+		bool isExist = false;
+		std::shared_ptr<AssetMeta> meta;
+		if (auto existingMeta = m_database->GetAssetMetaByPath(assetPath))
+		{
+			if (existingMeta->type != AssetType::Scene)
+				return false;
+			meta = existingMeta;
+			isExist = true;
+		}
+		else
+		{
+			meta = std::make_shared<AssetMeta>();
+			meta->guid = GenerateGUID();
+			meta->path = std::move(assetPath);
+			meta->name = absolutePath.filename().string();
+			meta->type = AssetType::Scene;
+			if (!m_database->AddAssetMeta(*meta))
+				return false;
+			isExist = false;
+		}
+
+		auto sceneAsset = std::make_shared<SceneAsset>();
+		sceneAsset->SetScene(std::make_shared<SceneCodec>(scene));
+		bool result = m_storage->SaveAsset(meta->guid, sceneAsset);
+		if (!result) return false;
+
+		if (!isExist)
+		{
+			m_database->MakeFolderAssetCacheDirty(meta->path);
+			if (!SaveProject())
+			{
+				m_database->RemoveAssetMeta(meta->guid);
+				return false;
+			}
+		}
+
+		if (out) *out = *meta;
+		return true;
+
+	}
+	catch (const fs::filesystem_error&)
+	{
+		return false;
+	}
+}
+
 std::shared_ptr<AssetObject> ProjectManager::LoadAsset(AssetGUID guid)
 {
-	return m_loader->LoadAsset(guid);
+	return m_storage->LoadAsset(guid);
+}
+
+bool ProjectManager::SaveAsset(AssetGUID guid)
+{
+	return m_storage->SaveAsset(guid);
 }
 
 bool ProjectManager::CopyToProject(const std::string& filePath, const AssetPath& assetPath)

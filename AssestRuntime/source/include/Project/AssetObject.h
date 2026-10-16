@@ -3,9 +3,10 @@
 #include "AssetMeta.h"
 #include "AssetDescription.h"
 #include "VulkanRenderEngine/Base/Model.h"
+#include "SceneCodec/SceneCodec.h"
 
-class AssetLoader;
-class AssetLoadHelper;
+class AssetStroage;
+class AssetStroageHelper;
 
 class AudioInfo;
 
@@ -22,15 +23,15 @@ public:
 	virtual std::shared_ptr<Texture2D> AsTexture();
 	virtual std::shared_ptr<Material> AsMaterial();
 	virtual std::shared_ptr<Model> AsModel();
-	virtual std::shared_ptr<Scene> AsScene();
+	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
 
 protected:
 	AssetType _type;
 	AssetGUID _assetGUID;
-	std::weak_ptr<AssetLoader> _loader;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	std::weak_ptr<AssetStroage> _storage;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class StaticMeshAsset : public AssetObject
@@ -44,8 +45,8 @@ public:
 
 private:
 	std::vector<std::shared_ptr<Mesh>> _meshes;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class TextureAsset : public AssetObject
@@ -59,8 +60,8 @@ public:
 
 private:
 	std::shared_ptr<Texture2D> _texture;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class AudioAsset : public AssetObject
@@ -72,8 +73,8 @@ public:
 
 private:
 	std::shared_ptr<AudioInfo> _audio;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class MaterialAsset : public AssetObject
@@ -86,8 +87,8 @@ public:
 private:
 	MaterialProperties _properties;
 	std::map<TextureType, AssetGUID> _dependencyTexture;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class ModelAsset : public AssetObject
@@ -100,8 +101,8 @@ public:
 private:
 	std::vector<AssetGUID> _dependencyStaticMesh;
 	std::unordered_map<uint32_t, AssetGUID> _dependencyMaterial;
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };
 
 class SceneAsset : public AssetObject
@@ -109,9 +110,12 @@ class SceneAsset : public AssetObject
 public:
 	SceneAsset();
 	virtual ~SceneAsset() = default;
-	virtual std::shared_ptr<Scene> AsScene() override;
+	virtual std::shared_ptr<SceneCodec> AsScene() override;
+
+	void SetScene(std::shared_ptr<SceneCodec>);
 
 private:
-	friend AssetLoader;
-	friend AssetLoadHelper;
+	std::shared_ptr<SceneCodec> _scene;
+	friend AssetStroage;
+	friend AssetStroageHelper;
 };

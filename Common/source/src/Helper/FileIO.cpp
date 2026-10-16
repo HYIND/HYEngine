@@ -128,7 +128,7 @@ namespace FileIO
 			return false;
 	}
 
-	bool SaveOneFile(std::string& filePath, const std::string& defaultFileName, std::string defExt, const std::map<std::string, std::string>& filters)
+	bool SaveOneFile(std::string& filePath, const std::string& defaultFileName, std::string defExt, const std::map<std::string, std::string>& filters, const std::string& initialDirectory)
 	{
 		std::string filterString;
 		if (!filters.empty())
@@ -147,7 +147,7 @@ namespace FileIO
 		TCHAR szOpenFileNames[80 * MAX_PATH] = { 0 };
 		TCHAR szPath[MAX_PATH] = { 0 };
 		ZeroMemory(&ofn, sizeof(ofn));
-		ofn.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR;
+		ofn.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 		ofn.lStructSize = sizeof(ofn);
 		ofn.lpstrFile = szOpenFileNames;
 		ofn.nMaxFile = sizeof(szOpenFileNames);
@@ -160,15 +160,18 @@ namespace FileIO
 		std::wstring wDefault = Tool::UTF8ToWString(defaultFileName);
 		auto wfilterString = Tool::UTF8ToWString(filterString);
 		auto wdefExt = Tool::UTF8ToWString(defExt + "\0");
+		auto wInitialDirectory = Tool::UTF8ToWString(initialDirectory);
 
 		wcsncpy(ofn.lpstrFile, wDefault.c_str(), wDefault.size());
 		ofn.lpstrFilter = wfilterString.c_str();
 		ofn.lpstrDefExt = wdefExt.c_str();
+		ofn.lpstrInitialDir = wInitialDirectory.empty() ? nullptr : wInitialDirectory.c_str();
 #else
 		auto temp = std::string(defExt + "\0");
 		strncpy(ofn.lpstrFile, defaultFileName.c_str(), defaultFileName.size());
 		ofn.lpstrFilter = filterString.c_str();
 		ofn.lpstrDefExt = temp.c_str();
+		ofn.lpstrInitialDir = initialDirectory.empty() ? nullptr : initialDirectory.c_str();
 #endif
 
 		if (GetSaveFileName(&ofn))

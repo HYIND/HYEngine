@@ -3,7 +3,13 @@
 #include "AssetMeta.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/Material.h"
+#include <nlohmann/json.hpp>
+#include <cstdint>
 #include <string>
+#include <vector>
+#include <functional>
+#include <unordered_map>
+#include <utility>
 
 class AssetDescription
 {
@@ -92,4 +98,17 @@ public:
 private:
 	std::vector<AssetGUID> _dependencyStaticMesh;
 	std::unordered_map<uint32_t, AssetGUID> _dependencyMaterial;
+};
+
+class SceneAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	nlohmann::json GetJsonData() const;
+	void SetJsonData(const nlohmann::json&);
+
+private:
+	nlohmann::json _json = nlohmann::json::object();
 };

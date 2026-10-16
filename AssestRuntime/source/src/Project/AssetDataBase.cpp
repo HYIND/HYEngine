@@ -198,7 +198,10 @@ bool AssetDatabase::Load(const nlohmann::json& assetJson)
 
 void AssetDatabase::MakeFolderAssetCacheDirty(const AssetPath& path)
 {
-	m_FolderAssetCache.Erase(fs::path(path).parent_path().string());
+	auto parent = fs::path(path).parent_path().string();
+	if (parent.empty())
+		parent = ".";
+	m_FolderAssetCache.Erase(parent);
 }
 
 void AssetDatabase::Clear()

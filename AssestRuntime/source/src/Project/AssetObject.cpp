@@ -1,5 +1,5 @@
 #include "Project/AssetObject.h"
-#include "Project/AssetLoader.h"
+#include "Project/AssetStroage.h"
 
 AssetType AssetObject::GetType() const {
 	return _type;
@@ -17,7 +17,7 @@ std::shared_ptr<Material> AssetObject::AsMaterial() { return nullptr; }
 
 std::shared_ptr<Model> AssetObject::AsModel() { return nullptr; }
 
-std::shared_ptr<Scene> AssetObject::AsScene() { return nullptr; }
+std::shared_ptr<SceneCodec> AssetObject::AsScene() { return nullptr; }
 
 std::shared_ptr<AudioInfo> AssetObject::AsAudio() { return nullptr; }
 
@@ -40,12 +40,15 @@ std::shared_ptr<Material> MaterialAsset::AsMaterial()
 	auto material = std::make_shared<Material>();
 	material->SetAssetGUID(_assetGUID);
 	material->SetProperty(_properties);
-	if (auto loader = _loader.lock())
+	if (auto storage = _storage.lock())
 	{
 		for (auto& [type, guid] : _dependencyTexture)
 		{
-			if (auto texture = loader->LoadAsset(guid)->AsTexture())
-				material->SetTexture(type, texture);
+			if (auto asset = storage->LoadAsset(guid))
+			{
+				if (auto texture = asset->AsTexture())
+					material->SetTexture(type, texture);
+			}
 		}
 	}
 	return material;
@@ -56,15 +59,15 @@ ModelAsset::ModelAsset() { _type = AssetType::Model; }
 std::shared_ptr<Model> ModelAsset::AsModel()
 {
 	std::vector<std::shared_ptr<MeshInfo>> mesheInfos;
-	if (auto loader = _loader.lock())
+	if (auto storage = _storage.lock())
 	{
 		std::vector<Task<std::vector<std::shared_ptr<Mesh>>>> staticMeshTask;
 		std::vector<Task<void>> materialTask;
 
 		for (auto& guid : _dependencyStaticMesh)
 		{
-			auto task = CoroTask::Run([guid, &loader]() -> std::vector<std::shared_ptr<Mesh>> {
-				auto asset = loader->LoadAsset(guid);
+			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<Mesh>> {
+				auto asset = storage->LoadAsset(guid);
 				if (asset)
 					return asset->AsStaticMesh();
 				return {};
@@ -84,12 +87,12 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 
 		for (uint32_t i = 0; i < mesheInfos.size(); i++)
 		{
-			auto task = CoroTask::Run([i, &loader, &mesheInfos, this]() ->auto {
+			auto task = CoroTask::Run([i, &storage, &mesheInfos, this]() ->auto {
 				std::shared_ptr<Material> material;
 				if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
 				{
 					auto& guid = _dependencyMaterial[i];
-					auto asset = loader->LoadAsset(guid);
+					auto asset = storage->LoadAsset(guid);
 					if (asset)
 						material = asset->AsMaterial();
 				}
@@ -116,7 +119,12 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 
 SceneAsset::SceneAsset() { _type = AssetType::Scene; }
 
-std::shared_ptr<Scene> SceneAsset::AsScene()
+std::shared_ptr<SceneCodec> SceneAsset::AsScene()
 {
-	return std::shared_ptr<Scene>();
+	return _scene;
+}
+
+void SceneAsset::SetScene(std::shared_ptr<SceneCodec> s)
+{
+	_scene = s;
 }
