@@ -5,6 +5,103 @@
 
 using namespace NComponentCodec;
 
+Json EncodeVec3(const glm::vec3& v)
+{
+	return Json{ v.x, v.y, v.z };
+}
+
+Json EncodeVec2(const glm::vec2& v)
+{
+	return Json{ v.x, v.y };
+}
+
+Json EncodeFloat(const float& v)
+{
+	return Json{ v };
+}
+
+// 统一使用 w, x, y, z 顺序存储四元数。
+Json EncodeQuat(const glm::quat& q)
+{
+	return Json{ q.w, q.x, q.y, q.z };
+}
+
+bool DecodeVec3(const Json& j, glm::vec3& v)
+{
+	if (!j.is_array() || j.size() != 3)
+		return false;
+
+	try
+	{
+		v = glm::vec3(
+			j[0].get<float>(),
+			j[1].get<float>(),
+			j[2].get<float>());
+
+		return true;
+	}
+	catch (const Json::exception&)
+	{
+		return false;
+	}
+}
+
+bool DecodeVec2(const Json& j, glm::vec2& v)
+{
+	if (!j.is_array() || j.size() != 2)
+		return false;
+
+	try
+	{
+		v = glm::vec2(
+			j[0].get<float>(),
+			j[1].get<float>());
+
+		return true;
+	}
+	catch (const Json::exception&)
+	{
+		return false;
+	}
+}
+
+bool DecodeFloat(const Json& j, float& v)
+{
+	if (!j.is_array() || j.size() != 1)
+		return false;
+
+	try
+	{
+		v = j[0].get<float>();
+		return true;
+	}
+	catch (const Json::exception&)
+	{
+		return false;
+	}
+}
+
+bool DecodeQuat(const Json& j, glm::quat& q)
+{
+	if (!j.is_array() || j.size() != 4)
+		return false;
+
+	try
+	{
+		q = glm::quat(
+			j[0].get<float>(),
+			j[1].get<float>(),
+			j[2].get<float>(),
+			j[3].get<float>());
+
+		return true;
+	}
+	catch (const Json::exception&)
+	{
+		return false;
+	}
+}
+
 std::vector<ComponentCodec>& NComponentCodec::GetComponentCodecs()
 {
 	static std::vector<ComponentCodec> codecs;
@@ -29,9 +126,9 @@ static void RegisterGeneralCodec()
 		"engine.transform",
 		[](const Transform& transform) {
 			return Json{
-				{"position", {transform.position.x, transform.position.y, transform.position.z}},
-				{"rotation", {transform.rotation.w, transform.rotation.x, transform.rotation.y, transform.rotation.z}},
-				{"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}
+				{"position", EncodeVec3(transform.position)},
+				{"rotation", EncodeQuat(transform.rotation)},
+				{"scale", EncodeVec3(transform.scale)}
 			};
 		},
 		[](Transform& transform, const Json& data) {
@@ -40,17 +137,38 @@ static void RegisterGeneralCodec()
 			const auto& position = data.at("position");
 			const auto& rotation = data.at("rotation");
 			const auto& scale = data.at("scale");
-			if (!position.is_array() || position.size() != 3
-				|| !rotation.is_array() || rotation.size() != 4
-				|| !scale.is_array() || scale.size() != 3)
+
+			if (!DecodeVec3(position, transform.position)
+				|| !DecodeQuat(rotation, transform.rotation)
+				|| !DecodeVec3(scale, transform.scale)
+				)
 				return false;
-			transform.position = glm::vec3(
-				position[0].get<float>(), position[1].get<float>(), position[2].get<float>());
-			transform.rotation = glm::quat(
-				rotation[0].get<float>(), rotation[1].get<float>(),
-				rotation[2].get<float>(), rotation[3].get<float>());
-			transform.scale = glm::vec3(
-				scale[0].get<float>(), scale[1].get<float>(), scale[2].get<float>());
+
+			return true;
+		});
+
+	RegisterComponentCodec<Transform2D>(
+		"engine.transform2D",
+		[](const Transform2D& transform) {
+			return Json{
+				{"position", EncodeVec2(transform.position)},
+				{"rotation", EncodeFloat(transform.rotation)},
+				{"scale", EncodeVec2(transform.scale)}
+			};
+		},
+		[](Transform2D& transform, const Json& data) {
+			if (!data.is_object() || !data.contains("position") || !data.contains("rotation") || !data.contains("scale"))
+				return false;
+			const auto& position = data.at("position");
+			const auto& rotation = data.at("rotation");
+			const auto& scale = data.at("scale");
+
+			if (!DecodeVec2(position, transform.position)
+				|| !DecodeFloat(rotation, transform.rotation)
+				|| !DecodeVec2(scale, transform.scale)
+				)
+				return false;
+
 			return true;
 		});
 
@@ -69,7 +187,7 @@ static void RegisterGeneralCodec()
 				if (!d) return Json{};
 
 				data = {
-					{"color", {d->color.x, d->color.y, d->color.z}},
+					{"color", EncodeVec3(d->color)},
 					{"luxIntensity", d->luxIntensity},
 					{"volumetricScatteringIntensity", d->volumetricScatteringIntensity},
 					{"castShadow", d->castShadow},
@@ -85,7 +203,7 @@ static void RegisterGeneralCodec()
 				if (!d) return Json{};
 
 				data = {
-					{"color", {d->color.x, d->color.y, d->color.z}},
+					{"color", EncodeVec3(d->color)},
 					{"cdIntensity", d->cdIntensity},
 					{"volumetricScatteringIntensity", d->volumetricScatteringIntensity},
 					{"castShadow", d->castShadow},
@@ -100,7 +218,7 @@ static void RegisterGeneralCodec()
 				if (!d) return Json{};
 
 				data = {
-					{"color", {d->color.x, d->color.y, d->color.z}},
+					{"color", EncodeVec3(d->color)},
 					{"cdIntensity", d->cdIntensity},
 					{"volumetricScatteringIntensity", d->volumetricScatteringIntensity},
 					{"cutOffAngle", d->cutOffAngle},
@@ -149,14 +267,9 @@ static void RegisterGeneralCodec()
 			{
 				DirectionalLightData d{};
 
-				if (!data.contains("color") || !data["color"].is_array()
-					|| data["color"].size() != 3)
+				if (!data.contains("color")
+					|| !DecodeVec3(data["color"], d.color))
 					return false;
-
-				d.color = glm::vec3(
-					data["color"][0].get<float>(),
-					data["color"][1].get<float>(),
-					data["color"][2].get<float>());
 
 				d.luxIntensity = data.at("luxIntensity").get<float>();
 				d.volumetricScatteringIntensity =
@@ -173,8 +286,8 @@ static void RegisterGeneralCodec()
 			{
 				PointLightData d{};
 
-				if (!data.contains("color") || !data["color"].is_array()
-					|| data["color"].size() != 3)
+				if (!data.contains("color")
+					|| !DecodeVec3(data["color"], d.color))
 					return false;
 
 				d.color = glm::vec3(
@@ -196,8 +309,8 @@ static void RegisterGeneralCodec()
 			{
 				SpotLightData d{};
 
-				if (!data.contains("color") || !data["color"].is_array()
-					|| data["color"].size() != 3)
+				if (!data.contains("color")
+					|| !DecodeVec3(data["color"], d.color))
 					return false;
 
 				d.color = glm::vec3(
@@ -226,34 +339,6 @@ static void RegisterGeneralCodec()
 		}
 	);
 
-	//RegisterComponentCodec<RenderModel>(
-	//	"engine.transform",
-	//	[](const RenderModel& transform) {
-	//		return Json{
-	//			{"position", {transform.position.x, transform.position.y, transform.position.z}},
-	//			{"rotation", {transform.rotation.w, transform.rotation.x, transform.rotation.y, transform.rotation.z}},
-	//			{"scale", {transform.scale.x, transform.scale.y, transform.scale.z}}
-	//		};
-	//	},
-	//	[](RenderModel& transform, const Json& data) {
-	//		if (!data.is_object() || !data.contains("position") || !data.contains("rotation") || !data.contains("scale"))
-	//			return false;
-	//		const auto& position = data.at("position");
-	//		const auto& rotation = data.at("rotation");
-	//		const auto& scale = data.at("scale");
-	//		if (!position.is_array() || position.size() != 3
-	//			|| !rotation.is_array() || rotation.size() != 4
-	//			|| !scale.is_array() || scale.size() != 3)
-	//			return false;
-	//		transform.position = glm::vec3(
-	//			position[0].get<float>(), position[1].get<float>(), position[2].get<float>());
-	//		transform.rotation = glm::quat(
-	//			rotation[0].get<float>(), rotation[1].get<float>(),
-	//			rotation[2].get<float>(), rotation[3].get<float>());
-	//		transform.scale = glm::vec3(
-	//			scale[0].get<float>(), scale[1].get<float>(), scale[2].get<float>());
-	//		return true;
-	//	});
 }
 
 void NComponentCodec::RegisterBuiltInCodecs()
