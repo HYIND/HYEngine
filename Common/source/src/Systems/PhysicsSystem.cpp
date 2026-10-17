@@ -337,17 +337,15 @@ std::vector<RaycastHit> PhysicsSystem::raycastAll(const glm::vec3& start, const 
 
 void PhysicsSystem::checkNewEntity()
 {
+	auto entities = m_world->getEntitiesWith<Physics, Transform>();
+	for (auto entity : entities)
 	{
-		auto entities = m_world->getEntitiesWith<Physics, Transform>();
-		for (auto entity : entities)
+		if (!entity.hasComponent<PhysicsRuntime>())
 		{
-			if (!entity.hasComponent<PhysicsRuntime>())
-			{
-				auto& physics = entity.getComponent<Physics>();
-				auto& trans = entity.getComponent<Transform>();
-				auto& runtime = entity.addComponent<PhysicsRuntime>();
-				createBody(entity, physics, trans, runtime);
-			}
+			auto& physics = entity.getComponent<Physics>();
+			auto& trans = entity.getComponent<Transform>();
+			auto& runtime = entity.addComponent<PhysicsRuntime>();
+			createBody(entity, physics, trans, runtime);
 		}
 	}
 }

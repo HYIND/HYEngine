@@ -156,7 +156,7 @@ struct PhysicsRuntime :public IComponent
 	btDiscreteDynamicsWorld* world = nullptr;
 
 	// ---- shape ----
-	btCollisionShape* shapePtr;
+	btCollisionShape* shapePtr = nullptr;
 	std::vector<btCollisionShape*> childShapePtrs;
 
 	virtual void OnRemove(const Entity& e) override
