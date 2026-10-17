@@ -242,6 +242,7 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	auto& inputSystem = world->registerSystem<LocalInputSystem>();
 	auto& movementSystem = world->registerSystem<MovementSystem>();
 	auto& renderSystem = world->registerSystem<RenderSystem>();
+	auto& scriptSystem = world->registerSystem<ScriptSystem>();
 	auto& lifetimeSystem = world->registerSystem<LifetimeSystem>();
 	auto& physicsSystem = world->registerSystem<PhysicsSystem>();
 	auto& destroySystem = world->registerSystem<DestroySystem>();
@@ -268,6 +269,7 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	destroySystem.setPriority(-8000);
 	animationSystem.setPriority(-9000);
 	renderSystem.setPriority(-10000);
+	scriptSystem.setPriority(450);
 
 	renderSystem.SetTriBuffer(_triBuffer);
 	renderSystem.SetOpenGLRender(_renderer);

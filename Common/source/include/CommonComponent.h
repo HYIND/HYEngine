@@ -6,6 +6,7 @@
 #include "Components/CameraComponent.h"		// 相机组件
 #include "Components/Controller.h"			// 基础控制
 #include "Components/Transform2D.h"			// 2D变换
+#include "Components/Script.h"				// Lua脚本引用
 
 // ================ 渲染基础 ===============
 #include "Components/Renderable.h"
