@@ -172,6 +172,12 @@ struct PhysicsRuntime :public IComponent
 		}
 		if (world && ghostObject) {
 			world->removeCollisionObject(ghostObject);
+
+			Entity* data = static_cast<Entity*>(ghostObject->getUserPointer());
+			if (data)
+				delete data;
+			ghostObject->setUserPointer(nullptr);
+
 			delete ghostObject;
 			ghostObject = nullptr;
 		}
@@ -196,13 +202,17 @@ struct PhysicsRuntime :public IComponent
 
 		if (body)
 		{
+			Entity* data = static_cast<Entity*>(body->getUserPointer());
+			if (data)
+				delete data;
+			body->setUserPointer(nullptr);
+
 			delete body;
 			body = nullptr;
 		}
+
+		world = nullptr;
 	}
 
-	virtual bool ShouldDuplicate() const override
-	{
-		return false;
-	}
+	virtual bool ShouldDuplicate() const override { return false; }
 };
