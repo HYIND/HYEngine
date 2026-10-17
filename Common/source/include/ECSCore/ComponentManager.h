@@ -103,12 +103,13 @@ public:
 		return array->tryGetComponentAsIComponent(entityId);
 	}
 
-	void DuplicateAllComponent(Entity& newEntity,const Entity& srcEntity)
+	void DuplicateAllComponent(Entity& newEntity, const Entity& srcEntity, std::vector<ComponentTypeID>& outComponentIds)
 	{
 		for (auto& pair : componentArrays)
 		{
 			auto array = std::static_pointer_cast<IComponentArray>(pair.second);
-			array->duplicateComponent(newEntity, srcEntity);
+			if (array->duplicateComponent(newEntity, srcEntity))
+				outComponentIds.push_back(pair.first);
 		}
 	}
 };

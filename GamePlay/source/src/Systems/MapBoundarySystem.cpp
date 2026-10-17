@@ -31,16 +31,16 @@ void MapBoundarySystem::update(float deltaTime)
 			trans.rotation = glm::identity<glm::quat>();
 		}
 
-		if (!entity.hasComponent<Physics>())
+		if (!entity.hasComponent<PhysicsRuntime>())
 			continue;
 
-		auto& physics = entity.getComponent<Physics>();
-		if (physics.ghostObject)
+		auto& runtime = entity.getComponent<PhysicsRuntime>();
+		if (runtime.ghostObject)
 		{
 			btTransform btTrans;
 			btTrans.setOrigin(GlmToBullet(trans.position));
 			btTrans.setRotation(GlmToBullet(trans.rotation));
-			physics.ghostObject->setWorldTransform(btTrans);
+			runtime.ghostObject->setWorldTransform(btTrans);
 		}
 	}
 }

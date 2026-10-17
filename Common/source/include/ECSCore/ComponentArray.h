@@ -14,7 +14,7 @@ public:
 	virtual bool hasComponent(const EntityID& entityId) const = 0;
 	virtual void entityDestroyed(const Entity& entity) = 0;
 	virtual IComponent* tryGetComponentAsIComponent(const EntityID& entityId) = 0;
-	virtual void duplicateComponent(Entity& newEntity, const Entity& srcEntity) = 0;
+	virtual bool duplicateComponent(Entity& newEntity, const Entity& srcEntity) = 0;
 };
 
 
@@ -132,14 +132,21 @@ public:
 		return nullptr;
 	}
 
-	void duplicateComponent(Entity& newEntity, const Entity& srcEntity)
+	bool duplicateComponent(Entity& newEntity, const Entity& srcEntity) override
 	{
 		EntityID entityId = srcEntity.getId();
 		if (!hasComponent(entityId))
-			return;
+			return false;
 
 		const T& srcComp = componentData[entityToIndex[entityId]];
-		addComponent(newEntity, srcComp);
+
+		if constexpr (std::is_base_of_v<IComponent, T>)
+		{
+			if (!srcComp.ShouldDuplicate())
+				return false;
+		}
+
+		return addComponent(newEntity, srcComp);
 	}
 
 	bool hasComponent(const EntityID& entityId) const {

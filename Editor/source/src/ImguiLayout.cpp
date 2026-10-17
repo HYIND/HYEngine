@@ -1437,18 +1437,19 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 						[newMatrix = transformMatrix, entity = selectedEntity]() mutable ->void {
 							auto* transform = entity.tryGetComponent<Transform>();
 							auto* physics = entity.tryGetComponent<Physics>();
+							auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
 							if (!transform)
 								return;
 
 							transform->SetMatrix(newMatrix);
 
-							if (physics)
+							if (physics && runtime)
 							{
 								physics->forceSyncTransform = true;
-								if (physics->body && !physics->body->isActive())
-									physics->body->activate(true);
-								if (physics->isCharacter && physics->character && physics->ghostObject && !physics->ghostObject->isActive())
-									physics->ghostObject->activate(true);
+								if (runtime->body && !runtime->body->isActive())
+									runtime->body->activate(true);
+								if (physics->isCharacter && runtime->character && runtime->ghostObject && !runtime->ghostObject->isActive())
+									runtime->ghostObject->activate(true);
 							}
 
 						}

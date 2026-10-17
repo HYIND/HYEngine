@@ -73,17 +73,16 @@ ComponentMask EntityManager::getEntityComponentMask(EntityID id)
 	return componentMasks[id];
 }
 
-EntityID EntityManager::DuplicateEntity(EntityID srcEntityId)
+bool EntityManager::setEntityComponentMasks(EntityID id, const std::vector<ComponentTypeID>& ids)
 {
-	auto newEntityId = createEntity();
+	if (!isValid(id))
+		return false;
 
-	if (isValid(srcEntityId))
-	{
-		auto& srcMask = componentMasks[srcEntityId];
-		componentMasks[newEntityId] = srcMask;
-	}
+	auto& masks = componentMasks[id];
+	for (ComponentTypeID id : ids)
+		masks.set(id);
 
-	return newEntityId;
+	return true;
 }
 
 void EntityManager::clearComponentMask(EntityID id) {

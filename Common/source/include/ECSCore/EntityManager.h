@@ -24,7 +24,7 @@ public:
 	std::vector<EntityID> getAllActiveEntities() const;
 	void getAllActiveEntities(std::vector<EntityID>& out) const;
 	ComponentMask getEntityComponentMask(EntityID id);
-	EntityID DuplicateEntity(EntityID srcEntityId);
+	bool setEntityComponentMasks(EntityID id, const std::vector<ComponentTypeID>& ids);
 
 private:
 	// 实体存储

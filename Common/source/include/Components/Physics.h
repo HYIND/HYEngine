@@ -35,20 +35,8 @@ struct CollisionShape
 		glm::quat rotation = glm::identity<glm::quat>();
 		std::vector<glm::vec3> vertices;  // 仅对ConvexHull和TriangleMesh有效
 		std::vector<unsigned int> indices;  // 仅对TriangleMesh有效
-
-		btCollisionShape* shapePtr = nullptr;
-
-		~ChildShape()
-		{
-			if (shapePtr)
-			{
-				delete shapePtr;
-				shapePtr = nullptr;
-			}
-		}
 	};
 
-	btCollisionShape* shapePtr = nullptr;
 	std::vector<std::shared_ptr<ChildShape>> children;
 
 	void AddBoxShape(const glm::vec3& size = glm::vec3(0.5f), glm::vec3 position = glm::vec3(0.0f), glm::quat rotation = glm::identity<glm::quat>())
@@ -148,8 +136,14 @@ struct Physics :public IComponent
 
 	bool allowSleep = true;				//允许休眠
 
-	// === 运行时数据 ===
+	// 标记下轮处理中强制同步Transform的位置
+	bool forceSyncTransform = false;
+	bool forceRecalculate = false;
+};
 
+// === 运行时数据 ===
+struct PhysicsRuntime :public IComponent
+{
 	// ---- 刚体模式 ----
 	btRigidBody* body = nullptr;
 	btDefaultMotionState* motionState = nullptr;
@@ -161,9 +155,9 @@ struct Physics :public IComponent
 	// ---- world ----
 	btDiscreteDynamicsWorld* world = nullptr;
 
-	// 标记下轮处理中强制同步Transform的位置
-	bool forceSyncTransform = false;
-	bool forceRecalculate = false;
+	// ---- shape ----
+	btCollisionShape* shapePtr;
+	std::vector<btCollisionShape*> childShapePtrs;
 
 	virtual void OnRemove(const Entity& e) override
 	{
@@ -187,15 +181,28 @@ struct Physics :public IComponent
 			delete motionState;
 			motionState = nullptr;
 		}
-		if (collisionShape.shapePtr)
+
+		for (auto ptr : childShapePtrs)
 		{
-			delete collisionShape.shapePtr;
-			collisionShape.shapePtr = nullptr;
+			if (ptr)
+				delete ptr;
 		}
+		childShapePtrs.clear();
+		if (shapePtr)
+		{
+			delete shapePtr;
+			shapePtr = nullptr;
+		}
+
 		if (body)
 		{
 			delete body;
 			body = nullptr;
 		}
+	}
+
+	virtual bool ShouldDuplicate() const override
+	{
+		return false;
 	}
 };
