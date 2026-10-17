@@ -216,7 +216,7 @@ btCollisionShape* createShape(Transform& trans, CollisionShape::ChildShape& chil
 	return childShapePtr;
 }
 
-btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_ptr<CollisionShape::ChildShape>>& childShapes)
+btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_ptr<CollisionShape::ChildShape>>& childShapes, PhysicsRuntime& runtime)
 {
 	if (childShapes.empty())
 	{
@@ -240,8 +240,7 @@ btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_
 		localTransform.setRotation(GlmToBullet(child->rotation));
 
 		// 添加到组合体
-		child->shapePtr = childShape;
-
+		runtime.childShapePtrs.push_back(childShape);
 		compoundShape->addChildShape(localTransform, childShape);
 	}
 
@@ -342,12 +341,12 @@ void PhysicsSystem::checkNewEntity()
 		auto entities = m_world->getEntitiesWith<Physics, Transform>();
 		for (auto entity : entities)
 		{
-			if (!entity.hasComponent<TagPhysiscCreate>())
+			if (!entity.hasComponent<PhysicsRuntime>())
 			{
 				auto& physics = entity.getComponent<Physics>();
 				auto& trans = entity.getComponent<Transform>();
-				createBody(entity, physics, trans);
-				entity.addComponent<TagPhysiscCreate>();
+				auto& runtime = entity.addComponent<PhysicsRuntime>();
+				createBody(entity, physics, trans, runtime);
 			}
 		}
 	}
@@ -355,35 +354,35 @@ void PhysicsSystem::checkNewEntity()
 
 void PhysicsSystem::syncWorldToPhysics(float dt_second)
 {
-	auto entities = m_world->getEntitiesWith<Physics, Transform>();
+	auto entities = m_world->getEntitiesWith<Physics, Transform, PhysicsRuntime>();
 
 	for (auto entity : entities)
 	{
 		auto& physics = entity.getComponent<Physics>();
-		auto* trans = entity.tryGetComponent<Transform>();
-		if (!trans) continue;
+		auto& trans = entity.getComponent<Transform>();
+		auto& runtime = entity.getComponent<PhysicsRuntime>();
 
-		if (physics.isCharacter && physics.character)
+		if (physics.isCharacter && runtime.character)
 		{
-			if (physics.ghostObject)
+			if (runtime.ghostObject)
 			{
-				btTransform currentTrans = physics.ghostObject->getWorldTransform();
-				currentTrans.setRotation(GlmToBullet(trans->rotation));
-				physics.ghostObject->setWorldTransform(currentTrans);
-				if (!physics.ghostObject->isActive())
-					physics.ghostObject->activate(true);
+				btTransform currentTrans = runtime.ghostObject->getWorldTransform();
+				currentTrans.setRotation(GlmToBullet(trans.rotation));
+				runtime.ghostObject->setWorldTransform(currentTrans);
+				if (!runtime.ghostObject->isActive())
+					runtime.ghostObject->activate(true);
 			}
 
 			// 从 Movement 组件读取输入
 			if (auto* move = entity.tryGetComponent<Movement>())
 			{
 				float stepDisplacement = physics.walkSpeed * fixedTimeStep;
-				btVector3 walkDir = GlmToBullet(trans->rotation * move->currentMoveDirection * stepDisplacement);
-				physics.character->setWalkDirection(walkDir);
+				btVector3 walkDir = GlmToBullet(trans.rotation * move->currentMoveDirection * stepDisplacement);
+				runtime.character->setWalkDirection(walkDir);
 
 				// 跳跃
-				if (move->canJump && move->currentWantJump && physics.character->canJump())
-					physics.character->jump();
+				if (move->canJump && move->currentWantJump && runtime.character->canJump())
+					runtime.character->jump();
 			}
 		}
 
@@ -391,41 +390,41 @@ void PhysicsSystem::syncWorldToPhysics(float dt_second)
 		{
 			btTransform newTrans;
 			newTrans.setIdentity();
-			newTrans.setOrigin(GlmToBullet(trans->position));
-			newTrans.setRotation(GlmToBullet(trans->rotation));
+			newTrans.setOrigin(GlmToBullet(trans.position));
+			newTrans.setRotation(GlmToBullet(trans.rotation));
 
-			if (physics.body)
+			if (runtime.body)
 			{
-				physics.body->setWorldTransform(newTrans);
-				physics.body->getMotionState()->setWorldTransform(newTrans);
-				physics.body->setLinearVelocity(btVector3(0, 0, 0));
-				physics.body->setAngularVelocity(btVector3(0, 0, 0));
+				runtime.body->setWorldTransform(newTrans);
+				runtime.body->getMotionState()->setWorldTransform(newTrans);
+				runtime.body->setLinearVelocity(btVector3(0, 0, 0));
+				runtime.body->setAngularVelocity(btVector3(0, 0, 0));
 			}
-			if (physics.ghostObject)
+			if (runtime.ghostObject)
 			{
-				physics.ghostObject->setWorldTransform(newTrans);
+				runtime.ghostObject->setWorldTransform(newTrans);
 			}
 			physics.forceSyncTransform = false;
 		}
 
-		auto& shape = physics.collisionShape.shapePtr;
+		auto& shape = runtime.shapePtr;
 		if (shape)
 		{
-			if (shape->getLocalScaling() != GlmToBullet(trans->scale))
+			if (shape->getLocalScaling() != GlmToBullet(trans.scale))
 			{
-				btVector3 newScale = GlmToBullet(trans->scale);
+				btVector3 newScale = GlmToBullet(trans.scale);
 				shape->setLocalScaling(newScale);
 
 				// Dynamic 物体需要重新计算惯性
 				if (physics.bodyType == Physics::BodyType::Dynamic)
 				{
-					if (physics.body)
+					if (runtime.body)
 					{
 						float mass = physics.mass;
 						btVector3 localInertia(0, 0, 0);
 						shape->calculateLocalInertia(mass, localInertia);
-						physics.body->setMassProps(mass, localInertia);
-						physics.body->updateInertiaTensor();
+						runtime.body->setMassProps(mass, localInertia);
+						runtime.body->updateInertiaTensor();
 					}
 				}
 				if (shape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE) {
@@ -437,68 +436,74 @@ void PhysicsSystem::syncWorldToPhysics(float dt_second)
 
 		if (physics.forceRecalculate)
 		{
-			auto clearShapeState = [&](Physics& physics)
+			auto clearShapeState = [&](PhysicsRuntime& runtime)
 				{
-					if (physics.motionState)
+					if (runtime.motionState)
 					{
-						delete physics.motionState;
-						physics.motionState = nullptr;
+						delete runtime.motionState;
+						runtime.motionState = nullptr;
 					}
-					if (physics.collisionShape.shapePtr)
+					for (auto ptr : runtime.childShapePtrs)
 					{
-						delete physics.collisionShape.shapePtr;
-						physics.collisionShape.shapePtr = nullptr;
+						if (ptr)
+							delete ptr;
 					}
-				};
-			auto clearCharacter = [&](Physics& physics)
-				{
-					if (physics.character || physics.ghostObject)
+					runtime.childShapePtrs.clear();
+					if (runtime.shapePtr)
 					{
-						if (physics.character)
-						{
-							phyWorld->removeAction(physics.character);
-							delete physics.character;
-							physics.character = nullptr;
-						}
-						if (physics.ghostObject)
-						{
-							phyWorld->removeCollisionObject(physics.ghostObject);
-							delete physics.ghostObject;
-							physics.ghostObject = nullptr;
-						}
-						clearShapeState(physics);
+						delete runtime.shapePtr;
+						runtime.shapePtr = nullptr;
 					}
 				};
-			auto clearRigidBody = [&](Physics& physics)
+			auto clearCharacter = [&](PhysicsRuntime& runtime)
 				{
-					if (physics.body)
+					if (runtime.character || runtime.ghostObject)
 					{
-						phyWorld->removeRigidBody(physics.body);
-						delete physics.body;
-						physics.body = nullptr;
-						clearShapeState(physics);
+						if (runtime.character)
+						{
+							phyWorld->removeAction(runtime.character);
+							delete runtime.character;
+							runtime.character = nullptr;
+						}
+						if (runtime.ghostObject)
+						{
+							phyWorld->removeCollisionObject(runtime.ghostObject);
+							delete runtime.ghostObject;
+							runtime.ghostObject = nullptr;
+						}
+						clearShapeState(runtime);
+					}
+				};
+			auto clearRigidBody = [&](PhysicsRuntime& runtime)
+				{
+					if (runtime.body)
+					{
+						phyWorld->removeRigidBody(runtime.body);
+						delete runtime.body;
+						runtime.body = nullptr;
+						clearShapeState(runtime);
 					}
 				};
 
 			if (!physics.isCharacter)
 			{
-				if (physics.character || physics.ghostObject)
-					clearCharacter(physics);
+				if (runtime.character || runtime.ghostObject)
+					clearCharacter(runtime);
 
-				if (physics.body)
-					updateRigidBody(physics);
+				if (runtime.body)
+					updateRigidBody(physics, runtime);
 				else
-					createBody(entity, physics, *trans);
+					createBody(entity, physics, trans, runtime);
 			}
 			else
 			{
-				if (physics.body)
-					clearRigidBody(physics);
+				if (runtime.body)
+					clearRigidBody(runtime);
 
-				if (physics.character && physics.ghostObject)
-					updateCharacter(physics);
+				if (runtime.character && runtime.ghostObject)
+					updateCharacter(physics, runtime);
 				else
-					createBody(entity, physics, *trans);
+					createBody(entity, physics, trans, runtime);
 			}
 
 			physics.forceRecalculate = false;
@@ -555,26 +560,27 @@ void PhysicsSystem::processCollisions()
 
 void PhysicsSystem::syncPhysicsToWorld()
 {
-	auto entities = m_world->getEntitiesWith<Physics, Transform>();
+	auto entities = m_world->getEntitiesWith<Physics, Transform, PhysicsRuntime>();
 
 	for (auto entity : entities) {
 		auto& trans = entity.getComponent<Transform>();
 		auto& physics = entity.getComponent<Physics>();
+		auto& runtime = entity.getComponent<PhysicsRuntime>();
 
 		// ========================================
 		// 情况1：角色控制器
 		// ========================================
-		if (physics.isCharacter && physics.ghostObject) {
-			btTransform bulletTrans = physics.ghostObject->getWorldTransform();
+		if (physics.isCharacter && runtime.ghostObject) {
+			btTransform bulletTrans = runtime.ghostObject->getWorldTransform();
 			trans.position = BulletToGlm(bulletTrans.getOrigin());
 			//trans.rotation = BulletToGlm(bulletTrans.getRotation());
 		}
 		// ========================================
 		// 情况2：刚体
 		// ========================================
-		else if (physics.body && physics.motionState) {
+		else if (runtime.body && runtime.motionState) {
 			btTransform bulletTrans;
-			physics.body->getMotionState()->getWorldTransform(bulletTrans);
+			runtime.body->getMotionState()->getWorldTransform(bulletTrans);
 			trans.position = BulletToGlm(bulletTrans.getOrigin());
 
 			// 如果是 Dynamic 且不固定旋转，同步旋转
@@ -586,25 +592,25 @@ void PhysicsSystem::syncPhysicsToWorld()
 }
 
 // 创建物理体
-void PhysicsSystem::createBody(Entity entity, Physics& physics, Transform& trans)
+void PhysicsSystem::createBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime)
 {
-	physics.world = phyWorld;
+	runtime.world = phyWorld;
 
 	if (physics.isCharacter) {
 		if (physics.collisionShape.children.empty())
 			return;
-		physics.collisionShape.shapePtr = createShape(trans, *physics.collisionShape.children[0]);
-		createCharacter(entity, physics, trans);
+		runtime.shapePtr = createShape(trans, *physics.collisionShape.children[0]);
+		createCharacter(entity, physics, trans, runtime);
 	}
 	else {
-		physics.collisionShape.shapePtr = createCompoundShape(trans, physics.collisionShape.children);
-		createRigidBody(entity, physics, trans);
+		runtime.shapePtr = createCompoundShape(trans, physics.collisionShape.children, runtime);
+		createRigidBody(entity, physics, trans, runtime);
 	}
 
-	physics.collisionShape.shapePtr->setLocalScaling(GlmToBullet(trans.scale));
+	runtime.shapePtr->setLocalScaling(GlmToBullet(trans.scale));
 }
 
-void PhysicsSystem::createRigidBody(Entity entity, Physics& physics, Transform& trans)
+void PhysicsSystem::createRigidBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime)
 {
 	float mass = physics.mass;
 	btVector3 localInertia(0, 0, 0);
@@ -613,15 +619,15 @@ void PhysicsSystem::createRigidBody(Entity entity, Physics& physics, Transform& 
 		mass = 0.f;
 
 	if (physics.bodyType == Physics::BodyType::Dynamic && !physics.fixedRotation)
-		physics.collisionShape.shapePtr->calculateLocalInertia(mass, localInertia);
+		runtime.shapePtr->calculateLocalInertia(mass, localInertia);
 
 	btTransform startTransform;
 	startTransform.setIdentity();
 	startTransform.setOrigin(GlmToBullet(trans.position));
 	startTransform.setRotation(GlmToBullet(trans.rotation));
-	physics.motionState = new btDefaultMotionState(startTransform);
+	runtime.motionState = new btDefaultMotionState(startTransform);
 
-	btRigidBody* body = new btRigidBody(mass, physics.motionState, physics.collisionShape.shapePtr, localInertia);
+	btRigidBody* body = new btRigidBody(mass, runtime.motionState, runtime.shapePtr, localInertia);
 	body->setFriction(physics.friction);
 	body->setRestitution(physics.restitution);
 	body->setRollingFriction(physics.rollingFriction);
@@ -641,31 +647,31 @@ void PhysicsSystem::createRigidBody(Entity entity, Physics& physics, Transform& 
 		btTransform trans;
 		trans.setIdentity();
 		btVector3 aabbmin, aabbmax;
-		physics.collisionShape.shapePtr->getAabb(trans, aabbmin, aabbmax);
+		runtime.shapePtr->getAabb(trans, aabbmin, aabbmax);
 		btVector3 aabbsize = aabbmax - aabbmin;
 		float maxSize = std::max(aabbsize.x(), std::max(aabbsize.y(), aabbsize.z()));
 		body->setCcdSweptSphereRadius(maxSize * 0.5f);
 	}
 
 	phyWorld->addRigidBody(body);
-	physics.body = body;
+	runtime.body = body;
 }
 
-void PhysicsSystem::createCharacter(Entity entity, Physics& physics, Transform& trans)
+void PhysicsSystem::createCharacter(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime)
 {
-	if (!physics.collisionShape.shapePtr)
+	if (!runtime.shapePtr)
 		return;
 
 	btConvexShape* convexShape = nullptr;
 	// 检查形状类型是否是凸体
-	int shapeType = physics.collisionShape.shapePtr->getShapeType();
+	int shapeType = runtime.shapePtr->getShapeType();
 	if (shapeType == BOX_SHAPE_PROXYTYPE ||
 		shapeType == SPHERE_SHAPE_PROXYTYPE ||
 		shapeType == CAPSULE_SHAPE_PROXYTYPE ||
 		shapeType == CYLINDER_SHAPE_PROXYTYPE ||
 		shapeType == CONVEX_HULL_SHAPE_PROXYTYPE) {
 		// 安全转换
-		convexShape = static_cast<btConvexShape*>(physics.collisionShape.shapePtr);
+		convexShape = static_cast<btConvexShape*>(runtime.shapePtr);
 	}
 	else {
 		// 非凸体，回退到胶囊体
@@ -693,7 +699,7 @@ void PhysicsSystem::createCharacter(Entity entity, Physics& physics, Transform& 
 	startTransform.setRotation(GlmToBullet(trans.rotation));
 	ghost->setWorldTransform(startTransform);
 
-	physics.ghostObject = ghost;
+	runtime.ghostObject = ghost;
 
 	// 2. 创建角色控制器
 	btKinematicCharacterController* character = new btKinematicCharacterController(
@@ -709,7 +715,7 @@ void PhysicsSystem::createCharacter(Entity entity, Physics& physics, Transform& 
 	character->setGravity(phyWorld->getGravity());
 	character->setMaxPenetrationDepth(physics.maxPenetrationDepth);
 
-	physics.character = character;
+	runtime.character = character;
 
 	// 3. 添加到物理世界
 	// 先添加到碰撞对象（用于碰撞检测）
@@ -726,12 +732,12 @@ void PhysicsSystem::createCharacter(Entity entity, Physics& physics, Transform& 
 	ghost->setUserPointer(new Entity(entity));
 }
 
-void PhysicsSystem::updateRigidBody(Physics& physics)
+void PhysicsSystem::updateRigidBody(Physics& physics, PhysicsRuntime& runtime)
 {
-	if (!physics.body || !physics.collisionShape.shapePtr)
+	if (!runtime.body || !runtime.shapePtr)
 		return;
 
-	phyWorld->removeRigidBody(physics.body);
+	phyWorld->removeRigidBody(runtime.body);
 
 	float mass = physics.mass;
 	btVector3 localInertia(0, 0, 0);
@@ -740,9 +746,9 @@ void PhysicsSystem::updateRigidBody(Physics& physics)
 		mass = 0.f;
 
 	if (physics.bodyType == Physics::BodyType::Dynamic && !physics.fixedRotation)
-		physics.collisionShape.shapePtr->calculateLocalInertia(mass, localInertia);
+		runtime.shapePtr->calculateLocalInertia(mass, localInertia);
 
-	auto& body = physics.body;
+	auto& body = runtime.body;
 
 	body->setFriction(physics.friction);
 	body->setRestitution(physics.restitution);
@@ -770,7 +776,7 @@ void PhysicsSystem::updateRigidBody(Physics& physics)
 		btTransform trans;
 		trans.setIdentity();
 		btVector3 aabbmin, aabbmax;
-		physics.collisionShape.shapePtr->getAabb(trans, aabbmin, aabbmax);
+		runtime.shapePtr->getAabb(trans, aabbmin, aabbmax);
 		btVector3 aabbsize = aabbmax - aabbmin;
 		float maxSize = std::max(aabbsize.x(), std::max(aabbsize.y(), aabbsize.z()));
 		body->setCcdSweptSphereRadius(maxSize * 0.5f);
@@ -784,14 +790,14 @@ void PhysicsSystem::updateRigidBody(Physics& physics)
 	body->setLinearVelocity(btVector3(0, 0, 0));
 	body->setAngularVelocity(btVector3(0, 0, 0));
 
-	phyWorld->addRigidBody(physics.body);
+	phyWorld->addRigidBody(runtime.body);
 }
 
-void PhysicsSystem::updateCharacter(Physics& physics)
+void PhysicsSystem::updateCharacter(Physics& physics, PhysicsRuntime& runtime)
 {
 
-	auto& character = physics.character;
-	auto& ghost = physics.ghostObject;
+	auto& character = runtime.character;
+	auto& ghost = runtime.ghostObject;
 
 	phyWorld->removeAction(character);
 

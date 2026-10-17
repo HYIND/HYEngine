@@ -51,10 +51,10 @@ T& World::addComponent(const Entity& entity, Args&&... args) {
 	if (!IsValidWorldEntity(entity))
 		throw("is not a invaild entity in this world");
 
-	// 1. 添加组件数据
+	// 添加组件数据
 	T& component = m_componentManager->addComponent<T>(entity, std::forward<Args>(args)...);
 
-	// 2. 更新实体掩码
+	// 更新实体掩码
 	size_t typeId = ComponentType<T>::getId();
 	m_entityManager->addComponent(entity.getId(), typeId);
 

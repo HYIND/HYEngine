@@ -48,12 +48,12 @@ private:
 	void syncWorldToPhysics(float dt_second);
 	void syncPhysicsToWorld();
 
-	void createBody(Entity entity, Physics& physics, Transform& trans);
-	void createRigidBody(Entity entity, Physics& physics, Transform& trans);
-	void createCharacter(Entity entity, Physics& physics, Transform& trans);
+	void createBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime);
+	void createRigidBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime);
+	void createCharacter(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime);
 
-	void updateRigidBody(Physics& physics);
-	void updateCharacter(Physics& physics);
+	void updateRigidBody(Physics& physics, PhysicsRuntime& runtime);
+	void updateCharacter(Physics& physics, PhysicsRuntime& runtime);
 
 private:
 	btDiscreteDynamicsWorld* phyWorld;

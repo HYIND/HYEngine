@@ -106,12 +106,15 @@ Entity World::DuplicateEntity(const Entity& srcEntity)
 	if (!IsValidWorldEntity(srcEntity))
 		return createEntity();
 
-	EntityID newEntityId = m_entityManager->DuplicateEntity(srcEntity.getId());
-	Entity newEntity(this, newEntityId);
 
-	m_componentManager->DuplicateAllComponent(newEntity, srcEntity);
-	if (newEntity.hasComponent<TagPhysiscCreate>())
-		newEntity.removeComponent<TagPhysiscCreate>();
+	EntityID newEntityId = m_entityManager->createEntity();
+	Entity newEntity(this, newEntityId);
+	if (!newEntity)
+		return newEntity;
+
+	std::vector<ComponentTypeID> ids;
+	m_componentManager->DuplicateAllComponent(newEntity, srcEntity, ids);
+	m_entityManager->setEntityComponentMasks(newEntityId, ids);
 
 	return newEntity;
 }
@@ -216,7 +219,7 @@ void World::setFixedDeltaTime(float dt) { m_fixedDeltaTime = dt; }
 
 bool World::IsValidWorldEntity(Entity entity) const
 {
-	return entity && entity.getWorld() == this;
+	return entity && entity.getWorld() == this && m_entityManager && m_entityManager->isValid(entity.getId());
 }
 
 void World::SetMainCamera(const Entity& entity)

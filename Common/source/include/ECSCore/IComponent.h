@@ -11,4 +11,9 @@ public:
 	virtual void OnAdd(const Entity& e) {}
 	// 组件移除时
 	virtual void OnRemove(const Entity& e) {}
+
+	virtual bool ShouldDuplicate() const
+	{
+		return true;
+	}
 };
