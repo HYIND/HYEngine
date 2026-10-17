@@ -3,4 +3,5 @@
 #include "Systems/LifeTimeSystem.h"
 #include "Systems/PhysicsSystem.h"
 #include "Systems/DestroySystem.h"
+#include "Systems/ScriptSystem.h"
 

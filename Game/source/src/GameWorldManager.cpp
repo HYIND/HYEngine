@@ -1039,6 +1039,7 @@ void GameWorldManager::InitGameWorld()
 	auto& inputSystem = _world->registerSystem<LocalInputSystem>();
 	auto& movementSystem = _world->registerSystem<MovementSystem>();
 	auto& renderSystem = _world->registerSystem<RenderSystem>();
+	auto& scriptSystem = _world->registerSystem<ScriptSystem>();
 	auto& lifetimeSystem = _world->registerSystem<LifetimeSystem>();
 	auto& physicsSystem = _world->registerSystem<PhysicsSystem>();
 	auto& destroySystem = _world->registerSystem<DestroySystem>();
@@ -1068,6 +1069,7 @@ void GameWorldManager::InitGameWorld()
 	destroySystem.setPriority(-8000);
 	animationSystem.setPriority(-9000);
 	renderSystem.setPriority(-10000);
+	scriptSystem.setPriority(450);
 
 	renderSystem.SetTriBuffer(RenderManager::Instance()->getBufferManager());
 	renderSystem.SetOpenGLRender(RenderManager::Instance()->getRenderer()->GetOpenGLRender());
