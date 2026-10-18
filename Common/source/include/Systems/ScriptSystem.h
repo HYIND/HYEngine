@@ -22,7 +22,11 @@ public:
 	void fixedUpdate(float fixedDeltaTime) override;
 
 	void SetSourceResolver(ScriptSourceResolver resolver);
-	void RequestReload(const AssetGUID& scriptGuid);
+
+private:
+	void CheckNewOrReloadScript();
+	void ProcessUpdateScripts(float deltaTime);
+	void ProcessFixedUpdateScripts(float deltaTime);
 
 private:
 	struct Impl;
