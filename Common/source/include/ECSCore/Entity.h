@@ -16,9 +16,10 @@
 
 class World;
 
-class Entity {
+class Entity 
+{
 public:
-	explicit constexpr Entity(World* world = nullptr, EntityID id = INVALID_ID) :world(world), id(id) {}
+	explicit constexpr Entity(World* world = nullptr, EntityID id = INVALID_ID);
 
 	// 只读访问
 	EntityID getId() const;

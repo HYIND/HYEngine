@@ -1,7 +1,7 @@
 #include "Systems/ScriptSystem.h"
 
 #include "Components/Script.h"
-#include "Components/Transform.h"
+#include "CommonComponent.h"
 #include "ECSCore/World.h"
 
 #include <sol/sol.hpp>
@@ -14,16 +14,15 @@
 #include <vector>
 #include <tuple>
 
+
 struct ScriptEntityHandle
 {
 	World* world = nullptr;
 	Entity entity;
-	std::weak_ptr<bool> lifetime;
 
 	bool IsValid() const
 	{
-		const auto token = lifetime.lock();
-		return token && *token && world && world->IsValidWorldEntity(entity);
+		return world && world->IsValidWorldEntity(entity);
 	}
 
 	std::tuple<bool, float, float, float> GetPosition() const
@@ -45,55 +44,50 @@ struct ScriptEntityHandle
 
 	bool SetPosition(float x, float y, float z) const
 	{
-		if (!IsValid()) return false;
+		if (!IsValid())
+			return false;
+
 		Transform* transform = entity.tryGetComponent<Transform>();
-		if (!transform) return false;
+		if (!transform)
+			return false;
+
 		transform->position = { x, y, z };
 		return true;
 	}
 
 	bool Translate(float x, float y, float z) const
 	{
-		if (!IsValid()) return false;
+		if (!IsValid())
+			return false;
+
 		Transform* transform = entity.tryGetComponent<Transform>();
-		if (!transform) return false;
+		if (!transform)
+			return false;
+
 		transform->position += glm::vec3(x, y, z);
+
+		auto* physics = entity.tryGetComponent<Physics>();
+		auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
+
+		if (physics && runtime)
+		{
+			physics->forceSyncTransform = true;
+			if (runtime->body && !runtime->body->isActive())
+				runtime->body->activate(true);
+			if (physics->isCharacter && runtime->character && runtime->ghostObject && !runtime->ghostObject->isActive())
+				runtime->ghostObject->activate(true);
+		}
 		return true;
 	}
 };
 
-std::string MakeFailureKey(const ScriptComponent& component)
-{
-	if (!component.inlineSource.empty()) return "inline:" + component.inlineSource;
-	return "asset:" + component.scriptGuid;
-}
-
 struct ScriptSystem::Impl
 {
-	struct Instance
-	{
-		AssetGUID guid;
-		std::string sourceOverride;
-		std::string source;
-		sol::environment environment;
-		sol::protected_function onCreate;
-		sol::protected_function onUpdate;
-		sol::protected_function onFixedUpdate;
-		sol::protected_function onDestroy;
-		std::shared_ptr<bool> lifetime = std::make_shared<bool>(true);
-		bool created = false;
-		bool faulted = false;
-	};
-
-	// Declare Lua before instances so environments and functions are destroyed first.
 	sol::state lua;
-	std::unordered_map<EntityID, Instance> instances;
-	std::unordered_map<EntityID, std::string> failedSources;
+
 	ScriptSourceResolver sourceResolver;
 	World* world = nullptr;
 	bool initialized = false;
-	std::mutex reloadMutex;
-	std::unordered_set<AssetGUID> reloadRequests;
 
 	void Initialize()
 	{
@@ -116,13 +110,8 @@ struct ScriptSystem::Impl
 		initialized = true;
 	}
 
-	bool Resolve(const ScriptComponent& component, std::string& source) const
+	bool Resolve(const Script& component, std::string& source) const
 	{
-		if (!component.inlineSource.empty())
-		{
-			source = component.inlineSource;
-			return true;
-		}
 		return !component.scriptGuid.empty() && sourceResolver && sourceResolver(component.scriptGuid, source);
 	}
 
@@ -133,52 +122,82 @@ struct ScriptSystem::Impl
 		return object.as<sol::protected_function>();
 	}
 
-	bool Call(EntityID id, Instance& instance, const char* callback, sol::protected_function& function, float delta = 0.0f)
+	bool Call(ScriptEnv& env, const char* callback, sol::protected_function& function, float delta = 0.0f)
 	{
-		if (instance.faulted || !function.valid()) return true;
+		if (env.faulted || !function.valid())
+			return true;
+
 		sol::protected_function_result result = callback == nullptr ? function() : function(delta);
-		if (result.valid()) return true;
-		const sol::error error = result;
-		std::cerr << "[ScriptSystem] Entity " << id << " callback " << callback
-			<< " failed: " << error.what() << std::endl;
-		instance.faulted = true;
-		return false;
+		if (!result.valid())
+		{
+			const sol::error error = result;
+			std::cerr << "[ScriptSystem]" << " callback " << callback << " failed: " << error.what() << std::endl;
+			env.faulted = true;
+			return false;
+		}
+
+		return true;
 	}
 
-	void Stop(EntityID id, Instance& instance)
+	bool Call(const std::shared_ptr<ScriptEnv>& env, const char* callback, sol::protected_function& function, float delta = 0.0f)
 	{
-		if (instance.created && !instance.faulted && instance.onDestroy.valid())
-			Call(id, instance, "OnDestroy", instance.onDestroy);
-		if (instance.lifetime) *instance.lifetime = false;
-		instance.created = false;
+		if (!env)
+			return false;
+		return Call(*env, callback, function, delta);
 	}
 
-	bool Build(Entity entity, const ScriptComponent& component, const std::string& source, Instance& output)
+	void Stop(ScriptRuntime& runtime)
+	{
+		auto& env = runtime.env;
+		if (env && env->onDestroy.valid())
+			Call(env, "OnDestroy", env->onDestroy);
+	}
+
+	bool Build(std::shared_ptr<ScriptEnv>& env, const std::string& source, Entity entity, const std::string& chunkName)
+	{
+		env->environment = sol::environment(lua, sol::create, lua.globals());
+		env->environment["entity"] = ScriptEntityHandle{ world, entity };
+
+		sol::protected_function_result result = lua.safe_script(
+			source,
+			env->environment,
+			sol::script_pass_on_error,
+			chunkName,
+			sol::load_mode::text
+		);
+
+		if (!result.valid())
+		{
+			const sol::error error = result;
+			std::cerr << "[ScriptSystem] Failed to load " << chunkName << ": " << error.what() << std::endl;
+			return false;
+		}
+
+		env->onCreate = GetCallback(env->environment, "OnCreate");
+		env->onUpdate = GetCallback(env->environment, "OnUpdate");
+		env->onFixedUpdate = GetCallback(env->environment, "OnFixedUpdate");
+		env->onDestroy = GetCallback(env->environment, "OnDestroy");
+
+		env->faulted = false;
+		env->created = false;
+	}
+
+	bool Reload(Entity entity, const Script& script, ScriptRuntime& runtime)
 	{
 		try
 		{
-			output.guid = component.scriptGuid;
-			output.sourceOverride = component.inlineSource;
-			output.source = source;
-			output.environment = sol::environment(lua, sol::create, lua.globals());
-			output.environment["entity"] = ScriptEntityHandle{ world, entity, output.lifetime };
-
-			const std::string chunkName = component.scriptGuid.empty()
+			const std::string chunkName = script.scriptGuid.empty()
 				? "inline-entity-" + std::to_string(entity.getId())
-				: "asset-" + component.scriptGuid;
-			sol::protected_function_result result = lua.safe_script(source, output.environment,
-				sol::script_pass_on_error, chunkName, sol::load_mode::text);
-			if (!result.valid())
-			{
-				const sol::error error = result;
-				std::cerr << "[ScriptSystem] Failed to load " << chunkName << ": " << error.what() << std::endl;
-				return false;
-			}
+				: "asset-" + script.scriptGuid;
 
-			output.onCreate = GetCallback(output.environment, "OnCreate");
-			output.onUpdate = GetCallback(output.environment, "OnUpdate");
-			output.onFixedUpdate = GetCallback(output.environment, "OnFixedUpdate");
-			output.onDestroy = GetCallback(output.environment, "OnDestroy");
+			std::shared_ptr<ScriptEnv> env = std::make_shared<ScriptEnv>();
+			if (!Build(env, script.source, entity, chunkName))
+				return false;
+
+			runtime.env = env;
+			runtime.loadedGuid = script.scriptGuid;
+			runtime.source = script.source;
+
 			return true;
 		}
 		catch (const std::exception& error)
@@ -189,11 +208,13 @@ struct ScriptSystem::Impl
 		}
 	}
 
-	void Start(EntityID id, Instance& instance)
+	void Start(ScriptRuntime& runtime)
 	{
-		if (instance.created || instance.faulted) return;
-		instance.created = true;
-		Call(id, instance, "OnCreate", instance.onCreate);
+		auto& env = runtime.env;
+		if (!env || env->created || env->faulted)
+			return;
+		if (Call(env, "OnCreate", env->onCreate))
+			env->created = true;
 	}
 
 	bool ReloadRequested(const AssetGUID& guid, const std::unordered_set<AssetGUID>& requests) const
@@ -201,147 +222,140 @@ struct ScriptSystem::Impl
 		return !guid.empty() && requests.find(guid) != requests.end();
 	}
 
-	void UpdateScripts(float deltaTime)
+	void CheckChangeScripts()
 	{
 		if (!world) return;
-		std::unordered_set<AssetGUID> requests;
-		{
-			std::lock_guard<std::mutex> lock(reloadMutex);
-			requests.swap(reloadRequests);
-		}
 
-		std::unordered_set<EntityID> active;
-		const std::vector<Entity> entities = world->getEntitiesWith<ScriptComponent>();
-		for (const Entity& entity : entities)
+		auto views = world->getViewWith<Script>();
+		for (auto [entity, script] : views)
 		{
 			if (!world->IsValidWorldEntity(entity)) continue;
-			const EntityID id = entity.getId();
-			active.insert(id);
-			const ScriptComponent* component = entity.tryGetComponent<ScriptComponent>();
-			if (!component || !component->enabled)
+
+			bool hasComponent = entity.hasComponent<ScriptRuntime>();
+			bool needClose = !script.enabled;
+
+			if (needClose)
 			{
-				auto existing = instances.find(id);
-				if (existing != instances.end())
+				if (hasComponent)
 				{
-					Stop(id, existing->second);
-					instances.erase(existing);
+					auto& runtime = entity.getComponent<ScriptRuntime>();
+					if (runtime.env)
+						Stop(runtime);
 				}
-				failedSources.erase(id);
 				continue;
 			}
 
-			auto current = instances.find(id);
-			const bool requested = ReloadRequested(component->scriptGuid, requests)
-				|| (current != instances.end() && ReloadRequested(current->second.guid, requests));
-			const bool changed = current == instances.end()
-				|| current->second.guid != component->scriptGuid
-				|| current->second.sourceOverride != component->inlineSource;
-			const std::string failureKey = MakeFailureKey(*component);
-			const auto failed = failedSources.find(id);
-			const bool failedUnchanged = failed != failedSources.end() && failed->second == failureKey;
-
-			if (changed || requested)
+			bool needReload = script.needReload || !hasComponent;
+			if (needReload)
 			{
-				if (!(failedUnchanged && !requested))
+
+				auto& runtime = hasComponent ? entity.getComponent<ScriptRuntime>() : entity.addComponent<ScriptRuntime>();
+
+				if (!script.scriptGuid.empty())
 				{
 					std::string source;
-					if (!Resolve(*component, source))
+					if (!Resolve(script, source))
 					{
-						if (!failedUnchanged)
-							std::cerr << "[ScriptSystem] No source available for entity " << id << std::endl;
-						failedSources[id] = failureKey;
+						std::cerr << "[ScriptSystem] No source available for entity " << entity.getId() << std::endl;
+						script.needReload = false;
+						continue;
 					}
-					else
-					{
-						Instance replacement;
-						if (Build(entity, *component, source, replacement))
-						{
-							if (current != instances.end())
-							{
-								Stop(id, current->second);
-								current->second = std::move(replacement);
-							}
-							else
-								current = instances.emplace(id, std::move(replacement)).first;
-							failedSources.erase(id);
-							Start(id, current->second);
-						}
-						else
-							failedSources[id] = failureKey;
-					}
+					script.source = source;
 				}
-			}
 
-			current = instances.find(id);
-			if (current != instances.end())
-				Call(id, current->second, "OnUpdate", current->second.onUpdate, deltaTime);
+				if (!Reload(entity, script, runtime))
+				{
+					script.needReload = false;
+					continue;
+				}
+
+				Start(runtime);
+				script.needReload = false;
+			}
 		}
 
-		for (auto it = instances.begin(); it != instances.end();)
+	}
+
+	void UpdateScripts(float deltaTime)
+	{
+		if (!world) return;
+
+		auto views = world->getViewWith<Script, ScriptRuntime>();
+		for (auto [entity, script, runtime] : views)
 		{
-			if (active.find(it->first) == active.end())
-			{
-				Stop(it->first, it->second);
-				it = instances.erase(it);
-			}
-			else ++it;
-		}
-		for (auto it = failedSources.begin(); it != failedSources.end();)
-		{
-			if (active.find(it->first) == active.end()) it = failedSources.erase(it);
-			else ++it;
+			auto& env = runtime.env;
+			if (script.enabled && env && env->created && !env->faulted)
+				Call(env, "OnUpdate", env->onUpdate, deltaTime);
 		}
 	}
 
 	void FixedUpdateScripts(float deltaTime)
 	{
-		for (auto& pair : instances)
-			Call(pair.first, pair.second, "OnFixedUpdate", pair.second.onFixedUpdate, deltaTime);
+		if (!world) return;
+
+		auto views = world->getViewWith<Script, ScriptRuntime>();
+		for (auto [entity, script, runtime] : views)
+		{
+			auto& env = runtime.env;
+			if (script.enabled && env && env->created && !env->faulted)
+				Call(env, "OnFixedUpdate", env->onFixedUpdate, deltaTime);
+		}
 	}
 };
 
-ScriptSystem::ScriptSystem() : System("ScriptSystem"), _impl(std::make_unique<Impl>())
+ScriptSystem::ScriptSystem()
+	: System("ScriptSystem")
 {}
 
 ScriptSystem::~ScriptSystem()
-{
-	onDetach();
-}
+{}
 
 void ScriptSystem::onAttach(World& world)
 {
+	_impl = std::make_unique<Impl>();
 	_impl->world = &world;
 	_impl->Initialize();
 }
 
 void ScriptSystem::onDetach()
 {
-	if (!_impl) return;
-	for (auto& pair : _impl->instances)
-		_impl->Stop(pair.first, pair.second);
-	_impl->instances.clear();
-	_impl->failedSources.clear();
-	_impl->world = nullptr;
+	if (!_impl)
+		return;
+	_impl.reset();
 }
 
 void ScriptSystem::update(float deltaTime)
 {
-	_impl->UpdateScripts(deltaTime / 1000.0f);
+	CheckNewOrReloadScript();
+	ProcessUpdateScripts(deltaTime);
 }
 
 void ScriptSystem::fixedUpdate(float fixedDeltaTime)
 {
-	_impl->FixedUpdateScripts(fixedDeltaTime / 1000.0f);
+	ProcessFixedUpdateScripts(fixedDeltaTime);
 }
 
 void ScriptSystem::SetSourceResolver(ScriptSourceResolver resolver)
 {
-	_impl->sourceResolver = std::move(resolver);
+	if (_impl)
+		_impl->sourceResolver = std::move(resolver);
 }
 
-void ScriptSystem::RequestReload(const AssetGUID& scriptGuid)
+void ScriptSystem::CheckNewOrReloadScript()
 {
-	if (scriptGuid.empty()) return;
-	std::lock_guard<std::mutex> lock(_impl->reloadMutex);
-	_impl->reloadRequests.insert(scriptGuid);
+	if (_impl)
+		_impl->CheckChangeScripts();
 }
+
+void ScriptSystem::ProcessUpdateScripts(float deltaTime)
+{
+	if (_impl)
+		_impl->UpdateScripts(deltaTime / 1000.0f);
+}
+
+void ScriptSystem::ProcessFixedUpdateScripts(float fixedDeltaTime)
+{
+	if (_impl)
+		_impl->FixedUpdateScripts(fixedDeltaTime / 1000.0f);
+}
+

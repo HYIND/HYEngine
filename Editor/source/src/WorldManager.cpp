@@ -147,6 +147,56 @@ void LoadInitScene(WorldManager* manager)
 	}
 
 	{
+		Entity cube = world->createEntity();
+		auto& trans = cube.addComponent<Transform>();
+		trans.position = { -3,3,0 };
+
+		auto& physics = cube.addComponent<Physics>();
+		physics.bodyType = Physics::BodyType::Dynamic;
+		physics.isSensor = false;
+		physics.isBullet = true;
+		physics.friction = 0.1;
+		physics.restitution = 0.8;
+		physics.mass = 5.f;
+		physics.collisionShape.AddBoxShape();
+
+		auto& rendermodel = cube.addComponent<RenderModel>();
+		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
+
+		AddPickProxy(cube);
+		SetNameTag(cube, "cube_script_test");
+
+		static auto ReadFromFile = [](const std::string& path) ->std::string
+			{
+				std::ifstream file;
+				file.exceptions(std::ifstream::badbit);// 异常机制处理：保证ifstream对象可以抛出异常：
+
+				try
+				{
+					file.open(path);
+					if (!file) {
+						std::cerr << "文件打开失败" << ",path=" << path << std::endl;
+						return std::string();
+					}
+
+					std::stringstream stream;
+					stream << file.rdbuf();
+					file.close();
+
+					return stream.str();
+				}
+				catch (std::ifstream::failure e) {
+					std::cout << "ERROR::FILE_NOT_SUCCESSFULLY_READ" << std::endl;
+				}
+
+				return std::string();
+			};
+
+		auto& script = cube.addComponent<Script>();
+		script.source = ReadFromFile("Test/script/TestScript.lua");
+	}
+
+	{
 		float radius = 3.0;
 
 		Entity sphere = world->createEntity();
@@ -261,6 +311,7 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	inputSystem.setPriority(1000);
 	movementSystem.setPriority(500);
 	weaponSystem.setPriority(400);
+	scriptSystem.setPriority(450);
 	physicsSystem.setPriority(300);
 	laserBeamSystem.setPriority(250);
 	particleSystem.setPriority(200);
@@ -269,7 +320,6 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	destroySystem.setPriority(-8000);
 	animationSystem.setPriority(-9000);
 	renderSystem.setPriority(-10000);
-	scriptSystem.setPriority(450);
 
 	renderSystem.SetTriBuffer(_triBuffer);
 	renderSystem.SetOpenGLRender(_renderer);
