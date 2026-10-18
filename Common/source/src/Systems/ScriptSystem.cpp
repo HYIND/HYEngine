@@ -52,6 +52,19 @@ struct ScriptEntityHandle
 			return false;
 
 		transform->position = { x, y, z };
+
+		auto* physics = entity.tryGetComponent<Physics>();
+		auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
+
+		if (physics && runtime)
+		{
+			physics->forceSyncTransform = true;
+			if (runtime->body && !runtime->body->isActive())
+				runtime->body->activate(true);
+			if (physics->isCharacter && runtime->character && runtime->ghostObject && !runtime->ghostObject->isActive())
+				runtime->ghostObject->activate(true);
+		}
+
 		return true;
 	}
 
