@@ -7,9 +7,11 @@
 template<typename T, typename... Args>
 inline T& SystemManager::registerSystem(int priority, Args&&... args)
 {
-	SystemTypeID systemid = SystemType<T>::getID();
+	//assert(m_typeIdToIndex.find(systemid) == m_typeIdToIndex.end());
+	if (auto ptr = getSystem<T>())
+		return *ptr;
 
-	assert(m_typeIdToIndex.find(systemid) == m_typeIdToIndex.end());
+	SystemTypeID systemid = SystemType<T>::getID();
 
 	auto system = std::make_unique<T>(std::forward<Args>(args)...);
 	T& ref = *system;
