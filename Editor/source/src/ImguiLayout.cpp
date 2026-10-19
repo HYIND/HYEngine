@@ -1815,6 +1815,64 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	if (!assetObject)
 		return;
 
+	auto GetMouseRay =
+		[&](glm::vec3& rayOrigin, glm::vec3& rayDirection)
+		{
+			auto triBuffer = worldManager->GetTriBuffer();
+			auto view = triBuffer->acquireReadBuffer()->view;
+			auto projection = triBuffer->acquireReadBuffer()->projection;
+
+			glm::mat4 projOG = projection;
+			projOG[1][1] *= -1;
+
+			// 计算射线
+			ImGuizmo::ComputeMouseRay(
+				(float*)&view,
+				(float*)&projOG,
+				mousePos,
+				viewportPos,
+				viewportSize,
+				(float*)&rayOrigin,
+				(float*)&rayDirection
+			);
+		};
+
+	auto RayCast =
+		[&](const glm::vec3& rayOrigin, const glm::vec3& rayDirection,
+			World& world, Entity& entity,
+			glm::vec3* hitPos = nullptr, float* distance = nullptr, glm::vec3* hitNormal = nullptr
+			) -> bool
+		{
+			auto result = worldManager->RayCast(rayOrigin, rayDirection);
+			if (!result.hit)
+				return false;
+			if (!world.IsValidWorldEntity(result.hitEntity))
+				return false;
+
+			entity = result.hitEntity;
+			if (hitPos)
+				*hitPos = result.hitPoint;
+			if (distance)
+				*distance = result.distance;
+			if (hitNormal)
+				*hitNormal = result.hitNormal;
+
+			return true;
+		};
+
+
+	auto RayCastFromMouse =
+		[&](World& world, Entity& entity,
+			glm::vec3* hitPos = nullptr, float* distance = nullptr, glm::vec3* hitNormal = nullptr
+			) -> bool
+		{
+			// 计算射线
+			glm::vec3 rayOrigin;
+			glm::vec3 rayDirection;
+			GetMouseRay(rayOrigin, rayDirection);
+			return RayCast(rayOrigin, rayDirection, world, entity, hitPos, distance, hitNormal);
+		};
+
 	switch (meta.type)
 	{
 	case AssetType::StaticMesh:
@@ -1831,27 +1889,14 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 
 			if (auto trans = entity.tryGetComponent<Transform>())
 			{
-				worldManager->GetWorld()->SubmitCommand([&]
+				worldManager->GetWorld()->SubmitCommand([&](World& world)
 					{
-						auto triBuffer = worldManager->GetTriBuffer();
-						auto view = triBuffer->acquireReadBuffer()->view;
-						auto projection = triBuffer->acquireReadBuffer()->projection;
+						glm::vec3 rayOrigin, rayDirection;
+						GetMouseRay(rayOrigin, rayDirection);
 
-						// 计算射线
-						glm::vec3 rayOrigin;
-						glm::vec3 rayDirection;
-						ImGuizmo::ComputeMouseRay(
-							(float*)&view,
-							(float*)&projection,
-							mousePos,
-							viewportPos,
-							viewportSize,
-							(float*)&rayOrigin,
-							(float*)&rayDirection
-						);
-
-						auto result = worldManager->RayCast(rayOrigin, rayDirection);
-						trans->position = result.hit ? result.hitPoint : rayOrigin + rayDirection * 15.f;
+						Entity entity;
+						glm::vec3 hitPos;
+						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
 
 					}).get();
 			}
@@ -1870,6 +1915,21 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	{
 		if (auto material = assetObject->AsMaterial())
 		{
+			worldManager->GetWorld()->SubmitCommand([&](World& world)
+				{
+
+					Entity entity;
+					if (!RayCastFromMouse(world, entity))
+						return;
+
+					auto rModel = entity.tryGetComponent<RenderModel>();
+					if (!rModel || !rModel->model)
+						return;
+					auto& meshInfos = rModel->model->getMeshInfos();
+					if (meshInfos.size() == 1)
+						meshInfos[0].material = material;
+
+				}).get();
 		}
 		break;
 	}
@@ -1883,27 +1943,14 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 
 			if (auto trans = entity.tryGetComponent<Transform>())
 			{
-				worldManager->GetWorld()->SubmitCommand([&]
+				worldManager->GetWorld()->SubmitCommand([&](World& world)
 					{
-						auto triBuffer = worldManager->GetTriBuffer();
-						auto view = triBuffer->acquireReadBuffer()->view;
-						auto projection = triBuffer->acquireReadBuffer()->projection;
+						glm::vec3 rayOrigin, rayDirection;
+						GetMouseRay(rayOrigin, rayDirection);
 
-						// 计算射线
-						glm::vec3 rayOrigin;
-						glm::vec3 rayDirection;
-						ImGuizmo::ComputeMouseRay(
-							(float*)&view,
-							(float*)&projection,
-							mousePos,
-							viewportPos,
-							viewportSize,
-							(float*)&rayOrigin,
-							(float*)&rayDirection
-						);
-
-						auto result = worldManager->RayCast(rayOrigin, rayDirection);
-						trans->position = result.hit ? result.hitPoint : rayOrigin + rayDirection * 15.f;
+						Entity entity;
+						glm::vec3 hitPos;
+						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
 
 					}).get();
 
