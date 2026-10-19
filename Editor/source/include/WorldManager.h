@@ -31,7 +31,7 @@ private:
 public:
 	void SetRender(std::shared_ptr<VulkanRenderer> renderer);
 	void InitDefaultWorld();
-	bool LoadScene(const std::shared_ptr<SceneCodec>& scene);
+	bool LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene);
 	static void RegisterSceneComponentCodecs();
 
 

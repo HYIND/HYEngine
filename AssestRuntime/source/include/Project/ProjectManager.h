@@ -3,6 +3,7 @@
 #include "AssetDescription.h"
 #include "AssetDatabase.h"
 #include "AssetStroage.h"
+#include "Script/ScriptSystemVM.h"
 
 class ProjectManager
 {

@@ -42,12 +42,6 @@ void ScriptSystem::fixedUpdate(float fixedDeltaTime)
 	_impl->FixedUpdateScripts(fixedDeltaTime / 1000.0f);
 }
 
-void ScriptSystem::SetSourceResolver(ScriptSystemVM::ScriptSourceResolver resolver)
-{
-	if (_impl)
-		_impl->SetSourceResolver(resolver);
-}
-
 bool ScriptSystem::RegisterScriptModule(const std::string& name, std::unique_ptr<IScriptModule> module)
 {
 	if (!module || !_impl)

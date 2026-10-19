@@ -14,9 +14,6 @@ class ScriptSystemVM
 {
 
 public:
-	using ScriptSourceResolver = std::function<bool(const AssetGUID&, std::string&)>;
-
-public:
 	ScriptSystemVM(World* world);
 
 	void Initialize();
@@ -26,12 +23,10 @@ public:
 	void UpdateScripts(float deltaTime);
 	void FixedUpdateScripts(float deltaTime);
 
-	void SetSourceResolver(ScriptSourceResolver resolver);
 	void RegisterModule(const std::string& name, std::unique_ptr<IScriptModule> module);
 
 private:
 	void RegisterBuiltinApi();
-	bool Resolve(const Script& script, std::string& source) const;
 	static sol::protected_function GetCallback(sol::environment& env, const char* name);
 	bool Call(ScriptEnv& env, const char* callback, sol::protected_function& function, float delta = 0.0f);
 	bool Call(const std::shared_ptr<ScriptEnv>& env, const char* callback, sol::protected_function& function, float delta = 0.0f);
@@ -49,7 +44,6 @@ private:
 
 	sol::state _lua;
 
-	ScriptSourceResolver _sourceResolver;
 	World* _world = nullptr;
 	bool _initialized = false;
 

@@ -21,7 +21,7 @@ std::shared_ptr<SceneCodec> AssetObject::AsScene() { return nullptr; }
 
 std::shared_ptr<AudioInfo> AssetObject::AsAudio() { return nullptr; }
 
-std::shared_ptr<std::string> AssetObject::AsScript() { return nullptr; }
+std::shared_ptr<ScriptSourceData> AssetObject::AsScript() { return nullptr; }
 
 StaticMeshAsset::StaticMeshAsset() { _type = AssetType::StaticMesh; }
 
@@ -133,15 +133,12 @@ void SceneAsset::SetScene(std::shared_ptr<SceneCodec> s)
 
 ScriptAsset::ScriptAsset(){ _type = AssetType::Script; }
 
-std::shared_ptr<std::string> ScriptAsset::AsScript()
+std::shared_ptr<ScriptSourceData> ScriptAsset::AsScript()
 {
-	return _source;
+	return _data;
 }
 
-void ScriptAsset::SetSource(const std::string& s)
+void ScriptAsset::SetData(const std::shared_ptr<ScriptSourceData>& data)
 {
-	if (!_source)
-		_source = std::make_shared<std::string>(s);
-	else
-		*_source = s;
+	_data = data;
 }

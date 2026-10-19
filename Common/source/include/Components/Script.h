@@ -1,16 +1,30 @@
 #pragma once
 
-#include "CommonData/AssetGUIDDef.h"
 #include "ECSCore/IComponent.h"
-#include <string>
+#include "Script/ScriptSourceData.h"
 #include <sol/sol.hpp>
 
 struct Script : public IComponent
 {
-	AssetGUID scriptGuid;
-	std::string source;
+	std::shared_ptr<ScriptSourceData> data;
 	bool enabled = true;
 	bool needReload = true;
+
+	Script() = default;
+	Script(const std::shared_ptr<ScriptSourceData>& data) :data(data) {}
+	Script(const std::string& source, const AssetGUID& scriptGuid = "")
+	{
+		data = std::make_shared<ScriptSourceData>();
+		data->scriptGuid = scriptGuid;
+		data->source = source;
+	}
+
+	void OnRemove(const Entity& entity) override
+	{
+		data.reset();
+		enabled = true;
+		needReload = true;
+	}
 };
 
 struct ScriptEnv

@@ -4,6 +4,7 @@
 #include "AssetDescription.h"
 #include "VulkanRenderEngine/Base/Model.h"
 #include "SceneCodec/SceneCodec.h"
+#include "Script/ScriptSourceData.h"
 
 class AssetStroage;
 class AssetStroageHelper;
@@ -25,7 +26,7 @@ public:
 	virtual std::shared_ptr<Model> AsModel();
 	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
-	virtual std::shared_ptr<std::string> AsScript();
+	virtual std::shared_ptr<ScriptSourceData> AsScript();
 
 protected:
 	AssetType _type;
@@ -126,12 +127,12 @@ class ScriptAsset : public AssetObject
 public:
 	ScriptAsset();
 	virtual ~ScriptAsset() = default;
-	virtual std::shared_ptr<std::string> AsScript() override;
+	virtual std::shared_ptr<ScriptSourceData> AsScript() override;
 
-	void SetSource(const std::string &);
+	void SetData(const std::shared_ptr<ScriptSourceData>& data);
 
 private:
-	std::shared_ptr<std::string> _source;
+	std::shared_ptr<ScriptSourceData> _data;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };

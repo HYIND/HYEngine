@@ -1139,7 +1139,7 @@ void GameWorldManager::RunWorld()
 
 void GameWorldManager::WorldLoop()
 {
-	int targetfps = (1000.f / std::min(_world->getFixedDeltaTime(), _world->getLogicDeltaTime())) + 1;
+	uint32_t targetfps = (1000.f / std::min(_world->getFixedDeltaTime(), _world->getLogicDeltaTime())) + 1;
 	DynamicFpsController fpscontroller(targetfps);
 	fpscontroller.reset();
 
