@@ -1,4 +1,7 @@
 #include "SceneCodec/SceneCodec.h"
+#include "Components/Script.h"
+#include "Render/Components/RenderModel.h"
+#include "VulkanRenderEngine/Base/Model.h"
 
 using namespace NComponentCodec;
 
@@ -133,7 +136,10 @@ bool SceneCodec::Serialize(World& world, const std::function<bool(Entity)>& incl
 	return true;
 }
 
-bool SceneCodec::Deserialize(World& world) const
+bool SceneCodec::Deserialize(
+	World& world,
+	const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset,
+	const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset) const
 {
 	RegisterBuiltInCodecs();
 	const auto& codecs = GetComponentCodecs();
@@ -160,7 +166,7 @@ bool SceneCodec::Deserialize(World& world) const
 				if (codec == codecs.end())
 					continue;
 				if (!codec->decode(entity, componentData.data))
-					return false;
+					continue;
 			}
 
 			if (!entityData.name.empty())
@@ -174,6 +180,39 @@ bool SceneCodec::Deserialize(World& world) const
 					}
 				}
 			}
+
+		}
+
+		for (Entity entity : entityHandles)
+		{
+			auto script = entity.tryGetComponent<Script>();
+			if (!script || !script->data || script->data->scriptGuid.empty())
+				continue;
+
+			if (!resolveScriptAsset)
+				continue;
+
+			auto sourceData = resolveScriptAsset(script->data->scriptGuid);
+			if (!sourceData || sourceData->scriptGuid != script->data->scriptGuid)
+				continue;
+
+			script->data = std::move(sourceData);
+			script->needReload = true;
+		}
+
+		for (Entity entity : entityHandles)
+		{
+			auto renderModel = entity.tryGetComponent<RenderModel>();
+			if (!renderModel || !renderModel->model)
+				continue;
+
+			const auto& guid = renderModel->model->GetAssetGUID();
+			if (guid.empty() || !resolveModelAsset)
+				continue;
+			auto model = resolveModelAsset(guid);
+			if (!model || model->GetAssetGUID() != guid)
+				continue;
+			renderModel->model = std::move(model);
 		}
 	}
 	catch (const std::exception&)

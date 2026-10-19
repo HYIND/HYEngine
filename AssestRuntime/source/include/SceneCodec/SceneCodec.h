@@ -1,6 +1,9 @@
 #pragma once
 
 #include "ComponentCodec.h"
+#include "Script/ScriptSourceData.h"
+
+class Model;
 
 class SceneCodec
 {
@@ -13,7 +16,10 @@ public:
 	Json SaveToJson() const;
 
 	bool Serialize(World& world, const std::function<bool(Entity)>& includeEntity = {});
-	bool Deserialize(World& world) const;
+	bool Deserialize(
+		World& world,
+		const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset = {},
+		const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset = {}) const;
 
 	const std::string& GetName() const { return _name; }
 	void SetName(const std::string& name) { _name = name; }
