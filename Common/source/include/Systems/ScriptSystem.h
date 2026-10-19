@@ -1,18 +1,11 @@
 #pragma once
 
+#include "Script/ScriptSystemVM.h"
 #include "ECSCore/System.h"
-#include "CommonData/AssetGUIDDef.h"
-#include <functional>
-#include <memory>
-#include <string>
-
-class World;
 
 class ScriptSystem : public System
 {
 public:
-	using ScriptSourceResolver = std::function<bool(const AssetGUID&, std::string&)>;
-
 	ScriptSystem();
 	~ScriptSystem() override;
 
@@ -21,14 +14,10 @@ public:
 	void update(float deltaTime) override;
 	void fixedUpdate(float fixedDeltaTime) override;
 
-	void SetSourceResolver(ScriptSourceResolver resolver);
+public:
+	void SetSourceResolver(ScriptSystemVM::ScriptSourceResolver resolver);
+	bool RegisterScriptModule(const std::string& name, std::unique_ptr<IScriptModule> module);
 
 private:
-	void CheckNewOrReloadScript();
-	void ProcessUpdateScripts(float deltaTime);
-	void ProcessFixedUpdateScripts(float deltaTime);
-
-private:
-	struct Impl;
-	std::unique_ptr<Impl> _impl;
+	std::unique_ptr<ScriptSystemVM> _impl;
 };
