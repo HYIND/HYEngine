@@ -61,7 +61,7 @@ void SetNameTag(Entity entity, const std::string& name)
 	}
 }
 
-void LoadInitScene(WorldManager* manager)
+void LoadDefaultScene(WorldManager* manager)
 {
 	auto world = manager->GetWorld();
 
@@ -86,43 +86,6 @@ void LoadInitScene(WorldManager* manager)
 		entity.addComponent<SkyBox>(skyboxcube);
 
 		SetNameTag(entity, "DefaultSkybox");
-	}
-
-	{
-
-		Entity freeEntity = world->createEntityWithTag<TagFreeCamera>();
-		freeEntity.addComponent<Transform>();
-		freeEntity.addComponent<PlayerInput>();
-		auto& controller = freeEntity.addComponent<Controller>();
-		controller.yaw = -90.f;
-		controller.pitch = -45.f;
-		freeEntity.addComponent<TagCurrentControl>();
-		auto& tag = freeEntity.getComponent<TagFreeCamera>();
-		tag.velocity = 0.25;
-
-		{
-			Entity cameraEntity = world->createEntityWithTag<TagCamera>();
-			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
-			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(80.f);
-			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(800.f);
-			cameracom.SetTransForm(trans);
-			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
-			camerafollow.target = freeEntity;
-			camerafollow.offset = glm::vec3(0, 0, 0);
-			world->SetMainCamera(cameraEntity);
-
-			//if (freeEntity.hasComponent<TagCurrentControl>() && cameraEntity.hasComponent<TagMainCamera>())
-			//{
-			//	auto light = LightFactory::CreateSpotLight(world, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1), 100.f, 17.5, 30);
-			//	light.addComponent<TagLightShowLight>();
-			//	auto& follow = light.addComponent<LightFollow>();
-			//	follow.target = cameraEntity;
-			//}
-			SetNameTag(cameraEntity, "freeCameraEntity");
-		}
-		SetNameTag(freeEntity, "freeEntity");
 	}
 
 	{
@@ -192,8 +155,7 @@ void LoadInitScene(WorldManager* manager)
 				return std::string();
 			};
 
-		auto& script = entity.addComponent<Script>();
-		script.source = ReadFromFile("Test/script/TestScript.lua");
+		auto& script = entity.addComponent<Script>(ReadFromFile("Test/script/TestScript.lua"));
 	}
 
 	{
@@ -279,11 +241,6 @@ void WorldManager::SetRender(std::shared_ptr<VulkanRenderer> renderer)
 	pendingHeight = _renderer->GetHeight();
 }
 
-void WorldManager::InitDefaultWorld()
-{
-	CreateWorld(true);
-}
-
 void WorldManager::CreateWorld(bool loadDefaultScene)
 {
 	auto world = std::make_shared<World>();
@@ -327,12 +284,55 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	_world = world;
 
 	if (loadDefaultScene)
-		LoadInitScene(this);
+		LoadDefaultScene(this);
 
 	_world->update(16);
 }
 
-bool WorldManager::LoadScene(const std::shared_ptr<SceneCodec>& scene)
+static void AddFreeCamera(World& world)
+{
+	Entity freeEntity = world.createEntityWithTag<TagFreeCamera>();
+	freeEntity.addComponent<Transform>();
+	freeEntity.addComponent<PlayerInput>();
+	auto& controller = freeEntity.addComponent<Controller>();
+	controller.yaw = -90.f;
+	controller.pitch = -45.f;
+	freeEntity.addComponent<TagCurrentControl>();
+	freeEntity.getComponent<TagFreeCamera>().velocity = 0.25f;
+	SetNameTag(freeEntity, "freeEntity");
+
+	Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+	auto& transform = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
+	auto& camera = cameraEntity.addComponent<CameraComponent>();
+	camera.camera.SetFOV(80.f);
+	camera.camera.SetNearPlane(0.1f);
+	camera.camera.SetFarPlane(800.f);
+	camera.SetTransForm(transform);
+	auto& follow = cameraEntity.addComponent<CameraFollow>();
+	follow.target = freeEntity;
+	follow.offset = glm::vec3(0.f);
+	world.SetMainCamera(cameraEntity);
+	SetNameTag(cameraEntity, "freeCameraEntity");
+}
+
+void WorldManager::InitDefaultWorld()
+{
+	const bool wasRunning = _world && _world->isRunning();
+	if (_world || _worldThread)
+		StopWorld();
+
+	CreateWorld(true);
+	auto world = _world;
+	if (!world)
+		return;
+
+	AddFreeCamera(*world);
+
+	if (wasRunning)
+		RunWorld();
+}
+
+bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene)
 {
 	if (!scene)
 		return false;
@@ -347,28 +347,7 @@ bool WorldManager::LoadScene(const std::shared_ptr<SceneCodec>& scene)
 	if (!world)
 		return false;
 
-	Entity freeEntity = world->createEntityWithTag<TagFreeCamera>();
-	freeEntity.addComponent<Transform>();
-	freeEntity.addComponent<PlayerInput>();
-	auto& controller = freeEntity.addComponent<Controller>();
-	controller.yaw = -90.f;
-	controller.pitch = -45.f;
-	freeEntity.addComponent<TagCurrentControl>();
-	freeEntity.getComponent<TagFreeCamera>().velocity = 0.25f;
-	SetNameTag(freeEntity, "freeEntity");
-
-	Entity cameraEntity = world->createEntityWithTag<TagCamera>();
-	auto& transform = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
-	auto& camera = cameraEntity.addComponent<CameraComponent>();
-	camera.camera.SetFOV(80.f);
-	camera.camera.SetNearPlane(0.1f);
-	camera.camera.SetFarPlane(800.f);
-	camera.SetTransForm(transform);
-	auto& follow = cameraEntity.addComponent<CameraFollow>();
-	follow.target = freeEntity;
-	follow.offset = glm::vec3(0.f);
-	world->SetMainCamera(cameraEntity);
-	SetNameTag(cameraEntity, "freeCameraEntity");
+	AddFreeCamera(*world);
 
 	if (!scene->Deserialize(*world))
 		return false;
@@ -465,7 +444,7 @@ void WorldManager::PushFrameLoop()
 
 void WorldManager::WorldLoop()
 {
-	int targetfps = (1000.f / std::min(_world->getFixedDeltaTime(), _world->getLogicDeltaTime())) + 1;
+	uint32_t targetfps = (1000.f / std::min(_world->getFixedDeltaTime(), _world->getLogicDeltaTime())) + 1;
 	DynamicFpsController fpscontroller(targetfps);
 	fpscontroller.reset();
 

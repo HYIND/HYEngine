@@ -185,6 +185,7 @@
     <ClInclude Include="source\include\Helper\TripleBuffer.h" />
     <ClInclude Include="source\include\Script\BaseScriptModule.h" />
     <ClInclude Include="source\include\Script\IScriptModule.h" />
+    <ClInclude Include="source\include\Script\ScriptSourceData.h" />
     <ClInclude Include="source\include\Script\ScriptSystemVM.h" />
     <ClInclude Include="source\include\Systems\DestroySystem.h" />
     <ClInclude Include="source\include\Systems\LifeTimeSystem.h" />

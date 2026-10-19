@@ -8,13 +8,13 @@ class DynamicFpsController
 	using Duration = std::chrono::duration<float, std::milli>;
 
 public:
-	DynamicFpsController(int gameTargetFps = 60);
+	DynamicFpsController(uint32_t gameTargetFps = 60);
 
-	void setGameTargetFps(int gameTargetFps);
-	int getGameTargetFps() const;
+	void setGameTargetFps(uint32_t gameTargetFps);
+	uint32_t getGameTargetFps() const;
 
-	void setCurTargetFps(int curTargetFps);
-	int getCurTargetFps() const;
+	void setCurTargetFps(uint32_t curTargetFps);
+	uint32_t getCurTargetFps() const;
 	float getCurTimeInOneFps() const;
 
 	void reset();
@@ -24,16 +24,18 @@ public:
 
 private:
 	float _curTimeInOneFps;
-	int _curTargetFps;
-	int _gameTargetFps;
+	uint32_t _curTargetFps;
+	uint32_t _gameTargetFps;
 
 private:
-	int frame_count;
+	uint32_t frame_count;
 	TimePoint time_now;
 	TimePoint time_last;
 	TimePoint time_last_second;
 	int sleep_time;
 	float time_diff = 0;
+
+	uint32_t maxSleepAdjustTime = 160u;
 };
 
 class DynamicFpsEstimate

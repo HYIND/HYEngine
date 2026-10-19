@@ -15,7 +15,6 @@ public:
 	void fixedUpdate(float fixedDeltaTime) override;
 
 public:
-	void SetSourceResolver(ScriptSystemVM::ScriptSourceResolver resolver);
 	bool RegisterScriptModule(const std::string& name, std::unique_ptr<IScriptModule> module);
 
 private:

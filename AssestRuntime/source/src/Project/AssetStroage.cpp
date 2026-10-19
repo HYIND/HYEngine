@@ -236,7 +236,10 @@ std::shared_ptr<ScriptAsset> AssetStroageHelper::LoadScript(AssetMeta& meta, std
 	if (!desc.LoadFromFile(fullMetaPath))
 		return asset;
 
-	asset->SetSource(desc.GetSource());
+	auto data = std::make_shared<ScriptSourceData>();
+	data->scriptGuid = meta.guid;
+	data->source = desc.GetSource();
+	asset->SetData(data);
 	return asset;
 }
 
@@ -306,7 +309,7 @@ bool AssetStroageHelper::SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMet
 
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
 	ScriptAssetDescription desc;
-	desc.SetSource(*script);
+	desc.SetSource(script->source);
 	if (!desc.SaveToFile(fullMetaPath))
 		return false;
 

@@ -85,28 +85,10 @@ void ScriptSystemVM::CheckScriptsChange()
 		bool needReload = script.needReload || !hasComponent;
 		if (needReload)
 		{
-
 			auto& runtime = hasComponent ? entity.getComponent<ScriptRuntime>() : entity.addComponent<ScriptRuntime>();
+			if (Reload(entity, script, runtime))
+				Start(runtime);
 
-			if (!script.scriptGuid.empty())
-			{
-				std::string source;
-				if (!Resolve(script, source))
-				{
-					std::cerr << "[ScriptSystem] No source available for entity " << entity.getId() << std::endl;
-					script.needReload = false;
-					continue;
-				}
-				script.source = source;
-			}
-
-			if (!Reload(entity, script, runtime))
-			{
-				script.needReload = false;
-				continue;
-			}
-
-			Start(runtime);
 			script.needReload = false;
 		}
 	}
@@ -139,11 +121,6 @@ void ScriptSystemVM::FixedUpdateScripts(float deltaTime)
 	}
 }
 
-void ScriptSystemVM::SetSourceResolver(ScriptSourceResolver resolver)
-{
-	_sourceResolver = resolver;
-}
-
 void ScriptSystemVM::RegisterModule(const std::string& name, std::unique_ptr<IScriptModule> module)
 {
 	_modules[name] = ModuleEntry{ .module = std::move(module),.registered = false };
@@ -156,11 +133,6 @@ void ScriptSystemVM::RegisterBuiltinApi()
 		RegisterModule("Transform", std::make_unique<TransformScriptModule>(_world));
 	if (_modules.find("GLMMath") == _modules.end())
 		RegisterModule("GLMMath", std::make_unique<GLMMathModule>());
-}
-
-bool ScriptSystemVM::Resolve(const Script& script, std::string& source) const
-{
-	return !script.scriptGuid.empty() && _sourceResolver && _sourceResolver(script.scriptGuid, source);
 }
 
 sol::protected_function ScriptSystemVM::GetCallback(sol::environment& env, const char* name)
@@ -268,17 +240,21 @@ bool ScriptSystemVM::Reload(Entity entity, const Script& script, ScriptRuntime& 
 {
 	try
 	{
-		const std::string chunkName = script.scriptGuid.empty()
+		if (!script.data)
+			return false;
+
+		auto& data = script.data;
+		const std::string chunkName = data->scriptGuid.empty()
 			? "-entity-" + std::to_string(entity.getId())
-			: "asset-" + script.scriptGuid;
+			: "asset-" + data->scriptGuid;
 
 		std::shared_ptr<ScriptEnv> env = std::make_shared<ScriptEnv>();
-		if (!Build(env, script.source, entity, chunkName))
+		if (!Build(env, data->source, entity, chunkName))
 			return false;
 
 		runtime.env = env;
-		runtime.loadedGuid = script.scriptGuid;
-		runtime.source = script.source;
+		runtime.loadedGuid = data->scriptGuid;
+		runtime.source = data->source;
 
 		return true;
 	}

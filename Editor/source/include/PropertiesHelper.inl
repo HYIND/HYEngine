@@ -391,6 +391,52 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 	return false;
 }
 
+template<>
+inline bool PropertiesHelper::DrawComponent<Script>(Script& comp, ProjectManager* assetManager)
+{
+	if (!comp.data)
+	{
+		ImGui::TextDisabled("No Script assigned");
+		return false;
+	}
+
+	const auto drawAssetPath = [assetManager](const char* label, const AssetGUID& guid)
+		{
+			ImGui::Text("%s", label);
+			ImGui::SameLine();
+			if (guid.empty())
+			{
+				ImGui::TextDisabled("Unlinked");
+				return;
+			}
+
+			auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+			if (!meta)
+			{
+				ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Missing asset (%s)", guid.c_str());
+				return;
+			}
+
+			ImGui::TextUnformatted(meta->name.c_str());
+			ImGui::TextDisabled("%s", meta->path.c_str());
+		};
+
+	drawAssetPath("ScriptSource", comp.data->scriptGuid);
+
+	bool changed = ImGui::Checkbox("Enabled", &comp.enabled);
+	ImGui::SameLine();
+	ImGui::BeginDisabled(comp.needReload);
+	if (ImGui::Button("Reload"))
+	{
+		comp.needReload = true;
+		changed |= true;
+	}
+	ImGui::EndDisabled();
+
+	return changed;
+}
+
 template<typename T>
 void PropertiesHelper::OnComponentChange(Entity entity, T& comp)
 {}

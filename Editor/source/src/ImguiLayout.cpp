@@ -1960,7 +1960,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	}
 	case AssetType::Scene:
 	{
-		if (auto scene = assetObject->AsScene(); scene && worldManager->LoadScene(scene))
+		if (auto scene = assetObject->AsScene(); scene && worldManager->LoadFromSceneCodec(scene))
 		{
 			m_currentSceneAssetGuid = meta.guid;
 			selectedEntity = Entity();
@@ -1973,6 +1973,25 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 		{
 		}
 		break;
+	}
+	case AssetType::Script:
+	{
+		if (auto scriptSourceData = assetObject->AsScript())
+		{
+			worldManager->GetWorld()->SubmitCommand([&](World& world)
+				{
+					Entity entity;
+					if (!RayCastFromMouse(world, entity))
+						return;
+
+					auto script = entity.tryGetComponent<Script>();
+					if (!script)
+						return;
+
+					script->data = scriptSourceData;
+					script->needReload = true;
+				}).get();
+		}
 	}
 	}
 }

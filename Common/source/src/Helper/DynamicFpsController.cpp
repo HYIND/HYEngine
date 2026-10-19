@@ -3,31 +3,31 @@
 #include <thread>
 #include <cmath>
 
-DynamicFpsController::DynamicFpsController(int gameTargetFps)
+DynamicFpsController::DynamicFpsController(uint32_t gameTargetFps)
 {
 	setGameTargetFps(gameTargetFps);
 	setCurTargetFps(gameTargetFps);
 }
 
-void DynamicFpsController::setCurTargetFps(int curTargetFps)
+void DynamicFpsController::setCurTargetFps(uint32_t curTargetFps)
 {
 	if (curTargetFps == _curTargetFps)
 		return;
-	_curTargetFps = std::max(1, curTargetFps);
+	_curTargetFps = std::max(1u, curTargetFps);
 	_curTimeInOneFps = 1000.f / _curTargetFps;
 }
 
-void DynamicFpsController::setGameTargetFps(int gameFps)
+void DynamicFpsController::setGameTargetFps(uint32_t gameFps)
 {
-	_gameTargetFps = std::max(1, gameFps);
+	_gameTargetFps = std::max(1u, gameFps);
 }
 
-int DynamicFpsController::getCurTargetFps() const
+uint32_t DynamicFpsController::getCurTargetFps() const
 {
 	return _curTargetFps;
 }
 
-int DynamicFpsController::getGameTargetFps() const
+uint32_t DynamicFpsController::getGameTargetFps() const
 {
 	return _gameTargetFps;
 }
@@ -59,6 +59,8 @@ void DynamicFpsController::run()
 	time_last = time_now;
 	frame_count++;
 
+	int maxSleepTime = maxSleepAdjustTime;
+
 	duration = time_now - time_last_second;
 	if (duration.count() >= 1000.f)
 	{
@@ -66,19 +68,19 @@ void DynamicFpsController::run()
 		float curTimeInOneFpsDuringSecond = duration.count() / frame_count;
 		int delta = std::floor(curTimeInOneFpsDuringSecond - _curTimeInOneFps + 0.5f);
 
-		sleep_time = std::clamp(sleep_time - delta, -160, 160);
+		sleep_time = std::clamp(sleep_time - delta, -maxSleepTime, maxSleepTime);
 
-		frame_count = 0;
+		frame_count = 0u;
 	}
 
 	if (time_diff - _curTimeInOneFps >= 0.f)
 	{
-		if (sleep_time > -160)
+		if (sleep_time > -maxSleepTime)
 			sleep_time--;
 	}
 	else
 	{
-		if (sleep_time < 160)
+		if (sleep_time < maxSleepTime)
 			sleep_time++;
 	}
 

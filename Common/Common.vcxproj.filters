@@ -22,9 +22,6 @@
     <Filter Include="头文件\CommonData">
       <UniqueIdentifier>{78040ce8-3ba7-4307-8c51-013210bcf896}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\CommonData">
-      <UniqueIdentifier>{7de3507b-64a2-4310-ad08-a73c803abbe3}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\ECSCore">
       <UniqueIdentifier>{b339690e-ad66-4f02-a432-ff84e6f6a46f}</UniqueIdentifier>
     </Filter>
@@ -48,6 +45,9 @@
     </Filter>
     <Filter Include="源文件\Script">
       <UniqueIdentifier>{0e6e7d0d-5b18-4e6b-a8e2-489ddd4c7070}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\lua\CommonData">
+      <UniqueIdentifier>{7de3507b-64a2-4310-ad08-a73c803abbe3}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -198,6 +198,9 @@
     <ClInclude Include="source\include\Script\BaseScriptModule.h">
       <Filter>头文件\Script</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Script\ScriptSourceData.h">
+      <Filter>头文件\Script</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp">
@@ -213,7 +216,7 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\CommonData\Camera.cpp">
-      <Filter>源文件\CommonData</Filter>
+      <Filter>源文件\lua\CommonData</Filter>
     </ClCompile>
     <ClCompile Include="source\src\ECSCore\Entity.cpp">
       <Filter>源文件\ECSCore</Filter>
@@ -243,7 +246,7 @@
       <Filter>源文件\Helper</Filter>
     </ClCompile>
     <ClCompile Include="source\src\CommonData\LightFactory.cpp">
-      <Filter>源文件\CommonData</Filter>
+      <Filter>源文件\lua\CommonData</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Systems\ScriptSystem.cpp">
       <Filter>源文件\Systems</Filter>
