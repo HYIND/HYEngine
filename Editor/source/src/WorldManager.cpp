@@ -4,6 +4,7 @@
 #include "GameRuntimeSystems.h"
 #include "ECSCore/World.h"
 #include "Helper/DynamicFpsController.h"
+#include "Project/ProjectManager.h"
 
 #include "CommonData/LightFactory.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
@@ -14,6 +15,8 @@
 #include "GeneralManager/FocusManager.h"
 #include "GeneralManager/MouseManager.h"
 #include "GeneralManager/KeyMapManaer.h"
+
+#include <cmath>
 
 void AddPickProxy(Entity& entity)
 {
@@ -332,7 +335,7 @@ void WorldManager::InitDefaultWorld()
 		RunWorld();
 }
 
-bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene)
+bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, ProjectManager* projectManager)
 {
 	if (!scene)
 		return false;
@@ -349,8 +352,145 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene)
 
 	AddFreeCamera(*world);
 
-	if (!scene->Deserialize(*world))
+	auto resolveScriptAsset = [projectManager](const AssetGUID& guid) -> std::shared_ptr<ScriptSourceData> {
+		if (!projectManager)
+			return nullptr;
+		auto database = projectManager->GetDatabase();
+		auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+		if (!meta || meta->type != AssetType::Script)
+			return nullptr;
+		auto asset = projectManager->LoadAsset(guid);
+		return asset ? asset->AsScript() : nullptr;
+		};
+	auto resolveModelAsset = [projectManager](const AssetGUID& guid) -> std::shared_ptr<Model> {
+		if (guid == "DefaultCube")
+			return GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
+		if (guid == "DefaultSphere")
+			return GetSphereModel(0.5f, 72, 36, guid);
+		if (!projectManager)
+			return nullptr;
+
+		auto database = projectManager->GetDatabase();
+		auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+		if (!meta)
+			return nullptr;
+
+		auto asset = projectManager->LoadAsset(guid);
+		if (!asset)
+			return nullptr;
+		if (meta->type == AssetType::Model)
+			return asset->AsModel();
+		if (meta->type != AssetType::StaticMesh)
+			return nullptr;
+
+		auto meshes = asset->AsStaticMesh();
+		if (meshes.empty())
+			return nullptr;
+		auto model = std::make_shared<Model>();
+		for (auto& mesh : meshes)
+			model->AddMesh(mesh, std::make_shared<Material>());
+		model->SetAssetGUID(guid);
+		return model;
+		};
+	if (!scene->Deserialize(*world, resolveScriptAsset, resolveModelAsset))
 		return false;
+
+	const auto& settings = scene->GetSettings();
+	if (settings.is_object() && settings.contains("editorFreeCamera"))
+	{
+		const auto& cameraSettings = settings["editorFreeCamera"];
+		const auto entities = world->getAllEntity();
+		const auto cameraEntity = std::find_if(entities.begin(), entities.end(), [](Entity entity) {
+			if (!entity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
+				return false;
+			const Entity target = entity.getComponent<CameraFollow>().target;
+			return target && target.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>();
+			});
+		const auto isFiniteArray = [](const nlohmann::json& value, size_t size) {
+			if (!value.is_array() || value.size() != size)
+				return false;
+			for (const auto& element : value)
+				if (!element.is_number() || !std::isfinite(element.get<double>()))
+					return false;
+			return true;
+			};
+		const auto readVec3 = [&isFiniteArray](const nlohmann::json& value, glm::vec3& result) {
+			if (!isFiniteArray(value, 3))
+				return false;
+			result = glm::vec3(value[0].get<float>(), value[1].get<float>(), value[2].get<float>());
+			return std::isfinite(result.x) && std::isfinite(result.y) && std::isfinite(result.z);
+			};
+		const auto readTransform = [&readVec3, &isFiniteArray](const nlohmann::json& data, Transform& transform) {
+			if (!data.is_object() || !data.contains("position") || !data.contains("rotation") || !data.contains("scale"))
+				return false;
+			glm::vec3 position;
+			glm::vec3 scale;
+			const auto& rotation = data["rotation"];
+			if (!readVec3(data["position"], position) || !readVec3(data["scale"], scale)
+				|| !isFiniteArray(rotation, 4))
+				return false;
+			glm::quat quaternion(
+				rotation[0].get<float>(), rotation[1].get<float>(),
+				rotation[2].get<float>(), rotation[3].get<float>());
+			const float length = glm::length(quaternion);
+			if (!std::isfinite(length) || length <= 1e-6f)
+				return false;
+			transform.position = position;
+			transform.rotation = glm::normalize(quaternion);
+			transform.scale = scale;
+			return true;
+			};
+		if (cameraSettings.is_object() && cameraEntity != entities.end()
+			&& cameraSettings.contains("cameraTransform")
+			&& cameraSettings.contains("yaw") && cameraSettings["yaw"].is_number()
+			&& cameraSettings.contains("pitch") && cameraSettings["pitch"].is_number()
+			&& cameraSettings.contains("velocity") && cameraSettings["velocity"].is_number()
+			&& cameraSettings.contains("offset") && isFiniteArray(cameraSettings["offset"], 3)
+			&& cameraSettings.contains("fov") && cameraSettings["fov"].is_number()
+			&& cameraSettings.contains("nearPlane") && cameraSettings["nearPlane"].is_number()
+			&& cameraSettings.contains("farPlane") && cameraSettings["farPlane"].is_number())
+		{
+			try
+			{
+				Transform cameraTransform;
+				const bool validTransform = readTransform(cameraSettings["cameraTransform"], cameraTransform);
+				const float fov = cameraSettings["fov"].get<float>();
+				const float nearPlane = cameraSettings["nearPlane"].get<float>();
+				const float farPlane = cameraSettings["farPlane"].get<float>();
+				const float yaw = cameraSettings["yaw"].get<float>();
+				const float pitch = cameraSettings["pitch"].get<float>();
+				const float velocity = cameraSettings["velocity"].get<float>();
+				glm::vec3 offset;
+				const bool validOffset = readVec3(cameraSettings["offset"], offset);
+				if (validTransform && validOffset
+					&& std::isfinite(fov) && fov > 0.f && fov < 180.f
+					&& std::isfinite(nearPlane) && nearPlane > 0.f
+					&& std::isfinite(farPlane) && farPlane > nearPlane
+					&& std::isfinite(yaw) && std::isfinite(pitch) && pitch >= -89.f && pitch <= 89.f
+					&& std::isfinite(velocity) && velocity >= 0.f)
+				{
+					auto& cameraComponent = cameraEntity->getComponent<CameraComponent>();
+					auto& follow = cameraEntity->getComponent<CameraFollow>();
+					Entity freeEntity = follow.target;
+					auto& controller = freeEntity.getComponent<Controller>();
+					auto& freeCamera = freeEntity.getComponent<TagFreeCamera>();
+					cameraEntity->getComponent<Transform>() = cameraTransform;
+					cameraComponent.camera.SetPosition(cameraTransform.position);
+					cameraComponent.camera.SetFOV(fov);
+					cameraComponent.camera.SetNearPlane(nearPlane);
+					cameraComponent.camera.SetFarPlane(farPlane);
+					cameraComponent.camera.SetYawPitch(yaw, pitch);
+					controller.yaw = yaw;
+					controller.pitch = pitch;
+					freeCamera.velocity = velocity;
+					follow.offset = offset;
+				}
+			}
+			catch (const nlohmann::json::exception&)
+			{
+			}
+		}
+	}
 
 	world->update(16);
 	if (wasRunning)
@@ -360,6 +500,11 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene)
 
 void WorldManager::RegisterSceneComponentCodecs()
 {
+	NComponentCodec::RegisterComponentCodec<EditorPick>(
+		"editor.pick",
+		[](const EditorPick&) { return nlohmann::json::object(); },
+		[](EditorPick&, const nlohmann::json& data) { return data.is_object(); });
+
 	NComponentCodec::RegisterComponentCodec<NameTag>(
 		"editor.name",
 		[](const NameTag& tag) { return nlohmann::json{ {"name", tag.name} }; },

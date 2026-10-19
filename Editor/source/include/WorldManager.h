@@ -8,6 +8,8 @@
 #include "CommonData/LightData.h"
 #include "SceneCodec/SceneCodec.h"
 
+class ProjectManager;
+
 struct EditorPick :public IComponent
 {};
 
@@ -31,7 +33,7 @@ private:
 public:
 	void SetRender(std::shared_ptr<VulkanRenderer> renderer);
 	void InitDefaultWorld();
-	bool LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene);
+	bool LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, ProjectManager* projectManager);
 	static void RegisterSceneComponentCodecs();
 
 

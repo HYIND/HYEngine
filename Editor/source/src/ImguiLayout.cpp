@@ -6,6 +6,7 @@
 #include "PropertiesHelper.h"
 #include "IconManager.h"
 #include <filesystem>
+#include <cmath>
 
 namespace fs = std::filesystem;
 
@@ -40,27 +41,82 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 	if (!world)
 		return false;
 	WorldManager::RegisterSceneComponentCodecs();
-	auto serializeCurrentWorld = [world](SceneCodec& scene) {
-		auto serialize = [&scene](World& activeWorld) {
-			return scene.Serialize(activeWorld, [](Entity entity) {
-				return !entity.hasComponent<TagFreeCamera>() && !entity.hasComponent<TagCamera>();
-				});
-			};
-		if (!world->isRunning())
-			return serialize(*world);
+	auto serializeCurrentWorld = [world](SceneCodec& scene)
+		{
+			auto serialize = [&scene](World& activeWorld)
+				{
+					const bool serialized = scene.Serialize(activeWorld, [](Entity entity) {
+						return !entity.hasComponent<TagFreeCamera>();
+						});
+					if (!serialized)
+						return false;
 
-		bool result = false;
-		try
-		{
-			world->SubmitCommand([&](World& activeWorld) {
-				result = serialize(activeWorld);
-				}).get();
-		}
-		catch (const std::exception&)
-		{
-			return false;
-		}
-		return result;
+					auto& settings = scene.GetSettings();
+					settings.erase("editorFreeCamera");
+					for (Entity entity : activeWorld.getAllEntity())
+					{
+						if (!entity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
+							continue;
+
+						auto& follow = entity.getComponent<CameraFollow>();
+						Entity freeEntity = follow.target;
+						if (!freeEntity || !freeEntity.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>())
+							continue;
+
+						const auto& camera = entity.getComponent<CameraComponent>().camera;
+						const auto& cameraTransform = entity.getComponent<Transform>();
+						const auto& controller = freeEntity.getComponent<Controller>();
+						const auto& freeCamera = freeEntity.getComponent<TagFreeCamera>();
+						const auto finiteVec3 = [](const glm::vec3& value) {
+							return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+							};
+						const auto finiteQuat = [](const glm::quat& value) {
+							return std::isfinite(value.w) && std::isfinite(value.x)
+								&& std::isfinite(value.y) && std::isfinite(value.z);
+							};
+						if (!finiteVec3(cameraTransform.position) || !finiteVec3(cameraTransform.scale)
+							|| !finiteQuat(cameraTransform.rotation)
+							|| !finiteVec3(follow.offset)
+							|| !std::isfinite(controller.yaw) || !std::isfinite(controller.pitch)
+							|| !std::isfinite(freeCamera.velocity)
+							|| !std::isfinite(camera.GetFOV()) || !std::isfinite(camera.GetNearPlane())
+							|| !std::isfinite(camera.GetFarPlane()))
+							return false;
+
+						settings["editorFreeCamera"] = {
+							{"yaw", controller.yaw},
+							{"pitch", controller.pitch},
+							{"velocity", freeCamera.velocity},
+							{"cameraTransform", {
+								{"position", { cameraTransform.position.x, cameraTransform.position.y, cameraTransform.position.z }},
+								{"rotation", { cameraTransform.rotation.w, cameraTransform.rotation.x, cameraTransform.rotation.y, cameraTransform.rotation.z }},
+								{"scale", { cameraTransform.scale.x, cameraTransform.scale.y, cameraTransform.scale.z }}
+							}},
+							{"fov", camera.GetFOV()},
+							{"nearPlane", camera.GetNearPlane()},
+							{"farPlane", camera.GetFarPlane()},
+							{"offset", { follow.offset.x, follow.offset.y, follow.offset.z }}
+						};
+						break;
+					}
+					return true;
+				};
+
+			try
+			{
+				if (!world->isRunning())
+					return serialize(*world);
+
+				bool result = false;
+				world->SubmitCommand([&](World& activeWorld) {
+					result = serialize(activeWorld);
+					}).get();
+				return result;
+			}
+			catch (const std::exception&)
+			{
+				return false;
+			}
 		};
 
 	if (!m_currentSceneAssetGuid.empty())
@@ -1907,6 +1963,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 			auto model = std::make_shared<Model>();
 			for (auto mesh : meshes)
 				model->AddMesh(mesh, std::make_shared<Material>());
+			model->SetAssetGUID(meta.guid);
 
 			auto entity = worldManager->CreateModelEntity(model);
 			if (!entity)
@@ -1985,7 +2042,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	}
 	case AssetType::Scene:
 	{
-		if (auto scene = assetObject->AsScene(); scene && worldManager->LoadFromSceneCodec(scene))
+		if (auto scene = assetObject->AsScene(); scene && worldManager->LoadFromSceneCodec(scene, projectManager))
 		{
 			m_currentSceneAssetGuid = meta.guid;
 			selectedEntity = Entity();

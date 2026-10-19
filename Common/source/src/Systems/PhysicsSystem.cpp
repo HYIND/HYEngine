@@ -343,6 +343,9 @@ void PhysicsSystem::checkNewEntity()
 		if (!entity.hasComponent<PhysicsRuntime>())
 		{
 			auto& physics = entity.getComponent<Physics>();
+			if (physics.collisionShape.children.empty())
+				return;
+
 			auto& trans = entity.getComponent<Transform>();
 			auto& runtime = entity.addComponent<PhysicsRuntime>();
 			createBody(entity, physics, trans, runtime);
@@ -595,8 +598,6 @@ void PhysicsSystem::createBody(Entity entity, Physics& physics, Transform& trans
 	runtime.world = phyWorld;
 
 	if (physics.isCharacter) {
-		if (physics.collisionShape.children.empty())
-			return;
 		runtime.shapePtr = createShape(trans, *physics.collisionShape.children[0]);
 		createCharacter(entity, physics, trans, runtime);
 	}
