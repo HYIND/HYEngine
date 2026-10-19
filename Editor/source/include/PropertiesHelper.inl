@@ -1,4 +1,5 @@
 ﻿#include "PropertiesHelper.h"
+#include "ImguiLayout.h"
 
 // 注册组件
 template<typename T>
@@ -394,37 +395,39 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 template<>
 inline bool PropertiesHelper::DrawComponent<Script>(Script& comp, ProjectManager* assetManager)
 {
+	bool changed = false;
 	if (!comp.data)
 	{
 		ImGui::TextDisabled("No Script assigned");
-		return false;
+	}
+	else
+	{
+		const auto drawAssetPath = [assetManager](const char* label, const AssetGUID& guid)
+			{
+				ImGui::Text("%s", label);
+				ImGui::SameLine();
+				if (guid.empty())
+				{
+					ImGui::TextDisabled("Unlinked");
+					return;
+				}
+
+				auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+				auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+				if (!meta)
+				{
+					ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Missing asset (%s)", guid.c_str());
+					return;
+				}
+
+				ImGui::TextUnformatted(meta->name.c_str());
+				ImGui::TextDisabled("%s", meta->path.c_str());
+			};
+
+		drawAssetPath("ScriptSource", comp.data->scriptGuid);
 	}
 
-	const auto drawAssetPath = [assetManager](const char* label, const AssetGUID& guid)
-		{
-			ImGui::Text("%s", label);
-			ImGui::SameLine();
-			if (guid.empty())
-			{
-				ImGui::TextDisabled("Unlinked");
-				return;
-			}
-
-			auto database = assetManager ? assetManager->GetDatabase() : nullptr;
-			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
-			if (!meta)
-			{
-				ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Missing asset (%s)", guid.c_str());
-				return;
-			}
-
-			ImGui::TextUnformatted(meta->name.c_str());
-			ImGui::TextDisabled("%s", meta->path.c_str());
-		};
-
-	drawAssetPath("ScriptSource", comp.data->scriptGuid);
-
-	bool changed = ImGui::Checkbox("Enabled", &comp.enabled);
+	changed |= ImGui::Checkbox("Enabled", &comp.enabled);
 	ImGui::SameLine();
 	ImGui::BeginDisabled(comp.needReload);
 	if (ImGui::Button("Reload"))
@@ -433,6 +436,45 @@ inline bool PropertiesHelper::DrawComponent<Script>(Script& comp, ProjectManager
 		changed |= true;
 	}
 	ImGui::EndDisabled();
+	if (ImGui::Button("Drop script asset to replace", ImVec2(-FLT_MIN, 0.0f))) {}
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+		{
+			const char* data = static_cast<const char*>(payload->Data);
+			if (data && *data && assetManager)
+			{
+				auto database = assetManager->GetDatabase();
+				auto meta = database ? database->GetAssetMetaByGuid(AssetGUID(data)) : nullptr;
+				if (meta && meta->type == AssetType::Script)
+				{
+					auto asset = assetManager->LoadAsset(meta->guid);
+					auto source = asset ? asset->AsScript() : nullptr;
+					if (source)
+					{
+						comp.data = std::move(source);
+						comp.needReload = true;
+						changed = true;
+					}
+				}
+			}
+		}
+		if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_FILE"))
+		{
+			const char* data = static_cast<const char*>(payload->Data);
+			if (data && strlen(data) > 0)
+			{
+				std::string fileFullPath(data);
+				std::string ext = fs::path(fileFullPath).extension().string();
+				if (ext == ".lua")
+				{
+					if (assetManager)
+						ImguiLayout::HandleScriptFileDrop(fileFullPath, ImguiLayout::selectedEntity, assetManager);
+				}
+			}
+		}
+		ImGui::EndDragDropTarget();
+	}
 
 	return changed;
 }

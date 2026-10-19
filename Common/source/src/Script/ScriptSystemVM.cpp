@@ -68,10 +68,12 @@ void ScriptSystemVM::CheckScriptsChange()
 	{
 		if (!_world->IsValidWorldEntity(entity)) continue;
 
-		bool hasComponent = entity.hasComponent<ScriptRuntime>();
-		bool needClose = !script.enabled;
+		if (!script.enabled)
+			continue;
 
-		if (needClose)
+		bool hasComponent = entity.hasComponent<ScriptRuntime>();
+		bool needReload = script.needReload || !hasComponent;
+		if (needReload)
 		{
 			if (hasComponent)
 			{
@@ -79,12 +81,7 @@ void ScriptSystemVM::CheckScriptsChange()
 				if (runtime.env)
 					Stop(runtime);
 			}
-			continue;
-		}
 
-		bool needReload = script.needReload || !hasComponent;
-		if (needReload)
-		{
 			auto& runtime = hasComponent ? entity.getComponent<ScriptRuntime>() : entity.addComponent<ScriptRuntime>();
 			if (Reload(entity, script, runtime))
 				Start(runtime);
@@ -180,8 +177,12 @@ bool ScriptSystemVM::Call(const std::shared_ptr<ScriptEnv>& env, const char* cal
 void ScriptSystemVM::Stop(ScriptRuntime& runtime)
 {
 	auto& env = runtime.env;
-	if (env && env->onDestroy.valid())
+	if (!env)
+		return;
+
+	if (env->onDestroy.valid())
 		Call(env, "OnDestroy", env->onDestroy);
+	env.reset();
 }
 
 bool ScriptSystemVM::Build(std::shared_ptr<ScriptEnv>& env, const std::string& source, Entity entity, const std::string& chunkName)

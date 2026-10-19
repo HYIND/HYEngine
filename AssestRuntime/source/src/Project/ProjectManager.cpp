@@ -19,7 +19,8 @@ static const std::map<AssetType, std::string> metaPerfix = {
 	{ AssetType::Material,"Mat" },
 	{ AssetType::Model,"Model" },
 	{ AssetType::Scene,"Scene" },
-	{ AssetType::Audio,"Au" }
+	{ AssetType::Audio,"Au" },
+	{ AssetType::Script,"Script" }
 };
 
 class ProjectAssetPathProvider :public IAssetFullPathProvider
@@ -333,6 +334,57 @@ bool ProjectManager::ImportTextureAsset(const std::string& sourcePathStr, const 
 	if (out) *out = meta;
 
 	if (autoSave) SaveProject();
+	return true;
+}
+
+bool ProjectManager::ImportScriptAsset(const std::string& sourcePathStr, const std::string& destPathStr, AssetMeta* out, bool autoSave)
+{
+	if (!m_isOpen || !fs::exists(sourcePathStr) || !fs::is_regular_file(sourcePathStr))
+		return false;
+	if (!Tool::IsSubDirectory(destPathStr, m_projectPath))
+		return false;
+
+	std::string extension = fs::path(sourcePathStr).extension().string();
+	std::transform(extension.begin(), extension.end(), extension.begin(),
+		[](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+	if (extension != ".lua")
+		return false;
+
+	fs::path absoluteDestPath = fs::absolute(destPathStr).lexically_normal();
+	fs::path projectPath = fs::absolute(m_projectPath).lexically_normal();
+	fs::path assetPath = fs::relative(absoluteDestPath, projectPath);
+	if (assetPath.empty() || assetPath.string().find("..") == 0)
+		return false;
+
+	if (auto existingMeta = m_database->GetAssetMetaByPath(assetPath.string()))
+	{
+		if (existingMeta->type != AssetType::Script)
+			return false;
+		if (out) *out = *existingMeta;
+		return true;
+	}
+
+	if (fs::exists(absoluteDestPath) && fs::weakly_canonical(sourcePathStr) != fs::weakly_canonical(absoluteDestPath.string()))
+		return false;
+	if (fs::weakly_canonical(sourcePathStr) != fs::weakly_canonical(absoluteDestPath.string()) &&
+		!CopyToProject(sourcePathStr, assetPath.string()))
+		return false;
+
+	AssetMeta meta;
+	meta.guid = GenerateGUID();
+	meta.type = AssetType::Script;
+	meta.path = assetPath.string();
+	meta.name = absoluteDestPath.filename().string();
+	if (!m_database->AddAssetMeta(meta))
+		return false;
+
+	if (autoSave && !SaveProject())
+	{
+		m_database->RemoveAssetMeta(meta.guid);
+		return false;
+	}
+
+	if (out) *out = meta;
 	return true;
 }
 

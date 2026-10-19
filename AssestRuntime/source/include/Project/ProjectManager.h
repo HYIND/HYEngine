@@ -28,6 +28,7 @@ public:
 	bool ImportStaticMeshAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
 	bool ImportModelAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
 	bool ImportTextureAsset(const std::string& filePath, const std::string& assetPath, const TextureConfig& config, AssetMeta* out = nullptr, bool autoSave = true);
+	bool ImportScriptAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
 	bool ImportMaterialAsset(const std::string& destPathStr, const MaterialProperties& prop, const std::map<TextureType, AssetGUID>& dependencyTexture, AssetMeta* out, bool autoSave = true);
 
 	bool DeleteAsset(const AssetGUID& guid);

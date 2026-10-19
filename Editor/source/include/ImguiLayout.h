@@ -25,6 +25,8 @@ public:
 	static void DropFolder(const std::string& folderPath, ProjectManager* projectManager, const ImVec2& mousePos);
 
 	static void HandleAssetDrop(const AssetMeta& meta, WorldManager* worldManager, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
+	static void HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
+	static void ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
 
 private:
 	static void DrawFolderTree(const std::string& currentPath, const std::string& parentPathStr, const std::string& rootPathStr);
