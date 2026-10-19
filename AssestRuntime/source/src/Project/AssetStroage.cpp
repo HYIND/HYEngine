@@ -15,12 +15,14 @@ private:
 	static std::shared_ptr<ModelAsset> LoadModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<MaterialAsset> LoadMaterial(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<SceneAsset> LoadScene(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<ScriptAsset> LoadScript(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
 public:
 	static bool SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
 private:
 	static bool SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static bool SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 };
 
 
@@ -128,6 +130,8 @@ std::shared_ptr<AssetObject> AssetStroageHelper::LoadAsset(AssetMeta& meta, std:
 		return LoadScene(meta, pathProvider);
 	case AssetType::Audio:
 		return LoadAudio(meta, pathProvider);
+	case AssetType::Script:
+		return LoadScript(meta, pathProvider);
 	default:
 		return nullptr;
 	}
@@ -220,6 +224,22 @@ std::shared_ptr<SceneAsset> AssetStroageHelper::LoadScene(AssetMeta& meta, std::
 	return asset;
 }
 
+std::shared_ptr<ScriptAsset> AssetStroageHelper::LoadScript(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	if (!pathProvider)
+		return nullptr;
+
+	auto asset = std::make_shared<ScriptAsset>();
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	ScriptAssetDescription desc;
+	if (!desc.LoadFromFile(fullMetaPath))
+		return asset;
+
+	asset->SetSource(desc.GetSource());
+	return asset;
+}
+
 bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
 {
 	if (!asset)
@@ -249,6 +269,8 @@ bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta
 		return SaveScene(std::static_pointer_cast<SceneAsset>(asset), meta, pathProvider);
 	case AssetType::Audio:
 		return false;
+	case AssetType::Script:
+		return SaveScript(std::static_pointer_cast<ScriptAsset>(asset), meta, pathProvider);
 	default:
 		return false;
 	}
@@ -267,6 +289,24 @@ bool AssetStroageHelper::SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta&
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
 	SceneAssetDescription desc;
 	desc.SetJsonData(scene->SaveToJson());
+	if (!desc.SaveToFile(fullMetaPath))
+		return false;
+
+	return true;
+}
+
+bool AssetStroageHelper::SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	if (!pathProvider)
+		return false;
+
+	auto script = asset->AsScript();
+	if (!script)
+		return false;
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	ScriptAssetDescription desc;
+	desc.SetSource(*script);
 	if (!desc.SaveToFile(fullMetaPath))
 		return false;
 

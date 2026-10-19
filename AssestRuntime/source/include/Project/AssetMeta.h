@@ -20,7 +20,7 @@
 // Scene		--- 记录World的状态快照
 
 enum class AssetType {
-	Unknown = 0, Texture, Audio, Material, StaticMesh, Model, Scene
+	Unknown = 0, Texture, Audio, Material, StaticMesh, Model, Scene, Script
 };
 
 using AssetPath = std::string;

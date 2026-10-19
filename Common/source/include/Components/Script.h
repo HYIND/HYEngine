@@ -36,7 +36,11 @@ struct ScriptRuntime : public IComponent
 	std::shared_ptr<ScriptEnv> env;
 
 	void OnRemove(const Entity& entity) override
-	{}
+	{
+		loadedGuid.clear();
+		source.clear();
+		env.reset();
+	}
 
 	bool ShouldDuplicate() const override { return false; }
 };

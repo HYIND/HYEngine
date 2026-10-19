@@ -25,6 +25,7 @@ public:
 	virtual std::shared_ptr<Model> AsModel();
 	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
+	virtual std::shared_ptr<std::string> AsScript();
 
 protected:
 	AssetType _type;
@@ -116,6 +117,21 @@ public:
 
 private:
 	std::shared_ptr<SceneCodec> _scene;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class ScriptAsset : public AssetObject
+{
+public:
+	ScriptAsset();
+	virtual ~ScriptAsset() = default;
+	virtual std::shared_ptr<std::string> AsScript() override;
+
+	void SetSource(const std::string &);
+
+private:
+	std::shared_ptr<std::string> _source;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };

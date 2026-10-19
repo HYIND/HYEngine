@@ -112,3 +112,16 @@ public:
 private:
 	nlohmann::json _json = nlohmann::json::object();
 };
+
+class ScriptAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	std::string GetSource() const;
+	void SetSource(const std::string&);
+
+private:
+	std::string _source;
+};

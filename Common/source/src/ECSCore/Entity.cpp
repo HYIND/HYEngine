@@ -1,8 +1,6 @@
 #include "ECSCore/Entity.h"
 #include "ECSCore/World.h"
 
-constexpr Entity::Entity(World* world, EntityID id) :world(world), id(id) {}
-
 // 只读访问
 EntityID Entity::getId() const { return id; }
 
