@@ -1395,9 +1395,34 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 			if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_FILE"))
 			{
 				const char* data = (const char*)payload->Data;
-				if (data && strlen(data) > 0) {
-					fs::path filePath(data);
-					//HandleAssetDrop(assetPath, worldManager, viewportPos, viewportSize);
+				if (data && strlen(data) > 0)
+				{
+					std::string fileFullPath(data);
+					std::string ext = fs::path(fileFullPath).extension().string();
+					if (ext == ".lua")
+					{
+						auto triBuffer = worldManager->GetTriBuffer();
+						auto view = triBuffer->acquireReadBuffer()->view;
+						auto projection = triBuffer->acquireReadBuffer()->projection;
+
+						glm::mat4 projOG = projection;
+						projOG[1][1] *= -1;
+
+						glm::vec3 rayOrigin, rayDirection;
+						ImGuizmo::ComputeMouseRay(
+							(float*)&view,
+							(float*)&projOG,
+							ImGui::GetMousePos(),
+							viewportPos,
+							viewportSize,
+							(float*)&rayOrigin,
+							(float*)&rayDirection
+						);
+
+						auto entity = worldManager->PickObject(rayOrigin, rayDirection);
+						if (entity && worldManager->GetWorld()->IsValidWorldEntity(entity))
+							HandleScriptFileDrop(fileFullPath, entity, projectManager);
+					}
 				}
 			}
 			ImGui::EndDragDropTarget();
@@ -1976,24 +2001,62 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 	}
 	case AssetType::Script:
 	{
-		if (auto scriptSourceData = assetObject->AsScript())
-		{
-			worldManager->GetWorld()->SubmitCommand([&](World& world)
-				{
-					Entity entity;
-					if (!RayCastFromMouse(world, entity))
-						return;
-
-					auto script = entity.tryGetComponent<Script>();
-					if (!script)
-						return;
-
-					script->data = scriptSourceData;
-					script->needReload = true;
-				}).get();
-		}
+		Entity entity;
+		auto world = worldManager->GetWorld();
+		if (world && RayCastFromMouse(*world, entity))
+			ApplyScriptAsset(entity, meta, projectManager);
 	}
 	}
+}
+
+void ImguiLayout::ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager)
+{
+	if (!target || !projectManager || meta.type != AssetType::Script)
+		return;
+	auto asset = projectManager->LoadAsset(meta.guid);
+	auto source = asset ? asset->AsScript() : nullptr;
+	if (!source)
+		return;
+	auto world = target.getWorld();
+	if (!world)
+		return;
+	auto assign = [target, source](World& activeWorld) {
+		if (!activeWorld.IsValidWorldEntity(target))
+			return;
+		auto script = target.tryGetComponent<Script>();
+		if (!script)
+			script = &target.addComponent<Script>();
+		script->data = source;
+		script->needReload = true;
+		};
+	if (world->isRunning())
+		world->SubmitCommand(assign).get();
+	else
+		assign(*world);
+}
+
+void ImguiLayout::HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager)
+{
+	if (filePath.empty() || !target || !projectManager || !projectManager->IsProjectOpen())
+		return;
+
+	std::error_code ec;
+	fs::path fullPath = fs::weakly_canonical(filePath, ec);
+	if (ec)
+		fullPath = fs::absolute(filePath, ec).lexically_normal();
+
+	fs::path destination = fullPath;
+	fs::path projectPath = fs::weakly_canonical(projectManager->GetProjectFolderFullPath(), ec);
+	fs::path relativePath = fullPath.lexically_relative(projectPath);
+	if (ec || relativePath.empty() || relativePath.is_absolute() || *relativePath.begin() == "..")
+		destination = projectPath / "Assets" / "Others" / fullPath.filename();
+
+	s_assetImportPopup.SetFilePath(fullPath.string());
+	s_assetImportPopup.SetImportPath(destination.string());
+	s_assetImportPopup.SetImportCallback([target, projectManager](const AssetMeta& importedMeta) {
+		ApplyScriptAsset(target, importedMeta, projectManager);
+		});
+	s_assetImportPopup.SetVisiable(true);
 }
 
 std::string ImguiLayout::GetWindowAtPosition(const ImVec2& pos)

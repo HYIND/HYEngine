@@ -39,6 +39,11 @@ static bool DetectType(const std::string& path, AssetType& type)
 		type = AssetType::Scene;
 		return true;
 	}
+	if (ext == ".lua")
+	{
+		type = AssetType::Script;
+		return true;
+	}
 
 	return false;
 
@@ -59,13 +64,19 @@ void AssetImportPopup::SetFilePath(const std::string& filePath)
 {
 	memset(m_wantImportFilePathBuffer, 0, sizeof(m_wantImportFilePathBuffer));
 	strcpy(m_wantImportFilePathBuffer, filePath.c_str());
-	DetectType(filePath, m_importAssetType);
+	if (!DetectType(filePath, m_importAssetType))
+		m_importAssetType = AssetType::Unknown;
 }
 
 void AssetImportPopup::SetImportPath(const std::string& filePath)
 {
 	memset(m_wantImportAssetPathBuffer, 0, sizeof(m_wantImportAssetPathBuffer));
 	strcpy(m_wantImportAssetPathBuffer, filePath.c_str());
+}
+
+void AssetImportPopup::SetImportCallback(std::function<void(const AssetMeta&)> callback)
+{
+	m_importCallback = std::move(callback);
 }
 
 void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
@@ -93,7 +104,10 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 				strcpy(m_wantImportFilePathBuffer, filePath.c_str());
 			}
 			if (!filePath.empty())
-				DetectType(filePath, m_importAssetType);
+			{
+				if (!DetectType(filePath, m_importAssetType))
+					m_importAssetType = AssetType::Unknown;
+			}
 		}
 		ImGui::PopID();
 
@@ -113,7 +127,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		ImGui::PopID();
 
 		int currentItem = static_cast<int>(m_importAssetType);
-		const char* items[] = { "未知", "贴图", "音频", "材质", "静态网格体","模型", "场景" };
+		const char* items[] = { "未知", "贴图", "音频", "材质", "静态网格体","模型", "场景", "脚本" };
 		if (ImGui::Combo("资产类型", &currentItem, items, IM_ARRAYSIZE(items)))
 			m_importAssetType = static_cast<AssetType>(currentItem);
 
@@ -134,6 +148,8 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 			break;
 		case AssetType::Audio:
 			break;
+		case AssetType::Script:
+			break;
 		default:
 			break;
 		}
@@ -144,6 +160,8 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 			{
 				if (projectManager)
 				{
+					AssetMeta importedMeta;
+					bool imported = false;
 					switch (m_importAssetType)
 					{
 					case AssetType::Unknown:
@@ -163,9 +181,14 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 						break;
 					case AssetType::Audio:
 						break;
+					case AssetType::Script:
+						imported = projectManager->ImportScriptAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						break;
 					default:
 						break;
 					}
+					if (imported && m_importCallback)
+						m_importCallback(importedMeta);
 
 				}
 
@@ -173,6 +196,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 				memset(m_wantImportAssetPathBuffer, 0, sizeof(m_wantImportAssetPathBuffer));
 				ImGui::CloseCurrentPopup();
 				visiable = false;
+				m_importCallback = nullptr;
 			}
 		}
 
@@ -180,6 +204,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		if (ImGui::Button("取消导入")) {
 			memset(m_wantImportFilePathBuffer, 0, sizeof(m_wantImportFilePathBuffer));
 			memset(m_wantImportAssetPathBuffer, 0, sizeof(m_wantImportAssetPathBuffer));
+			m_importCallback = nullptr;
 			ImGui::CloseCurrentPopup();
 			visiable = false;
 		}
