@@ -43,6 +43,12 @@
     <Filter Include="源文件\lua">
       <UniqueIdentifier>{4d3e4a54-8fb8-41fc-be3b-c65192a4166b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Script">
+      <UniqueIdentifier>{c41dd5c7-2204-48fb-91e2-257ee0d16923}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Script">
+      <UniqueIdentifier>{0e6e7d0d-5b18-4e6b-a8e2-489ddd4c7070}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="source\include\Common.h">
@@ -182,6 +188,15 @@
     </ClInclude>
     <ClInclude Include="source\include\Systems\ScriptSystem.h">
       <Filter>头文件\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Script\IScriptModule.h">
+      <Filter>头文件\Script</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Script\ScriptSystemVM.h">
+      <Filter>头文件\Script</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Script\BaseScriptModule.h">
+      <Filter>头文件\Script</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -328,6 +343,15 @@
     </ClCompile>
     <ClCompile Include="lua\ldblib.c">
       <Filter>源文件\lua</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Script\IScriptModule.cpp">
+      <Filter>源文件\Script</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Script\ScriptSystemVM.cpp">
+      <Filter>源文件\Script</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Script\BaseScriptModule.cpp">
+      <Filter>源文件\Script</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

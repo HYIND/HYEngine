@@ -26,8 +26,10 @@ public:
 	T& addComponent(const Entity& entity, Args&&... args)
 	{
 		EntityID entityId = entity.getId();
-		assert(entityToIndex.find(entityId) == entityToIndex.end() &&
-			"Entity already has this component!");
+
+		//assert(entityToIndex.find(entityId) == entityToIndex.end() &&"Entity already has this component!");
+		if (auto ptr = tryGetComponent(entityId))
+			return *ptr;
 
 		uint32_t newIndex = NextIndex();
 		entityToIndex[entityId] = newIndex;
@@ -47,8 +49,10 @@ public:
 	bool addComponent(const Entity& entity, const T& component)
 	{
 		EntityID entityId = entity.getId();
-		assert(entityToIndex.find(entityId) == entityToIndex.end() &&
-			"Entity already has this component!");
+
+		//assert(entityToIndex.find(entityId) == entityToIndex.end() && "Entity already has this component!");
+		if (auto ptr = tryGetComponent(entityId))
+			return false;
 
 		uint32_t newIndex = NextIndex();
 		entityToIndex[entityId] = newIndex;

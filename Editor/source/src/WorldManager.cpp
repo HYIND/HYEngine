@@ -147,11 +147,11 @@ void LoadInitScene(WorldManager* manager)
 	}
 
 	{
-		Entity cube = world->createEntity();
-		auto& trans = cube.addComponent<Transform>();
+		Entity entity = world->createEntity();
+		auto& trans = entity.addComponent<Transform>();
 		trans.position = { -3,3,0 };
 
-		auto& physics = cube.addComponent<Physics>();
+		auto& physics = entity.addComponent<Physics>();
 		physics.bodyType = Physics::BodyType::Dynamic;
 		physics.isSensor = false;
 		physics.isBullet = true;
@@ -160,11 +160,11 @@ void LoadInitScene(WorldManager* manager)
 		physics.mass = 5.f;
 		physics.collisionShape.AddBoxShape();
 
-		auto& rendermodel = cube.addComponent<RenderModel>();
+		auto& rendermodel = entity.addComponent<RenderModel>();
 		rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-		AddPickProxy(cube);
-		SetNameTag(cube, "cube_script_test");
+		AddPickProxy(entity);
+		SetNameTag(entity, "cube_script_test");
 
 		static auto ReadFromFile = [](const std::string& path) ->std::string
 			{
@@ -192,8 +192,10 @@ void LoadInitScene(WorldManager* manager)
 				return std::string();
 			};
 
-		auto& script = cube.addComponent<Script>();
+		auto& script = entity.addComponent<Script>();
 		script.source = ReadFromFile("Test/script/TestScript.lua");
+
+		entity.addComponent<TagCurrentControl>();
 	}
 
 	{
@@ -289,10 +291,10 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	auto world = std::make_shared<World>();
 
 	// 通过World注册系统
+	auto& scriptSystem = world->registerSystem<ScriptSystem>();
 	auto& inputSystem = world->registerSystem<LocalInputSystem>();
 	auto& movementSystem = world->registerSystem<MovementSystem>();
 	auto& renderSystem = world->registerSystem<RenderSystem>();
-	auto& scriptSystem = world->registerSystem<ScriptSystem>();
 	auto& lifetimeSystem = world->registerSystem<LifetimeSystem>();
 	auto& physicsSystem = world->registerSystem<PhysicsSystem>();
 	auto& destroySystem = world->registerSystem<DestroySystem>();

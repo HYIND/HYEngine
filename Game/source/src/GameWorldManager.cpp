@@ -1036,10 +1036,10 @@ void GameWorldManager::InitGameWorld()
 
 
 	// 通过World注册系统
+	auto& scriptSystem = _world->registerSystem<ScriptSystem>();
 	auto& inputSystem = _world->registerSystem<LocalInputSystem>();
 	auto& movementSystem = _world->registerSystem<MovementSystem>();
 	auto& renderSystem = _world->registerSystem<RenderSystem>();
-	auto& scriptSystem = _world->registerSystem<ScriptSystem>();
 	auto& lifetimeSystem = _world->registerSystem<LifetimeSystem>();
 	auto& physicsSystem = _world->registerSystem<PhysicsSystem>();
 	auto& destroySystem = _world->registerSystem<DestroySystem>();

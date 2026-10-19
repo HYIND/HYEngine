@@ -183,6 +183,9 @@
     <ClInclude Include="source\include\Helper\SharedObjectPool.h" />
     <ClInclude Include="source\include\Helper\Tools.h" />
     <ClInclude Include="source\include\Helper\TripleBuffer.h" />
+    <ClInclude Include="source\include\Script\BaseScriptModule.h" />
+    <ClInclude Include="source\include\Script\IScriptModule.h" />
+    <ClInclude Include="source\include\Script\ScriptSystemVM.h" />
     <ClInclude Include="source\include\Systems\DestroySystem.h" />
     <ClInclude Include="source\include\Systems\LifeTimeSystem.h" />
     <ClInclude Include="source\include\Systems\PhysicsSystem.h" />
@@ -233,6 +236,9 @@
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp" />
     <ClCompile Include="source\src\Helper\FileIO.cpp" />
     <ClCompile Include="source\src\Helper\Tools.cpp" />
+    <ClCompile Include="source\src\Script\BaseScriptModule.cpp" />
+    <ClCompile Include="source\src\Script\IScriptModule.cpp" />
+    <ClCompile Include="source\src\Script\ScriptSystemVM.cpp" />
     <ClCompile Include="source\src\Systems\DestroySystem.cpp" />
     <ClCompile Include="source\src\Systems\LifeTimeSystem.cpp" />
     <ClCompile Include="source\src\Systems\PhysicsSystem.cpp" />
