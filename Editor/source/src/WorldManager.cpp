@@ -194,8 +194,6 @@ void LoadInitScene(WorldManager* manager)
 
 		auto& script = entity.addComponent<Script>();
 		script.source = ReadFromFile("Test/script/TestScript.lua");
-
-		entity.addComponent<TagCurrentControl>();
 	}
 
 	{
@@ -528,31 +526,31 @@ void WorldManager::StopWorld()
 
 Entity WorldManager::PickObject(const glm::vec3& origin, const glm::vec3& direction)
 {
-	auto view = _triBuffer->acquireReadBuffer()->view;
-	auto projection = _triBuffer->acquireReadBuffer()->projection;
-
-	if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
-	{
-		auto result = physicsSystem->raycast(origin, origin + direction * (2000.f));
-		if (!result.hit)
-			return Entity();
-
-		if (result.hitEntity.hasComponents<Transform, EditorPick>())
-			return result.hitEntity;
-	}
-
+	auto result = RayCast(origin, direction);
+	if (result.hit && result.hitEntity.hasComponents<Transform, EditorPick>())
+		return result.hitEntity;
 	return Entity();
 }
 
 RaycastHit WorldManager::RayCast(const glm::vec3& origin, const glm::vec3& direction)
 {
-	auto view = _triBuffer->acquireReadBuffer()->view;
-	auto projection = _triBuffer->acquireReadBuffer()->projection;
+	if (_world->isRunning())
+	{
+		RaycastHit result;
+		auto query = [&]() {
+			if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+				result = physicsSystem->raycast(origin, origin + direction * (2000.f));
+			};
 
-	if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
-		return physicsSystem->raycast(origin, origin + direction * (2000.f));
-
-	return RaycastHit();
+		_world->SubmitCommand(query).get();
+		return result;
+	}
+	else
+	{
+		if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+			return physicsSystem->raycast(origin, origin + direction * (2000.f));
+		return RaycastHit();
+	}
 }
 
 void WorldManager::SetInputActive(bool enable)

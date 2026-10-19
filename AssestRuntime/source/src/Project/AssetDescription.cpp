@@ -102,6 +102,52 @@ static bool SaveJsonFile(const std::string& filePath, const Json& j, int indent 
 	return true;
 }
 
+static bool LoadSourceFile(const std::string& filePath, std::string& content)
+{
+	try
+	{
+		if (!fs::exists(filePath)) return false;
+
+		std::ifstream file;
+		file.exceptions(std::ifstream::badbit);
+
+		file.open(filePath);
+		if (!file)
+			return false;
+
+		std::stringstream stream;
+		stream << file.rdbuf();
+		file.close();
+
+		content = stream.str();
+	}
+	catch (std::ifstream::failure e) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool SaveSourceFile(const std::string& filePath, const std::string& content)
+{
+	try
+	{
+		std::ofstream file;
+		file.exceptions(std::ifstream::badbit);
+
+		file.open(filePath);
+		if (!file)
+			return false;
+
+		file << content;
+	}
+	catch (const std::exception&)
+	{
+		return false;
+	}
+	return true;
+}
+
 bool StaticMeshAssetDescription::LoadFromFile(const std::string& filePath)
 {
 	Json content;
@@ -295,4 +341,24 @@ nlohmann::json SceneAssetDescription::GetJsonData() const
 void SceneAssetDescription::SetJsonData(const Json& j)
 {
 	_json = j;
+}
+
+bool ScriptAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	return LoadSourceFile(filePath, _source);
+}
+
+bool ScriptAssetDescription::SaveToFile(const std::string& filePath)
+{
+	return SaveSourceFile(filePath, _source);
+}
+
+std::string ScriptAssetDescription::GetSource() const
+{
+	return _source;
+}
+
+void ScriptAssetDescription::SetSource(const std::string& s)
+{
+	_source = s;
 }
