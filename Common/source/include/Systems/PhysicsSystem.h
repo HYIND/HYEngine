@@ -45,7 +45,7 @@ private:
 	void collisionCheck(float dt);
 	void processCollisions();
 
-	void syncWorldToPhysics(float dt_second);
+	void syncWorldToPhysics();
 	void syncPhysicsToWorld();
 
 	void createBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime);
