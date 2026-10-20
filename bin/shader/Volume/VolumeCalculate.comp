@@ -151,10 +151,12 @@ void main()
         {              
             vec3 vireDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
             vec3 farPos = camera.position + vireDir * camera.farPlane;
-            float T_far = exp(-GetFogExtinction(farPos, farPos + vireDir * MAX_DISTANCE));
 
-            float farTransmittance = clamp(T_far, 0.0, 1.0);
-                
+            float T_Total = 1.0;
+            
+            float T_far = clamp(exp(-GetFogExtinction(farPos, farPos + vireDir * MAX_DISTANCE)), 0.0, 1.0);
+            T_Total *= T_far;
+            
             if (VolumeFogEnable)
             {
                 CalculateLightVolume(camera.position, farPos, tramsmittance, scatterColor);
@@ -162,14 +164,12 @@ void main()
             else
             {
 
-                float T_view = exp(-GetFogExtinction(camera.position, farPos));
-                float viewTransmittance = clamp(T_view, 0.0, 1.0);
-                
-                farTransmittance *= viewTransmittance;
-                farTransmittance = max(farTransmittance, 1.0 - FogMaxOpacity);
+                float T_view = clamp(exp(-GetFogExtinction(camera.position, farPos)), 0.0, 1.0);
+                T_Total *= T_view;
+                T_Total = max(T_Total, 1.0 - FogMaxOpacity);
             }
 
-            float fogFactor = 1.0 - farTransmittance;
+            float fogFactor = 1.0 - T_Total;
             fragColor = mix(fragColor, fogAlbedo, fogFactor);
         }
 
