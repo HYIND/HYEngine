@@ -621,10 +621,14 @@ void WorldManager::UpdateEditorFrame()
 
 	_world->ProcessCommands();
 	const float deltaTime = 1000.f / 60.f;
-	if (_editorState == EditorWorldState::Editing)
+	if (_editorState == EditorWorldState::Editing || _editorState == EditorWorldState::Paused)
 	{
-		if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
-			physicsSystem->fixedUpdate(0.f);
+		if (_editorState == EditorWorldState::Editing)
+		{
+			if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+				physicsSystem->fixedUpdate(0.f);
+		}
+
 		for (Entity entity : _world->getAllEntity())
 		{
 			if (!entity.hasComponents<TagCurrentControl, TagFreeCamera, PlayerInput, Controller>())
