@@ -32,12 +32,44 @@ AssetImportPopup ImguiLayout::s_assetImportPopup;
 AssetGUID ImguiLayout::m_currentSceneAssetGuid;
 static AssetGUID s_materialEditorGuid;
 static bool s_materialEditorOpen = false;
+struct MaterialOrigin
+{
+	AssetGUID guid;
+	MaterialProperties properties;
+	std::map<TextureType, AssetGUID> textures;
+	bool valid = false;
+};
+static MaterialOrigin s_materialOrigin;
 static std::string s_sceneSaveErrorMessage;
 
 void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
 {
+	if (s_materialEditorOpen && s_materialEditorGuid != guid)
+	{
+		auto currentAsset = ProjectManager::Get()->LoadAsset(s_materialEditorGuid);
+		auto currentMaterial = currentAsset ? std::dynamic_pointer_cast<MaterialAsset>(currentAsset) : nullptr;
+		if (currentMaterial && s_materialOrigin.valid && s_materialOrigin.guid == s_materialEditorGuid)
+		{
+			currentMaterial->SetProperties(s_materialOrigin.properties);
+			std::vector<TextureType> currentTextures;
+			for (const auto& [type, textureGuid] : currentMaterial->GetTextureDependencies())
+				currentTextures.push_back(type);
+			for (TextureType type : currentTextures)
+				currentMaterial->SetTextureDependency(type, {}, nullptr);
+			for (const auto& [type, textureGuid] : s_materialOrigin.textures)
+			{
+				auto textureAsset = ProjectManager::Get()->LoadAsset(textureGuid);
+				auto texture = textureAsset ? textureAsset->AsTexture() : nullptr;
+				if (texture)
+					currentMaterial->SetTextureDependency(type, textureGuid, texture);
+			}
+		}
+	}
+	const bool isNewSession = !s_materialEditorOpen || s_materialEditorGuid != guid;
 	s_materialEditorGuid = guid;
 	s_materialEditorOpen = true;
+	if (isNewSession)
+		s_materialOrigin.valid = false;
 }
 
 bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
@@ -1302,14 +1334,44 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 	if (!materialAsset)
 	{
 		s_materialEditorOpen = false;
+		s_materialOrigin.valid = false;
 		return;
 	}
+	if (!s_materialOrigin.valid || s_materialOrigin.guid != meta->guid)
+	{
+		s_materialOrigin.guid = meta->guid;
+		s_materialOrigin.properties = materialAsset->GetProperties();
+		s_materialOrigin.textures = materialAsset->GetTextureDependencies();
+		s_materialOrigin.valid = true;
+	}
+	auto restoreOrigin = [&]() {
+		if (!s_materialOrigin.valid || s_materialOrigin.guid != meta->guid)
+			return;
+		materialAsset->SetProperties(s_materialOrigin.properties);
+		std::vector<TextureType> currentTextures;
+		for (const auto& [type, textureGuid] : materialAsset->GetTextureDependencies())
+			currentTextures.push_back(type);
+		for (TextureType type : currentTextures)
+			materialAsset->SetTextureDependency(type, {}, nullptr);
+		for (const auto& [type, textureGuid] : s_materialOrigin.textures)
+		{
+			auto textureObject = projectManager->LoadAsset(textureGuid);
+			auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+			if (texture)
+				materialAsset->SetTextureDependency(type, textureGuid, texture);
+		}
+		};
 
 	bool open = true;
-	if (!ImGui::Begin(std::format("材质编辑器: {}###MaterialEditor", meta->name).c_str(), &open))
+	if (!ImGui::Begin(std::format("Material Editor: {}###MaterialEditor", meta->name).c_str(), &open))
 	{
 		ImGui::End();
 		s_materialEditorOpen = open;
+		if (!open)
+		{
+			restoreOrigin();
+			s_materialOrigin.valid = false;
+		}
 		return;
 	}
 
@@ -1408,8 +1470,6 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 						if (texture)
 						{
 							materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
-							if (!projectManager->SaveAsset(meta->guid))
-								saveFailed = true;
 						}
 					}
 				}
@@ -1417,12 +1477,8 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 			ImGui::EndDragDropTarget();
 		}
 		ImGui::SameLine();
-		if (dependency != dependencies.end() && ImGui::SmallButton("清除"))
-		{
+		if (dependency != dependencies.end() && ImGui::SmallButton("Clear"))
 			materialAsset->SetTextureDependency(type, {}, nullptr);
-			if (!projectManager->SaveAsset(meta->guid))
-				saveFailed = true;
-		}
 		ImGui::EndGroup();
 		ImGui::Spacing();
 		ImGui::PopID();
@@ -1431,15 +1487,27 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		ImGui::EndTable();
 	}
 	if (changed)
-	{
 		materialAsset->SetProperties(properties);
+	ImGui::Separator();
+	if (open && ImGui::Button("Save"))
+	{
 		if (!projectManager->SaveAsset(meta->guid))
 			saveFailed = true;
+		else
+		{
+			s_materialOrigin.properties = materialAsset->GetProperties();
+			s_materialOrigin.textures = materialAsset->GetTextureDependencies();
+		}
 	}
 	if (saveFailed)
 		ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "材质保存失败");
 	ImGui::End();
 	s_materialEditorOpen = open;
+	if (!open)
+	{
+		restoreOrigin();
+		s_materialOrigin.valid = false;
+	}
 }
 
 void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
