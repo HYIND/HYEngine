@@ -83,7 +83,7 @@ void LoadDefaultScene(WorldManager* manager)
 			"Test/skybox/box2/front.png",
 			"Test/skybox/box2/back.png"
 		};
-		auto skyboxcube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
+		static auto skyboxcube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
 		Entity entity = world->createEntityWithTag<TagSkyBox>();
 		entity.addComponent<SkyBox>(skyboxcube);
 
