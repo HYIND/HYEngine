@@ -146,6 +146,8 @@ int ImGuiMain()
 		return 1;
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 	float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
@@ -290,15 +292,10 @@ int ImGuiMain()
 	ImGuizmo::Enable(true);
 
 	{
-
-		{
-			WorldManager::Instance()->InitDefaultWorld();
-			WorldManager::Instance()->RunWorld();
-			//WorldManager::Instance()->PauseWorld();
-		}
-
+		WorldManager::Instance()->InitDefaultWorld();
 	}
 
+	glfwShowWindow(window);
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
@@ -330,6 +327,8 @@ int ImGuiMain()
 
 
 		ImguiLayout::DrawMainMenu(window, ProjectManager::Get());
+		ImguiLayout::DrawPlayControls(WorldManager::Instance(), ProjectManager::Get());
+		WorldManager::Instance()->UpdateEditorFrame();
 		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
 		ImguiLayout::SetDockspace(firstFrame);
 		if (firstFrame) firstFrame = false;

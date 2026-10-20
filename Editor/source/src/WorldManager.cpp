@@ -16,7 +16,6 @@
 #include "GeneralManager/MouseManager.h"
 #include "GeneralManager/KeyMapManaer.h"
 
-#include <cmath>
 
 void AddPickProxy(Entity& entity)
 {
@@ -320,7 +319,6 @@ static void AddFreeCamera(World& world)
 
 void WorldManager::InitDefaultWorld()
 {
-	const bool wasRunning = _world && _world->isRunning();
 	if (_world || _worldThread)
 		StopWorld();
 
@@ -330,18 +328,15 @@ void WorldManager::InitDefaultWorld()
 		return;
 
 	AddFreeCamera(*world);
-
-	if (wasRunning)
-		RunWorld();
+	_editorState = EditorWorldState::Editing;
 }
 
 bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, ProjectManager* projectManager)
 {
 	if (!scene)
 		return false;
+	const bool resumeAfterLoad = _editorState == EditorWorldState::Playing;
 	RegisterSceneComponentCodecs();
-
-	const bool wasRunning = _world && _world->isRunning();
 	if (_world || _worldThread)
 		StopWorld();
 
@@ -493,7 +488,8 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 	}
 
 	world->update(16);
-	if (wasRunning)
+	_editorState = EditorWorldState::Editing;
+	if (resumeAfterLoad)
 		RunWorld();
 	return true;
 }
@@ -529,6 +525,147 @@ void WorldManager::RunWorld()
 	_world->start();
 	_worldStop = false;
 	_worldThread = std::make_shared<std::thread>(&WorldManager::WorldLoop, this);
+	_editorState = EditorWorldState::Playing;
+}
+
+bool WorldManager::PlayWorld()
+{
+	if (!_world || _editorState == EditorWorldState::Playing)
+		return false;
+
+	if (_editorState == EditorWorldState::Paused)
+	{
+		RunWorld();
+		return true;
+	}
+
+	RegisterSceneComponentCodecs();
+	if (_world->isRunning())
+		_world->stop();
+	auto snapshot = std::make_shared<SceneCodec>();
+	if (!snapshot->Serialize(*_world, [](Entity entity) {
+		return !entity.hasComponent<TagFreeCamera>() && !entity.hasComponent<TagCamera>();
+		}))
+		return false;
+
+	const auto entities = _world->getAllEntity();
+	for (Entity cameraEntity : entities)
+	{
+		if (!cameraEntity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
+			continue;
+		Entity freeEntity = cameraEntity.getComponent<CameraFollow>().target;
+		if (!freeEntity || !freeEntity.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>())
+			continue;
+
+		const auto& camera = cameraEntity.getComponent<CameraComponent>().camera;
+		const auto& cameraTransform = cameraEntity.getComponent<Transform>();
+		const auto& follow = cameraEntity.getComponent<CameraFollow>();
+		const auto& controller = freeEntity.getComponent<Controller>();
+		const auto& freeCamera = freeEntity.getComponent<TagFreeCamera>();
+		snapshot->GetSettings()["editorFreeCamera"] = {
+			{"cameraTransform", {
+				{"position", { cameraTransform.position.x, cameraTransform.position.y, cameraTransform.position.z }},
+				{"rotation", { cameraTransform.rotation.w, cameraTransform.rotation.x, cameraTransform.rotation.y, cameraTransform.rotation.z }},
+				{"scale", { cameraTransform.scale.x, cameraTransform.scale.y, cameraTransform.scale.z }}
+			}},
+			{"yaw", controller.yaw},
+			{"pitch", controller.pitch},
+			{"velocity", freeCamera.velocity},
+			{"fov", camera.GetFOV()},
+			{"nearPlane", camera.GetNearPlane()},
+			{"farPlane", camera.GetFarPlane()},
+			{"offset", { follow.offset.x, follow.offset.y, follow.offset.z }}
+		};
+		break;
+	}
+
+	_playSnapshot = std::move(snapshot);
+	RunWorld();
+	return true;
+}
+
+void WorldManager::StopPlayback(ProjectManager* projectManager)
+{
+	if (_editorState == EditorWorldState::Editing)
+		return;
+
+	StopWorldThread();
+	_editorState = EditorWorldState::Editing;
+	if (_playSnapshot)
+	{
+		auto snapshot = std::move(_playSnapshot);
+		LoadFromSceneCodec(snapshot, projectManager);
+	}
+}
+
+void WorldManager::StopWorldThread()
+{
+	_worldStop = true;
+	if (_worldThread)
+	{
+		if (_worldThread->joinable())
+			_worldThread->join();
+		_worldThread.reset();
+	}
+	if (_world)
+	{
+		_world->stop();
+		_world->ProcessCommands();
+	}
+}
+
+void WorldManager::UpdateEditorFrame()
+{
+	if (!_world || _editorState == EditorWorldState::Playing)
+		return;
+
+	_world->ProcessCommands();
+	const float deltaTime = 1000.f / 60.f;
+	if (_editorState == EditorWorldState::Editing)
+	{
+		if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+			physicsSystem->fixedUpdate(0.f);
+		for (Entity entity : _world->getAllEntity())
+		{
+			if (!entity.hasComponents<TagCurrentControl, TagFreeCamera, PlayerInput, Controller>())
+				continue;
+			auto& input = entity.getComponent<PlayerInput>();
+			auto& controller = entity.getComponent<Controller>();
+			if (FocusManager::Instance()->ShouldProcessInput())
+			{
+				input.setInput(PlayerInput::FORWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Forward)) & 0x8000);
+				input.setInput(PlayerInput::BACKWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Backward)) & 0x8000);
+				input.setInput(PlayerInput::LEFT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Left)) & 0x8000);
+				input.setInput(PlayerInput::RIGHT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Right)) & 0x8000);
+				input.setInput(PlayerInput::UP, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Up)) & 0x8000);
+				input.setInput(PlayerInput::DOWN, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Down)) & 0x8000);
+				MouseManager::Instance()->GetDelta(input.mouseDeltaX, input.mouseDeltaY);
+			}
+			else
+				input.reset();
+
+			controller.setForwardBackward(input.isPressed(PlayerInput::FORWARD) == input.isPressed(PlayerInput::BACKWARD)
+				? Controller::ForwardBackward::NONE
+				: input.isPressed(PlayerInput::FORWARD) ? Controller::ForwardBackward::FORWARD : Controller::ForwardBackward::BACKWARD);
+			controller.setLeftRight(input.isPressed(PlayerInput::LEFT) == input.isPressed(PlayerInput::RIGHT)
+				? Controller::LeftRight::NONE
+				: input.isPressed(PlayerInput::LEFT) ? Controller::LeftRight::LEFT : Controller::LeftRight::RIGHT);
+			controller.setUpDown(input.isPressed(PlayerInput::UP) == input.isPressed(PlayerInput::DOWN)
+				? Controller::UpDown::NONE
+				: input.isPressed(PlayerInput::UP) ? Controller::UpDown::UP : Controller::UpDown::DOWN);
+			controller.addMouseDelta(input.mouseDeltaX, input.mouseDeltaY);
+			input.reset();
+		}
+		if (auto* cameraSystem = _world->getSystem<CameraFollowSystem>())
+			cameraSystem->postUpdate(deltaTime);
+	}
+	if (auto* renderSystem = _world->getSystem<RenderSystem>())
+		renderSystem->postUpdate(deltaTime);
+}
+
+EditorWorldState WorldManager::GetEditorState() const
+{
+	return _editorState;
 }
 
 void WorldManager::RunPushFrame()
@@ -606,46 +743,25 @@ void WorldManager::WorldLoop()
 
 void WorldManager::PauseWorld()
 {
-	auto world = _world;
-	if (!world)
+	if (!_world || _editorState != EditorWorldState::Playing)
 		return;
-
-	for (auto& name : _world->getSystemNames())
-	{
-		//std::cout << std::format("name = {}\n", name);
-		bool isRender = name.find("Render") != std::string::npos;
-		bool isCmaera = name.find("Camera") != std::string::npos;
-		bool isInput = name.find("Input") != std::string::npos;
-		bool shouldDisable = !isRender && !isCmaera && !isInput;
-		if (shouldDisable)
-			_world->setSystemEnabled(name, false);
-	}
+	StopWorldThread();
+	_editorState = EditorWorldState::Paused;
 }
 
 void WorldManager::ContinueWorld()
 {
-	auto world = _world;
-	if (!world)
+	if (!_world || _editorState != EditorWorldState::Paused)
 		return;
-
-	for (auto& name : _world->getSystemNames())
-	{
-		_world->setSystemEnabled(name, true);
-	}
+	RunWorld();
 }
 
 void WorldManager::StopWorld()
 {
-	_worldStop = true;
-	if (_worldThread)
-	{
-		if (_worldThread->joinable())
-			_worldThread->join();
-		_worldThread.reset();
-	}
-	if (_world)
-		_world->stop();
+	StopWorldThread();
 	_world.reset();
+	_playSnapshot.reset();
+	_editorState = EditorWorldState::Editing;
 }
 
 Entity WorldManager::PickObject(const glm::vec3& origin, const glm::vec3& direction)
@@ -738,7 +854,7 @@ bool WorldManager::ResizeVulkan(uint32_t width, uint32_t height, std::function<v
 	}
 	else
 	{
-		if (resizePending && Tool::GetTimestampMilliseconds() - resizeTimeStamp > 200 && _renderer)
+		if (resizePending && Tool::GetTimestampMilliseconds() - resizeTimeStamp > 500 && _renderer)
 		{
 			prevClear();
 			_renderer->Resize(pendingWidth, pendingHeight);

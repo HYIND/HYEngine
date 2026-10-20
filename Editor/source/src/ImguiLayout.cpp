@@ -7,6 +7,7 @@
 #include "IconManager.h"
 #include <filesystem>
 #include <cmath>
+#include "Coroutine.h"
 
 namespace fs = std::filesystem;
 
@@ -1072,16 +1073,57 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManage
 	}
 }
 
+void ImguiLayout::DrawPlayControls(WorldManager* worldManager, ProjectManager* projectManager)
+{
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x, viewport->Pos.y + ImGui::GetFrameHeight()));
+	ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, 38.f));
+	ImGui::SetNextWindowViewport(viewport->ID);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.f, 5.f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
+	ImGui::Begin("##PlayControls", nullptr,
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+	ImGui::TextUnformatted(worldManager->GetEditorState() == EditorWorldState::Playing ? "Playing" :
+		worldManager->GetEditorState() == EditorWorldState::Paused ? "Paused" : "Editing");
+	ImGui::SameLine();
+	if (worldManager->GetEditorState() == EditorWorldState::Editing)
+	{
+		if (ImGui::Button("Play"))
+			worldManager->PlayWorld();
+	}
+	else if (worldManager->GetEditorState() == EditorWorldState::Playing)
+	{
+		if (ImGui::Button("Pause"))
+			worldManager->PauseWorld();
+	}
+	else
+	{
+		if (ImGui::Button("Resume"))
+			worldManager->ContinueWorld();
+	}
+	if (worldManager->GetEditorState() != EditorWorldState::Editing)
+	{
+		ImGui::SameLine();
+		if (ImGui::Button("Stop"))
+			worldManager->StopPlayback(projectManager);
+	}
+	ImGui::End();
+	ImGui::PopStyleVar(3);
+}
+
 void ImguiLayout::SetDockspace(bool firstFrame)
 {
 	ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-	// 设置窗口位置和大小：从菜单栏下方开始，填满剩余区域
+	// 设置窗口位置和大小：为主菜单和播放控制条预留空间
 	float menuBarHeight = ImGui::GetFrameHeight();
 	float statusBarHeight = ImGui::GetFrameHeightWithSpacing();
+	constexpr float playControlsHeight = 38.f;
 
-	ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x, viewport->Pos.y + menuBarHeight));
-	ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, viewport->Size.y - menuBarHeight - statusBarHeight));
+	ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x, viewport->Pos.y + menuBarHeight + playControlsHeight));
+	ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, viewport->Size.y - menuBarHeight - playControlsHeight - statusBarHeight));
 
 	ImGui::SetNextWindowViewport(viewport->ID);
 
@@ -1115,7 +1157,7 @@ void ImguiLayout::SetDockspace(bool firstFrame)
 		// 清除已有布局
 		ImGui::DockBuilderRemoveNode(dockspace_id);
 		ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
-		ImGui::DockBuilderSetNodeSize(dockspace_id, ImVec2(viewport->Size.x, viewport->Size.y - menuBarHeight - statusBarHeight));
+		ImGui::DockBuilderSetNodeSize(dockspace_id, ImVec2(viewport->Size.x, viewport->Size.y - menuBarHeight - playControlsHeight - statusBarHeight));
 
 		ImGuiID dock_left, dock_right, dock_bottom_left, dock_bottom_right, dock_center, dock_left_bottom;
 
@@ -1430,59 +1472,59 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		ImGui::SameLine();
 		ImGui::TextDisabled("Drag texture assets onto a slot");
 		ImGui::Separator();
-	const std::pair<TextureType, const char*> textureSlots[] = {
-		{ TextureType::Albedo, "Albedo Texture" },
-		{ TextureType::Metallic, "Metallic Texture" },
-		{ TextureType::Roughness, "Roughness Texture" },
-		{ TextureType::Normal, "Normal Texture" },
-		{ TextureType::AO, "AO Texture" },
-		{ TextureType::Emissive, "Emissive Texture" },
-		{ TextureType::MetallicRoughness, "Metallic Roughness Texture" },
-		{ TextureType::Height, "Height Texture" },
-		{ TextureType::Opacity, "Opacity Texture" }
-	};
-	for (const auto& [type, label] : textureSlots)
-	{
-		ImGui::PushID(static_cast<int>(type));
-		ImGui::BeginGroup();
-		ImGui::TextUnformatted(label);
-		const auto& dependencies = materialAsset->GetTextureDependencies();
-		auto dependency = dependencies.find(type);
-		std::string textureLabel = "None";
-		if (dependency != dependencies.end())
+		const std::pair<TextureType, const char*> textureSlots[] = {
+			{ TextureType::Albedo, "Albedo Texture" },
+			{ TextureType::Metallic, "Metallic Texture" },
+			{ TextureType::Roughness, "Roughness Texture" },
+			{ TextureType::Normal, "Normal Texture" },
+			{ TextureType::AO, "AO Texture" },
+			{ TextureType::Emissive, "Emissive Texture" },
+			{ TextureType::MetallicRoughness, "Metallic Roughness Texture" },
+			{ TextureType::Height, "Height Texture" },
+			{ TextureType::Opacity, "Opacity Texture" }
+		};
+		for (const auto& [type, label] : textureSlots)
 		{
-			auto textureMeta = database->GetAssetMetaByGuid(dependency->second);
-			textureLabel = textureMeta ? textureMeta->name : dependency->second;
-		}
-		ImGui::Button(textureLabel.c_str(), ImVec2(220.f, 34.f));
-		if (ImGui::BeginDragDropTarget())
-		{
-			if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			ImGui::PushID(static_cast<int>(type));
+			ImGui::BeginGroup();
+			ImGui::TextUnformatted(label);
+			const auto& dependencies = materialAsset->GetTextureDependencies();
+			auto dependency = dependencies.find(type);
+			std::string textureLabel = "None";
+			if (dependency != dependencies.end())
 			{
-				const auto* guidData = static_cast<const char*>(payload->Data);
-				if (guidData && guidData[0] != '\0')
+				auto textureMeta = database->GetAssetMetaByGuid(dependency->second);
+				textureLabel = textureMeta ? textureMeta->name : dependency->second;
+			}
+			ImGui::Button(textureLabel.c_str(), ImVec2(220.f, 34.f));
+			if (ImGui::BeginDragDropTarget())
+			{
+				if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
 				{
-					auto textureMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
-					if (textureMeta && textureMeta->type == AssetType::Texture)
+					const auto* guidData = static_cast<const char*>(payload->Data);
+					if (guidData && guidData[0] != '\0')
 					{
-						auto textureObject = projectManager->LoadAsset(textureMeta->guid);
-						auto texture = textureObject ? textureObject->AsTexture() : nullptr;
-						if (texture)
+						auto textureMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+						if (textureMeta && textureMeta->type == AssetType::Texture)
 						{
-							materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
+							auto textureObject = projectManager->LoadAsset(textureMeta->guid);
+							auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+							if (texture)
+							{
+								materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
+							}
 						}
 					}
 				}
+				ImGui::EndDragDropTarget();
 			}
-			ImGui::EndDragDropTarget();
+			ImGui::SameLine();
+			if (dependency != dependencies.end() && ImGui::SmallButton("Clear"))
+				materialAsset->SetTextureDependency(type, {}, nullptr);
+			ImGui::EndGroup();
+			ImGui::Spacing();
+			ImGui::PopID();
 		}
-		ImGui::SameLine();
-		if (dependency != dependencies.end() && ImGui::SmallButton("Clear"))
-			materialAsset->SetTextureDependency(type, {}, nullptr);
-		ImGui::EndGroup();
-		ImGui::Spacing();
-		ImGui::PopID();
-	}
 		ImGui::EndChild();
 		ImGui::EndTable();
 	}
@@ -1604,25 +1646,75 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 	}
 
 	// 显示场景渲染
-	if (viewportSize.x > 0 && viewportSize.y > 0)
+	auto renderer = worldManager->GetVulkanRener();
+	if (renderer && renderer->GetVulkanDevice() && viewportSize.x > 0 && viewportSize.y > 0)
 	{
 		ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 
-		static std::unordered_map<VkImageView, VkDescriptorSet> imguiRegisterTexture;
+		static Task<bool> targetInitializationTask;
+		static bool targetInitialized = false;
+		static bool targetInitializationFailed = false;
 
-		if (
-			(worldManager->GetVulkanRener()->GetWidth() == 0 || worldManager->GetVulkanRener()->GetHeight() == 0)
-			&& (viewportSize.x != 0 && viewportSize.y != 0)
-			)
+		if (!targetInitialized && !targetInitializationTask)
 		{
-			auto render = worldManager->GetVulkanRener();
-			VulkanRenderer::CreateForOffScreen_Target(render, viewportSize.x, viewportSize.y);
-			render->Run();
-			worldManager->RunPushFrame();
+			auto width = static_cast<uint32_t>(viewportSize.x);
+			auto height = static_cast<uint32_t>(viewportSize.y);
+			targetInitializationTask = CoroTask::Run([renderer, width, height, worldManager]() mutable -> bool {
+				try
+				{
+					if (VulkanRenderer::CreateForOffScreen_Target(renderer, width, height))
+					{
+						renderer->Run();
+						worldManager->RunPushFrame();
+						return true;
+					}
+					return false;
+				}
+				catch (const std::exception&)
+				{
+					return false;
+				}
+				});
 		}
 
-		if (worldManager->GetVulkanRener()->GetWidth() != 0 && worldManager->GetVulkanRener()->GetHeight() != 0)
+		if (targetInitializationTask && targetInitializationTask.is_done())
 		{
+			auto width = static_cast<uint32_t>(viewportSize.x);
+			auto height = static_cast<uint32_t>(viewportSize.y);
+			if (renderer->GetWidth() != width || renderer->GetHeight() != height)
+			{
+				targetInitializationTask = CoroTask::Run([renderer, width, height, worldManager]() mutable -> bool {
+					try
+					{
+						worldManager->StopPushFrame();
+						renderer->Resize(width, height);
+						worldManager->RunPushFrame();
+						return true;
+					}
+					catch (const std::exception&)
+					{
+						return false;
+					}
+					});
+			}
+			else
+			{
+				try
+				{
+					targetInitializationFailed = !targetInitializationTask.sync_wait();
+				}
+				catch (const std::exception&)
+				{
+					targetInitializationFailed = true;
+				}
+				targetInitialized = true;
+			}
+		}
+
+		if (targetInitialized && !targetInitializationFailed && renderer->GetWidth() != 0 && renderer->GetHeight() != 0)
+		{
+			static std::unordered_map<VkImageView, VkDescriptorSet> imguiRegisterTexture;
+
 			auto prevClear = [&]() {
 				{
 					LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
@@ -1671,6 +1763,98 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 				);
 
 				});
+		}
+		else
+		{
+			// 当前视口左上角和可用区域
+			const ImVec2 pos = ImGui::GetCursorScreenPos();
+			const ImVec2 size = viewportSize;
+
+			ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+			// 视口背景
+			drawList->AddRectFilled(
+				pos,
+				ImVec2(pos.x + size.x, pos.y + size.y),
+				IM_COL32(30, 30, 30, 255)
+			);
+
+			const ImVec2 center(
+				pos.x + size.x * 0.5f,
+				pos.y + size.y * 0.5f - 12.0f
+			);
+
+			if (targetInitializationFailed)
+			{
+				const char* message = "Scene Renderer Initialization Failed";
+				const ImVec2 textSize = ImGui::CalcTextSize(message);
+
+				drawList->AddText(
+					ImVec2(center.x - textSize.x * 0.5f,
+						center.y + 30.0f),
+					IM_COL32(255, 100, 100, 255),
+					message
+				);
+			}
+			else
+			{
+				// 旋转加载圆环
+				const float time = static_cast<float>(ImGui::GetTime());
+				const float startAngle = time * 4.0f;
+				const float radius = 16.0f;
+
+				drawList->PathClear();
+				drawList->PathArcTo(
+					center,
+					radius,
+					startAngle,
+					startAngle + 4.2f,
+					32
+				);
+				drawList->PathStroke(
+					IM_COL32(80, 170, 255, 255),
+					ImDrawFlags_None,
+					3.0f
+				);
+
+				// 加载文字
+				const char* message = "Initializing Scene Renderer...";
+				const ImVec2 textSize = ImGui::CalcTextSize(message);
+
+				drawList->AddText(
+					ImVec2(center.x - textSize.x * 0.5f,
+						center.y + 30.0f),
+					IM_COL32(220, 220, 220, 255),
+					message
+				);
+
+				// 动态省略号：Initializing Vulkan.
+				//                         ..
+				//                         ...
+				const int dots =
+					static_cast<int>(time * 2.0f) % 3 + 1;
+
+				char loadingText[64] = "Loading";
+				for (int i = 0; i < dots; ++i)
+				{
+					const size_t len = strlen(loadingText);
+					loadingText[len] = '.';
+					loadingText[len + 1] = '\0';
+				}
+
+				const ImVec2 loadingSize =
+					ImGui::CalcTextSize(loadingText);
+
+				drawList->AddText(
+					ImVec2(center.x - loadingSize.x * 0.5f,
+						center.y + 52.0f),
+					IM_COL32(160, 160, 160, 255),
+					loadingText
+				);
+			}
+
+			// 为视口占据布局空间，避免后续 ImGui 控件重叠
+			ImGui::Dummy(size);
 		}
 
 

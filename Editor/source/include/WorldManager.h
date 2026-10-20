@@ -7,6 +7,7 @@
 #include "Helper/DynamicFpsController.h"
 #include "CommonData/LightData.h"
 #include "SceneCodec/SceneCodec.h"
+#include <unordered_map>
 
 class ProjectManager;
 
@@ -20,6 +21,7 @@ struct NameTag :public IComponent
 void SetNameTag(Entity entity, const std::string& name);
 
 enum class GeometryType { Cube = 0, Sphere };
+enum class EditorWorldState { Editing, Playing, Paused };
 
 class WorldManager
 {
@@ -45,6 +47,10 @@ public:
 	void PauseWorld();
 	void ContinueWorld();
 	void StopWorld();
+	void UpdateEditorFrame();
+	bool PlayWorld();
+	void StopPlayback(ProjectManager* projectManager);
+	EditorWorldState GetEditorState() const;
 
 	void RunPushFrame();
 	void StopPushFrame();
@@ -79,11 +85,15 @@ private:
 	void WorldLoop();
 	void PushFrameLoop();
 	void CreateWorld(bool loadDefaultScene);
+	void StopWorldThread();
 
 private:
 	std::shared_ptr<World> _world;
 	std::shared_ptr<std::thread> _worldThread;
 	bool _worldStop = true;
+	EditorWorldState _editorState = EditorWorldState::Editing;
+	std::shared_ptr<SceneCodec> _playSnapshot;
+	std::unordered_map<std::string, bool> _prePauseSystemStates;
 
 	std::shared_ptr<std::thread> _framePushThread;
 	bool _framePushStop = true;
