@@ -47,7 +47,7 @@ void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
 {
 	if (s_materialEditorOpen && s_materialEditorGuid != guid)
 	{
-		auto currentAsset = ProjectManager::Get()->LoadAsset(s_materialEditorGuid);
+		auto currentAsset = ProjectManager::Instance()->LoadAsset(s_materialEditorGuid);
 		auto currentMaterial = currentAsset ? std::dynamic_pointer_cast<MaterialAsset>(currentAsset) : nullptr;
 		if (currentMaterial && s_materialOrigin.valid && s_materialOrigin.guid == s_materialEditorGuid)
 		{
@@ -59,7 +59,7 @@ void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
 				currentMaterial->SetTextureDependency(type, {}, nullptr);
 			for (const auto& [type, textureGuid] : s_materialOrigin.textures)
 			{
-				auto textureAsset = ProjectManager::Get()->LoadAsset(textureGuid);
+				auto textureAsset = ProjectManager::Instance()->LoadAsset(textureGuid);
 				auto texture = textureAsset ? textureAsset->AsTexture() : nullptr;
 				if (texture)
 					currentMaterial->SetTextureDependency(type, textureGuid, texture);
@@ -832,7 +832,7 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 	}
 }
 
-void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManager)
+void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, ProjectManager* projectManager)
 {
 
 	auto NewProjectPopup = [&]()->void {
@@ -1001,7 +1001,8 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, ProjectManager* projectManage
 
 		if (ImGui::BeginMenu("场景"))
 		{
-			if (ImGui::MenuItem("保存场景", nullptr, false, projectManager && projectManager->IsProjectOpen()))
+			if (ImGui::MenuItem("保存场景", nullptr, false,
+				worldManager->GetEditorState() == EditorWorldState::Editing && projectManager && projectManager->IsProjectOpen()))
 				SaveCurrentScene(projectManager);
 			ImGui::EndMenu();
 		}

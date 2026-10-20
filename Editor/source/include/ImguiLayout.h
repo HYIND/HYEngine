@@ -11,7 +11,7 @@
 class ImguiLayout
 {
 public:
-	static void DrawMainMenu(GLFWwindow* window, ProjectManager* projectManager);
+	static void DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, ProjectManager* projectManager);
 	static void DrawPlayControls(WorldManager* worldManager, ProjectManager* projectManager);
 	static void SetDockspace(bool firstFrame);
 	static void DrawSceneObjectList(WorldManager* worldManager);
