@@ -1107,7 +1107,10 @@ void ImguiLayout::DrawPlayControls(WorldManager* worldManager, ProjectManager* p
 	{
 		ImGui::SameLine();
 		if (ImGui::Button("Stop"))
+		{
 			worldManager->StopPlayback(projectManager);
+			selectedEntity = Entity();
+		}
 	}
 	ImGui::End();
 	ImGui::PopStyleVar(3);
