@@ -187,7 +187,7 @@ btCollisionShape* createTriangleShape(const std::vector<glm::vec3>& vertices, co
 	return terrainShape;
 }
 
-btCollisionShape* createShape(Transform& trans, CollisionShape::ChildShape& childShape)
+btCollisionShape* createShape(CollisionShape::ChildShape& childShape)
 {
 	btCollisionShape* childShapePtr = nullptr;
 	switch (childShape.shapeType) {
@@ -216,7 +216,7 @@ btCollisionShape* createShape(Transform& trans, CollisionShape::ChildShape& chil
 	return childShapePtr;
 }
 
-btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_ptr<CollisionShape::ChildShape>>& childShapes, PhysicsRuntime& runtime)
+btCollisionShape* createCompoundShape(std::vector<std::shared_ptr<CollisionShape::ChildShape>>& childShapes, PhysicsRuntime& runtime)
 {
 	if (childShapes.empty())
 	{
@@ -231,7 +231,7 @@ btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_
 	for (auto& child : childShapes)
 	{
 		// 创建子形状
-		btCollisionShape* childShape = createShape(trans, *child);
+		btCollisionShape* childShape = createShape(*child);
 
 		// 计算局部变换
 		btTransform localTransform;
@@ -243,10 +243,6 @@ btCollisionShape* createCompoundShape(Transform& trans, std::vector<std::shared_
 		runtime.childShapePtrs.push_back(childShape);
 		compoundShape->addChildShape(localTransform, childShape);
 	}
-
-	// 3. 优化组合体（可选）
-	// 重新计算 AABB，提升碰撞检测性能
-	compoundShape->recalculateLocalAabb();
 
 	return compoundShape;
 }
@@ -598,15 +594,20 @@ void PhysicsSystem::createBody(Entity entity, Physics& physics, Transform& trans
 	runtime.world = phyWorld;
 
 	if (physics.isCharacter) {
-		runtime.shapePtr = createShape(trans, *physics.collisionShape.children[0]);
+		runtime.shapePtr = createShape(*physics.collisionShape.children[0]);
+		runtime.shapePtr->setLocalScaling(GlmToBullet(trans.scale));
 		createCharacter(entity, physics, trans, runtime);
 	}
 	else {
-		runtime.shapePtr = createCompoundShape(trans, physics.collisionShape.children, runtime);
+		runtime.shapePtr = createCompoundShape(physics.collisionShape.children, runtime);
+		runtime.shapePtr->setLocalScaling(GlmToBullet(trans.scale));
+		if (runtime.shapePtr->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
+		{
+			// 优化组合体，重新计算 AABB，提升碰撞检测性能
+			static_cast<btCompoundShape*>(runtime.shapePtr)->recalculateLocalAabb();
+		}
 		createRigidBody(entity, physics, trans, runtime);
 	}
-
-	runtime.shapePtr->setLocalScaling(GlmToBullet(trans.scale));
 }
 
 void PhysicsSystem::createRigidBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime)
