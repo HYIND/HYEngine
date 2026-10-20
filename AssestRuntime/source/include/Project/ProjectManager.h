@@ -8,7 +8,7 @@
 class ProjectManager
 {
 public:
-	static ProjectManager* Get();
+	static ProjectManager* Instance();
 
 	// 项目操作
 	bool CreateProject(const std::string& filePath, const std::string& name);

@@ -78,7 +78,7 @@ std::string ProjectManager::GenerateAssetMetaPath(const AssetPath& pathStr, Asse
 	return "";
 }
 
-ProjectManager* ProjectManager::Get() {
+ProjectManager* ProjectManager::Instance() {
 	static ProjectManager* instance = new ProjectManager();
 	return instance;
 }

@@ -126,9 +126,9 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 		LockGuard guard1(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
 
 		if (fs::is_directory(fs::path(path)))
-			ImguiLayout::DropFolder(path, ProjectManager::Get(), mousePos);
+			ImguiLayout::DropFolder(path, ProjectManager::Instance(), mousePos);
 		if (fs::is_regular_file(fs::path(path)))
-			ImguiLayout::DropFile(path, ProjectManager::Get(), mousePos);
+			ImguiLayout::DropFile(path, ProjectManager::Instance(), mousePos);
 	}
 }
 
@@ -325,20 +325,22 @@ int ImGuiMain()
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
+		auto worldManager = WorldManager::Instance();
+		auto projectManager = ProjectManager::Instance();
 
-		ImguiLayout::DrawMainMenu(window, ProjectManager::Get());
-		ImguiLayout::DrawPlayControls(WorldManager::Instance(), ProjectManager::Get());
-		WorldManager::Instance()->UpdateEditorFrame();
+		ImguiLayout::DrawMainMenu(window, worldManager, projectManager);
+		ImguiLayout::DrawPlayControls(worldManager, projectManager);
+		worldManager->UpdateEditorFrame();
 		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
 		ImguiLayout::SetDockspace(firstFrame);
 		if (firstFrame) firstFrame = false;
 		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
-		ImguiLayout::DrawSceneObjectList(WorldManager::Instance());// 场景物体窗口 (左侧)
-		ImguiLayout::DrawOptions(WorldManager::Instance());	// 场景物体窗口 (左侧)
-		ImguiLayout::DrawObjectProperties(ProjectManager::Get());// 属性面板 (右侧)
-		ImguiLayout::DrawAssetBrowser(ProjectManager::Get());	// 资产管理 (底部)
-		ImguiLayout::DrawStatusBar(WorldManager::Instance());// 底部状态栏
-		ImguiLayout::DrawSceneView(WorldManager::Instance(), ProjectManager::Get());// 场景视图 (中间)
+		ImguiLayout::DrawSceneObjectList(worldManager);// 场景物体窗口 (左侧)
+		ImguiLayout::DrawOptions(worldManager);	// 场景物体窗口 (左侧)
+		ImguiLayout::DrawObjectProperties(projectManager);// 属性面板 (右侧)
+		ImguiLayout::DrawAssetBrowser(projectManager);	// 资产管理 (底部)
+		ImguiLayout::DrawStatusBar(worldManager);// 底部状态栏
+		ImguiLayout::DrawSceneView(worldManager, projectManager);// 场景视图 (中间)
 
 		// 渲染
 		ImGui::Render();
