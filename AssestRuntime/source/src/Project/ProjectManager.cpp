@@ -96,6 +96,7 @@ bool ProjectManager::CreateProject(const std::string& path, const std::string& n
 
 	m_projectPath = path;
 	m_projectName = name;
+	m_defaultSceneGUID.clear();
 	m_isOpen = true;
 
 	m_database->Clear();		// 初始化数据库
@@ -128,9 +129,16 @@ bool ProjectManager::OpenProject(const std::string& filePath)
 
 	if (projectJson.is_null())
 		return false;
+	if (!projectJson.is_object())
+		return false;
+
+	AssetGUID defaultSceneGUID;
+	if (projectJson.contains("defaultScene") && projectJson["defaultScene"].is_string())
+		defaultSceneGUID = projectJson["defaultScene"].get<std::string>();
 
 	m_projectPath = fs::path(filePath).parent_path().string();
 	m_projectName = fs::path(filePath).stem().string();
+	m_defaultSceneGUID = std::move(defaultSceneGUID);
 	m_isOpen = true;
 
 	// 加载数据库
@@ -153,6 +161,7 @@ bool ProjectManager::SaveProject()
 		return false;
 	json projectJson;
 	projectJson["asset"] = m_database->Save();
+	projectJson["defaultScene"] = m_defaultSceneGUID;
 
 	auto filePath = GetProjectFileFullPath();
 	std::ofstream file(filePath);
@@ -174,6 +183,25 @@ bool ProjectManager::CloseProject()
 bool ProjectManager::IsProjectOpen() const
 {
 	return m_isOpen;
+}
+
+bool ProjectManager::SetDefaultSceneGUID(const AssetGUID& guid)
+{
+	if (!m_isOpen)
+		return false;
+	if (!guid.empty())
+	{
+		auto meta = m_database->GetAssetMetaByGuid(guid);
+		if (!meta || meta->type != AssetType::Scene)
+			return false;
+	}
+	m_defaultSceneGUID = guid;
+	return SaveProject();
+}
+
+const AssetGUID& ProjectManager::GetDefaultSceneGUID() const
+{
+	return m_defaultSceneGUID;
 }
 
 std::shared_ptr<AssetDatabase> ProjectManager::GetDatabase()

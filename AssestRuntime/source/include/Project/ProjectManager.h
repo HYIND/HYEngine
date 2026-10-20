@@ -16,6 +16,8 @@ public:
 	bool SaveProject();
 	bool CloseProject();
 	bool IsProjectOpen() const;
+	bool SetDefaultSceneGUID(const AssetGUID& guid);
+	const AssetGUID& GetDefaultSceneGUID() const;
 
 	// 获取
 	std::shared_ptr<AssetDatabase> GetDatabase();
@@ -59,5 +61,6 @@ private:
 
 	std::string m_projectPath;
 	std::string m_projectName;
+	AssetGUID m_defaultSceneGUID;
 	bool m_isOpen = false;
 };

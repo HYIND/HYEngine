@@ -43,6 +43,34 @@ struct MaterialOrigin
 static MaterialOrigin s_materialOrigin;
 static std::string s_sceneSaveErrorMessage;
 
+static bool OpenProjectAndLoadDefaultScene(const std::string& filePath, ProjectManager* projectManager, WorldManager* worldManager)
+{
+	if (!projectManager || !worldManager || !projectManager->OpenProject(filePath))
+		return false;
+
+	ImguiLayout::m_currentSceneAssetGuid.clear();
+	ImguiLayout::selectedEntity = Entity();
+	const AssetGUID defaultSceneGUID = projectManager->GetDefaultSceneGUID();
+	if (!defaultSceneGUID.empty())
+	{
+		auto database = projectManager->GetDatabase();
+		auto meta = database ? database->GetAssetMetaByGuid(defaultSceneGUID) : nullptr;
+		if (meta && meta->type == AssetType::Scene)
+		{
+			auto asset = projectManager->LoadAsset(defaultSceneGUID);
+			auto scene = asset ? asset->AsScene() : nullptr;
+			if (scene && worldManager->LoadFromSceneCodec(scene, projectManager))
+			{
+				ImguiLayout::m_currentSceneAssetGuid = defaultSceneGUID;
+				return true;
+			}
+		}
+	}
+
+	worldManager->InitDefaultWorld();
+	return true;
+}
+
 void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
 {
 	if (s_materialEditorOpen && s_materialEditorGuid != guid)
@@ -883,7 +911,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 			std::string filePath;
 			if (FileIO::OpenOneFile(filePath))
 			{
-				projectManager->OpenProject(filePath);
+				OpenProjectAndLoadDefaultScene(filePath, projectManager, worldManager);
 				m_selectedFolder.clear();
 			}
 		}
@@ -894,7 +922,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 			std::string filePath(m_wantOpenProjectPathBuffer);
 			if (!filePath.empty())
 			{
-				projectManager->OpenProject(filePath);
+				OpenProjectAndLoadDefaultScene(filePath, projectManager, worldManager);
 				m_selectedFolder.clear();
 			}
 			memset(m_wantOpenProjectPathBuffer, 0, sizeof(m_wantOpenProjectPathBuffer));
@@ -957,7 +985,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 					std::string filePath;
 					if (FileIO::OpenOneFile(filePath))
 					{
-						projectManager->OpenProject(filePath);
+						OpenProjectAndLoadDefaultScene(filePath, projectManager, worldManager);
 						m_selectedFolder.clear();
 					}
 				}
@@ -1004,6 +1032,10 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 			if (ImGui::MenuItem("保存场景", nullptr, false,
 				worldManager->GetEditorState() == EditorWorldState::Editing && projectManager && projectManager->IsProjectOpen()))
 				SaveCurrentScene(projectManager);
+			const bool canSetDefaultScene = worldManager->GetEditorState() == EditorWorldState::Editing
+				&& projectManager && projectManager->IsProjectOpen() && !m_currentSceneAssetGuid.empty();
+			if (ImGui::MenuItem("设为默认场景", nullptr, false, canSetDefaultScene))
+				projectManager->SetDefaultSceneGUID(m_currentSceneAssetGuid);
 			ImGui::EndMenu();
 		}
 
@@ -2254,7 +2286,7 @@ void ImguiLayout::DropFile(const std::string& filePathStr, ProjectManager* proje
 			s_openSaveConfirmPopup = true;
 		}
 		else {
-			projectManager->OpenProject(filePath.string());
+			OpenProjectAndLoadDefaultScene(filePath.string(), projectManager, WorldManager::Instance());
 			m_selectedFolder.clear();
 		}
 	}
@@ -2305,7 +2337,7 @@ void ImguiLayout::DropFolder(const std::string& folderPath, ProjectManager* proj
 				break;
 			}
 			else {
-				if (projectManager->OpenProject(filePath.string()))
+				if (OpenProjectAndLoadDefaultScene(filePath.string(), projectManager, WorldManager::Instance()))
 					m_selectedFolder.clear();
 				hasOpenProject = true;
 				break;
