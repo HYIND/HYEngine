@@ -132,7 +132,8 @@ void main()
         if (ExponentialHeightFogEnable && !VolumeFogEnable)
         {
             float fogFactor = 1.0 - exp(-GetFogExtinction(camera.position, worldPos));
-            result = mix(result, fogAlbedo, clamp(fogFactor, 0.0, FogMaxOpacity));
+            fogFactor = clamp(fogFactor, 0.0, FogMaxOpacity);
+            result = mix(result, fogAlbedo, fogFactor);
         }
     }
     else 
@@ -153,7 +154,7 @@ void main()
             vec3 farPos = camera.position + vireDir * camera.farPlane;
 
             float T_Total = 1.0;
-            
+
             float T_far = clamp(exp(-GetFogExtinction(farPos, farPos + vireDir * MAX_DISTANCE)), 0.0, 1.0);
             T_Total *= T_far;
             
