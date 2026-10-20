@@ -624,7 +624,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeCalculate.comp");
+	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeLut.comp", "shader/Volume/VolumeCalculate.comp");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
@@ -912,7 +912,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 		)
 		.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempColor"), {} })
+		.Temp(
+			ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempColor"), {} },
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "volumeCalculateNode_TempScatterColor"), {} },
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "volumeCalculateNode_TempTramsmittance"), {} }
+		)
 		.Before(postProcessFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 

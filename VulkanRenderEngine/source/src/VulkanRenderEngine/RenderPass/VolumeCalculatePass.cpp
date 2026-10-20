@@ -2,31 +2,53 @@
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 VolumeCalculatePass::VolumeCalculatePass(
-	const std::string& computeShaderPath
+	const std::string& lutShaderPath,
+	const std::string& combinShaderPath
 )
 {
-	ComputePipelineConfig config;
-	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
-	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
-	config.computePath = computeShaderPath;
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
+		config.computePath = lutShaderPath;
 
-	config
-		.AddCameraUnifromDataBinding()
-		.AddLightDataBinding()
-		.AddUnifromBuffer(0)
-		.AddUnifromBuffer(1)
-		.AddUnifromBuffer(2)
-		.AddStorageImage(3)
-		.AddUnifromTexture(4)
-		.AddUnifromTexture(5)
-		.AddUnifromTexture(6)
-		.AddUnifromTexture(7)
-		.AddUnifromTexture(8)
-		.AddUnifromTexture(9);
+		config
+			.AddCameraUnifromDataBinding()
+			.AddLightDataBinding()
+			.AddUnifromBuffer(0)
+			.AddUnifromBuffer(1)
+			.AddUnifromBuffer(2)
+			.AddStorageImage(3)
+			.AddStorageImage(4)
+			.AddUnifromTexture(5)
+			.AddUnifromTexture(6)
+			.AddUnifromTexture(7)
+			.AddUnifromTexture(8);
 
-	if (config.Validate())
-		_shader.Create(config);
+		if (config.Validate())
+			_lutShader.Create(config);
+	}
 
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
+		config.computePath = combinShaderPath;
+
+		config
+			.AddUnifromBuffer(0)
+			.AddUnifromBuffer(1)
+			.AddUnifromBuffer(2)
+			.AddStorageImage(3)
+			.AddUnifromTexture(4)
+			.AddUnifromTexture(5)
+			.AddUnifromTexture(6)
+			.AddUnifromTexture(7)
+			.AddUnifromTexture(8);
+
+		if (config.Validate())
+			_combinShader.Create(config);
+	}
 }
 
 bool VolumeCalculatePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -64,7 +86,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	bool exponentialHeightFogEnable = state.option.flags.exponentialHeightFogOn;
 	bool volumeFogEnable = exponentialHeightFogEnable && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& lutBinding = *registry.Get<ComputeBindingRecord>("lutBinding");
+	auto& combinBinding = *registry.Get<ComputeBindingRecord>("combinBinding");
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	glm::vec3 dirLightColor(0.0f);
@@ -93,7 +116,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	};
 	auto atmosphereParamsUBO = std::make_shared<UniformBlock>(sizeof(atmosphereParams));
 	atmosphereParamsUBO->WriteDataAsync(cmd, &atmosphereParams, sizeof(atmosphereParams));
-	binding.SetUniformBlock(atmosphereParamsUBO, 0);
+	lutBinding.SetUniformBlock(atmosphereParamsUBO, 0);
+	combinBinding.SetUniformBlock(atmosphereParamsUBO, 0);
 
 	const auto& fogOptions = state.option.exponentialHeightFogParams;
 	ExponentialHeightFogShaderParams fogParams
@@ -108,7 +132,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	};
 	auto fogParamsUBO = std::make_shared<UniformBlock>(sizeof(fogParams));
 	fogParamsUBO->WriteDataAsync(cmd, &fogParams, sizeof(fogParams));
-	binding.SetUniformBlock(fogParamsUBO, 1);
+	lutBinding.SetUniformBlock(fogParamsUBO, 1);
+	combinBinding.SetUniformBlock(fogParamsUBO, 1);
 
 	{
 		VolumeParams params{
@@ -117,7 +142,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 		};
 		auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 		paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
-		binding.SetUniformBlock(paramsUBO, 2);
+		lutBinding.SetUniformBlock(paramsUBO, 2);
+		combinBinding.SetUniformBlock(paramsUBO, 2);
 	}
 
 	cmd->SubmitNowAndWait();
@@ -139,6 +165,8 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	auto sceneDepthBuffer = ctx.GetFrameLocal(0);
 
 	auto tempColor = ctx.GetTemp(0);
+	auto tempScatterColor = ctx.GetTemp(1);
+	auto tempTramsmittance = ctx.GetTemp(2);
 
 	auto atlasShadowMap = ctx.GetInput(0);
 	auto gPosition = ctx.GetInput(1);
@@ -154,13 +182,47 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 
 	auto cmd = cmdCtx.GetCmd();
 
-	Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColor);
+	DrawLut(
+		cmd,
+		registry,
+		state,
+		tempScatterColor,
+		tempTramsmittance,
+		sceneDepthBuffer,
+		atlasShadowMap,
+		gPosition,
+		atmoEnable
+	);
 
-	uint32_t width = sceneColorBuffer->GetWidth();
-	uint32_t height = sceneColorBuffer->GetHeight();
+	CombinVolume(
+		cmd,
+		registry,
+		state,
+		sceneColorBuffer,
+		tempColor,
+		sceneDepthBuffer,
+		tempScatterColor,
+		tempTramsmittance,
+		atmoEnable
+	);
 
+}
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+void VolumeCalculatePass::DrawLut(
+	std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
+	RenderGraph::FrameDataRegistry& registry,
+	RenderState& state,
+	std::shared_ptr<Texture2D>& tempScatterColor,
+	std::shared_ptr<Texture2D>& tempTramsmittance,
+	std::shared_ptr<Texture2D>& sceneDepthBuffer,
+	std::shared_ptr<Texture2D>& atlasShadowMap,
+	std::shared_ptr<Texture2D>& gPosition,
+	bool atmoEnable
+)
+{
+	uint32_t width = tempScatterColor->GetWidth();
+	uint32_t height = tempScatterColor->GetHeight();
+	auto& binding = *registry.Get<ComputeBindingRecord>("lutBinding");
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetLightStorageData(
@@ -171,18 +233,52 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 		state.lights.ssbo_dirLightCascadeDistances
 	);
 
+	binding.SetStorageImage(tempScatterColor, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetStorageImage(tempTramsmittance, vk::ImageAspectFlagBits::eColor, 4);
+	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 5);
+	if (atmoEnable)
+	{
+		binding.SetUniformTexture(state.skyAtmosphereParams.transmittanceLut, vk::ImageAspectFlagBits::eColor, 6);
+	}
+	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
+	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 8);
+
+	_lutShader.Bind(cmd, binding);
+	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+
+	cmd->SubmitToQueue();
+}
+
+void VolumeCalculatePass::CombinVolume(
+	std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
+	RenderGraph::FrameDataRegistry& registry,
+	RenderState& state,
+	std::shared_ptr<Texture2D>& sceneColorBuffer,
+	std::shared_ptr<Texture2D>& tempColor,
+	std::shared_ptr<Texture2D>& sceneDepthBuffer,
+	std::shared_ptr<Texture2D>& tempScatterColor,
+	std::shared_ptr<Texture2D>& tempTramsmittance,
+	bool atmoEnable
+)
+{
+	Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColor);
+	tempColor->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+
+	uint32_t width = sceneColorBuffer->GetWidth();
+	uint32_t height = sceneColorBuffer->GetHeight();
+	auto& binding = *registry.Get<ComputeBindingRecord>("combinBinding");
+
 	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 3);
 	binding.SetUniformTexture(tempColor, vk::ImageAspectFlagBits::eColor, 4);
 	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 5);
 	if (atmoEnable)
 	{
-		binding.SetUniformTexture(state.skyAtmosphereParams.transmittanceLut, vk::ImageAspectFlagBits::eColor, 6);
-		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 7);
+		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 8);
-	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(tempScatterColor, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(tempTramsmittance, vk::ImageAspectFlagBits::eColor, 8);
 
-	_shader.Bind(cmd, binding);
+	_combinShader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
