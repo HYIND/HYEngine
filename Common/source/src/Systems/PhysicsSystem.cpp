@@ -349,7 +349,7 @@ void PhysicsSystem::checkNewEntity()
 	}
 }
 
-void PhysicsSystem::syncWorldToPhysics(float dt_second)
+void PhysicsSystem::syncWorldToPhysics()
 {
 	auto entities = m_world->getEntitiesWith<Physics, Transform, PhysicsRuntime>();
 
@@ -394,12 +394,16 @@ void PhysicsSystem::syncWorldToPhysics(float dt_second)
 			{
 				runtime.body->setWorldTransform(newTrans);
 				runtime.body->getMotionState()->setWorldTransform(newTrans);
+				runtime.body->setInterpolationWorldTransform(newTrans);
 				runtime.body->setLinearVelocity(btVector3(0, 0, 0));
 				runtime.body->setAngularVelocity(btVector3(0, 0, 0));
+				runtime.body->activate(true);
 			}
 			if (runtime.ghostObject)
 			{
 				runtime.ghostObject->setWorldTransform(newTrans);
+				runtime.ghostObject->setInterpolationWorldTransform(newTrans);
+				runtime.ghostObject->activate(true);
 			}
 			physics.forceSyncTransform = false;
 		}
@@ -513,9 +517,10 @@ void PhysicsSystem::collisionCheck(float dt)
 {
 	float dt_second = dt / 1000.f;
 
-	syncWorldToPhysics(dt_second);
+	syncWorldToPhysics();
 
-	phyWorld->stepSimulation(dt_second, 8, fixedTimeStep);	// 执行物理模拟
+	if (dt_second > 0.f)
+		phyWorld->stepSimulation(dt_second, 8, fixedTimeStep);	// 执行物理模拟
 
 	processCollisions();
 
