@@ -55,9 +55,7 @@ class TextureAsset : public AssetObject
 {
 public:
 	TextureAsset();
-	virtual ~TextureAsset() {
-		_texture.reset();
-	}
+	virtual ~TextureAsset();
 	virtual std::shared_ptr<Texture2D> AsTexture() override;
 
 private:
@@ -85,10 +83,15 @@ public:
 	MaterialAsset();
 	virtual ~MaterialAsset() = default;
 	virtual std::shared_ptr<Material> AsMaterial() override;
+	MaterialProperties GetProperties() const;
+	void SetProperties(const MaterialProperties& properties);
+	const std::map<TextureType, AssetGUID>& GetTextureDependencies() const;
+	void SetTextureDependency(TextureType type, const AssetGUID& guid, const std::shared_ptr<Texture2D>& texture);
 
 private:
 	MaterialProperties _properties;
 	std::map<TextureType, AssetGUID> _dependencyTexture;
+	std::shared_ptr<Material> _material;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };

@@ -22,6 +22,7 @@ public:
 
 private:
 	static bool SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static bool SaveMaterial(std::shared_ptr<MaterialAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static bool SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 };
 
@@ -265,7 +266,7 @@ bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta
 	case AssetType::Texture:
 		return false;
 	case AssetType::Material:
-		return false;
+		return SaveMaterial(std::static_pointer_cast<MaterialAsset>(asset), meta, pathProvider);
 	case AssetType::Model:
 		return false;
 	case AssetType::Scene:
@@ -280,6 +281,21 @@ bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta
 	return false;
 }
 
+bool AssetStroageHelper::SaveMaterial(std::shared_ptr<MaterialAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	if (!asset || !pathProvider)
+		return false;
+
+	const std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	if (fullMetaPath.empty())
+		return false;
+
+	MaterialAssetDescription description;
+	description.SetProperties(asset->GetProperties());
+	description.SetTexture(asset->GetTextureDependencies());
+	return description.SaveToFile(fullMetaPath);
+}
+
 bool AssetStroageHelper::SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
 {
 	if (!pathProvider)
@@ -292,10 +308,7 @@ bool AssetStroageHelper::SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta&
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
 	SceneAssetDescription desc;
 	desc.SetJsonData(scene->SaveToJson());
-	if (!desc.SaveToFile(fullMetaPath))
-		return false;
-
-	return true;
+	return desc.SaveToFile(fullMetaPath);
 }
 
 bool AssetStroageHelper::SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
@@ -310,8 +323,5 @@ bool AssetStroageHelper::SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMet
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
 	ScriptAssetDescription desc;
 	desc.SetSource(script->source);
-	if (!desc.SaveToFile(fullMetaPath))
-		return false;
-
-	return true;
+	return desc.SaveToFile(fullMetaPath);
 }
