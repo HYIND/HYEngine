@@ -303,21 +303,47 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		MaterialProperties properties;
 	};
 	std::vector<MaterialEdit> edits;
-	const auto& meshInfos = comp.model->getMeshInfos();
+	auto& meshInfos = comp.model->getMeshInfos();
 	for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 	{
 		ImGui::PushID(static_cast<int>(slot));
 		const std::string title = std::format("Material Slot {}", slot);
 		if (ImGui::TreeNodeEx(title.c_str(), ImGuiTreeNodeFlags_None))
 		{
-			auto material = meshInfos[slot].material;
-			if (!material)
+			auto& material = meshInfos[slot].material;
+			ImGui::TextUnformatted("Material");
+			ImGui::SameLine();
+			auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+			auto materialMeta = database && material ? database->GetAssetMetaByGuid(material->GetAssetGUID()) : nullptr;
+			const std::string materialLabel = materialMeta ? materialMeta->name :
+				(material && !material->GetAssetGUID().empty() ? material->GetAssetGUID() : "No material assigned");
+			ImGui::Button(materialLabel.c_str(), ImVec2(220.f, 0.f));
+			if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
+				&& materialMeta && materialMeta->type == AssetType::Material)
+				ImguiLayout::OpenMaterialEditor(materialMeta->guid);
+			if (ImGui::BeginDragDropTarget())
 			{
-				ImGui::TextDisabled("No material assigned");
+				if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+				{
+					const auto* guidData = static_cast<const char*>(payload->Data);
+					if (guidData && guidData[0] != '\0' && database && assetManager)
+					{
+						auto droppedMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+						if (droppedMeta && droppedMeta->type == AssetType::Material)
+						{
+							auto asset = assetManager->LoadAsset(droppedMeta->guid);
+							auto replacement = asset ? asset->AsMaterial() : nullptr;
+							if (replacement)
+								material = std::move(replacement);
+						}
+					}
+				}
+				ImGui::EndDragDropTarget();
 			}
+			if (!material)
+				ImGui::TextDisabled("No material assigned");
 			else
 			{
-				drawAssetPath("Material", material->GetAssetGUID());
 				auto properties = material->GetProperties();
 				bool slotChanged = false;
 				SetNextPropertyFieldWidth(250.f, 0.6f);

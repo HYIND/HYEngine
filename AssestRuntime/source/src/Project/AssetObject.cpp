@@ -29,6 +29,8 @@ std::vector<std::shared_ptr<Mesh>> StaticMeshAsset::AsStaticMesh() { return _mes
 
 TextureAsset::TextureAsset() { _type = AssetType::Texture; }
 
+TextureAsset::~TextureAsset() { _texture.reset(); }
+
 std::shared_ptr<Texture2D> TextureAsset::AsTexture() { return _texture; }
 
 AudioAsset::AudioAsset() { _type = AssetType::Audio; }
@@ -39,21 +41,51 @@ MaterialAsset::MaterialAsset() { _type = AssetType::Material; }
 
 std::shared_ptr<Material> MaterialAsset::AsMaterial()
 {
-	auto material = std::make_shared<Material>();
-	material->SetAssetGUID(_assetGUID);
-	material->SetProperty(_properties);
-	if (auto storage = _storage.lock())
+	if (!_material)
 	{
-		for (auto& [type, guid] : _dependencyTexture)
+		_material = std::make_shared<Material>();
+		_material->SetAssetGUID(_assetGUID);
+		_material->SetProperty(_properties);
+		if (auto storage = _storage.lock())
 		{
-			if (auto asset = storage->LoadAsset(guid))
+			for (auto& [type, guid] : _dependencyTexture)
 			{
-				if (auto texture = asset->AsTexture())
-					material->SetTexture(type, texture);
+				if (auto asset = storage->LoadAsset(guid))
+				{
+					if (auto texture = asset->AsTexture())
+						_material->SetTexture(type, texture);
+				}
 			}
 		}
 	}
-	return material;
+	return _material;
+}
+
+MaterialProperties MaterialAsset::GetProperties() const
+{
+	return _properties;
+}
+
+void MaterialAsset::SetProperties(const MaterialProperties& properties)
+{
+	_properties = properties;
+	if (_material)
+		_material->SetProperty(properties);
+}
+
+const std::map<TextureType, AssetGUID>& MaterialAsset::GetTextureDependencies() const
+{
+	return _dependencyTexture;
+}
+
+void MaterialAsset::SetTextureDependency(TextureType type, const AssetGUID& guid, const std::shared_ptr<Texture2D>& texture)
+{
+	if (guid.empty())
+		_dependencyTexture.erase(type);
+	else
+		_dependencyTexture[type] = guid;
+	if (_material)
+		_material->SetTexture(type, texture);
 }
 
 ModelAsset::ModelAsset() { _type = AssetType::Model; }
@@ -131,7 +163,7 @@ void SceneAsset::SetScene(std::shared_ptr<SceneCodec> s)
 	_scene = s;
 }
 
-ScriptAsset::ScriptAsset(){ _type = AssetType::Script; }
+ScriptAsset::ScriptAsset() { _type = AssetType::Script; }
 
 std::shared_ptr<ScriptSourceData> ScriptAsset::AsScript()
 {

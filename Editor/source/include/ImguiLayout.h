@@ -27,12 +27,14 @@ public:
 	static void HandleAssetDrop(const AssetMeta& meta, WorldManager* worldManager, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
 	static void HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
 	static void ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
+	static void OpenMaterialEditor(const AssetGUID& guid);
 
 private:
 	static void DrawFolderTree(const std::string& currentPath, const std::string& parentPathStr, const std::string& rootPathStr);
 	static void DrawFolderContent(ProjectManager* projectManager, const std::string& currentPath);
 	static std::string GetWindowAtPosition(const ImVec2& pos);
 	static bool SaveCurrentScene(ProjectManager* projectManager);
+	static void DrawMaterialEditor(ProjectManager* projectManager);
 
 public:
 	static ImGuizmo::OPERATION mCurrentGizmoOperation;

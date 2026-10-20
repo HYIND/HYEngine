@@ -30,7 +30,15 @@ std::string ImguiLayout::m_selectedFolder;
 
 AssetImportPopup ImguiLayout::s_assetImportPopup;
 AssetGUID ImguiLayout::m_currentSceneAssetGuid;
+static AssetGUID s_materialEditorGuid;
+static bool s_materialEditorOpen = false;
 static std::string s_sceneSaveErrorMessage;
+
+void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
+{
+	s_materialEditorGuid = guid;
+	s_materialEditorOpen = true;
+}
 
 bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 {
@@ -565,6 +573,8 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 		if (isDbClicked)
 		{
+			if (isAssetFile && meta.type == AssetType::Material)
+				OpenMaterialEditor(meta.guid);
 		}
 
 		if (isRightClicked) {
@@ -1274,6 +1284,164 @@ void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 	ImGui::End();
 }
 
+void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
+{
+	if (!s_materialEditorOpen || !projectManager)
+		return;
+
+	auto database = projectManager->GetDatabase();
+	auto meta = database ? database->GetAssetMetaByGuid(s_materialEditorGuid) : nullptr;
+	if (!meta || meta->type != AssetType::Material)
+	{
+		s_materialEditorOpen = false;
+		return;
+	}
+
+	auto assetObject = projectManager->LoadAsset(meta->guid);
+	auto materialAsset = assetObject ? std::dynamic_pointer_cast<MaterialAsset>(assetObject) : nullptr;
+	if (!materialAsset)
+	{
+		s_materialEditorOpen = false;
+		return;
+	}
+
+	bool open = true;
+	if (!ImGui::Begin(std::format("材质编辑器: {}###MaterialEditor", meta->name).c_str(), &open))
+	{
+		ImGui::End();
+		s_materialEditorOpen = open;
+		return;
+	}
+
+	bool changed = false;
+	bool saveFailed = false;
+	auto properties = materialAsset->GetProperties();
+	if (ImGui::BeginTable("MaterialEditorColumns", 2,
+		ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("Properties", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableSetupColumn("Textures", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableNextRow();
+
+		ImGui::TableSetColumnIndex(0);
+		ImGui::BeginChild("MaterialPropertyPanel", ImVec2(0.f, 0.f), ImGuiChildFlags_Borders);
+		ImGui::TextUnformatted("Material Properties");
+		ImGui::Separator();
+		ImGui::SetNextItemWidth(250.f);
+		changed |= ImGui::ColorEdit3("Albedo", glm::value_ptr(properties.albedo));
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("Metallic", &properties.metallic, 0.01f, 0.f, 1.f);
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("Roughness", &properties.roughness, 0.01f, 0.001f, 1.f);
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("Ambient Occlusion", &properties.ambientOcclusion, 0.01f, 0.f, 1.f);
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("Opacity", &properties.opacity, 0.01f, 0.f, 1.f);
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("IOR", &properties.IOR, 0.01f, 1.f, 3.f);
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Emission");
+		ImGui::SetNextItemWidth(250.f);
+		changed |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(properties.emissionColor));
+		ImGui::SetNextItemWidth(130.f);
+		changed |= ImGui::DragFloat("Emission Strength", &properties.emissionStrength, 0.01f, 0.f, 100.f);
+		ImGui::Spacing();
+		int alphaMode = static_cast<int>(properties.alphamode);
+		const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+		ImGui::SetNextItemWidth(130.f);
+		if (ImGui::Combo("Alpha Mode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+		{
+			properties.alphamode = static_cast<AlphaMode>(alphaMode);
+			changed = true;
+		}
+		if (properties.alphamode == AlphaMode::Mask)
+		{
+			ImGui::SetNextItemWidth(130.f);
+			changed |= ImGui::DragFloat("Mask Threshold", &properties.maskthreshold, 0.01f, 0.f, 1.f);
+		}
+		changed |= ImGui::Checkbox("Two Sided", &properties.twosided);
+		ImGui::EndChild();
+
+		ImGui::TableSetColumnIndex(1);
+		ImGui::BeginChild("MaterialTexturePanel", ImVec2(0.f, 0.f), ImGuiChildFlags_Borders);
+		ImGui::TextUnformatted("Texture Slots");
+		ImGui::SameLine();
+		ImGui::TextDisabled("Drag texture assets onto a slot");
+		ImGui::Separator();
+	const std::pair<TextureType, const char*> textureSlots[] = {
+		{ TextureType::Albedo, "Albedo Texture" },
+		{ TextureType::Metallic, "Metallic Texture" },
+		{ TextureType::Roughness, "Roughness Texture" },
+		{ TextureType::Normal, "Normal Texture" },
+		{ TextureType::AO, "AO Texture" },
+		{ TextureType::Emissive, "Emissive Texture" },
+		{ TextureType::MetallicRoughness, "Metallic Roughness Texture" },
+		{ TextureType::Height, "Height Texture" },
+		{ TextureType::Opacity, "Opacity Texture" }
+	};
+	for (const auto& [type, label] : textureSlots)
+	{
+		ImGui::PushID(static_cast<int>(type));
+		ImGui::BeginGroup();
+		ImGui::TextUnformatted(label);
+		const auto& dependencies = materialAsset->GetTextureDependencies();
+		auto dependency = dependencies.find(type);
+		std::string textureLabel = "None";
+		if (dependency != dependencies.end())
+		{
+			auto textureMeta = database->GetAssetMetaByGuid(dependency->second);
+			textureLabel = textureMeta ? textureMeta->name : dependency->second;
+		}
+		ImGui::Button(textureLabel.c_str(), ImVec2(220.f, 34.f));
+		if (ImGui::BeginDragDropTarget())
+		{
+			if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			{
+				const auto* guidData = static_cast<const char*>(payload->Data);
+				if (guidData && guidData[0] != '\0')
+				{
+					auto textureMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+					if (textureMeta && textureMeta->type == AssetType::Texture)
+					{
+						auto textureObject = projectManager->LoadAsset(textureMeta->guid);
+						auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+						if (texture)
+						{
+							materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
+							if (!projectManager->SaveAsset(meta->guid))
+								saveFailed = true;
+						}
+					}
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+		ImGui::SameLine();
+		if (dependency != dependencies.end() && ImGui::SmallButton("清除"))
+		{
+			materialAsset->SetTextureDependency(type, {}, nullptr);
+			if (!projectManager->SaveAsset(meta->guid))
+				saveFailed = true;
+		}
+		ImGui::EndGroup();
+		ImGui::Spacing();
+		ImGui::PopID();
+	}
+		ImGui::EndChild();
+		ImGui::EndTable();
+	}
+	if (changed)
+	{
+		materialAsset->SetProperties(properties);
+		if (!projectManager->SaveAsset(meta->guid))
+			saveFailed = true;
+	}
+	if (saveFailed)
+		ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "材质保存失败");
+	ImGui::End();
+	s_materialEditorOpen = open;
+}
+
 void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
 {
 	{
@@ -1315,6 +1483,7 @@ void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
 
 		ImGui::End();
 	}
+	DrawMaterialEditor(projectManager);
 }
 
 void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* projectManager)
