@@ -116,7 +116,6 @@ void main()
 
     vec3 result = vec3(0.f);
 
-
     if (samplerDepth < 0.99994)
     {
         vec3 fragColor = texture(colorMap, TexCoords).rgb;
@@ -126,7 +125,7 @@ void main()
         
         if (AtmoVolumeEnable)
             CalculateAtmoVolume(camera.position, worldPos, tramsmittance, scatterColor);
-        if (VolumeFogEnable)
+        if (ExponentialHeightFogEnable && VolumeFogEnable)
             CalculateLightVolume(camera.position, worldPos, tramsmittance, scatterColor);
 
         result = scatterColor + tramsmittance * fragColor;
@@ -141,11 +140,6 @@ void main()
         vec3 scatterColor = vec3(0.f);
         vec3 tramsmittance = vec3(1.f);
 
-        vec3 vireDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
-
-        if (VolumeFogEnable)
-            CalculateLightVolume(camera.position, camera.position + vireDir * camera.farPlane, tramsmittance, scatterColor);
-
         vec3 fragColor = texture(colorMap, TexCoords).rgb;
         if (AtmoVolumeEnable && normalize(DirLightDir).y < 0.2)
         {
@@ -153,24 +147,33 @@ void main()
             fragColor = skyViewColor;
         }
 
-        vec3 farResult = fragColor;
         if (ExponentialHeightFogEnable)
-        {
+        {              
+            vec3 vireDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
             vec3 farPos = camera.position + vireDir * camera.farPlane;
             float T_far = exp(-GetFogExtinction(farPos, farPos + vireDir * MAX_DISTANCE));
+
             float farTransmittance = clamp(T_far, 0.0, 1.0);
-            if (!VolumeFogEnable)
-                farTransmittance = max(farTransmittance, 1.0 - FogMaxOpacity);
-            farResult = mix(fogAlbedo, fragColor, farTransmittance);
-            if (!VolumeFogEnable)
+                
+            if (VolumeFogEnable)
             {
-                float T_view = exp(-GetFogExtinction(camera.position, farPos + vireDir * MAX_DISTANCE));
-                float viewTransmittance = max(clamp(T_view, 0.0, 1.0), 1.0 - FogMaxOpacity);
-                farResult = mix(fogAlbedo, fragColor, viewTransmittance);
+                CalculateLightVolume(camera.position, farPos, tramsmittance, scatterColor);
             }
+            else
+            {
+
+                float T_view = exp(-GetFogExtinction(camera.position, farPos));
+                float viewTransmittance = clamp(T_view, 0.0, 1.0);
+                
+                farTransmittance *= viewTransmittance;
+                farTransmittance = max(farTransmittance, 1.0 - FogMaxOpacity);
+            }
+
+            float fogFactor = 1.0 - farTransmittance;
+            fragColor = mix(fragColor, fogAlbedo, fogFactor);
         }
 
-        result = scatterColor + tramsmittance * farResult;
+        result = scatterColor + tramsmittance * fragColor;
     }
 
     imageStore(outputImage, coord, vec4(result, 1.0));
