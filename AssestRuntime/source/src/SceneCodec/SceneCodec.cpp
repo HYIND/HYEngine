@@ -144,6 +144,7 @@ bool SceneCodec::Deserialize(
 	RegisterBuiltInCodecs();
 	const auto& codecs = GetComponentCodecs();
 	std::vector<Entity> entityHandles;
+	std::unordered_map<std::string, Entity> entitiesById;
 
 	try
 	{
@@ -151,6 +152,8 @@ bool SceneCodec::Deserialize(
 		{
 			Entity entity = world.createEntity();
 			entityHandles.push_back(entity);
+			if (!entityData.id.empty())
+				entitiesById.emplace(entityData.id, entity);
 		}
 
 		for (size_t entityIndex = 0; entityIndex < _entities.size(); ++entityIndex)
@@ -167,6 +170,15 @@ bool SceneCodec::Deserialize(
 					continue;
 				if (!codec->decode(entity, componentData.data))
 					continue;
+			}
+
+			for (const auto& componentData : entityData.components)
+			{
+				auto codec = std::find_if(codecs.begin(), codecs.end(), [&](const ComponentCodec& item) {
+					return item.type == componentData.type;
+					});
+				if (codec != codecs.end() && codec->resolveReferences && codec->has(entity))
+					codec->resolveReferences(entity, componentData.data, entitiesById);
 			}
 
 			if (!entityData.name.empty())

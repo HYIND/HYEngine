@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include "ECSCore/World.h"
 #include "ECSCore/ComponentTypes.h"
 #include <nlohmann/json.hpp>
@@ -32,6 +33,7 @@ namespace NComponentCodec
 		std::function<bool(Entity)> has;
 		std::function<Json(Entity)> encode;
 		std::function<bool(Entity, const Json&)> decode;
+		std::function<bool(Entity, const Json&, const std::unordered_map<std::string, Entity>&)> resolveReferences;
 		std::function<std::string(Entity)> getName;
 		std::function<void(Entity, const std::string&)> setName;
 	};
@@ -46,7 +48,8 @@ namespace NComponentCodec
 		std::function<Json(const T&)> encode,
 		std::function<bool(T&, const Json&)> decode,
 		std::function<std::string(const T&)> getName = {},
-		std::function<void(T&, const std::string&)> setName = {});
+		std::function<void(T&, const std::string&)> setName = {},
+		std::function<bool(T&, const Json&, const std::unordered_map<std::string, Entity>&)> resolveReferences = {});
 
 }
 
@@ -56,7 +59,8 @@ void NComponentCodec::RegisterComponentCodec(
 	std::function<Json(const T&)> encode,
 	std::function<bool(T&, const Json&)> decode,
 	std::function<std::string(const T&)> getName,
-	std::function<void(T&, const std::string&)> setName)
+	std::function<void(T&, const std::string&)> setName,
+	std::function<bool(T&, const Json&, const std::unordered_map<std::string, Entity>&)> resolveReferences)
 {
 	ComponentCodec codec;
 	codec.type = type;
@@ -64,6 +68,10 @@ void NComponentCodec::RegisterComponentCodec(
 	codec.has = [](Entity entity) { return entity.hasComponent<T>(); };
 	codec.encode = [encode = std::move(encode)](Entity entity) {
 		return encode(entity.getComponent<T>());
+		};
+	if (resolveReferences)
+		codec.resolveReferences = [resolveReferences = std::move(resolveReferences)](Entity entity, const Json& data, const std::unordered_map<std::string, Entity>& entities) {
+		return resolveReferences(entity.getComponent<T>(), data, entities);
 		};
 	codec.decode = [decode = std::move(decode)](Entity entity, const Json& data) {
 		T component{};

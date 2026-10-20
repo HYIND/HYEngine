@@ -425,6 +425,33 @@ static void RegisterGeneralCodec()
 		[](const TagLight&) { return Json::object(); },
 		[](TagLight&, const Json& data) { return data.is_object(); });
 
+	RegisterComponentCodec<CameraFollow>(
+		"gameplay.camera_follow",
+		[](const CameraFollow& follow) {
+			return Json{
+				{"target", follow.target ? std::to_string(follow.target.getId()) : std::string{}},
+				{"offset", EncodeVec3(follow.offset)},
+				{"smoothSpeed", follow.smoothSpeed}
+			};
+		},
+		[](CameraFollow& follow, const Json& data) {
+			return data.is_object()
+				&& data.contains("target") && data["target"].is_string()
+				&& data.contains("offset") && DecodeVec3(data["offset"], follow.offset)
+				&& data.contains("smoothSpeed") && DecodeFiniteFloat(data["smoothSpeed"], follow.smoothSpeed);
+		},
+		{}, {},
+		[](CameraFollow& follow, const Json& data, const std::unordered_map<std::string, Entity>& entities) {
+			const auto target = data.at("target").get<std::string>();
+			if (target.empty())
+				return true;
+			auto found = entities.find(target);
+			if (found == entities.end())
+				return false;
+			follow.target = found->second;
+			return true;
+		});
+
 	RegisterComponentCodec<Transform>(
 		"engine.transform",
 		[](const Transform& transform) {
