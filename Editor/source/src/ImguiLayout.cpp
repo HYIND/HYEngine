@@ -1085,6 +1085,11 @@ void ImguiLayout::DrawPlayControls(WorldManager* worldManager, ProjectManager* p
 	ImGui::Begin("##PlayControls", nullptr,
 		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+	const float controlsWidth = ImGui::CalcTextSize("Paused").x + ImGui::GetStyle().ItemSpacing.x
+		+ ImGui::CalcTextSize("Resume").x + ImGui::GetStyle().FramePadding.x * 2.f
+		+ ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize("Stop").x + ImGui::GetStyle().FramePadding.x * 2.f;
+	ImGui::SetCursorPosX((ImGui::GetWindowWidth() - controlsWidth) * 0.5f);
+	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted(worldManager->GetEditorState() == EditorWorldState::Playing ? "Playing" :
 		worldManager->GetEditorState() == EditorWorldState::Paused ? "Paused" : "Editing");
 	ImGui::SameLine();
@@ -1408,7 +1413,7 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		};
 
 	bool open = true;
-	if (!ImGui::Begin(std::format("Material Editor: {}###MaterialEditor", meta->name).c_str(), &open))
+	if (!ImGui::Begin(std::format("Material Editor: {}###MaterialEditor", meta->name).c_str(), &open, ImGuiWindowFlags_NoDocking))
 	{
 		ImGui::End();
 		s_materialEditorOpen = open;
@@ -1421,8 +1426,9 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 	}
 
 	bool changed = false;
-	bool saveFailed = false;
 	auto properties = materialAsset->GetProperties();
+	const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2.f;
+	ImGui::BeginChild("MaterialEditorContent", ImVec2(0.f, -footerHeight), ImGuiChildFlags_None);
 	if (ImGui::BeginTable("MaterialEditorColumns", 2,
 		ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 	{
@@ -1531,21 +1537,31 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		ImGui::EndChild();
 		ImGui::EndTable();
 	}
+	ImGui::EndChild();
 	if (changed)
 		materialAsset->SetProperties(properties);
 	ImGui::Separator();
-	if (open && ImGui::Button("Save"))
+	ImGui::BeginChild("MaterialEditorFooter", ImVec2(0.f, footerHeight), ImGuiChildFlags_None);
+	if (open)
 	{
-		if (!projectManager->SaveAsset(meta->guid))
-			saveFailed = true;
-		else
+		if (ImGui::Button("Save"))
 		{
-			s_materialOrigin.properties = materialAsset->GetProperties();
-			s_materialOrigin.textures = materialAsset->GetTextureDependencies();
+			if (!projectManager->SaveAsset(meta->guid))
+			{
+				ImGui::SameLine();
+				ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "材质保存失败");
+			}
+			else
+			{
+				s_materialOrigin.properties = materialAsset->GetProperties();
+				s_materialOrigin.textures = materialAsset->GetTextureDependencies();
+			}
 		}
+		ImGui::SameLine();
+		if (ImGui::Button("Restore"))
+			restoreOrigin();
 	}
-	if (saveFailed)
-		ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "材质保存失败");
+	ImGui::EndChild();
 	ImGui::End();
 	s_materialEditorOpen = open;
 	if (!open)
@@ -1658,41 +1674,22 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 		static bool targetInitialized = false;
 		static bool targetInitializationFailed = false;
 
-		if (!targetInitialized && !targetInitializationTask)
+		if (!targetInitialized)
 		{
-			auto width = static_cast<uint32_t>(viewportSize.x);
-			auto height = static_cast<uint32_t>(viewportSize.y);
-			targetInitializationTask = CoroTask::Run([renderer, width, height, worldManager]() mutable -> bool {
-				try
-				{
-					if (VulkanRenderer::CreateForOffScreen_Target(renderer, width, height))
-					{
-						renderer->Run();
-						worldManager->RunPushFrame();
-						return true;
-					}
-					return false;
-				}
-				catch (const std::exception&)
-				{
-					return false;
-				}
-				});
-		}
-
-		if (targetInitializationTask && targetInitializationTask.is_done())
-		{
-			auto width = static_cast<uint32_t>(viewportSize.x);
-			auto height = static_cast<uint32_t>(viewportSize.y);
-			if (renderer->GetWidth() != width || renderer->GetHeight() != height)
+			if (!targetInitializationTask)
 			{
+				auto width = static_cast<uint32_t>(viewportSize.x);
+				auto height = static_cast<uint32_t>(viewportSize.y);
 				targetInitializationTask = CoroTask::Run([renderer, width, height, worldManager]() mutable -> bool {
 					try
 					{
-						worldManager->StopPushFrame();
-						renderer->Resize(width, height);
-						worldManager->RunPushFrame();
-						return true;
+						if (VulkanRenderer::CreateForOffScreen_Target(renderer, width, height))
+						{
+							renderer->Run();
+							worldManager->RunPushFrame();
+							return true;
+						}
+						return false;
 					}
 					catch (const std::exception&)
 					{
@@ -1700,17 +1697,38 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 					}
 					});
 			}
-			else
+			else if (targetInitializationTask && targetInitializationTask.is_done())
 			{
-				try
+				auto width = static_cast<uint32_t>(viewportSize.x);
+				auto height = static_cast<uint32_t>(viewportSize.y);
+				if (renderer->GetWidth() != width || renderer->GetHeight() != height)
 				{
-					targetInitializationFailed = !targetInitializationTask.sync_wait();
+					targetInitializationTask = CoroTask::Run([renderer, width, height, worldManager]() mutable -> bool {
+						try
+						{
+							worldManager->StopPushFrame();
+							renderer->Resize(width, height);
+							worldManager->RunPushFrame();
+							return true;
+						}
+						catch (const std::exception&)
+						{
+							return false;
+						}
+						});
 				}
-				catch (const std::exception&)
+				else
 				{
-					targetInitializationFailed = true;
+					try
+					{
+						targetInitializationFailed = !targetInitializationTask.sync_wait();
+					}
+					catch (const std::exception&)
+					{
+						targetInitializationFailed = true;
+					}
+					targetInitialized = true;
 				}
-				targetInitialized = true;
 			}
 		}
 
