@@ -398,12 +398,14 @@ void PhysicsSystem::syncWorldToPhysics()
 				runtime.body->setLinearVelocity(btVector3(0, 0, 0));
 				runtime.body->setAngularVelocity(btVector3(0, 0, 0));
 				runtime.body->activate(true);
+				phyWorld->updateSingleAabb(runtime.body);
 			}
 			if (runtime.ghostObject)
 			{
 				runtime.ghostObject->setWorldTransform(newTrans);
 				runtime.ghostObject->setInterpolationWorldTransform(newTrans);
 				runtime.ghostObject->activate(true);
+				phyWorld->updateSingleAabb(runtime.ghostObject);
 			}
 			physics.forceSyncTransform = false;
 		}
