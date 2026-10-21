@@ -123,8 +123,6 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 		if (!fs::path(path).is_absolute())
 			continue;
 
-		LockGuard guard1(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
-
 		if (fs::is_directory(fs::path(path)))
 			ImguiLayout::DropFolder(path, ProjectManager::Instance(), mousePos);
 		if (fs::is_regular_file(fs::path(path)))
@@ -354,21 +352,21 @@ int ImGuiMain()
 
 		bool minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
 
-		LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
-		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+		{
+			LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+			LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
 
-		// 渲染主窗口
-		if (!minimized) {
-			// 设置清除颜色
-			wd->ClearValue.color.float32[0] = clear_color.x;
-			wd->ClearValue.color.float32[1] = clear_color.y;
-			wd->ClearValue.color.float32[2] = clear_color.z;
-			wd->ClearValue.color.float32[3] = clear_color.w;
-			FrameRender(wd, draw_data);
+			// 渲染主窗口
+			if (!minimized) {
+				// 设置清除颜色
+				wd->ClearValue.color.float32[0] = clear_color.x;
+				wd->ClearValue.color.float32[1] = clear_color.y;
+				wd->ClearValue.color.float32[2] = clear_color.z;
+				wd->ClearValue.color.float32[3] = clear_color.w;
+				FrameRender(wd, draw_data);
+				FramePresent(wd);
+			}
 		}
-
-		if (!minimized)
-			FramePresent(wd);
 	}
 
 	// ==================== 清理 ====================
