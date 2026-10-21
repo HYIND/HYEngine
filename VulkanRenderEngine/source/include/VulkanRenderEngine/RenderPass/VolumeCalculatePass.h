@@ -2,7 +2,7 @@
 
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "RenderPassBase.h"
-#include "AtmospherePreCalculatePass.h"
+#include "VulkanRenderEngine/General/TAAFilter.h"
 
 class VolumeCalculatePass :public RenderPassBase
 {
@@ -19,31 +19,46 @@ public:
 
 
 private:
-	void DrawLut(
-		std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
-		RenderGraph::FrameDataRegistry& registry,
-		RenderState& state,
-		std::shared_ptr<Texture2D>& tempScatterColor,
-		std::shared_ptr<Texture2D>& tempTramsmittance,
-		std::shared_ptr<Texture2D>& sceneDepthBuffer,
-		std::shared_ptr<Texture2D>& atlasShadowMap,
-		std::shared_ptr<Texture2D>& gPosition,
-		bool atmoEnable
-	);
+	struct FrameRenderData
+	{
+		std::shared_ptr<Texture2D> gPosition;
+		std::shared_ptr<Texture2D> gNormal;
+		std::shared_ptr<Texture2D> gDepthStencil;
 
-	void CombinVolume(
-		std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
-		RenderGraph::FrameDataRegistry& registry,
-		RenderState& state,
-		std::shared_ptr<Texture2D>& tempScatterColor,
-		std::shared_ptr<Texture2D>& tempTramsmittance,
-		std::shared_ptr<Texture2D>& sceneDepthBuffer,
-		std::shared_ptr<Texture2D>& atlasShadowMap,
-		std::shared_ptr<Texture2D>& gPosition,
-		bool atmoEnable
-	);
+		std::shared_ptr<Texture2D> atlasShadowMap;
+		std::shared_ptr<Texture2D> gMotionVector;
+
+		std::shared_ptr<Texture2D> gPrevPosition;
+		std::shared_ptr<Texture2D> gPrevNormal;
+		std::shared_ptr<Texture2D> gPrevDepthStencil;
+
+		std::shared_ptr<Texture2D> targetSceneColor;
+
+		std::shared_ptr<Texture2D> tempScatterColor;
+		std::shared_ptr<Texture2D> tempTramsmittance;
+		std::shared_ptr<Texture2D> tempSceneColor;
+
+		std::shared_ptr<Texture2D> taaScatterColorTexture;
+		std::shared_ptr<Texture2D> taaTramsmittanceTexture;
+
+		std::shared_ptr<Texture2D> taaHistoryScatterColorTexture;
+		std::shared_ptr<Texture2D> taaHistoryTramsmittanceTexture;
+
+		bool atmoEnable = false;
+	};
+
+	void DrawLut(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
+	bool DrawTAAFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data);
+	void CombinVolume(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
+
+	void SetEnable(bool enable) const;
 
 private:
 	ComputePipeline _lutShader;
 	ComputePipeline _combinShader;
+
+	TAAFilter _taaFilter;
+
+	mutable bool _firstDrawTemporal;
+	mutable bool _enable;
 };

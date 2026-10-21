@@ -7,134 +7,141 @@
 #define work_size_y 16
 #endif
 
-layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
 #include "shader/dataDef/camerauboDef.comp"
 
-layout(binding = 0) uniform Params
+layout (binding = 0) uniform Params
 {
-    uint historyValid;
     float historyWeight;
-    float motionWeightScale;
+	float motionWeightScale;
     float depthThreshold;
+    float positiondistThreshold;
     float normalThreshold;
-};
+};    
 
-layout(binding = 1, rgba16f) uniform image2D outputColor;
-layout(binding = 2) uniform sampler2D currentColorTexture;
-layout(binding = 3) uniform sampler2D historyColorTexture;
-layout(binding = 4) uniform sampler2D currentDepthTexture;
-layout(binding = 5) uniform sampler2D currentNormalTexture;
-layout(binding = 6) uniform sampler2D motionVectorTexture;
-layout(binding = 7) uniform sampler2D previousDepthTexture;
-layout(binding = 8) uniform sampler2D previousNormalTexture;
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D rawTexture;
+layout (binding = 3) uniform sampler2D historyColorTexture;
+layout (binding = 4) uniform sampler2D positionMap;
+layout (binding = 5) uniform sampler2D normalMap;
+layout (binding = 6) uniform sampler2D depthMap;
+layout (binding = 7) uniform sampler2D motionMap;
+layout (binding = 8) uniform sampler2D prevPositionMap;
+layout (binding = 9) uniform sampler2D prevNormalMap;
+layout (binding = 10) uniform sampler2D prevDepthMap;
 
-vec3 RGBToYCoCg(vec3 color)
+
+float DepthBufferConvertToViewDepth(float depth)
 {
-    float co = color.r - color.b;
-    float temp = color.b + co * 0.5;
-    float cg = color.g - temp;
-    float y = temp + cg * 0.5;
-    return vec3(y, co, cg);
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
-vec3 YCoCgToRGB(vec3 color)
-{
-    float temp = color.x - color.z * 0.5;
-    float g = color.z + temp;
-    float b = temp - color.y * 0.5;
-    float r = b + color.y;
-    return vec3(r, g, b);
+void GetDepthNormal(vec2 uv, inout float depth, inout vec3 normal)
+{    
+    depth = texture(depthMap, uv).r;
+    normal = normalize(texture(normalMap, uv).rgb);
 }
 
-float LinearDepth(float depth)
+bool IsSky(float depth)
 {
-    return camera.farPlane * camera.nearPlane /
-        (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+    return depth >= 0.99994;
 }
 
-vec2 ReprojectSky(vec2 uv)
-{
-    vec2 ndc = uv * 2.0 - 1.0;
-    vec4 viewPoint = camera.invProjection * vec4(ndc, 1.0, 1.0);
-    vec3 viewDir = normalize(viewPoint.xyz / viewPoint.w);
-    vec3 worldDir = normalize(mat3(camera.invView) * viewDir);
-    vec4 previousClip = prevcamera.projView * vec4(prevcamera.position + worldDir * camera.farPlane, 1.0);
-    if (previousClip.w <= 0.0)
-        return vec2(-1.0);
-    return previousClip.xy / previousClip.w * 0.5 + 0.5;
-}
-
-void StoreCurrent(ivec2 coord, vec4 color)
-{
-    imageStore(outputColor, coord, color);
-}
-
-void main()
+void main() 
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(outputColor);
-    if (any(greaterThanEqual(coord, size)))
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (any(greaterThanEqual(coord, imageSize)))
         return;
 
-    vec2 currentUV = (vec2(coord) + 0.5) / vec2(size);
-    vec4 currentColor = texelFetch(currentColorTexture, coord, 0);
-    if (historyValid == 0)
-    {
-        StoreCurrent(coord, currentColor);
-        return;
-    }
+    vec2 currentUV = (vec2(coord) + vec2(0.5f)) / imageSize;
+    vec4 currentColor = texture(rawTexture, currentUV).rgba;
 
-    float currentDepth = texelFetch(currentDepthTexture, coord, 0).r;
-    bool isSky = currentDepth >= 0.99994;
-    vec2 motion = texelFetch(motionVectorTexture, coord, 0).xy;
-    vec2 historyUV = isSky ? ReprojectSky(currentUV) : currentUV - motion;
+    vec2 motionVector = clamp(texture(motionMap, currentUV).xy, -1, 1);
+    vec2 historyUV = currentUV - motionVector;
+
+    // 边界检查（如果上一帧没这个像素，直接返回当前帧）
     if (any(lessThanEqual(historyUV, vec2(0.0))) || any(greaterThanEqual(historyUV, vec2(1.0))))
     {
-        StoreCurrent(coord, currentColor);
+        imageStore(outputImage, coord, currentColor);
         return;
     }
 
-    float previousDepth = texture(previousDepthTexture, historyUV).r;
-    bool historyValidAtPixel = false;
-    if (isSky)
-    {
-        historyValidAtPixel = previousDepth >= 0.99994;
-    }
-    else if (previousDepth < 0.99994)
-    {
-        vec3 currentNormal = normalize(texelFetch(currentNormalTexture, coord, 0).xyz);
-        vec3 previousNormal = normalize(texture(previousNormalTexture, historyUV).xyz);
-        float currentLinearDepth = LinearDepth(currentDepth);
-        float previousLinearDepth = LinearDepth(previousDepth);
-        float relativeDepthError = abs(currentLinearDepth - previousLinearDepth) /
-            max(max(currentLinearDepth, previousLinearDepth), 1.0);
-        historyValidAtPixel = dot(currentNormal, previousNormal) >= normalThreshold
-            && relativeDepthError <= depthThreshold;
-    }
+    float currentDepth = texture(depthMap, currentUV).r;
+    float historyDepth = texture(prevDepthMap, historyUV).r;
 
-    if (!historyValidAtPixel)
+    bool currentIsSky = IsSky(currentDepth);
+    bool historyIsSky = IsSky(historyDepth);
+
+    if (currentIsSky != historyIsSky)
     {
-        StoreCurrent(coord, currentColor);
+        imageStore(outputImage, coord, currentColor);
         return;
     }
 
-    vec3 neighborhoodMin = vec3(3.402823e+38);
-    vec3 neighborhoodMax = vec3(-3.402823e+38);
-    for (int y = -1; y <= 1; ++y)
+    bool historyValid = false;
+
+    if (currentIsSky)
     {
-        for (int x = -1; x <= 1; ++x)
-        {
-            ivec2 sampleCoord = clamp(coord + ivec2(x, y), ivec2(0), size - 1);
-            vec3 sampleColor = RGBToYCoCg(texelFetch(currentColorTexture, sampleCoord, 0).rgb);
-            neighborhoodMin = min(neighborhoodMin, sampleColor);
-            neighborhoodMax = max(neighborhoodMax, sampleColor);
+        historyValid = true;
+    }
+    else 
+    {
+        vec3 currentNormal = texture(normalMap, currentUV).xyz;
+        vec3 currentWorldPos = texture(positionMap, currentUV).xyz;
+
+        vec3 historyNormal = texture(prevNormalMap, historyUV).xyz;
+        vec3 historyWorldPos = texture(prevPositionMap, historyUV).xyz;
+
+        float currentLinearDepth = DepthBufferConvertToViewDepth(currentDepth);
+        float historyLinearDepth = DepthBufferConvertToViewDepth(historyDepth);
+
+        float normalSimilarity = dot(currentNormal, historyNormal);
+        bool normalValid = normalSimilarity > normalThreshold;
+
+        float depthDiff = abs(currentLinearDepth - historyLinearDepth); 
+        bool depthValid = depthDiff < depthThreshold;
+
+        vec3 d = currentWorldPos - historyWorldPos;
+        float positionDiff2 = dot(d, d);
+        bool positionValid = positionDiff2 < positiondistThreshold * positiondistThreshold;
+
+        historyValid = normalValid && depthValid && positionValid;
+    }
+
+    if (!historyValid)
+    {
+        imageStore(outputImage, coord, currentColor);
+        return;       
+    }
+
+    vec4 historyColor = texture(historyColorTexture, historyUV).rgba;
+
+    // AABB 钳制（消除拖影）
+    vec4 minColor = currentColor;
+    vec4 maxColor = currentColor;
+
+    // 取周围 11x11 的最小最大值
+    for (int x = -5; x <= 5; x++) {
+        for (int y = -5; y <= 5; y++) {
+            ivec2 sampleCoord = coord + ivec2(x, y);
+            sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
+            vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
+
+            vec4 neighbor = texture(rawTexture, uv).rgba;
+            minColor = min(minColor, neighbor);
+            maxColor = max(maxColor, neighbor);
         }
     }
+    historyColor = clamp(historyColor, minColor * 0.8, maxColor * 1.25);
 
-    vec4 historyColor = texture(historyColorTexture, historyUV);
-    vec3 clippedHistory = YCoCgToRGB(clamp(RGBToYCoCg(historyColor.rgb), neighborhoodMin, neighborhoodMax));
-    float motionPixels = length(motion * vec2(size));
-    float historyBlend = clamp(historyWeight, 0.0, 0.99) * exp(-max(motionWeightScale, 0.0) * motionPixels);
-    StoreCurrent(coord, vec4(mix(currentColor.rgb, clippedHistory, historyBlend), currentColor.a));
+    float motionPixels = length(motionVector * vec2(imageSize));
+    float historyBlendFactor = clamp(historyWeight, 0.0, 0.99) * exp(-max(motionWeightScale, 0.0) * motionPixels);
+
+    vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
+
+    imageStore(outputImage, coord, finalColor);
 }

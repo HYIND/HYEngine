@@ -109,11 +109,30 @@ vec3 GetAtmoExtinction(vec3 p)
     return extinction;
 }
 
+#ifndef Halton_Define
+#define Halton_Define
+// 计算 Halton 序列
+float halton(uint index, int base) 
+{
+    float result = 0.0;
+    float f = 1.0;
+    uint i = index;
+    while (i > 0) 
+    {
+        f /= float(base);
+        result += f * float(i % base);
+        i /= base;
+    }
+    return result;
+}
+#endif
+
 const float AtmoScatterMinStpeSize = 1.5;
 const float AtmosphereSampleStrideMinHeightSize = 120;
 
 void AtmoSingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, DirLight light,
-                            inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor)
+                            inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor,
+                            bool JitterEnable, uint JitterSeed)
 {
     vec3 lightColor = light.color * light.luxIntensity;
 
@@ -144,7 +163,8 @@ void AtmoSingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, DirL
 
     for (uint i = 0; i < sampleCount; i++) {
 
-        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(sampleCount));
+        float mid = JitterEnable ? halton(JitterSeed + i * 456, 2) : 0.5;
+        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + mid)/float(sampleCount));
 
         atmosphereAccumlateStride++;
         camSumExtinction += GetAtmoExtinction(testPoint) * stepSize;

@@ -15,6 +15,9 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 layout (binding = 0) uniform Params
 {
     uint maxAccumulateCount;
+    float depthThreshold;
+    float positiondistThreshold;
+    float normalThreshold;
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -51,21 +54,16 @@ void GetDepthNormal(vec2 uv, inout float depth, inout vec3 normal)
     normal = normalize(texture(normalMap, uv).rgb);
 }
 
-const float depthThreshold = 0.5;
-const float positiondistThreshold = 0.2;
-const float normalThreshold = 0.9;
-
 
 void main() 
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
     ivec2 imageSize = imageSize(outputImage);
 
-    if (coord.x >= imageSize.x || coord.y >= imageSize.y)
+    if (any(greaterThanEqual(coord, imageSize)))
         return;
 
     vec2 currentUV = (vec2(coord) + vec2(0.5f)) / imageSize;
-    
     vec4 currentColor = texture(rawTexture, currentUV).rgba;
 
     float L = GetLuminance(currentColor.rgb);
@@ -87,7 +85,7 @@ void main()
     vec2 historyUV = currentUV - motionVector;
 
     // 边界检查（如果上一帧没这个像素，直接返回当前帧）
-    if (historyUV.x <= 0.0 || historyUV.x >= 1.0 || historyUV.y <= 0.0 || historyUV.y >= 1.0) 
+    if (any(lessThanEqual(historyUV, vec2(0.0))) || any(greaterThanEqual(historyUV, vec2(1.0))))
     {
         imageStore(outputImage, coord, currentColor);
         imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
@@ -160,11 +158,11 @@ void main()
     historyColor  = clamp(historyColor, minColor, maxColor);
 
     uint blendlenth = min(accumulateLength + 1, maxAccumulateCount);
-    float blendFactor = float(blendlenth - 1) / float(blendlenth);
+    float historyBlendFactor = float(blendlenth - 1) / float(blendlenth);
 
-    vec4 finalColor = mix(currentColor, historyColor, blendFactor);
-    float finalM1 = mix(currentM1, historyM1, blendFactor);
-    float finalM2 = mix(currentM2, historyM2, blendFactor);
+    vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
+    float finalM1 = mix(currentM1, historyM1, historyBlendFactor);
+    float finalM2 = mix(currentM2, historyM2, historyBlendFactor);
 
     imageStore(outputImage, coord, finalColor);
     imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), float(accumulateLength + 1)));

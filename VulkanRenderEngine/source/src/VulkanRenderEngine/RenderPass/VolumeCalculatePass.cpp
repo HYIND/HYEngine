@@ -1,10 +1,13 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/AtmospherePreCalculatePass.h"
 
 VolumeCalculatePass::VolumeCalculatePass(
 	const std::string& lutShaderPath,
 	const std::string& combinShaderPath
-)
+) :
+	_firstDrawTemporal(true),
+	_enable(false)
 {
 	{
 		ComputePipelineConfig config;
@@ -61,6 +64,8 @@ struct VolumeParams
 {
 	uint32_t AtmoVolumeEnable = 0;
 	uint32_t ExponentialHeightFogEnable = 0;
+	uint32_t JitterEnable = 1;
+	uint32_t JitterSeed = 0;
 };
 
 struct alignas(16) ExponentialHeightFogShaderParams
@@ -78,7 +83,9 @@ static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
 
 void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (!ShouldExecute(registry, state))
+	bool enable = ShouldExecute(registry, state);
+	SetEnable(enable);
+	if (!enable)
 		return;
 
 	bool atmoEnable = state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
@@ -137,8 +144,10 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 
 	{
 		VolumeParams params{
-			.AtmoVolumeEnable = atmoEnable,
-			.ExponentialHeightFogEnable = exponentialHeightFogEnable
+			.AtmoVolumeEnable = (uint32_t)atmoEnable,
+			.ExponentialHeightFogEnable = (uint32_t)exponentialHeightFogEnable,
+			.JitterEnable = (uint32_t)true,
+			.JitterSeed = state.renderRecord.frameIndex % 100000
 		};
 		auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 		paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
@@ -161,67 +170,54 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	if (!atmoEnable && !exponentialHeightFogEnable)
 		return;
 
-	auto sceneColorBuffer = ctx.GetExternal(0);
-	auto sceneDepthBuffer = ctx.GetFrameLocal(0);
+	FrameRenderData data;
+	data.gPosition = ctx.GetInput(0);
+	data.gNormal = ctx.GetInput(1);
+	data.gDepthStencil = ctx.GetFrameLocal(0);
+	data.atlasShadowMap = ctx.GetInput(2);
+	data.gMotionVector = ctx.GetInput(3);
+	data.gPrevPosition = ctx.GetInput(4);
+	data.gPrevNormal = ctx.GetInput(5);
+	data.gPrevDepthStencil = ctx.GetInput(6);
 
-	auto tempColor = ctx.GetTemp(0);
-	auto tempScatterColor = ctx.GetTemp(1);
-	auto tempTramsmittance = ctx.GetTemp(2);
+	data.targetSceneColor = ctx.GetExternal(0);
 
-	auto atlasShadowMap = ctx.GetInput(0);
-	auto gPosition = ctx.GetInput(1);
+	data.tempScatterColor = ctx.GetTemp(0);
+	data.tempTramsmittance = ctx.GetTemp(1);
+	data.tempSceneColor = ctx.GetTemp(2);
+	data.taaScatterColorTexture = ctx.GetTemp(3);
+	data.taaTramsmittanceTexture = ctx.GetTemp(4);
 
-	if (!sceneColorBuffer
-		|| !sceneDepthBuffer
-		|| !tempColor
-		|| sceneColorBuffer->IsEmpty()
-		|| sceneDepthBuffer->IsEmpty()
-		|| tempColor->IsEmpty()
-		)
-		return;
+	data.taaHistoryScatterColorTexture = ctx.GetPersitent(0);
+	data.taaHistoryTramsmittanceTexture = ctx.GetPersitent(1);
+
+	data.atmoEnable = atmoEnable;
 
 	auto cmd = cmdCtx.GetCmd();
 
-	DrawLut(
-		cmd,
-		registry,
-		state,
-		tempScatterColor,
-		tempTramsmittance,
-		sceneDepthBuffer,
-		atlasShadowMap,
-		gPosition,
-		atmoEnable
-	);
+	DrawLut(cmd, registry, state, data);
+	if (!DrawTAAFilter(cmd, state, data))
+		return;
 
-	CombinVolume(
-		cmd,
-		registry,
-		state,
-		sceneColorBuffer,
-		tempColor,
-		sceneDepthBuffer,
-		tempScatterColor,
-		tempTramsmittance,
-		atmoEnable
-	);
+	bool copyToHistory = Texture2D::CopyTextureAsync(cmd, data.taaScatterColorTexture, data.taaHistoryScatterColorTexture)
+		&& Texture2D::CopyTextureAsync(cmd, data.taaTramsmittanceTexture, data.taaHistoryTramsmittanceTexture);
+	if (cmd->IsRecording())
+		cmd->SubmitToQueue();
+	if (!copyToHistory)
+		return;
 
+	CombinVolume(cmd, registry, state, data);
 }
 
 void VolumeCalculatePass::DrawLut(
 	std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
 	RenderGraph::FrameDataRegistry& registry,
 	RenderState& state,
-	std::shared_ptr<Texture2D>& tempScatterColor,
-	std::shared_ptr<Texture2D>& tempTramsmittance,
-	std::shared_ptr<Texture2D>& sceneDepthBuffer,
-	std::shared_ptr<Texture2D>& atlasShadowMap,
-	std::shared_ptr<Texture2D>& gPosition,
-	bool atmoEnable
+	FrameRenderData& data
 )
 {
-	uint32_t width = tempScatterColor->GetWidth();
-	uint32_t height = tempScatterColor->GetHeight();
+	uint32_t width = data.tempScatterColor->GetWidth();
+	uint32_t height = data.tempScatterColor->GetHeight();
 	auto& binding = *registry.Get<ComputeBindingRecord>("lutBinding");
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
@@ -233,15 +229,15 @@ void VolumeCalculatePass::DrawLut(
 		state.lights.ssbo_dirLightCascadeDistances
 	);
 
-	binding.SetStorageImage(tempScatterColor, vk::ImageAspectFlagBits::eColor, 3);
-	binding.SetStorageImage(tempTramsmittance, vk::ImageAspectFlagBits::eColor, 4);
-	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 5);
-	if (atmoEnable)
+	binding.SetStorageImage(data.tempScatterColor, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetStorageImage(data.tempTramsmittance, vk::ImageAspectFlagBits::eColor, 4);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 5);
+	if (data.atmoEnable)
 	{
 		binding.SetUniformTexture(state.skyAtmosphereParams.transmittanceLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
-	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
+	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
 
 	_lutShader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
@@ -249,38 +245,99 @@ void VolumeCalculatePass::DrawLut(
 	cmd->SubmitToQueue();
 }
 
+bool VolumeCalculatePass::DrawTAAFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data)
+{
+	auto& sourceScatter = data.tempScatterColor;
+	auto& sourceTramsmittance = data.tempTramsmittance;
+	auto& historyScatter = data.taaHistoryScatterColorTexture;
+	auto& historyTramsmittance = data.taaHistoryTramsmittanceTexture;
+	auto& targetScatter = data.taaScatterColorTexture;
+	auto& targetTramsmittance = data.taaTramsmittanceTexture;
+
+
+	if (_firstDrawTemporal)
+	{
+		bool result = Texture2D::CopyTextureAsync(cmd, sourceScatter, targetScatter) && Texture2D::CopyTextureAsync(cmd, sourceTramsmittance, targetTramsmittance);
+		if (cmd->IsRecording())
+			cmd->SubmitToQueue();
+		if (result)
+			_firstDrawTemporal = false;
+		return result;
+	}
+
+	TAAFilter::Params params{
+	};
+
+	std::vector<std::tuple<std::shared_ptr<Texture2D>, std::shared_ptr<Texture2D>, std::shared_ptr<Texture2D>>> tuples =
+	{
+		std::tuple{ sourceScatter, historyScatter, targetScatter }
+		//std::tuple{ sourceTramsmittance, historyTramsmittance, targetTramsmittance }
+	};
+
+	for (auto& [source, history, target] : tuples)
+	{
+		_taaFilter.Execute(
+			cmd,
+			source,
+			history,
+			data.gPosition,
+			data.gNormal,
+			data.gDepthStencil,
+			data.gMotionVector,
+			data.gPrevPosition,
+			data.gPrevNormal,
+			data.gPrevDepthStencil,
+			target,
+			params,
+			state.camera.curUBO,
+			state.camera.prevUBO
+		);
+	}
+
+	cmd->SubmitToQueue();
+
+	return true;
+}
+
 void VolumeCalculatePass::CombinVolume(
 	std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,
 	RenderGraph::FrameDataRegistry& registry,
 	RenderState& state,
-	std::shared_ptr<Texture2D>& sceneColorBuffer,
-	std::shared_ptr<Texture2D>& tempColor,
-	std::shared_ptr<Texture2D>& sceneDepthBuffer,
-	std::shared_ptr<Texture2D>& tempScatterColor,
-	std::shared_ptr<Texture2D>& tempTramsmittance,
-	bool atmoEnable
+	FrameRenderData& data
 )
 {
-	Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColor);
-	tempColor->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	auto& target = data.targetSceneColor;
 
-	uint32_t width = sceneColorBuffer->GetWidth();
-	uint32_t height = sceneColorBuffer->GetHeight();
+	uint32_t width = target->GetWidth();
+	uint32_t height = target->GetHeight();
+
+	Texture2D::CopyTextureAsync(cmd, target, data.tempSceneColor);
+	data.tempSceneColor->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+
 	auto& binding = *registry.Get<ComputeBindingRecord>("combinBinding");
 
-	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 3);
-	binding.SetUniformTexture(tempColor, vk::ImageAspectFlagBits::eColor, 4);
-	binding.SetUniformTexture(sceneDepthBuffer, vk::ImageAspectFlagBits::eDepth, 5);
-	if (atmoEnable)
+	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 3);
+	binding.SetUniformTexture(data.tempSceneColor, vk::ImageAspectFlagBits::eColor, 4);
+	binding.SetUniformTexture(data.gDepthStencil, vk::ImageAspectFlagBits::eDepth, 5);
+	if (data.atmoEnable)
 	{
 		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	binding.SetUniformTexture(tempScatterColor, vk::ImageAspectFlagBits::eColor, 7);
-	binding.SetUniformTexture(tempTramsmittance, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(data.taaScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.tempTramsmittance, vk::ImageAspectFlagBits::eColor, 8);
 
 	_combinShader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
+}
+
+void VolumeCalculatePass::SetEnable(bool enable) const
+{
+	if (_enable == enable)
+		return;
+	_enable = enable;
+	if (_enable)
+		_firstDrawTemporal = true;
 }
 

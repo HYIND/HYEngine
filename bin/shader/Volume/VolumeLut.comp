@@ -17,6 +17,8 @@ layout (binding = 2) uniform Params
 {
     bool AtmoVolumeEnable;
     bool ExponentialHeightFogEnable;
+    bool JitterEnable;
+    uint JitterSeed;
 };
 
 layout (binding = 3, rgba16f) uniform image2D outputScatterColor;
@@ -64,6 +66,15 @@ bool InSpotShadow(SpotLight light, vec3 fragPos)
 #include "shader/Volume/AtmoVolume.comp"
 #include "shader/Volume/FogVolume.comp"
 
+uint GetJetterValue(uint sampleIndex)
+{
+    uint seed = uint(gl_GlobalInvocationID.x) * 197u 
+        + uint(gl_GlobalInvocationID.y) * 927u 
+        + uint(sampleIndex) * 2697u 
+        + uint(JitterSeed) * 777u;
+    return seed;
+}
+
 void CalculateAtmoVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor)
 {
     vec3 startPosInPlanet = startPos + vec3(0, PlanetRadius, 0.f);
@@ -71,7 +82,7 @@ void CalculateAtmoVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmitt
 
     vec3 T = vec3(1);
     vec3 sc = vec3(0);
-    AtmoSingleScatterToFrag(startPosInPlanet, targetPosInPlanet, dirLightMetaData.info[0], T, sc);
+    AtmoSingleScatterToFrag(startPosInPlanet, targetPosInPlanet, dirLightMetaData.info[0], T, sc, JitterEnable, JitterEnable ? GetJetterValue(0) : 0);
     atomTramsmittanceFragToCam *= T;
     scatterColor +=sc;
 }
@@ -80,7 +91,7 @@ void CalculateLightVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmit
 {
     vec3 T = vec3(1);
     vec3 sc = vec3(0);
-    LightSingleScatterToFrag(startPos, targetPos, T, sc);
+    LightSingleScatterToFrag(startPos, targetPos, T, sc, JitterEnable, JitterEnable ? GetJetterValue(1) : 0);
     atomTramsmittanceFragToCam *= T;
     scatterColor +=sc;
 }
