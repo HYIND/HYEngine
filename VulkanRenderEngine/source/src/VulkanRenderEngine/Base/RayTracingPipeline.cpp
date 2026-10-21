@@ -91,14 +91,24 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 			return createInfo;
 		};
 
+	auto ProcessSPIRV =
+		[&](const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {})
+		->std::tuple<std::vector<uint32_t>, bool>
+		{
+			auto [code, res] = ReadSPIRVFromSourcePath(path, type, defines);
+			if (!res)
+				std::cerr << std::format("[GraphicsPipeline] SPIRV 编译失败！path = {}", path);
+			return { code,res };
+		};
+
 	uint32_t index = 0;
 	uint32_t closestHitIndex = VK_SHADER_UNUSED_KHR;
 	uint32_t anyHitIndex = VK_SHADER_UNUSED_KHR;
 	uint32_t intersectionIndex = VK_SHADER_UNUSED_KHR;
 
 	if (!config.raygenPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.raygenPath, ShaderType::RayGen, config.defines);
-		if (CreateShaderModule(code, m_raygenModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.raygenPath, ShaderType::RayGen, config.defines);
+		if (!res || CreateShaderModule(code, m_raygenModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_raygenModule, vk::ShaderStageFlagBits::eRaygenKHR));
 
 		vk::RayTracingShaderGroupCreateInfoKHR group{};
@@ -112,8 +122,8 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 	}
 
 	if (!config.missPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.missPath, ShaderType::Miss, config.defines);
-		if (CreateShaderModule(code, m_missModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.missPath, ShaderType::Miss, config.defines);
+		if (!res || CreateShaderModule(code, m_missModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_missModule, vk::ShaderStageFlagBits::eMissKHR));
 
 		vk::RayTracingShaderGroupCreateInfoKHR group{};
@@ -127,24 +137,24 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 	}
 
 	if (!config.closestHitPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.closestHitPath, ShaderType::ClosestHit, config.defines);
-		if (CreateShaderModule(code, m_closestHitModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.closestHitPath, ShaderType::ClosestHit, config.defines);
+		if (!res || CreateShaderModule(code, m_closestHitModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_closestHitModule, vk::ShaderStageFlagBits::eClosestHitKHR));
 
 		closestHitIndex = index++;
 	}
 
 	if (!config.anyHitPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.anyHitPath, ShaderType::AnyHit, config.defines);
-		if (CreateShaderModule(code, m_anyHitModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.anyHitPath, ShaderType::AnyHit, config.defines);
+		if (!res || CreateShaderModule(code, m_anyHitModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_anyHitModule, vk::ShaderStageFlagBits::eAnyHitKHR));
 
 		anyHitIndex = index++;
 	}
 
 	if (!config.intersectionPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.intersectionPath, ShaderType::Intersection, config.defines);
-		if (CreateShaderModule(code, m_intersectionPath) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.intersectionPath, ShaderType::Intersection, config.defines);
+		if (!res || CreateShaderModule(code, m_intersectionPath) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_intersectionPath, vk::ShaderStageFlagBits::eIntersectionKHR));
 
 		intersectionIndex = index++;
@@ -172,8 +182,8 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 	}
 
 	if (!config.callablePath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.callablePath, ShaderType::Callable, config.defines);
-		if (CreateShaderModule(code, m_callableModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.callablePath, ShaderType::Callable, config.defines);
+		if (!res || CreateShaderModule(code, m_callableModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_callableModule, vk::ShaderStageFlagBits::eCallableKHR));
 
 		vk::RayTracingShaderGroupCreateInfoKHR group{};

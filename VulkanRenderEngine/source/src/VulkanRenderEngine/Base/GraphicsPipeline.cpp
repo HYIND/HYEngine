@@ -272,25 +272,34 @@ bool GraphicsPipeline::CreateShaderStages(GraphicsPipelineConfig& config)
 			return createInfo;
 		};
 
+	auto ProcessSPIRV =
+		[&](const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {})
+		->std::tuple<std::vector<uint32_t>, bool>
+		{
+			auto [code, res] = ReadSPIRVFromSourcePath(path, type, defines);
+			if (!res)
+				std::cerr << std::format("[GraphicsPipeline] SPIRV 编译失败！path = {}", path);
+			return { code,res };
+		};
 
 	// 顶点着色器
 	if (!config.vertexPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.vertexPath, ShaderType::Vertex, config.defines);
-		if (CreateShaderModule(code, m_vertModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.vertexPath, ShaderType::Vertex, config.defines);
+		if (!res || CreateShaderModule(code, m_vertModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_vertModule, vk::ShaderStageFlagBits::eVertex));
 	}
 
 	// 片段着色器
 	if (!config.fragmentPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.fragmentPath, ShaderType::Fragment, config.defines);
-		if (CreateShaderModule(code, m_fragModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.fragmentPath, ShaderType::Fragment, config.defines);
+		if (!res || CreateShaderModule(code, m_fragModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_fragModule, vk::ShaderStageFlagBits::eFragment));
 	}
 
 	// 几何着色器
 	if (!config.geometryPath.empty()) {
-		auto code = ReadSPIRVFromSourcePath(config.geometryPath, ShaderType::Geometry, config.defines);
-		if (CreateShaderModule(code, m_geomModule) != vk::Result::eSuccess) return false;
+		auto [code, res] = ProcessSPIRV(config.geometryPath, ShaderType::Geometry, config.defines);
+		if (!res || CreateShaderModule(code, m_geomModule) != vk::Result::eSuccess) return false;
 		m_shaderStages.push_back(GetStageCreateInfo(m_geomModule, vk::ShaderStageFlagBits::eGeometry));
 	}
 

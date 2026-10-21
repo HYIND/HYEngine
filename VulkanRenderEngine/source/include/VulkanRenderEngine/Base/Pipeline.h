@@ -195,9 +195,9 @@ public:
 	VKCore::VulkanDevice* GetDevice() const;
 	bool IsValid() const;
 
-	static std::vector<uint32_t> ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {});
-	static std::vector<uint32_t> ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines = {});
-	static std::vector<uint32_t> ReadSPIRVBinaryPath(const std::string& path);
+	static std::tuple<std::vector<uint32_t>, bool> ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines = {});
+	static std::tuple<std::vector<uint32_t>, bool> ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines = {});
+	static std::tuple<std::vector<uint32_t>, bool> ReadSPIRVBinaryPath(const std::string& path);
 
 	virtual void Release();
 

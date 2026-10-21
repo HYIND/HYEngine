@@ -69,7 +69,12 @@ bool ComputePipeline::Create(
 	}
 
 	// 创建 Compute ShaderModule
-	auto code = ReadSPIRVFromSourcePath(config.computePath, ShaderType::Compute, config.defines);
+	auto [code, res] = ReadSPIRVFromSourcePath(config.computePath, ShaderType::Compute, config.defines);
+	if (!res) {
+		std::cerr << std::format("[ComputePipeline] SPIRV 编译失败！path = {}", config.computePath);
+		return false;
+	}
+
 	if (CreateShaderModule(code, m_computeModule) != vk::Result::eSuccess) {
 		return false;
 	}
