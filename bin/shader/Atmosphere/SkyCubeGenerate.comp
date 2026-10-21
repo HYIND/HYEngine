@@ -86,15 +86,15 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
     vec3 viewDir = normalize(targetPosInPlanet - startPosInPlanet);
     vec3 toLightDir = -lightDir;
     float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
-    float stepSize = dstToTarget / float(ScatterPathSampleCount);
+    float stepSize = dstToTarget / float(AtmoScatterPathSampleCount);
     vec3 color = vec3(0.f);
 
     // 累积光学厚度
     vec3 camSumExtinction = vec3(0.f);
 
-    for (uint i = 0; i < ScatterPathSampleCount; i++) {
+    for (uint i = 0; i < AtmoScatterPathSampleCount; i++) {
 
-        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(ScatterPathSampleCount));
+        vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + float(0.5))/float(AtmoScatterPathSampleCount));
 
         vec3 extinction = GetExtinction(testPoint) * stepSize;
         camSumExtinction += extinction;

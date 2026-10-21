@@ -3,6 +3,7 @@
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "RenderPassBase.h"
 #include "VulkanRenderEngine/General/TAAFilter.h"
+#include "VulkanRenderEngine/General/AtrousGaussFilter.h"
 
 class VolumeCalculatePass :public RenderPassBase
 {
@@ -39,16 +40,16 @@ private:
 		std::shared_ptr<Texture2D> tempSceneColor;
 
 		std::shared_ptr<Texture2D> taaScatterColorTexture;
-		std::shared_ptr<Texture2D> taaTramsmittanceTexture;
+		std::shared_ptr<Texture2D> taaGaussScatterColorTexture;
 
 		std::shared_ptr<Texture2D> taaHistoryScatterColorTexture;
-		std::shared_ptr<Texture2D> taaHistoryTramsmittanceTexture;
 
 		bool atmoEnable = false;
 	};
 
 	void DrawLut(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
 	bool DrawTAAFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data);
+	bool DrawGaussFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data);
 	void CombinVolume(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
 
 	void SetEnable(bool enable) const;
@@ -58,6 +59,7 @@ private:
 	ComputePipeline _combinShader;
 
 	TAAFilter _taaFilter;
+	AtrousGaussFilter _gaussFilter;
 
 	mutable bool _firstDrawTemporal;
 	mutable bool _enable;

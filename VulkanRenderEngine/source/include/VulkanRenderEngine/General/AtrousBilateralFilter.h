@@ -14,7 +14,7 @@ public:
 	};
 
 public:
-	AtrousBilateralFilter(const std::string& atrousComputeShaderPath = "shader/BilateralFilter/Atrous-BilateralFilter.comp");
+	AtrousBilateralFilter(const std::string& atrousComputeShaderPath = "shader/Filter/Atrous-BilateralFilter.comp");
 
 	void Execute(
 		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,

@@ -921,11 +921,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TempTramsmittance"), computeWriteLayout },
 				ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempSceneColor"), computeWriteLayout },
 				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAScatterColorTexture"), computeReadLayout },
-				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TAATramsmittance"),computeReadLayout }
+				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TAAGaussScatterColorTexture"),computeReadLayout }
 			)
 			.Persistent(
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout },
-				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_HistoryTramsmittanceTexture"), computeReadLayout }
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout }
 			)
 			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
 			.After(atmospherePreCalculateNode, opaqueFence, transprantFence)

@@ -57,9 +57,9 @@ vec4 Transmittance(float height, float cos_theta)
 
     vec3 sum = vec3(0.0);
 
-    for(uint i = 0; i < TransmittanceSampleCount; i++)
+    for(uint i = 0; i < AtmoTransmittanceSampleCount; i++)
     {
-        vec3 p = mix(p1, p2, float(i + 0.5) / TransmittanceSampleCount);
+        vec3 p = mix(p1, p2, float(i + 0.5) / AtmoTransmittanceSampleCount);
 
         float hSample = length(p) - PlanetRadius;
         hSample = max(0.0, hSample);
@@ -71,7 +71,7 @@ vec4 Transmittance(float height, float cos_theta)
         sum += extinction;
     }
 
-    float ds = dist / float(TransmittanceSampleCount);
+    float ds = dist / float(AtmoTransmittanceSampleCount);
     vec3 T = exp(-sum * ds);
     T = max(T, vec3(1e-6));
 

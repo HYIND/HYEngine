@@ -165,6 +165,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousGaussFilter.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IBLImageBuilder.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\ImageLayoutWrapper.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectDrawManager.h" />
@@ -265,6 +266,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousBilateralFilter.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\BVHBuilder.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\DDSLoader.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousGaussFilter.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\GeneralSegmentBuffer.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\IBLImageBuilder.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp" />

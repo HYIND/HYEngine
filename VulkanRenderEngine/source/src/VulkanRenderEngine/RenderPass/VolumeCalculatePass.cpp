@@ -77,6 +77,7 @@ struct alignas(16) ExponentialHeightFogShaderParams
 	float fogHeightFalloff;
 	uint32_t VolumeFogEnable;
 	float FogMaxOpacity;
+	uint32_t VolumeLightScatterPathSampleCount;
 };
 
 static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
@@ -135,7 +136,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 		.fogStartDistance = fogOptions.fogStartDistance,
 		.fogHeightFalloff = fogOptions.fogHeightFalloff / 100.0f,
 		.VolumeFogEnable = volumeFogEnable,
-		.FogMaxOpacity = std::clamp(fogOptions.fogMaxOpacity, 0.0f, 1.0f)
+		.FogMaxOpacity = std::clamp(fogOptions.fogMaxOpacity, 0.0f, 1.0f),
+		.VolumeLightScatterPathSampleCount = std::max(1u, fogOptions.VolumeLightScatterPathSampleCount)
 	};
 	auto fogParamsUBO = std::make_shared<UniformBlock>(sizeof(fogParams));
 	fogParamsUBO->WriteDataAsync(cmd, &fogParams, sizeof(fogParams));
@@ -186,10 +188,9 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	data.tempTramsmittance = ctx.GetTemp(1);
 	data.tempSceneColor = ctx.GetTemp(2);
 	data.taaScatterColorTexture = ctx.GetTemp(3);
-	data.taaTramsmittanceTexture = ctx.GetTemp(4);
+	data.taaGaussScatterColorTexture = ctx.GetTemp(4);
 
 	data.taaHistoryScatterColorTexture = ctx.GetPersitent(0);
-	data.taaHistoryTramsmittanceTexture = ctx.GetPersitent(1);
 
 	data.atmoEnable = atmoEnable;
 
@@ -199,11 +200,13 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	if (!DrawTAAFilter(cmd, state, data))
 		return;
 
-	bool copyToHistory = Texture2D::CopyTextureAsync(cmd, data.taaScatterColorTexture, data.taaHistoryScatterColorTexture)
-		&& Texture2D::CopyTextureAsync(cmd, data.taaTramsmittanceTexture, data.taaHistoryTramsmittanceTexture);
+	bool copyToHistory = Texture2D::CopyTextureAsync(cmd, data.taaScatterColorTexture, data.taaHistoryScatterColorTexture);
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
 	if (!copyToHistory)
+		return;
+
+	if (!DrawGaussFilter(cmd, state, data))
 		return;
 
 	CombinVolume(cmd, registry, state, data);
@@ -248,16 +251,12 @@ void VolumeCalculatePass::DrawLut(
 bool VolumeCalculatePass::DrawTAAFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data)
 {
 	auto& sourceScatter = data.tempScatterColor;
-	auto& sourceTramsmittance = data.tempTramsmittance;
 	auto& historyScatter = data.taaHistoryScatterColorTexture;
-	auto& historyTramsmittance = data.taaHistoryTramsmittanceTexture;
 	auto& targetScatter = data.taaScatterColorTexture;
-	auto& targetTramsmittance = data.taaTramsmittanceTexture;
-
 
 	if (_firstDrawTemporal)
 	{
-		bool result = Texture2D::CopyTextureAsync(cmd, sourceScatter, targetScatter) && Texture2D::CopyTextureAsync(cmd, sourceTramsmittance, targetTramsmittance);
+		bool result = Texture2D::CopyTextureAsync(cmd, sourceScatter, targetScatter);
 		if (cmd->IsRecording())
 			cmd->SubmitToQueue();
 		if (result)
@@ -268,31 +267,45 @@ bool VolumeCalculatePass::DrawTAAFilter(const std::shared_ptr<VKWrapper::VKComma
 	TAAFilter::Params params{
 	};
 
-	std::vector<std::tuple<std::shared_ptr<Texture2D>, std::shared_ptr<Texture2D>, std::shared_ptr<Texture2D>>> tuples =
-	{
-		std::tuple{ sourceScatter, historyScatter, targetScatter }
-		//std::tuple{ sourceTramsmittance, historyTramsmittance, targetTramsmittance }
+	_taaFilter.Execute(
+		cmd,
+		sourceScatter,
+		historyScatter,
+		data.gPosition,
+		data.gNormal,
+		data.gDepthStencil,
+		data.gMotionVector,
+		data.gPrevPosition,
+		data.gPrevNormal,
+		data.gPrevDepthStencil,
+		targetScatter,
+		params,
+		state.camera.curUBO,
+		state.camera.prevUBO
+	);
+
+	cmd->SubmitToQueue();
+
+	return true;
+}
+
+bool VolumeCalculatePass::DrawGaussFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data)
+{
+	auto& source = data.taaScatterColorTexture;
+	auto& target = data.taaGaussScatterColorTexture;
+
+	AtrousGaussFilter::Params params{
+		.sigma = 1.0,
+		.kernelRadius = 2,
+		.kernelStep = 1
 	};
 
-	for (auto& [source, history, target] : tuples)
-	{
-		_taaFilter.Execute(
-			cmd,
-			source,
-			history,
-			data.gPosition,
-			data.gNormal,
-			data.gDepthStencil,
-			data.gMotionVector,
-			data.gPrevPosition,
-			data.gPrevNormal,
-			data.gPrevDepthStencil,
-			target,
-			params,
-			state.camera.curUBO,
-			state.camera.prevUBO
-		);
-	}
+	_gaussFilter.Execute(
+		cmd,
+		source,
+		target,
+		params
+	);
 
 	cmd->SubmitToQueue();
 
@@ -323,7 +336,7 @@ void VolumeCalculatePass::CombinVolume(
 	{
 		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	binding.SetUniformTexture(data.taaScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(data.taaGaussScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetUniformTexture(data.tempTramsmittance, vk::ImageAspectFlagBits::eColor, 8);
 
 	_combinShader.Bind(cmd, binding);
