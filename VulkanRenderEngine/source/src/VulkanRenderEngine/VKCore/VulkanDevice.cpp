@@ -302,16 +302,16 @@ vk::Result VulkanDevice::Create(
 	if (info.computeQueueFamily != VK_QUEUE_FAMILY_IGNORED)
 		m_queue_compute = m_device.getQueue(info.computeQueueFamily, 0);
 
-	m_queue_graphics_mutex = std::make_shared<SpinLock>();
+	m_queue_graphics_mutex = std::make_shared<RecursiveSpinLock>();
 
 	if (m_queue_presentation == m_queue_graphics)
 		m_queue_presentation_mutex = m_queue_graphics_mutex;
 	else
-		m_queue_presentation_mutex = std::make_shared<SpinLock>();
+		m_queue_presentation_mutex = std::make_shared<RecursiveSpinLock>();
 
 	if (m_queue_compute == m_queue_graphics) m_queue_compute_mutex = m_queue_graphics_mutex;
 	else if (m_queue_compute == m_queue_presentation) m_queue_compute_mutex = m_queue_presentation_mutex;
-	else m_queue_compute_mutex = std::make_shared<SpinLock>();
+	else m_queue_compute_mutex = std::make_shared<RecursiveSpinLock>();
 
 	m_instance = instance;
 
@@ -363,17 +363,17 @@ vk::Queue VulkanDevice::GetPresentQueue() const { return m_queue_presentation; }
 
 vk::Queue VulkanDevice::GetComputeQueue() const { return m_queue_compute; }
 
-SpinLock& VKCore::VulkanDevice::GetGraphicsQueueMutex()
+RecursiveSpinLock& VKCore::VulkanDevice::GetGraphicsQueueMutex()
 {
 	return *m_queue_graphics_mutex;
 }
 
-SpinLock& VKCore::VulkanDevice::GetPresentQueueMutex()
+RecursiveSpinLock& VKCore::VulkanDevice::GetPresentQueueMutex()
 {
 	return *m_queue_presentation_mutex;
 }
 
-SpinLock& VKCore::VulkanDevice::GetComputeQueueMutex()
+RecursiveSpinLock& VKCore::VulkanDevice::GetComputeQueueMutex()
 {
 	return *m_queue_compute_mutex;
 }
