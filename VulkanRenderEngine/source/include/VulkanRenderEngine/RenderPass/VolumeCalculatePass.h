@@ -45,6 +45,8 @@ private:
 		std::shared_ptr<Texture2D> taaHistoryScatterColorTexture;
 
 		bool atmoEnable = false;
+		bool exponentialHeightFogEnable = false;
+		bool volumeFogEnable = false;
 	};
 
 	void DrawLut(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
