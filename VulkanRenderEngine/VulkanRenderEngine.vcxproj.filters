@@ -353,6 +353,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\VolumeCalculatePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousGaussFilter.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -594,6 +597,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\VolumeCalculatePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousGaussFilter.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

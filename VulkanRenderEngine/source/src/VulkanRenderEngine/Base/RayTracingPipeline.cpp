@@ -97,7 +97,7 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 		{
 			auto [code, res] = ReadSPIRVFromSourcePath(path, type, defines);
 			if (!res)
-				std::cerr << std::format("[GraphicsPipeline] SPIRV 编译失败！path = {}", path);
+				std::cerr << std::format("[GraphicsPipeline] SPIRV 编译失败！path = {}\n", path);
 			return { code,res };
 		};
 

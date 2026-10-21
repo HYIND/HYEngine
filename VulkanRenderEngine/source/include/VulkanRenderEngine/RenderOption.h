@@ -78,12 +78,13 @@ struct RenderOption
 
 	struct alignas(16) ExponentialHeightFogParams {
 		glm::vec3 fogAlbedo = glm::vec3(1.0, 1.0, 1.0);
-		float globalDensity = 0.02;			// 全局雾浓度
-		float fogStartHeight = -45.f;       // 雾起始高度
-		float fogStartDistance = 100.f;		// 雾起始距离
-		float fogHeightFalloff = 0.5;		// 高度衰减系数
+		float globalDensity = 0.03;			// 全局雾浓度
+		float fogStartHeight = -25.f;       // 雾起始高度
+		float fogStartDistance = 10.f;		// 雾起始距离
+		float fogHeightFalloff = 0.6;		// 高度衰减系数
 		bool volumeFogOn = false;
 		float fogMaxOpacity = 1.0f;			// 非体积高度雾的最大不透明度
+		uint32_t VolumeLightScatterPathSampleCount = 20; // 体积光步进采样数
 	} exponentialHeightFogParams;
 
 	struct AtmosphereParams {

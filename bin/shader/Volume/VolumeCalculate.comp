@@ -22,8 +22,8 @@ layout (binding = 0) uniform AtmoParams
     float OzoneLevelCenterHeight;
     float OzoneLevelWidth;
 
-    uint ScatterPathSampleCount;
-    uint TransmittanceSampleCount;
+    uint AtmoScatterPathSampleCount;
+    uint AtmoTransmittanceSampleCount;
 };
 
 layout (binding = 1) uniform FogParams

@@ -108,7 +108,7 @@ vec3 Transmittance(vec3 p1, vec3 p2)
         1u,
         min(
             uint(ceil(heightDelta / TransmittanceMinHeightSize)),
-            TransmittanceSampleCount
+            AtmoTransmittanceSampleCount
         )
     );
 
@@ -159,7 +159,7 @@ vec3 SingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
     float heightDelta = abs((length(startPosInPlanet) - PlanetRadius) - (length(targetPosInPlanet) - PlanetRadius));
     float dstToTarget = distance(startPosInPlanet, targetPosInPlanet);
 
-    uint sampleCount = max(1u, min(uint(ceil(dstToTarget / ScatterMinStpeSize)), ScatterPathSampleCount));
+    uint sampleCount = max(1u, min(uint(ceil(dstToTarget / ScatterMinStpeSize)), AtmoScatterPathSampleCount));
 
     float stepSize = dstToTarget / float(sampleCount);
     float stepHeightSize = max(heightDelta / float(sampleCount), 1e-2);

@@ -1,0 +1,62 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+layout (binding = 0) uniform Params
+{
+    float sigma;
+    uint kernelRadius;
+    uint kernelStep;
+};
+
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D rawImage;
+
+void main() 
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (any(greaterThanEqual(coord, imageSize)))
+        return;
+
+    vec2 uvCenter = (vec2(coord) + vec2(0.5f)) / imageSize;
+    
+    vec4 total = vec4(0.0);
+    float totalWeight = 0.0;
+
+    // Atrous 核心
+    int curStep = int(kernelStep);
+    int radius = int(kernelRadius);
+
+    float sigmaTwo = 2.0 * sigma * sigma;
+
+    for (int x = -radius; x <= radius; x++) 
+    {
+        for (int y = -radius; y <= radius; y++) 
+        {
+            ivec2 stepCoord = ivec2(x, y) * curStep;
+            ivec2 sampleCoord = coord + stepCoord;
+            sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
+
+            vec2 uv = (vec2(sampleCoord) + vec2(0.5)) / imageSize;
+            vec4 sampleColor = texture(rawImage, uv);
+
+            float weight = exp(-(x*x + y*y) / sigmaTwo);
+
+            total += sampleColor * weight;
+            totalWeight += weight;
+        }
+    }
+
+    vec4 result = (totalWeight > 1e-5) ? total / totalWeight : texture(rawImage, uvCenter);
+
+    imageStore(outputImage, coord, result);
+}

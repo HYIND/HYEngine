@@ -8,6 +8,8 @@ layout (binding = 1) uniform FogParams
     float fogHeightFalloff;     // 高度衰减系数
     bool VolumeFogEnable;
     float FogMaxOpacity;
+
+    uint VolumeLightScatterPathSampleCount;
 };
 
 
@@ -172,7 +174,7 @@ float halton(uint index, int base)
 }
 #endif
 
-const float LightScatterMinStpeSize = 0.1;
+const float LightScatterMinStpeSize = 1.0;
 
 void LightSingleScatterToFrag(vec3 startPos, vec3 targetPos,
                             inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor,
@@ -187,7 +189,7 @@ void LightSingleScatterToFrag(vec3 startPos, vec3 targetPos,
         return;
     }
 
-    uint sampleCount = max(1u, min(uint(ceil(dstToTarget / LightScatterMinStpeSize)), ScatterPathSampleCount));
+    uint sampleCount = max(1u, min(uint(ceil(dstToTarget / LightScatterMinStpeSize)), VolumeLightScatterPathSampleCount));
     // float stepSize = dstToTarget / float(sampleCount);
     
     float nearDistance = max(min(0.1, dstToTarget), min(max(fogStartDistance, 0.0), dstToTarget));
