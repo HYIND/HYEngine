@@ -6,9 +6,12 @@
 class TemporalAccumulate
 {
 public:
-	struct Params
+	struct alignas(16) Params
 	{
 		uint32_t maxAccumulateCount;
+		float depthThreshold = 0.5;
+		float positiondistThreshold = 0.2;
+		float normalThreshold = 0.9;
 	};
 
 public:

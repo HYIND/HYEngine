@@ -905,20 +905,32 @@ void VulkanRenderer::InitSceneRenderGraph()
 	//	.After(opaqueFence, effectPass)
 	//	.Before(transprantFence);
 
-	volumeCalculateNode->SetRenderPass(std::move(volumeCalculatePass))
-		.Input(
-			ResourceData{ atlasShadowMap, computeReadLayout },
-			ResourceData{ gPosition, computeReadLayout }
-		)
-		.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.Temp(
-			ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempColor"), {} },
-			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "volumeCalculateNode_TempScatterColor"), {} },
-			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "volumeCalculateNode_TempTramsmittance"), {} }
-		)
-		.Before(postProcessFence)
-		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
+	{
+		auto scatterColorRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
+		auto tramsmittanceRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
+		volumeCalculateNode->SetRenderPass(std::move(volumeCalculatePass))
+			.Input(
+				ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout },
+				ResourceData{ atlasShadowMap, computeReadLayout },
+				ResourceData{ gMotionVector, computeReadLayout },
+				ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
+			)
+			.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
+			.Temp(
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TempScatterColor"), computeWriteLayout },
+				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TempTramsmittance"), computeWriteLayout },
+				ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempSceneColor"), computeWriteLayout },
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAScatterColorTexture"), computeReadLayout },
+				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TAATramsmittance"),computeReadLayout }
+			)
+			.Persistent(
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout },
+				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_HistoryTramsmittanceTexture"), computeReadLayout }
+			)
+			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
+			.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
+			.Before(postProcessFence);
+	}
 
 	autoExposureNode->SetRenderPass(std::move(autoExposurePass))
 		.After(postProcessFence)
