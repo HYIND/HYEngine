@@ -8,40 +8,35 @@ namespace __LightDataDefault
 	constexpr inline uint32_t __default_cascadeLevel = 4;
 }
 
-// 纯数据结构，不包含任何渲染逻辑
-struct DirectionalLightData
+struct BaseLightData
 {
 	glm::vec3 color = glm::vec3(1.0f);
+
+	bool volumeLightEnable = true;
+	float volumetricScatteringIntensity = 1.0f;
+
+	bool castShadow = true;
+	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+};
+
+struct DirectionalLightData : public BaseLightData
+{
 	float luxIntensity = 3.5f;
-	float volumetricScatteringIntensity = 1.0f;
 
-	// 阴影参数
-	bool castShadow = true;
 	uint32_t cascadeLevel = __LightDataDefault::__default_cascadeLevel;	//阴影级联
-	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
-struct PointLightData
+struct PointLightData : public BaseLightData
 {
-	glm::vec3 color = glm::vec3(1.0f);
 	float cdIntensity = 300.f;
-	float volumetricScatteringIntensity = 1.0f;
-
-	bool castShadow = true;
-	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
 };
 
-struct SpotLightData
+struct SpotLightData : public BaseLightData
 {
-	glm::vec3 color = glm::vec3(1.0f);
 	float cdIntensity = 300.f;
-	float volumetricScatteringIntensity = 1.0f;
 
-	float cutOffAngle = 15.f;
-	float outercutOffAngle = 30.f;
-
-	bool castShadow = true;
-	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+	float cutOffAngle = 25.f;
+	float outercutOffAngle = 45.f;
 };
 
 enum class LightType :uint32_t {
