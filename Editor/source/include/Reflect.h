@@ -176,6 +176,137 @@ namespace rfl {
 			src.camera.SetFarPlane(ref.farPlane);
 		}
 	};
+
+	template <>
+	struct Reflector<DirectionalLightData> {
+
+		struct Data {
+			glm::vec3 color = glm::vec3(1.0f);
+
+			bool volumeLightEnable = true;
+			float volumetricScatteringIntensity = 1.0f;
+
+			bool castShadow = true;
+			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+
+			float luxIntensity = 3.5f;
+
+			uint32_t cascadeLevel = __LightDataDefault::__default_cascadeLevel;	//阴影级联
+		};
+
+		using SrcType = DirectionalLightData;
+		using ReflType = Data;
+
+		static ReflType from(const SrcType& src) noexcept {
+			return Data{
+				.color = src.color,
+				.volumeLightEnable = src.volumeLightEnable,
+				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
+				.castShadow = src.castShadow,
+				.shadowMapSize = src.shadowMapSize,
+				.luxIntensity = src.luxIntensity,
+				.cascadeLevel = src.cascadeLevel
+			};
+		}
+
+		static void modify(SrcType& src, const ReflType& ref) noexcept {
+			src.color = ref.color;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
+			src.castShadow = ref.castShadow;
+			src.shadowMapSize = ref.shadowMapSize;
+			src.luxIntensity = ref.luxIntensity;
+			src.cascadeLevel = ref.cascadeLevel;
+		}
+	};
+
+	template <>
+	struct Reflector<PointLightData> {
+
+		struct Data {
+			glm::vec3 color = glm::vec3(1.0f);
+
+			bool volumeLightEnable = true;
+			float volumetricScatteringIntensity = 1.0f;
+
+			bool castShadow = true;
+			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+
+			float cdIntensity = 300.f;
+		};
+
+		using SrcType = PointLightData;
+		using ReflType = Data;
+
+		static ReflType from(const SrcType& src) noexcept {
+			return Data{
+				.color = src.color,
+				.volumeLightEnable = src.volumeLightEnable,
+				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
+				.castShadow = src.castShadow,
+				.shadowMapSize = src.shadowMapSize,
+				.cdIntensity = src.cdIntensity
+			};
+		}
+
+		static void modify(SrcType& src, const ReflType& ref) noexcept {
+			src.color = ref.color;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
+			src.castShadow = ref.castShadow;
+			src.shadowMapSize = ref.shadowMapSize;
+			src.cdIntensity = ref.cdIntensity;
+		}
+	};
+
+	template <>
+	struct Reflector<SpotLightData> {
+
+		struct Data {
+			glm::vec3 color = glm::vec3(1.0f);
+
+			bool volumeLightEnable = true;
+			float volumetricScatteringIntensity = 1.0f;
+
+			bool castShadow = true;
+			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+
+			float cdIntensity = 300.f;
+
+			float cutOffAngle = 15.f;
+			float outercutOffAngle = 30.f;
+		};
+
+		using SrcType = SpotLightData;
+		using ReflType = Data;
+
+		static ReflType from(const SrcType& src) noexcept {
+			return Data{
+				.color = src.color,
+				.volumeLightEnable = src.volumeLightEnable,
+				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
+				.castShadow = src.castShadow,
+				.shadowMapSize = src.shadowMapSize,
+				.cdIntensity = src.cdIntensity,
+				.cutOffAngle = src.cutOffAngle,
+				.outercutOffAngle = src.outercutOffAngle
+			};
+		}
+
+		static void modify(SrcType& src, const ReflType& ref) noexcept {
+			src.color = ref.color;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
+			src.castShadow = ref.castShadow;
+			src.shadowMapSize = ref.shadowMapSize;
+			src.cdIntensity = ref.cdIntensity;
+			src.cutOffAngle = ref.cutOffAngle;
+			src.outercutOffAngle = ref.outercutOffAngle;
+		}
+	};
 }
 
 enum class PropertyWidget

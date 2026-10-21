@@ -233,6 +233,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light->SetCascadeLevel(data->cascadeLevel);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
 				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
@@ -255,6 +256,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light = std::make_shared<PointLight>(position, data->color, data->cdIntensity);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
 				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
@@ -277,6 +279,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 				renderdata->light = std::make_shared<SpotLight>(position, direction, data->cutOffAngle, data->outercutOffAngle, data->color, data->cdIntensity);
 				renderdata->light->SetShadowMapSize(data->shadowMapSize);
 				renderdata->light->SetCastShadow(data->castShadow);
+				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
 				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 

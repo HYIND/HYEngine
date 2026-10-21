@@ -54,7 +54,7 @@ private:
 	bool DrawGaussFilter(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, FrameRenderData& data);
 	void CombinVolume(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
 
-	void SetEnable(bool enable) const;
+	void SetTAAEnable(bool enable) const;
 
 private:
 	ComputePipeline _lutShader;
@@ -64,5 +64,5 @@ private:
 	AtrousGaussFilter _gaussFilter;
 
 	mutable bool _firstDrawTemporal;
-	mutable bool _enable;
+	mutable bool _taaEnable;
 };

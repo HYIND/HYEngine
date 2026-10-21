@@ -54,14 +54,24 @@ void Light::SetColorTemperature(float temp)
 	_color = Tool::ColorTemperatureToRGB(temp);
 }
 
+void Light::SetCastShadow(bool value)
+{
+	_castShadow = value;
+}
+
 void Light::SetShadowMapSize(uint32_t s)
 {
 	_shadowMapSize = s;
 }
 
-void Light::SetCastShadow(bool value)
+void Light::SetVolumeLightEnable(bool value)
 {
-	_castShadow = value;
+	volumeLightEnable = value;
+}
+
+void Light::SetVolumetricScatteringIntensity(float value)
+{
+	_volumetricScatteringIntensity = std::max(value, 0.0f);
 }
 
 glm::vec3 Light::GetColor() const
@@ -69,19 +79,19 @@ glm::vec3 Light::GetColor() const
 	return _color;
 }
 
-uint32_t Light::GetShadowMapSize() const
-{
-	return _shadowMapSize;
-}
-
 bool Light::GetCastShadow() const
 {
 	return _castShadow;
 }
 
-void Light::SetVolumetricScatteringIntensity(float value)
+uint32_t Light::GetShadowMapSize() const
 {
-	_volumetricScatteringIntensity = std::max(value, 0.0f);
+	return _shadowMapSize;
+}
+
+bool Light::GetVolumeLightEnable() const
+{
+	return volumeLightEnable;
 }
 
 float Light::GetVolumetricScatteringIntensity() const

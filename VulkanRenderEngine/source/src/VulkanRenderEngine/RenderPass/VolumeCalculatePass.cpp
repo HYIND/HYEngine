@@ -7,7 +7,7 @@ VolumeCalculatePass::VolumeCalculatePass(
 	const std::string& combinShaderPath
 ) :
 	_firstDrawTemporal(true),
-	_enable(false)
+	_taaEnable(false)
 {
 	{
 		ComputePipelineConfig config;
@@ -85,9 +85,11 @@ static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
 void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	bool enable = ShouldExecute(registry, state);
-	SetEnable(enable);
 	if (!enable)
+	{
+		SetTAAEnable(false);
 		return;
+	}
 
 	bool atmoEnable = state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
 	bool hasLights = !state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty();
@@ -162,12 +164,34 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 
 void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
+	static auto hasVolumeFogLightSource = [](RenderState& state) -> bool {
+		for (auto& info : state.lights.dirLightInfos)
+		{
+			if (info->light && info->light->GetVolumeLightEnable())
+				return true;
+		}
+		for (auto& info : state.lights.pointLightInfos)
+		{
+			if (info->light && info->light->GetVolumeLightEnable())
+				return true;
+		}
+		for (auto& info : state.lights.spotLightInfos)
+		{
+			if (info->light && info->light->GetVolumeLightEnable())
+				return true;
+		}
+		return false;
+		};
+
 	bool atmoEnable = state.option.flags.atmosphereOn
 		&& state.skyAtmosphereParams.hasSkyAtmospherePreData
 		&& !state.lights.dirLightInfos.empty();
 	bool hasLights = !state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty();
 	bool exponentialHeightFogEnable = state.option.flags.exponentialHeightFogOn;
-	bool volumeFogEnable = exponentialHeightFogEnable && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
+	bool volumeFogEnable = exponentialHeightFogEnable
+		&& state.option.exponentialHeightFogParams.volumeFogOn
+		&& hasLights
+		&& hasVolumeFogLightSource(state);
 
 	if (!atmoEnable && !exponentialHeightFogEnable)
 		return;
@@ -200,6 +224,7 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 
 	DrawLut(cmd, registry, state, data);
 
+	SetTAAEnable(atmoEnable || volumeFogEnable);
 	if (atmoEnable || volumeFogEnable)
 	{
 		if (!DrawTAAFilter(cmd, state, data))
@@ -354,12 +379,12 @@ void VolumeCalculatePass::CombinVolume(
 	cmd->SubmitToQueue();
 }
 
-void VolumeCalculatePass::SetEnable(bool enable) const
+void VolumeCalculatePass::SetTAAEnable(bool enable) const
 {
-	if (_enable == enable)
+	if (_taaEnable == enable)
 		return;
-	_enable = enable;
-	if (_enable)
+	_taaEnable = enable;
+	if (_taaEnable)
 		_firstDrawTemporal = true;
 }
 

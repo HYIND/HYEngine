@@ -16,23 +16,26 @@ public:
 	void SetColor(float r, float g, float b);
 	void SetColorTemperature(float temp);
 
+	void SetCastShadow(bool value);
 	void SetShadowMapSize(uint32_t w);
 
-	void SetCastShadow(bool value);
+	void SetVolumeLightEnable(bool value);
 	void SetVolumetricScatteringIntensity(float value);
 
 public:
 	glm::vec3 GetColor() const;
 
+	bool GetCastShadow() const;
 	uint32_t GetShadowMapSize() const;
 
-	bool GetCastShadow() const;
+	bool GetVolumeLightEnable() const;
 	float GetVolumetricScatteringIntensity() const;
 
 protected:
 	glm::vec3 _color = glm::vec3(1.0f);
 	uint32_t _shadowMapSize = __default_shadow_side;
 	bool _castShadow = true;
+	bool volumeLightEnable = false;
 	float _volumetricScatteringIntensity = 1.0f;
 };
 
