@@ -895,7 +895,7 @@ Entity WorldManager::CreateModelEntity(std::shared_ptr<Model> model)
 bool WorldManager::DuplicateEntity(Entity oriEntity, Entity& newEntity)
 {
 	auto world = _world;
-	if (!_world || !_world->isRunning())
+	if (!_world || (!_world->isRunning() && _editorState != EditorWorldState::Editing))
 		return false;
 
 	bool isSuccess = false;

@@ -13,8 +13,8 @@
 
 #include <functional>
 #include <future>
-#include <mutex>
 #include <queue>
+#include "CriticalSectionLock.h"
 
 class Entity;
 class System;
@@ -182,7 +182,7 @@ private:
 	};
 
 	std::queue<CommandTask> m_commandQueue;
-	std::mutex m_commandMutex;
+	CriticalSectionLock m_commandMutex;
 };
 
 #include "ECSCore/World.inl"

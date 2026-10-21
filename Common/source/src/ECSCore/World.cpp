@@ -247,7 +247,7 @@ std::future<void> World::SubmitCommand(std::function<void()> command)
 {
 	std::promise<void> promise;
 	auto future = promise.get_future();
-	if (!isRunning() || isProcessCommandsThread)
+	if (isProcessCommandsThread)
 	{
 		if (command)
 			command();
@@ -255,8 +255,17 @@ std::future<void> World::SubmitCommand(std::function<void()> command)
 	}
 	else
 	{
-		std::lock_guard<std::mutex> lock(m_commandMutex);
-		m_commandQueue.push({ std::move(command), std::move(promise) });
+		LockGuard guard(m_commandMutex);
+		if (isRunning())
+		{
+			m_commandQueue.push({ std::move(command), std::move(promise) });
+		}
+		else
+		{
+			if (command)
+				command();
+			promise.set_value();
+		}
 	}
 	return future;
 }
@@ -277,7 +286,7 @@ void World::ProcessCommands()
 	std::queue<CommandTask> localQueue;
 
 	{
-		std::lock_guard<std::mutex> lock(m_commandMutex);
+		LockGuard guard(m_commandMutex);
 		m_commandQueue.swap(localQueue);
 	}
 
