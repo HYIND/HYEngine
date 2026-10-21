@@ -909,7 +909,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 		}
 		else if (m_pendingAction == "open") {
 			std::string filePath;
-			if (FileIO::OpenOneFile(filePath))
+			if (FileIO::OpenOneFile(filePath, { { "project",".project" } }))
 			{
 				OpenProjectAndLoadDefaultScene(filePath, projectManager, worldManager);
 				m_selectedFolder.clear();
@@ -983,7 +983,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 				}
 				else {
 					std::string filePath;
-					if (FileIO::OpenOneFile(filePath))
+					if (FileIO::OpenOneFile(filePath, { { "project",".project" } }))
 					{
 						OpenProjectAndLoadDefaultScene(filePath, projectManager, worldManager);
 						m_selectedFolder.clear();
