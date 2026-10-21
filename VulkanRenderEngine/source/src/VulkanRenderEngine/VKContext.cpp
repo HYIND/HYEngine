@@ -3,12 +3,14 @@
 #include <format>
 #include <thread>
 #include "CriticalSectionLock.h"
+#include "SpinLock.h"
 
 thread_local VKThreadContext tls_context;
 
+template<typename Lockable = RecursiveSpinLock>
 static vk::Result SubmitCommandBuffer(
 	vk::Queue queue,
-	SpinLock& queuemutex,
+	Lockable& queuemutex,
 	const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& commandBuffers,
 	const std::vector<WaitSemaphoreData>& waitSemaphores = {},
 	const std::vector<SignalSemaphoreData>& signalSemaphores = {},

@@ -45,9 +45,9 @@ namespace VKCore
 		vk::Queue GetPresentQueue() const;
 		vk::Queue GetComputeQueue() const;
 
-		SpinLock& GetGraphicsQueueMutex();
-		SpinLock& GetPresentQueueMutex();
-		SpinLock& GetComputeQueueMutex();
+		RecursiveSpinLock& GetGraphicsQueueMutex();
+		RecursiveSpinLock& GetPresentQueueMutex();
+		RecursiveSpinLock& GetComputeQueueMutex();
 
 		const std::vector<std::string>& GetDeviceExtensions() const;
 
@@ -75,9 +75,9 @@ namespace VKCore
 		std::vector<std::function<void()>> m_callbacks_createDevice;
 		std::vector<std::function<void()>> m_callbacks_destroyDevice;
 
-		std::shared_ptr<SpinLock> m_queue_graphics_mutex;
-		std::shared_ptr<SpinLock> m_queue_presentation_mutex;
-		std::shared_ptr<SpinLock> m_queue_compute_mutex;
+		std::shared_ptr<RecursiveSpinLock> m_queue_graphics_mutex;
+		std::shared_ptr<RecursiveSpinLock> m_queue_presentation_mutex;
+		std::shared_ptr<RecursiveSpinLock> m_queue_compute_mutex;
 	};
 
 }
