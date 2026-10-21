@@ -193,21 +193,27 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	data.taaHistoryScatterColorTexture = ctx.GetPersitent(0);
 
 	data.atmoEnable = atmoEnable;
+	data.exponentialHeightFogEnable = exponentialHeightFogEnable;
+	data.volumeFogEnable = volumeFogEnable;
 
 	auto cmd = cmdCtx.GetCmd();
 
 	DrawLut(cmd, registry, state, data);
-	if (!DrawTAAFilter(cmd, state, data))
-		return;
 
-	bool copyToHistory = Texture2D::CopyTextureAsync(cmd, data.taaScatterColorTexture, data.taaHistoryScatterColorTexture);
-	if (cmd->IsRecording())
-		cmd->SubmitToQueue();
-	if (!copyToHistory)
-		return;
+	if (atmoEnable || volumeFogEnable)
+	{
+		if (!DrawTAAFilter(cmd, state, data))
+			return;
 
-	if (!DrawGaussFilter(cmd, state, data))
-		return;
+		bool copyToHistory = Texture2D::CopyTextureAsync(cmd, data.taaScatterColorTexture, data.taaHistoryScatterColorTexture);
+		if (cmd->IsRecording())
+			cmd->SubmitToQueue();
+		if (!copyToHistory)
+			return;
+
+		if (!DrawGaussFilter(cmd, state, data))
+			return;
+	}
 
 	CombinVolume(cmd, registry, state, data);
 }
@@ -336,7 +342,10 @@ void VolumeCalculatePass::CombinVolume(
 	{
 		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	binding.SetUniformTexture(data.taaGaussScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
+	if (data.atmoEnable || data.volumeFogEnable)
+		binding.SetUniformTexture(data.taaGaussScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
+	else
+		binding.SetUniformTexture(data.tempScatterColor, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetUniformTexture(data.tempTramsmittance, vk::ImageAspectFlagBits::eColor, 8);
 
 	_combinShader.Bind(cmd, binding);
