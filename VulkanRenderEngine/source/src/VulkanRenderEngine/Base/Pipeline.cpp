@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <fstream>
 
-static std::string ReadFromFile(const std::string& path)
+static std::tuple<std::string, bool> ReadFromFile(const std::string& path)
 {
 	std::ifstream file;
 	file.exceptions(std::ifstream::badbit);// 异常机制处理：保证ifstream对象可以抛出异常：
@@ -17,20 +17,20 @@ static std::string ReadFromFile(const std::string& path)
 		file.open(path);
 		if (!file) {
 			std::cerr << "文件打开失败" << ",path=" << path << std::endl;
-			return std::string();
+			return { std::string(), false };
 		}
 
 		std::stringstream stream;
 		stream << file.rdbuf();
 		file.close();
 
-		return stream.str();
+		return { stream.str(), true };
 	}
 	catch (std::ifstream::failure e) {
 		std::cout << "ERROR::FILE_NOT_SUCCESSFULLY_READ" << std::endl;
 	}
 
-	return std::string();
+	return { std::string(), false };
 }
 static std::string RemoveComments(std::string code)
 {
@@ -82,8 +82,8 @@ static std::string preProcessInclude(std::string shaderSource)
 			auto& matchdata = *it;
 			for (auto& path : { matchdata.filepath.string(), matchdata.filepath.filename().string() })
 			{
-				std::string code = ReadFromFile(path);
-				if (!code.empty())
+				auto [code, readResult] = ReadFromFile(path);
+				if (!code.empty() || !readResult)
 				{
 					shaderSource.replace(matchdata.pos, matchdata.length, code);
 					IsRepleaceAnyStr = true;
@@ -174,8 +174,10 @@ shaderc::SpvCompilationResult CompileSourceCodeToSPIRV(const std::string& source
 
 static bool ProcessFileToSPIRV(const std::string& path, std::vector<uint32_t>& code, ShaderType type, const std::map<std::string, std::string>& defines = {})
 {
-	std::string sourceCode;
-	sourceCode = ReadFromFile(path);
+	auto [sourceCode, readResult] = ReadFromFile(path);
+	if (sourceCode.empty() || !readResult)
+		return false;
+
 	sourceCode = RemoveComments(sourceCode);
 	sourceCode = preProcessInclude(sourceCode);
 	sourceCode = insertDefinesAfterVersionAdvanced(sourceCode, defines);
@@ -496,23 +498,23 @@ VKCore::VulkanDevice* Pipeline::GetDevice() const { return m_device; }
 
 bool Pipeline::IsValid() const { return m_pipeline != VK_NULL_HANDLE; }
 
-std::vector<uint32_t> Pipeline::ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines)
+std::tuple<std::vector<uint32_t>, bool> Pipeline::ReadSPIRVFromSourcePath(const std::string& path, ShaderType type, const std::map<std::string, std::string>& defines)
 {
 	std::vector<uint32_t> result;
-	ProcessFileToSPIRV(path, result, type, defines);
-	return result;
+	bool flag = ProcessFileToSPIRV(path, result, type, defines);
+	return { result,flag };
 }
 
-std::vector<uint32_t> Pipeline::ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines)
+std::tuple<std::vector<uint32_t>, bool> Pipeline::ReadSPIRVFromSourceCode(const std::string& sourceCode, ShaderType type, const std::map<std::string, std::string>& defines)
 {
 	std::vector<uint32_t> result;
-	ProcessCodeToSPIRV(sourceCode, result, type, defines);
-	return result;
+	bool flag = ProcessCodeToSPIRV(sourceCode, result, type, defines);
+	return { result,flag };
 }
 
-std::vector<uint32_t> Pipeline::ReadSPIRVBinaryPath(const std::string& path)
+std::tuple<std::vector<uint32_t>, bool> Pipeline::ReadSPIRVBinaryPath(const std::string& path)
 {
-	return std::vector<uint32_t>();
+	return { std::vector<uint32_t>(),false };
 }
 
 void Pipeline::Release()
@@ -1007,7 +1009,7 @@ void BindingRecord::SetLightStorageData(
 	const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
 	const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta,
 	const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascadeDistances
-	)
+)
 {
 	if (_ssbo_dirLightMeta) SetStorageBlock(_ssbo_dirLightMeta, GeneralBindingPoint::Light_DirLightMetaData);
 	if (_ssbo_dirLightCascade) SetStorageBlock(_ssbo_dirLightCascade, GeneralBindingPoint::Light_DirLightCascadeData);
