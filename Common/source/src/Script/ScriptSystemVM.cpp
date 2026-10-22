@@ -130,6 +130,8 @@ void ScriptSystemVM::RegisterBuiltinApi()
 		RegisterModule("Transform", std::make_unique<TransformScriptModule>(_world));
 	if (_modules.find("GLMMath") == _modules.end())
 		RegisterModule("GLMMath", std::make_unique<GLMMathModule>());
+	if (_modules.find("Physics") == _modules.end())
+		RegisterModule("Physics", std::make_unique<PhysicsScriptModule>(_world));
 }
 
 sol::protected_function ScriptSystemVM::GetCallback(sol::environment& env, const char* name)

@@ -1,5 +1,6 @@
 #include "Script/BaseScriptModule.h"
 #include "ECSCore/World.h"
+#include "Systems/PhysicsSystem.h"
 
 bool TransformScriptModule::SetPosition(Entity entity, float x, float y, float z)
 {
@@ -418,4 +419,184 @@ std::tuple<bool, glm::vec3> TransformScriptModule::GetDirection(Entity entity) c
 
 	auto dir = transform->GetDirection();
 	return { true, dir };
+}
+
+static btVector3 ToBullet(const glm::vec3& v)
+{
+	return btVector3(v.x, v.y, v.z);
+}
+
+static glm::vec3 ToGlm(const btVector3& v)
+{
+	return glm::vec3(v.x(), v.y(), v.z());
+}
+
+PhysicsScriptModule::PhysicsScriptModule(World* world) :_world(world) {}
+
+btRigidBody* PhysicsScriptModule::GetRigidBody(Entity entity) const
+{
+	if (!IsValid(_world, entity))
+		return nullptr;
+
+	auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
+	if (!runtime)
+		return nullptr;
+
+	return runtime->body;
+}
+
+// 力/速度只对 Dynamic 刚体有意义，Static/Kinematic 的速度会被 PhysicsSystem 同步覆盖
+btRigidBody* PhysicsScriptModule::GetDynamicBody(Entity entity) const
+{
+	btRigidBody* body = GetRigidBody(entity);
+	if (!body || body->isStaticOrKinematicObject())
+		return nullptr;
+
+	body->activate(true);
+	return body;
+}
+
+bool PhysicsScriptModule::ApplyForce(Entity entity, const glm::vec3& force)
+{
+	btRigidBody* body = GetDynamicBody(entity);
+	if (!body)
+		return false;
+
+	body->applyCentralForce(ToBullet(force));
+	return true;
+}
+
+bool PhysicsScriptModule::ApplyImpulse(Entity entity, const glm::vec3& impulse)
+{
+	btRigidBody* body = GetDynamicBody(entity);
+	if (!body)
+		return false;
+
+	body->applyCentralImpulse(ToBullet(impulse));
+	return true;
+}
+
+bool PhysicsScriptModule::ApplyTorque(Entity entity, const glm::vec3& torque)
+{
+	btRigidBody* body = GetDynamicBody(entity);
+	if (!body)
+		return false;
+
+	body->applyTorque(ToBullet(torque));
+	return true;
+}
+
+bool PhysicsScriptModule::SetLinearVelocity(Entity entity, const glm::vec3& velocity)
+{
+	btRigidBody* body = GetDynamicBody(entity);
+	if (!body)
+		return false;
+
+	body->setLinearVelocity(ToBullet(velocity));
+	return true;
+}
+
+std::tuple<bool, glm::vec3> PhysicsScriptModule::GetLinearVelocity(Entity entity) const
+{
+	btRigidBody* body = GetRigidBody(entity);
+	if (!body)
+		return { false, glm::vec3(0.0f) };
+
+	return { true, ToGlm(body->getLinearVelocity()) };
+}
+
+bool PhysicsScriptModule::SetAngularVelocity(Entity entity, const glm::vec3& velocity)
+{
+	btRigidBody* body = GetDynamicBody(entity);
+	if (!body)
+		return false;
+
+	body->setAngularVelocity(ToBullet(velocity));
+	return true;
+}
+
+std::tuple<bool, glm::vec3> PhysicsScriptModule::GetAngularVelocity(Entity entity) const
+{
+	btRigidBody* body = GetRigidBody(entity);
+	if (!body)
+		return { false, glm::vec3(0.0f) };
+
+	return { true, ToGlm(body->getAngularVelocity()) };
+}
+
+void PhysicsScriptModule::Register(sol::state_view lua, sol::usertype<Entity>& entityType)
+{
+	lua.new_usertype<RaycastHit>(
+		"RaycastHit", sol::no_constructor,
+		"hit", sol::readonly_property([](const RaycastHit& h) { return h.hit; }),
+		"hit_entity", sol::readonly_property([](const RaycastHit& h) { return h.hitEntity; }),
+		"hit_point", sol::readonly_property([](const RaycastHit& h) { return h.hitPoint; }),
+		"hit_normal", sol::readonly_property([](const RaycastHit& h) { return h.hitNormal; }),
+		"distance", sol::readonly_property([](const RaycastHit& h) { return h.distance; })
+	);
+
+	auto raycast = [this](const glm::vec3& start, const glm::vec3& end) {
+		if (_world)
+		{
+			if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+				return physicsSystem->raycast(start, end);
+		}
+		return RaycastHit();
+		};
+	auto raycastAll = [this](const glm::vec3& start, const glm::vec3& end, sol::this_state state) {
+		sol::state_view view(state);
+		sol::table result = view.create_table();
+		if (_world)
+		{
+			if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+			{
+				auto hits = physicsSystem->raycastAll(start, end);
+				for (size_t i = 0; i < hits.size(); ++i)
+					result[i + 1] = hits[i];
+			}
+		}
+		return result;
+		};
+
+	auto applyForce = [this](Entity entity, const glm::vec3& force) {
+		return ApplyForce(entity, force);
+		};
+	auto applyImpulse = [this](Entity entity, const glm::vec3& impulse) {
+		return ApplyImpulse(entity, impulse);
+		};
+	auto applyTorque = [this](Entity entity, const glm::vec3& torque) {
+		return ApplyTorque(entity, torque);
+		};
+	auto setLinearVelocity = [this](Entity entity, const glm::vec3& velocity) {
+		return SetLinearVelocity(entity, velocity);
+		};
+	auto getLinearVelocity = [this](Entity entity) {
+		return GetLinearVelocity(entity);
+		};
+	auto setAngularVelocity = [this](Entity entity, const glm::vec3& velocity) {
+		return SetAngularVelocity(entity, velocity);
+		};
+	auto getAngularVelocity = [this](Entity entity) {
+		return GetAngularVelocity(entity);
+		};
+
+	sol::table physics = lua.create_table();
+	physics.set_function("raycast", raycast);
+	physics.set_function("raycast_all", raycastAll);
+	physics.set_function("apply_force", applyForce);
+	physics.set_function("apply_impulse", applyImpulse);
+	physics.set_function("apply_torque", applyTorque);
+	physics.set_function("set_linear_velocity", setLinearVelocity);
+	physics.set_function("get_linear_velocity", getLinearVelocity);
+	physics.set_function("set_angular_velocity", setAngularVelocity);
+	physics.set_function("get_angular_velocity", getAngularVelocity);
+	lua["Physics"] = physics;
+
+	entityType.set("apply_force", applyForce);
+	entityType.set("apply_impulse", applyImpulse);
+	entityType.set("apply_torque", applyTorque);
+	entityType.set("set_linear_velocity", setLinearVelocity);
+	entityType.set("get_linear_velocity", getLinearVelocity);
+	entityType.set("set_angular_velocity", setAngularVelocity);
+	entityType.set("get_angular_velocity", getAngularVelocity);
 }
