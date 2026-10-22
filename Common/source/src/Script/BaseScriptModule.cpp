@@ -402,7 +402,7 @@ void WorldModule::Register(sol::state_view lua, sol::usertype<Entity>& entityTyp
 {
 	sol::table table = lua["World"].get_or_create<sol::table>();
 
-	table.set_function("createentity",
+	table.set_function("create_entity",
 		[this]() -> Entity { return CreateEntity(); }
 	);
 }

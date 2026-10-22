@@ -153,6 +153,7 @@
     <ClInclude Include="source\include\Systems\LightShowSystem.h" />
     <ClInclude Include="source\include\Systems\MapBoundarySystem.h" />
     <ClInclude Include="source\include\Systems\MovementSystem.h" />
+    <ClInclude Include="source\include\Systems\TetrisSystem.h" />
     <ClInclude Include="source\include\Systems\WeaponSystem.h" />
   </ItemGroup>
   <ItemGroup>
@@ -164,6 +165,7 @@
     <ClCompile Include="source\src\Systems\LightShowSystem.cpp" />
     <ClCompile Include="source\src\Systems\MapBoundarySystem.cpp" />
     <ClCompile Include="source\src\Systems\MovementSystem.cpp" />
+    <ClCompile Include="source\src\Systems\TetrisSystem.cpp" />
     <ClCompile Include="source\src\Systems\WeaponSystem.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

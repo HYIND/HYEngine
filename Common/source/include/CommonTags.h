@@ -9,7 +9,6 @@ struct TagMainCamera :public IComponent {};
 
 struct TagCurrentControl :public IComponent {};
 
-struct TagCamera :public IComponent {};
 struct TagFreeCamera :public IComponent { float velocity = 0.8f; };
 
 struct TagLight :public IComponent {};

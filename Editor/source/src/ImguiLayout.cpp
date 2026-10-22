@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <cmath>
 #include "Coroutine.h"
+#include "EditorTags.h"
 
 namespace fs = std::filesystem;
 
@@ -115,7 +116,12 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 			auto serialize = [&scene](World& activeWorld)
 				{
 					const bool serialized = scene.Serialize(activeWorld, [](Entity entity) {
-						return !entity.hasComponent<TagFreeCamera>();
+						if (auto follow = entity.tryGetComponent<CameraFollow>())
+						{
+							if (follow->target && follow->target.hasComponent<TagEditorCamera>())
+								return false;
+						}
+						return !entity.hasComponent<TagEditorCamera>();
 						});
 					if (!serialized)
 						return false;
@@ -124,15 +130,15 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 					settings.erase("editorFreeCamera");
 					for (Entity entity : activeWorld.getAllEntity())
 					{
-						if (!entity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
+						if (!entity.hasComponents<CameraComponent, Transform, CameraFollow>())
 							continue;
 
 						auto& follow = entity.getComponent<CameraFollow>();
 						Entity freeEntity = follow.target;
-						if (!freeEntity || !freeEntity.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>())
+						if (!freeEntity || !freeEntity.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller, TagEditorCamera>())
 							continue;
 
-						const auto& camera = entity.getComponent<CameraComponent>().camera;
+						const auto& camera = entity.getComponent<CameraComponent>();
 						const auto& cameraTransform = entity.getComponent<Transform>();
 						const auto& controller = freeEntity.getComponent<Controller>();
 						const auto& freeCamera = freeEntity.getComponent<TagFreeCamera>();
@@ -148,8 +154,8 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 							|| !finiteVec3(follow.offset)
 							|| !std::isfinite(controller.yaw) || !std::isfinite(controller.pitch)
 							|| !std::isfinite(freeCamera.velocity)
-							|| !std::isfinite(camera.GetFOV()) || !std::isfinite(camera.GetNearPlane())
-							|| !std::isfinite(camera.GetFarPlane()))
+							|| !std::isfinite(camera.fov) || !std::isfinite(camera.nearPlane)
+							|| !std::isfinite(camera.farPlane))
 							return false;
 
 						settings["editorFreeCamera"] = {
@@ -161,9 +167,9 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 								{"rotation", { cameraTransform.rotation.w, cameraTransform.rotation.x, cameraTransform.rotation.y, cameraTransform.rotation.z }},
 								{"scale", { cameraTransform.scale.x, cameraTransform.scale.y, cameraTransform.scale.z }}
 							}},
-							{"fov", camera.GetFOV()},
-							{"nearPlane", camera.GetNearPlane()},
-							{"farPlane", camera.GetFarPlane()},
+							{"fov", camera.fov},
+							{"nearPlane", camera.nearPlane},
+							{"farPlane", camera.farPlane},
 							{"offset", { follow.offset.x, follow.offset.y, follow.offset.z }}
 						};
 						break;
@@ -1401,7 +1407,8 @@ void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 		{ "Camera", [](Entity entity) { return entity.hasComponent<CameraComponent>(); }, [](Entity entity) { entity.addComponent<CameraComponent>(); } },
 		{ "FreeCameraProp", [](Entity entity) { return entity.hasComponent<TagFreeCamera>(); }, [](Entity entity) { entity.addComponent<TagFreeCamera>(); } },
 		{ "Render Model", [](Entity entity) { return entity.hasComponent<RenderModel>(); }, [](Entity entity) { entity.addComponent<RenderModel>(); } },
-		{ "Script", [](Entity entity) { return entity.hasComponent<Script>(); }, [](Entity entity) { entity.addComponent<Script>(); } }
+		{ "Script", [](Entity entity) { return entity.hasComponent<Script>(); }, [](Entity entity) { entity.addComponent<Script>(); } },
+		{ "CurrentControl", [](Entity entity) { return entity.hasComponent<TagCurrentControl>(); }, [](Entity entity) { entity.addComponent<TagCurrentControl>(); } }
 	};
 
 	auto world = WorldManager::Instance()->GetWorld();

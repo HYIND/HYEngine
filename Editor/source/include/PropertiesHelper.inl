@@ -10,17 +10,21 @@ void PropertiesHelper::RegisterComponent(const std::string& displayName)
 		if (!entity || !comp)
 			return;
 
-		auto& component = *(static_cast<T*>(comp));
-		T temp = component;
-		bool changed = DrawComponent(temp, assetManager);
-		if (changed)
+		if constexpr (sizeof(T) > sizeof(IComponent))
 		{
-			auto world = entity.getWorld();
-			world->SubmitCommand([entity, t = std::move(temp), &component]->void {
-				component = std::move(t);
-				OnComponentChange(entity, component);
-				});
+			auto& component = *(static_cast<T*>(comp));
+			T temp = component;
+			bool changed = DrawComponent(temp, assetManager);
+			if (changed)
+			{
+				auto world = entity.getWorld();
+				world->SubmitCommand([entity, t = std::move(temp), &component]->void {
+					component = std::move(t);
+					OnComponentChange(entity, component);
+					});
+			}
 		}
+
 		};
 
 	auto& names = GetComponentNames();
@@ -138,44 +142,67 @@ bool PropertiesHelper::DrawComponent(T& comp)
 		ReflType refl_obj = rfl::Reflector<T>::from(comp);// 从组件创建反射对象
 
 		const auto fields = rfl::fields<ReflType>();// 获取字段信息
-		auto view = rfl::to_view(refl_obj);
 
-		// 遍历所有字段并绘制
-		[&] <std::size_t... I>(std::index_sequence<I...>) {
-			((anyChanged |= [&]() -> bool {
-				const std::string& field_name = std::get<I>(fields).name();
-				auto* ptr = view.template get<I>();
-				if constexpr (std::is_pointer_v<decltype(ptr)>) {
-					using FieldType = std::remove_pointer_t<decltype(ptr)>;
-					return DrawPropertyField<T>(field_name, ptr);
-				}
-				return false;
-				}()), ...);
-		}(std::make_index_sequence<fields.size()>{});
+		if constexpr (std::tuple_size_v<decltype(fields)> > 0)
+		{
+			auto view = rfl::to_view(refl_obj);
 
-		// 如果有任何字段被修改，将反射对象写回组件
-		if (anyChanged) {
-			rfl::Reflector<T>::modify(comp, refl_obj);
+			// 遍历所有字段并绘制
+			[&] <std::size_t... I>(std::index_sequence<I...>) {
+				((anyChanged |= [&]() -> bool {
+					const std::string& field_name = std::get<I>(fields).name();
+					auto* ptr = view.template get<I>();
+					if constexpr (std::is_pointer_v<decltype(ptr)>) {
+						using FieldType = std::remove_pointer_t<decltype(ptr)>;
+						return DrawPropertyField<T>(field_name, ptr);
+					}
+					return false;
+					}()), ...);
+			}(std::make_index_sequence<fields.size()>{});
+
+			// 如果有任何字段被修改，将反射对象写回组件
+			if (anyChanged) {
+				rfl::Reflector<T>::modify(comp, refl_obj);
+			}
+
+			return anyChanged;
+		}
+		else
+		{
+			return false;
 		}
 
-		return anyChanged;
 	}
 	else {
-		const auto fields = rfl::fields<T>();
-		auto view = rfl::to_view(comp);
+		if constexpr (std::is_empty_v<T>)
+		{
+			return false;
+		}
+		else
+		{
+			const auto fields = rfl::fields<T>();
 
-		[&] <std::size_t... I>(std::index_sequence<I...>) {
-			((anyChanged |= [&]() -> bool {
-				const std::string& field_name = std::get<I>(fields).name();
-				auto* ptr = view.template get<I>();
-				if constexpr (std::is_pointer_v<decltype(ptr)>) {
-					using FieldType = std::remove_pointer_t<decltype(ptr)>;
-					return DrawPropertyField<T>(field_name, ptr);
-				}
+			if constexpr (std::tuple_size_v<decltype(fields)> > 0)
+			{
+				auto view = rfl::to_view(comp);
+
+				[&] <std::size_t... I>(std::index_sequence<I...>) {
+					((anyChanged |= [&]() -> bool {
+						const std::string& field_name = std::get<I>(fields).name();
+						auto* ptr = view.template get<I>();
+						if constexpr (std::is_pointer_v<decltype(ptr)>) {
+							using FieldType = std::remove_pointer_t<decltype(ptr)>;
+							return DrawPropertyField<T>(field_name, ptr);
+						}
+						return false;
+						}()), ...);
+				}(std::make_index_sequence<fields.size()>{});
+			}
+			else
+			{
 				return false;
-				}()), ...);
-		}(std::make_index_sequence<fields.size()>{});
-
+			}
+		}
 	}
 
 	return anyChanged;

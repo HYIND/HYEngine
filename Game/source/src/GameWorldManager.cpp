@@ -264,13 +264,12 @@ void CreateTestDustScene(World& world)
 		tag.velocity = 0.5;
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(-15, -7.6 + 100, 144));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(800.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 90.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 700.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
 			camerafollow.offset = glm::vec3(0, 2.8, 0);
@@ -297,13 +296,12 @@ void CreateTestDustScene(World& world)
 			physics->walkSpeed = 16.f;
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>();
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(100.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 90.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 700.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = character;
 			camerafollow.offset = glm::vec3(0, 2.2, 0.2);
@@ -330,13 +328,12 @@ void CreateTestDustScene(World& world)
 		//character.addComponent<TagCurrentControl>();
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>();
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(800.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 90.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 700.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = character;
 			camerafollow.offset = glm::vec3(0, 2.2, 0.2);
@@ -496,13 +493,12 @@ void CreateTestGameScene(World& world)
 		tag.velocity = 0.25;
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 5, 77));
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(80.f);
-			cameracom.camera.SetNearPlane(0.05f);
-			cameracom.camera.SetFarPlane(300.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 80.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 300.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
 			camerafollow.offset = glm::vec3(0, 2.8, 0);
@@ -531,13 +527,12 @@ void CreateTestGameScene(World& world)
 		//character.addComponent<TagCurrentControl>();
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>();
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(800.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 90.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 700.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = character;
 			camerafollow.offset = glm::vec3(0, 2.5, 0.2);
@@ -851,14 +846,13 @@ void CreateTestSponzaScene(World& world)
 		tag.velocity = 0.08;
 
 		{
-			Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+			Entity cameraEntity = world.createEntity();
 			auto& trans = cameraEntity.addComponent<Transform>(glm::vec3(0, 5, 100));
 			trans.position = glm::vec3(-32.7, 3.8, 0.7);
 			auto& cameracom = cameraEntity.addComponent<CameraComponent>();
-			cameracom.camera.SetFOV(90.f);
-			cameracom.camera.SetNearPlane(0.1f);
-			cameracom.camera.SetFarPlane(800.f);
-			cameracom.SetTransForm(trans);
+			cameracom.fov = 90.f;
+			cameracom.nearPlane = 0.1f;
+			cameracom.farPlane = 700.f;
 			auto& camerafollow = cameraEntity.addComponent<CameraFollow>();
 			camerafollow.target = freeEntity;
 			camerafollow.offset = glm::vec3(0, 0, 0);

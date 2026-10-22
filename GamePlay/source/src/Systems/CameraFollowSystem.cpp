@@ -33,19 +33,18 @@ void CameraFollowSystem::processCameraFollow(Entity& cameraEntity, Entity& targe
 
 	if (cameraComponent.isFirstPerson)
 	{
+
 		if (auto controller = targetEntity.tryGetComponent<Controller>())
 		{
-			cameraComponent.camera.SetYaw(controller->yaw);
-			cameraComponent.camera.SetPitch(controller->pitch);
+			CameraFrontData data(controller->yaw, controller->pitch, cameraComponent.worldUp);
+
+			auto& cameraDircetion = data.cameraFront;
+
+			cameraTrans.position = trans.position + trans.rotation * cameraFollow.offset;
+			cameraTrans.rotation = glm::quatLookAt(-glm::normalize(glm::vec3(cameraDircetion.x, cameraDircetion.y, cameraDircetion.z)), glm::vec3(0.0f, 1.0f, 0.0f));
+
+			trans.rotation = glm::quatLookAt(-glm::normalize(glm::vec3(cameraDircetion.x, 0.f, cameraDircetion.z)), glm::vec3(0.0f, 1.0f, 0.0f));
 		}
-		cameraComponent.SetPosition(trans.position + trans.rotation * cameraFollow.offset);
-
-		auto cameraDircetion = cameraComponent.camera.GetDirection();
-
-		cameraTrans.position = cameraComponent.camera.GetPosition();
-		cameraTrans.rotation = glm::quatLookAt(-glm::normalize(glm::vec3(cameraDircetion.x, cameraDircetion.y, cameraDircetion.z)), glm::vec3(0.0f, 1.0f, 0.0f));
-
-		trans.rotation = glm::quatLookAt(-glm::normalize(glm::vec3(cameraDircetion.x, 0.f, cameraDircetion.z)), glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 }
 
@@ -58,31 +57,25 @@ void CameraFollowSystem::processFreeCmaera(Entity& cameraEntity, Entity& targetE
 	auto& cameraComponent = cameraEntity.getComponent<CameraComponent>();
 
 	auto& trans = targetEntity.getComponent<Transform>();
-	auto& contoller = targetEntity.getComponent<Controller>();
+	auto& controller = targetEntity.getComponent<Controller>();
 
-	cameraComponent.camera.SetYaw(contoller.yaw);
-	cameraComponent.camera.SetPitch(contoller.pitch);
+	CameraFrontData data(controller.yaw, controller.pitch, cameraComponent.worldUp);
 
 	float velocity = std::max(0.05f, targetEntity.getComponent<TagFreeCamera>().velocity);
-	if (contoller.getWantToForWard())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() + cameraComponent.camera.GetDirection() * velocity);
-	else if (contoller.getWantToBackWard())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() - cameraComponent.camera.GetDirection() * velocity);
+	if (controller.getWantToForWard())
+		cameraTrans.position += data.cameraFront * velocity;
+	else if (controller.getWantToBackWard())
+		cameraTrans.position -= data.cameraFront * velocity;
+	if (controller.getWantToLeft())
+		cameraTrans.position -= data.cameraRight * velocity;
+	else if (controller.getWantToRight())
+		cameraTrans.position += data.cameraRight * velocity;
+	if (controller.getWantToUp())
+		cameraTrans.position += data.cameraUp * velocity;
+	else if (controller.getWantToDown())
+		cameraTrans.position -= data.cameraUp * velocity;
 
-	if (contoller.getWantToLeft())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() - cameraComponent.camera.GetDirectionRight() * velocity);
-	else if (contoller.getWantToRight())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() + cameraComponent.camera.GetDirectionRight() * velocity);
-
-	if (contoller.getWantToUp())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() + cameraComponent.camera.GetDirectionUp() * velocity);
-	else if (contoller.getWantToDown())
-		cameraComponent.camera.SetPosition(cameraComponent.camera.GetPosition() - cameraComponent.camera.GetDirectionUp() * velocity);
-
-
-	auto cameraDircetion = cameraComponent.camera.GetDirection();
-
-	cameraTrans.position = cameraComponent.camera.GetPosition();
+	auto& cameraDircetion = data.cameraFront;
 	cameraTrans.rotation = glm::quatLookAt(-glm::normalize(glm::vec3(cameraDircetion.x, cameraDircetion.y, cameraDircetion.z)), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	trans.position = cameraTrans.position;

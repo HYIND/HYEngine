@@ -364,28 +364,33 @@ static void RegisterGeneralCodec()
 	RegisterComponentCodec<CameraComponent>(
 		"engine.camera",
 		[](const CameraComponent& component) {
-			const auto position = component.camera.GetPosition();
-			const auto direction = component.camera.GetDirection();
-			if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)
-				|| !std::isfinite(direction.x) || !std::isfinite(direction.y) || !std::isfinite(direction.z)
-				|| glm::length(direction) <= 1e-6f)
+			if (!std::isfinite(component.fov) || !std::isfinite(component.nearPlane) || !std::isfinite(component.farPlane)
+				|| !std::isfinite(component.worldUp.x) || !std::isfinite(component.worldUp.y) || !std::isfinite(component.worldUp.z)
+				)
 				throw std::runtime_error("Invalid camera state");
 			return Json{
-				{"position", EncodeVec3(position)},
-				{"direction", EncodeVec3(direction)},
+				{"worldUp", EncodeVec3(component.worldUp)},
+				{"fov", EncodeFloat(component.fov)},
+				{"nearPlane", EncodeFloat(component.nearPlane)},
+				{"farPlane", EncodeFloat(component.farPlane)},
 				{"isFirstPerson", component.isFirstPerson}
 			};
 		},
 		[](CameraComponent& component, const Json& data) {
-			glm::vec3 position, direction;
+			glm::vec3 wroldUp;
+			float fov, nearPlane, farPlane;
 			if (!data.is_object()
 				|| !data.contains("isFirstPerson") || !data["isFirstPerson"].is_boolean()
-				|| !data.contains("position") || !DecodePhysicsVec3(data["position"], position)
-				|| !data.contains("direction") || !DecodePhysicsVec3(data["direction"], direction)
-				|| glm::length(direction) <= 1e-6f)
+				|| !data.contains("worldUp") || !DecodePhysicsVec3(data["worldUp"], wroldUp)
+				|| !data.contains("fov") || !DecodeFloat(data["fov"], fov)
+				|| !data.contains("nearPlane") || !DecodeFloat(data["nearPlane"], nearPlane)
+				|| !data.contains("farPlane") || !DecodeFloat(data["farPlane"], farPlane)
+				)
 				return false;
-			component.camera.SetPosition(position);
-			component.camera.SetDirection(glm::normalize(direction));
+			component.worldUp = wroldUp;
+			component.fov = fov;
+			component.nearPlane = nearPlane;
+			component.farPlane = farPlane;
 			component.isFirstPerson = data["isFirstPerson"].get<bool>();
 			return true;
 		});
@@ -414,11 +419,6 @@ static void RegisterGeneralCodec()
 		"engine.tag_main_camera",
 		[](const TagMainCamera&) { return Json::object(); },
 		[](TagMainCamera&, const Json& data) { return data.is_object(); });
-
-	RegisterComponentCodec<TagCamera>(
-		"engine.tag_camera",
-		[](const TagCamera&) { return Json::object(); },
-		[](TagCamera&, const Json& data) { return data.is_object(); });
 
 	RegisterComponentCodec<TagLight>(
 		"engine.tag_light",

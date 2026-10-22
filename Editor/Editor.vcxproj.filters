@@ -76,6 +76,12 @@
     <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\EditorComponent.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\EditorTags.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="资源文件">
@@ -101,6 +107,9 @@
     </Filter>
     <Filter Include="头文件\ImguiInit">
       <UniqueIdentifier>{29dc4318-7d3e-448f-88d9-4b21bbac2047}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Components">
+      <UniqueIdentifier>{4da7ac8c-1eef-4923-acad-a83e6eca7efc}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

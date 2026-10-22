@@ -4,25 +4,49 @@
 #include "GameRuntimeComponents.h"
 #include "ECSCore/World.h"
 #include "Systems/ScriptSystem.h"
+#include "VulkanRenderEngine/General/RenderHelp.h"
 
 using namespace Render;
 
-RenderableVisiableModule::RenderableVisiableModule(World* world) :_world(world) {}
+RenderableBaseModule::RenderableBaseModule(World* world) :_world(world) {}
 
-void RenderableVisiableModule::Register(sol::state_view lua, sol::usertype<Entity>& entityType)
+void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& entityType)
 {
 	sol::table render = lua["Render"].get_or_create<sol::table>();
+
+	static auto DefaultCube = GetCubeModel(glm::vec3(0.5f), 1.0f, "");
 
 	auto setVisiable = [this](const Entity& entity, const std::string& field, bool value) ->bool {
 		return SetVisiable(entity, field, value);
 		};
+	auto setColor = [this](const Entity& entity, const glm::vec3& color) ->bool {
+		return SetColor(entity, color);
+		};
+	auto attach_model = [this](const Entity& entity, const std::string& modelName) ->bool {
+		if (!IsValid(_world, entity))
+			return false;
+
+		if (modelName != "DefaultCube")
+			return false;
+
+		auto& comp = entity.hasComponent<RenderModel>() ? entity.getComponent<RenderModel>() : entity.addComponent<RenderModel>();
+
+		if (modelName == "DefaultCube")
+			comp.model = DefaultCube->Clone(false, true, true);
+
+		};
+
 
 	render.set_function("set_visible", setVisiable);
+	render.set_function("set_color", setColor);
+	render.set_function("attach_model", attach_model);
 
 	entityType.set("set_visible", setVisiable);
+	entityType.set("set_color", setColor);
 }
 
-bool RenderableVisiableModule::SetVisiable(const Entity& entity, const std::string& field, bool value) {
+bool RenderableBaseModule::SetVisiable(const Entity& entity, const std::string& field, bool value)
+{
 	if (!IsValid(_world, entity))
 		return false;
 
@@ -59,15 +83,31 @@ bool RenderableVisiableModule::SetVisiable(const Entity& entity, const std::stri
 	return true;
 }
 
+bool RenderableBaseModule::SetColor(const Entity& entity, const glm::vec3& color)
+{
+	if (!IsValid(_world, entity))
+		return false;
+
+	auto comp = entity.tryGetComponent<RenderModel>();
+	if (!comp || !comp->model)
+		return false;
+
+	for (auto& info : comp->model->getMeshInfos())
+	{
+		if (info.material)
+			info.material->SetAlbedo(color);
+	}
+}
+
 RenderSystem::RenderSystem()
 	:
 	_threadPool(0)
 {}
 
-void RenderSystem::onAttach(World & world) {
+void RenderSystem::onAttach(World& world) {
 	if (auto scriptSystem = world.getSystem<ScriptSystem>())
 	{
-		scriptSystem->RegisterScriptModule("RenderableVisiableModule", std::make_unique<RenderableVisiableModule>(&world));
+		scriptSystem->RegisterScriptModule("RenderableBaseModule", std::make_unique<RenderableBaseModule>(&world));
 	}
 }
 
@@ -497,19 +537,23 @@ void RenderSystem::SyncGLCamera(std::shared_ptr<VulkanRenderer>& render, std::sh
 	if (width <= 0) width = 1;
 	if (height <= 0) height = 1;
 
-	glm::mat4 projection = camCom.camera.GetPerspectiveProjectionMatrix(width / height);
-	glm::mat4 view = camCom.camera.GetViewMatrix();
-	glm::vec3 position = camCom.camera.GetPosition();
+	auto direction = trans.GetDirection();
+
+	glm::mat4 projection = CameraHelper::GetPerspectiveProjectionMatrix(width / height, camCom.fov, camCom.nearPlane, camCom.farPlane);
+	glm::mat4 view = CameraHelper::GetViewMatrix(trans.position, trans.GetDirection(), camCom.worldUp);
+	glm::vec3 position = trans.position;
+
+	CameraFrontData data(direction, camCom.worldUp);
 
 	framebuffer->projection = projection;
 	framebuffer->view = view;
 	framebuffer->position = trans.position;
-	framebuffer->direction = camCom.camera.GetDirection();
-	framebuffer->directionUp = camCom.camera.GetDirectionUp();
-	framebuffer->directionRight = camCom.camera.GetDirectionRight();
-	framebuffer->nearPlane = camCom.camera.GetNearPlane();
-	framebuffer->farPlane = camCom.camera.GetFarPlane();
-	framebuffer->fov = camCom.camera.GetFOV();
+	framebuffer->direction = data.cameraFront;
+	framebuffer->directionUp = data.cameraUp;
+	framebuffer->directionRight = data.cameraRight;
+	framebuffer->nearPlane = camCom.nearPlane;
+	framebuffer->farPlane = camCom.farPlane;
+	framebuffer->fov = camCom.fov;
 
 	//static int64_t lastPrintTime = 0.0f;
 	//int64_t currentTime = Tool::GetTimestampMilliseconds();

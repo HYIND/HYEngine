@@ -11,19 +11,13 @@
 
 struct CameraComponent : public IComponent
 {
-	Camera camera;
+	glm::vec3 worldUp = glm::vec3(0, 1, 0);
+
+	float fov = 75.0f;
+	float nearPlane = 0.1f;
+	float farPlane = 200.0f;
+
 	bool isFirstPerson = true;
 
 	CameraComponent() {};
-
-	void SetTransForm(Transform& trans){
-		camera.SetPosition(trans.position);
-		camera.SetDirection(trans.GetDirection());
-	}
-	void SetPosition(const glm::vec3& pos){
-		camera.SetPosition(pos);
-	}
-	void SetDirection(const glm::vec3& direction){
-		camera.SetDirection(direction);
-	}
 };
