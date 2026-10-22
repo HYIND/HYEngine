@@ -20,6 +20,7 @@ public:
 	void SetShadowMapSize(uint32_t w);
 
 	void SetVolumeLightEnable(bool value);
+	void SetVolumeLightEffectByAtmospher(bool value);
 	void SetVolumetricScatteringIntensity(float value);
 
 public:
@@ -29,6 +30,7 @@ public:
 	uint32_t GetShadowMapSize() const;
 
 	bool GetVolumeLightEnable() const;
+	bool GetVolumeLightEffectByAtmospher() const;
 	float GetVolumetricScatteringIntensity() const;
 
 protected:
@@ -36,6 +38,7 @@ protected:
 	uint32_t _shadowMapSize = __default_shadow_side;
 	bool _castShadow = true;
 	bool volumeLightEnable = false;
+	bool _volumeLightEffectByAtmospher = false;
 	float _volumetricScatteringIntensity = 1.0f;
 };
 

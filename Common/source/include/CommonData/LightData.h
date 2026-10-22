@@ -13,6 +13,7 @@ struct BaseLightData
 	glm::vec3 color = glm::vec3(1.0f);
 
 	bool volumeLightEnable = true;
+	bool volumeLightEffectByAtmospher = false;
 	float volumetricScatteringIntensity = 1.0f;
 
 	bool castShadow = true;

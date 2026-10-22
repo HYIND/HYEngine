@@ -9,8 +9,7 @@ using namespace Render;
 RenderSystem::RenderSystem()
 	:
 	_threadPool(0)
-{
-}
+{}
 
 void RenderSystem::SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer)
 {
@@ -219,6 +218,15 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 		if (!renderLight.enable)
 			continue;
 
+		static auto setLightBaseParams = [](Light* light, BaseLightData* data) {
+			light->SetColor(data->color);
+			light->SetShadowMapSize(data->shadowMapSize);
+			light->SetCastShadow(data->castShadow);
+			light->SetVolumeLightEnable(data->volumeLightEnable);
+			light->SetVolumeLightEffectByAtmospher(data->volumeLightEffectByAtmospher);
+			light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
+			};
+
 		switch (renderLight.type)
 		{
 		case LightType::Directional:
@@ -230,11 +238,8 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 
 				auto renderdata = std::make_shared<VKRenderContext::DirLightRenderData>();
 				renderdata->light = std::make_shared<DirLight>(direction, data->color, data->luxIntensity);
+				setLightBaseParams(renderdata->light.get(), data);
 				renderdata->light->SetCascadeLevel(data->cascadeLevel);
-				renderdata->light->SetShadowMapSize(data->shadowMapSize);
-				renderdata->light->SetCastShadow(data->castShadow);
-				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
-				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -254,10 +259,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 
 				auto renderdata = std::make_shared<VKRenderContext::PointLightRenderData>();
 				renderdata->light = std::make_shared<PointLight>(position, data->color, data->cdIntensity);
-				renderdata->light->SetShadowMapSize(data->shadowMapSize);
-				renderdata->light->SetCastShadow(data->castShadow);
-				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
-				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
+				setLightBaseParams(renderdata->light.get(), data);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -277,10 +279,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 
 				auto renderdata = std::make_shared<VKRenderContext::SpotLightRenderData>();
 				renderdata->light = std::make_shared<SpotLight>(position, direction, data->cutOffAngle, data->outercutOffAngle, data->color, data->cdIntensity);
-				renderdata->light->SetShadowMapSize(data->shadowMapSize);
-				renderdata->light->SetCastShadow(data->castShadow);
-				renderdata->light->SetVolumeLightEnable(data->volumeLightEnable);
-				renderdata->light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
+				setLightBaseParams(renderdata->light.get(), data);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();

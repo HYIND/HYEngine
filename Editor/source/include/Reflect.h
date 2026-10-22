@@ -184,6 +184,7 @@ namespace rfl {
 			glm::vec3 color = glm::vec3(1.0f);
 
 			bool volumeLightEnable = true;
+			bool volumeLightEffectByAtmospher = false;
 			float volumetricScatteringIntensity = 1.0f;
 
 			bool castShadow = true;
@@ -201,6 +202,7 @@ namespace rfl {
 			return Data{
 				.color = src.color,
 				.volumeLightEnable = src.volumeLightEnable,
+				.volumeLightEffectByAtmospher = src.volumeLightEffectByAtmospher,
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
@@ -213,6 +215,7 @@ namespace rfl {
 			src.color = ref.color;
 			src.volumeLightEnable = ref.volumeLightEnable;
 			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEffectByAtmospher = ref.volumeLightEffectByAtmospher;
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;
@@ -228,6 +231,7 @@ namespace rfl {
 			glm::vec3 color = glm::vec3(1.0f);
 
 			bool volumeLightEnable = true;
+			bool volumeLightEffectByAtmospher = false;
 			float volumetricScatteringIntensity = 1.0f;
 
 			bool castShadow = true;
@@ -243,6 +247,7 @@ namespace rfl {
 			return Data{
 				.color = src.color,
 				.volumeLightEnable = src.volumeLightEnable,
+				.volumeLightEffectByAtmospher = src.volumeLightEffectByAtmospher,
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
@@ -253,7 +258,7 @@ namespace rfl {
 		static void modify(SrcType& src, const ReflType& ref) noexcept {
 			src.color = ref.color;
 			src.volumeLightEnable = ref.volumeLightEnable;
-			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEffectByAtmospher = ref.volumeLightEffectByAtmospher;
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;
@@ -268,6 +273,7 @@ namespace rfl {
 			glm::vec3 color = glm::vec3(1.0f);
 
 			bool volumeLightEnable = true;
+			bool volumeLightEffectByAtmospher = false;
 			float volumetricScatteringIntensity = 1.0f;
 
 			bool castShadow = true;
@@ -286,6 +292,7 @@ namespace rfl {
 			return Data{
 				.color = src.color,
 				.volumeLightEnable = src.volumeLightEnable,
+				.volumeLightEffectByAtmospher = src.volumeLightEffectByAtmospher,
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
@@ -298,7 +305,7 @@ namespace rfl {
 		static void modify(SrcType& src, const ReflType& ref) noexcept {
 			src.color = ref.color;
 			src.volumeLightEnable = ref.volumeLightEnable;
-			src.volumeLightEnable = ref.volumeLightEnable;
+			src.volumeLightEffectByAtmospher = ref.volumeLightEffectByAtmospher;
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;

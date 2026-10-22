@@ -10,6 +10,7 @@ struct DirLight {
 	int cascadeCount;
 
 	bool volumeLightEnable;
+	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
 };
 
@@ -35,6 +36,7 @@ struct PointLight {
 	float radius;
 
 	bool volumeLightEnable;
+	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
 };
 
@@ -57,6 +59,7 @@ struct SpotLight {
 	int atlasHeight;
 
 	bool volumeLightEnable;
+	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
 
 	mat4 lightSpaceMatrix;

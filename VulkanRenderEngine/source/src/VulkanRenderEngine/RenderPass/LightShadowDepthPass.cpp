@@ -15,6 +15,7 @@ struct alignas(16) DirLightMetaInfo {
 	int cascadeCount;
 
 	uint32_t volumeLightEnable = 0;
+	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
 };
 
@@ -45,6 +46,7 @@ struct SpotLightMetaInfo {
 	int atlasHeight;
 
 	uint32_t volumeLightEnable = 0;
+	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
 
 	alignas(16) glm::mat4 lightSpaceMatrix;
@@ -60,6 +62,7 @@ struct alignas(16) PointLightMetaInfo {
 	float radius;
 
 	uint32_t volumeLightEnable = 0;
+	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
 };
 
@@ -115,6 +118,7 @@ static void SetupDirLightData(
 		metainfo.luxIntensity = light->GetIntensity();
 
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
+		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 
 		metainfo.castShadow = info->light->GetCastShadow() || !info->cascades.empty();
@@ -194,6 +198,7 @@ static void SetupPointLightData(
 		metainfo.cdIntensity = light->GetIntensity();
 		metainfo.radius = light->GetRadius();
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
+		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 		for (int i = 0; i < 6; i++)
 		{
@@ -241,6 +246,7 @@ static void SetupSpotLightData(
 		metainfo.lightSpaceMatrix = light->GetLightSpaceMatrix();
 		metainfo.radius = light->GetRadius();
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
+		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
 		metainfo.atlasX = rect.x;
 		metainfo.atlasY = rect.y;

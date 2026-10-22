@@ -69,6 +69,11 @@ void Light::SetVolumeLightEnable(bool value)
 	volumeLightEnable = value;
 }
 
+void Light::SetVolumeLightEffectByAtmospher(bool value)
+{
+	_volumeLightEffectByAtmospher = value;
+}
+
 void Light::SetVolumetricScatteringIntensity(float value)
 {
 	_volumetricScatteringIntensity = std::max(value, 0.0f);
@@ -92,6 +97,11 @@ uint32_t Light::GetShadowMapSize() const
 bool Light::GetVolumeLightEnable() const
 {
 	return volumeLightEnable;
+}
+
+bool Light::GetVolumeLightEffectByAtmospher() const
+{
+	return _volumeLightEffectByAtmospher;
 }
 
 float Light::GetVolumetricScatteringIntensity() const
