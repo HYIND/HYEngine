@@ -33,3 +33,28 @@ public:
 private:
 	World* _world = nullptr;
 };
+
+class PhysicsScriptModule : public IScriptModule
+{
+public:
+	explicit PhysicsScriptModule(World* world);
+	virtual void Register(sol::state_view lua, sol::usertype<Entity>& entityType) override;
+
+public:
+	bool ApplyForce(Entity entity, const glm::vec3& force);
+	bool ApplyImpulse(Entity entity, const glm::vec3& impulse);
+	bool ApplyTorque(Entity entity, const glm::vec3& torque);
+
+	bool SetLinearVelocity(Entity entity, const glm::vec3& velocity);
+	std::tuple<bool, glm::vec3> GetLinearVelocity(Entity entity) const;
+
+	bool SetAngularVelocity(Entity entity, const glm::vec3& velocity);
+	std::tuple<bool, glm::vec3> GetAngularVelocity(Entity entity) const;
+
+private:
+	btRigidBody* GetRigidBody(Entity entity) const;
+	btRigidBody* GetDynamicBody(Entity entity) const;
+
+private:
+	World* _world = nullptr;
+};
