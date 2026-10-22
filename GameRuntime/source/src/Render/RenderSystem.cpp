@@ -238,11 +238,12 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 		if (!renderModel.visible || !renderModel.model) continue;
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneModelRenderData>();
+
 		auto& writeBuffer = renderModel.renderView.transformTripleBuffer->acquireWriteBuffer();
 		writeBuffer = transform.GetMatrix() * renderModel.trans;
 		renderModel.renderView.transformTripleBuffer->submitWriteBuffer();
-
 		renderdata->transformView = renderModel.renderView;
+
 		renderdata->model = renderModel.model;
 
 		if (entity.hasComponent<SkeletonAnimatorGroup>())
