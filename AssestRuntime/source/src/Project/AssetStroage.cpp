@@ -20,12 +20,44 @@ private:
 public:
 	static bool SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
+public:
+	static bool RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset);
+
 private:
 	static bool SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static bool SaveMaterial(std::shared_ptr<MaterialAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static bool SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 };
 
+bool AssetStroageHelper::RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset)
+{
+	if (!pathProvider || meta.type != AssetType::Script)
+		return false;
+
+	const std::string fullPath = pathProvider->GetFullPath(meta.path);
+	std::error_code ec;
+	auto writeTime = std::filesystem::last_write_time(fullPath, ec);
+	if (ec)
+		return false;	// 文件被删除或被占用：保留旧数据
+
+	if (writeTime == asset._lastWriteTime)
+		return false;
+
+	ScriptAssetDescription desc;
+	if (!desc.LoadFromFile(fullPath))
+		return false;	// 读取失败不更新时间，下一轮重试
+
+	auto oldData = asset.AsScript();
+	asset._lastWriteTime = writeTime;
+	if (!oldData || oldData->source != desc.GetSource())
+	{
+		auto data = std::make_shared<ScriptSourceData>();
+		data->scriptGuid = meta.guid;
+		data->source = std::move(desc.GetSource());
+		asset._data = data;
+	}
+	return true;
+}
 
 void AssetStroage::SetMetadataProvider(std::shared_ptr<IMetadataProvider> provider)
 {
@@ -41,7 +73,19 @@ std::shared_ptr<AssetObject> AssetStroage::LoadAsset(const AssetGUID& guid)
 {
 	std::shared_ptr<AssetObject> result;
 	if (m_GuidToAsset.Find(guid, result))
+	{
+		if (result && result->GetType() == AssetType::Script)
+		{
+			auto metaProvider = _metaProvider;
+			auto pathProvider = _pathProvider;
+			if (metaProvider && pathProvider)
+			{
+				if (auto meta = metaProvider->GetAssetMetaByGuid(guid))
+					AssetStroageHelper::RefreshScriptIfChanged(*meta, pathProvider, static_cast<ScriptAsset&>(*result));
+			}
+		}
 		return result;
+	}
 
 	auto metaProvider = _metaProvider;
 	auto pathProvider = _pathProvider;
@@ -241,6 +285,12 @@ std::shared_ptr<ScriptAsset> AssetStroageHelper::LoadScript(AssetMeta& meta, std
 	data->scriptGuid = meta.guid;
 	data->source = desc.GetSource();
 	asset->SetData(data);
+
+	std::error_code ec;
+	auto writeTime = std::filesystem::last_write_time(fullMetaPath, ec);
+	if (!ec)
+		asset->_lastWriteTime = writeTime;
+
 	return asset;
 }
 

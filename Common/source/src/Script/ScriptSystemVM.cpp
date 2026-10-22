@@ -211,25 +211,25 @@ bool ScriptSystemVM::Build(std::shared_ptr<ScriptEnv>& env, const std::string& s
 	env->onDestroy = GetCallback(env->environment, "OnDestroy");
 
 	sol::object obj = env->environment["require_components"];
-	if (obj.get_type() != sol::type::table)
-		return false;
-
-	sol::table requirements = obj.as<sol::table>();
-	std::unordered_set<std::string> componentNames;
-	for (const auto& entry : requirements)
+	if (obj.get_type() == sol::type::table)
 	{
-		sol::object value = entry.second;
-		if (value.get_type() != sol::type::string)
-			return false;
-		componentNames.insert(value.as<std::string>());
-	}
-
-	for (auto& name : componentNames)
-	{
-		if (auto it = _componentFunc.find(name); it != _componentFunc.end())
+		sol::table requirements = obj.as<sol::table>();
+		std::unordered_set<std::string> componentNames;
+		for (const auto& entry : requirements)
 		{
-			auto& func = it->second;
-			if (func) func(*_world, entity);
+			sol::object value = entry.second;
+			if (value.get_type() != sol::type::string)
+				return false;
+			componentNames.insert(value.as<std::string>());
+		}
+
+		for (auto& name : componentNames)
+		{
+			if (auto it = _componentFunc.find(name); it != _componentFunc.end())
+			{
+				auto& func = it->second;
+				if (func) func(*_world, entity);
+			}
 		}
 	}
 
