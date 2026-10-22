@@ -16,6 +16,7 @@
 #include "GeneralManager/MouseManager.h"
 #include "GeneralManager/KeyMapManaer.h"
 
+#include "EditorTags.h"
 
 void AddPickProxy(Entity& entity)
 {
@@ -291,30 +292,35 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	_world->update(16);
 }
 
-static void AddFreeCamera(World& world)
+static void AddFreeCamera(World& world, Entity* outFreeEntity = nullptr, Entity* outCameraEntity = nullptr)
 {
-	Entity freeEntity = world.createEntityWithTag<TagFreeCamera>();
+	Entity freeEntity = world.createEntityWithTag<TagEditorCamera>();
 	freeEntity.addComponent<Transform>();
 	freeEntity.addComponent<PlayerInput>();
 	auto& controller = freeEntity.addComponent<Controller>();
 	controller.yaw = -90.f;
 	controller.pitch = -45.f;
 	freeEntity.addComponent<TagCurrentControl>();
-	freeEntity.getComponent<TagFreeCamera>().velocity = 0.25f;
-	SetNameTag(freeEntity, "freeEntity");
+	auto& tag = freeEntity.addComponent<TagFreeCamera>();
+	tag.velocity = 0.25;
+	SetNameTag(freeEntity, "editor_FreeEntity");
 
-	Entity cameraEntity = world.createEntityWithTag<TagCamera>();
+	Entity cameraEntity = world.createEntity();
 	auto& transform = cameraEntity.addComponent<Transform>(glm::vec3(0, 10, 10));
 	auto& camera = cameraEntity.addComponent<CameraComponent>();
-	camera.camera.SetFOV(80.f);
-	camera.camera.SetNearPlane(0.1f);
-	camera.camera.SetFarPlane(800.f);
-	camera.SetTransForm(transform);
+	camera.fov = 80.0;
+	camera.nearPlane = 0.1;
+	camera.farPlane = 800.0;
 	auto& follow = cameraEntity.addComponent<CameraFollow>();
 	follow.target = freeEntity;
 	follow.offset = glm::vec3(0.f);
 	world.SetMainCamera(cameraEntity);
-	SetNameTag(cameraEntity, "freeCameraEntity");
+	SetNameTag(cameraEntity, "editor_FreeCameraEntity");
+
+	if (outFreeEntity)
+		*outFreeEntity = freeEntity;
+	if (outCameraEntity)
+		*outCameraEntity = cameraEntity;
 }
 
 void WorldManager::InitDefaultWorld()
@@ -345,7 +351,8 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 	if (!world)
 		return false;
 
-	AddFreeCamera(*world);
+	Entity editorFreeEntity, editorFreeCameraEntity;
+	AddFreeCamera(*world, &editorFreeEntity, &editorFreeCameraEntity);
 
 	auto resolveScriptAsset = [projectManager](const AssetGUID& guid) -> std::shared_ptr<ScriptSourceData> {
 		if (!projectManager)
@@ -387,6 +394,7 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 		model->SetAssetGUID(guid);
 		return model;
 		};
+
 	if (!scene->Deserialize(*world, resolveScriptAsset, resolveModelAsset))
 		return false;
 
@@ -394,13 +402,7 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 	if (settings.is_object() && settings.contains("editorFreeCamera"))
 	{
 		const auto& cameraSettings = settings["editorFreeCamera"];
-		const auto entities = world->getAllEntity();
-		const auto cameraEntity = std::find_if(entities.begin(), entities.end(), [](Entity entity) {
-			if (!entity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
-				return false;
-			const Entity target = entity.getComponent<CameraFollow>().target;
-			return target && target.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>();
-			});
+
 		const auto isFiniteArray = [](const nlohmann::json& value, size_t size) {
 			if (!value.is_array() || value.size() != size)
 				return false;
@@ -435,7 +437,8 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 			transform.scale = scale;
 			return true;
 			};
-		if (cameraSettings.is_object() && cameraEntity != entities.end()
+
+		if (cameraSettings.is_object()
 			&& cameraSettings.contains("cameraTransform")
 			&& cameraSettings.contains("yaw") && cameraSettings["yaw"].is_number()
 			&& cameraSettings.contains("pitch") && cameraSettings["pitch"].is_number()
@@ -464,17 +467,14 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 					&& std::isfinite(yaw) && std::isfinite(pitch) && pitch >= -89.f && pitch <= 89.f
 					&& std::isfinite(velocity) && velocity >= 0.f)
 				{
-					auto& cameraComponent = cameraEntity->getComponent<CameraComponent>();
-					auto& follow = cameraEntity->getComponent<CameraFollow>();
-					Entity freeEntity = follow.target;
-					auto& controller = freeEntity.getComponent<Controller>();
-					auto& freeCamera = freeEntity.getComponent<TagFreeCamera>();
-					cameraEntity->getComponent<Transform>() = cameraTransform;
-					cameraComponent.camera.SetPosition(cameraTransform.position);
-					cameraComponent.camera.SetFOV(fov);
-					cameraComponent.camera.SetNearPlane(nearPlane);
-					cameraComponent.camera.SetFarPlane(farPlane);
-					cameraComponent.camera.SetYawPitch(yaw, pitch);
+					auto& cameraComponent = editorFreeCameraEntity.getComponent<CameraComponent>();
+					auto& follow = editorFreeCameraEntity.getComponent<CameraFollow>();
+					auto& controller = editorFreeEntity.getComponent<Controller>();
+					auto& freeCamera = editorFreeEntity.getComponent<TagFreeCamera>();
+					editorFreeCameraEntity.getComponent<Transform>() = cameraTransform;
+					cameraComponent.fov = fov;
+					cameraComponent.nearPlane = nearPlane;
+					cameraComponent.farPlane = farPlane;
 					controller.yaw = yaw;
 					controller.pitch = pitch;
 					freeCamera.velocity = velocity;
@@ -542,22 +542,32 @@ bool WorldManager::PlayWorld()
 	RegisterSceneComponentCodecs();
 	if (_world->isRunning())
 		_world->stop();
+
+	static auto IsEditorEntity = [](Entity entity) {
+		if (auto follow = entity.tryGetComponent<CameraFollow>())
+		{
+			if (follow->target && follow->target.hasComponent<TagEditorCamera>())
+				return true;
+		}
+		return entity.hasComponent<TagEditorCamera>();
+		};
+
 	auto snapshot = std::make_shared<SceneCodec>();
-	if (!snapshot->Serialize(*_world, [](Entity entity) {
-		return !entity.hasComponent<TagFreeCamera>() && !entity.hasComponent<TagCamera>();
+	if (!snapshot->Serialize(*_world, [&](Entity entity) {
+		return !IsEditorEntity(entity);
 		}))
 		return false;
 
 	const auto entities = _world->getAllEntity();
 	for (Entity cameraEntity : entities)
 	{
-		if (!cameraEntity.hasComponents<TagCamera, CameraComponent, Transform, CameraFollow>())
+		if (!cameraEntity.hasComponents<CameraComponent, Transform, CameraFollow>())
 			continue;
 		Entity freeEntity = cameraEntity.getComponent<CameraFollow>().target;
 		if (!freeEntity || !freeEntity.hasComponents<TagFreeCamera, TagCurrentControl, Transform, PlayerInput, Controller>())
 			continue;
 
-		const auto& camera = cameraEntity.getComponent<CameraComponent>().camera;
+		const auto& camera = cameraEntity.getComponent<CameraComponent>();
 		const auto& cameraTransform = cameraEntity.getComponent<Transform>();
 		const auto& follow = cameraEntity.getComponent<CameraFollow>();
 		const auto& controller = freeEntity.getComponent<Controller>();
@@ -571,15 +581,40 @@ bool WorldManager::PlayWorld()
 			{"yaw", controller.yaw},
 			{"pitch", controller.pitch},
 			{"velocity", freeCamera.velocity},
-			{"fov", camera.GetFOV()},
-			{"nearPlane", camera.GetNearPlane()},
-			{"farPlane", camera.GetFarPlane()},
+			{"fov", camera.fov},
+			{"nearPlane", camera.nearPlane},
+			{"farPlane", camera.farPlane},
 			{"offset", { follow.offset.x, follow.offset.y, follow.offset.z }}
 		};
 		break;
 	}
 
 	_playSnapshot = std::move(snapshot);
+
+	bool findSceneCamera = false;
+	auto cameraEntities = _world->getEntitiesWith<Transform, CameraComponent>();
+	for (auto& entity : cameraEntities)
+	{
+		if (IsEditorEntity(entity))
+			continue;
+		_world->SetMainCamera(entity);
+		findSceneCamera = true;
+	}
+
+	if (findSceneCamera)
+	{
+		std::vector<Entity> toDestory;
+		const auto entities = _world->getAllEntity();
+		for (Entity entity : entities)
+		{
+			if (IsEditorEntity(entity))
+				toDestory.push_back(entity);
+		}
+
+		for (auto& entity : toDestory)
+			_world->destroyEntity(entity);
+	}
+
 	RunWorld();
 	return true;
 }

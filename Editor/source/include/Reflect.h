@@ -158,6 +158,7 @@ namespace rfl {
 	struct Reflector<CameraComponent> {
 
 		struct CameraData {
+			glm::vec3 worldUp;
 			float fov;
 			float nearPlane;
 			float farPlane;
@@ -167,13 +168,14 @@ namespace rfl {
 		using ReflType = CameraData;
 
 		static ReflType from(const SrcType& src) noexcept {
-			return { src.camera.GetFOV(), src.camera.GetNearPlane(), src.camera.GetFarPlane() };
+			return { src.worldUp, src.fov, src.nearPlane , src.farPlane };
 		}
 
 		static void modify(SrcType& src, const ReflType& ref) noexcept {
-			src.camera.SetFOV(ref.fov);
-			src.camera.SetNearPlane(ref.nearPlane);
-			src.camera.SetFarPlane(ref.farPlane);
+			src.worldUp = ref.worldUp;
+			src.fov = ref.fov;
+			src.nearPlane = ref.nearPlane;
+			src.farPlane = ref.farPlane;
 		}
 	};
 

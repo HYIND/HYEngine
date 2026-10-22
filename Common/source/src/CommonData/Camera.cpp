@@ -1,165 +1,55 @@
 #include "CommonData\Camera.h"
 #include <glm\gtc\matrix_transform.hpp>
 
-Camera::Camera(glm::vec3 position, glm::vec3 target, glm::vec3 worldUp)
-	:position(position), worldUp(worldUp)
-{
 
-	glm::vec3 front = glm::normalize(target - position);
-
-	if (std::abs(front.x) < 1e-6f && std::abs(front.z) < 1e-6f)
-		this->Yaw = 90.f;
-	else
-		this->Yaw = glm::degrees(atan2(front.z, front.x));
-	this->Pitch = glm::degrees(atan2(front.y, sqrt(front.x * front.x + front.z * front.z)));
-
-	if (Pitch > 89.0f)
-		Pitch = 89.0f;
-	if (Pitch < -89.0f)
-		Pitch = -89.0f;
-
-	updateCameraVectors();
-}
-
-glm::mat4 Camera::GetPerspectiveProjectionMatrix(float aspect) const
+glm::mat4 CameraHelper::GetPerspectiveProjectionMatrix(float aspect, float fov, float nearPlane, float farPlane)
 {
 	auto proj = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
 	proj[1][1] *= -1.0f;
 	return proj;
 }
 
-glm::mat4 Camera::GetPerspectiveProjectionMatrix(uint32_t width, uint32_t height) const
+glm::mat4 CameraHelper::GetPerspectiveProjectionMatrix(uint32_t width, uint32_t height, float fov, float nearPlane, float farPlane)
 {
-	return GetPerspectiveProjectionMatrix((float)width / (float)height);
+	return GetPerspectiveProjectionMatrix((float)width / (float)height, fov, nearPlane, farPlane);
 }
 
-glm::mat4 Camera::GetViewMatrix() const
+glm::mat4 CameraHelper::GetViewMatrix(const glm::vec3& position, const glm::vec3 cameraFront, const glm::vec3 worldUp)
 {
+	auto cameraRight = glm::normalize(glm::cross(cameraFront, worldUp));
+	auto cameraUp = glm::normalize(glm::cross(cameraRight, cameraFront));
 	return glm::lookAt(position, position + cameraFront, cameraUp);
 }
 
-glm::vec3 Camera::GetPosition() const
-{
-	return position;
+CameraFrontData::CameraFrontData(float yaw, float pitch, const glm::vec3& worldUp) {
+	updateCameraVectors(yaw, pitch, worldUp);
 }
 
-glm::vec3 Camera::GetDirection() const
+CameraFrontData::CameraFrontData(const glm::vec3& front, const glm::vec3& worldUp)
 {
-	return this->cameraFront;
-}
-
-glm::vec3 Camera::GetDirectionUp() const
-{
-	return this->cameraUp;
-}
-
-glm::vec3 Camera::GetDirectionRight() const
-{
-	return this->cameraRight;
-}
-
-float Camera::GetYaw() const
-{
-	return Yaw;
-}
-
-float Camera::GetPitch() const
-{
-	return Pitch;
-}
-
-float Camera::GetFOV() const
-{
-	return fov;
-}
-
-float Camera::GetNearPlane() const
-{
-	return nearPlane;
-}
-
-float Camera::GetFarPlane() const
-{
-	return farPlane;
-}
-
-void Camera::SetYaw(float y)
-{
-	Yaw = y;
-	this->updateCameraVectors();
-}
-
-void Camera::SetPitch(float p)
-{
-	Pitch = p;
-
-	if (Pitch > 89.0f)
-		Pitch = 89.0f;
-	if (Pitch < -89.0f)
-		Pitch = -89.0f;
-
-	this->updateCameraVectors();
-}
-
-void Camera::SetYawPitch(float y, float p)
-{
-	Yaw = y;
-	Pitch = p;
-
-	if (Pitch > 89.0f)
-		Pitch = 89.0f;
-	if (Pitch < -89.0f)
-		Pitch = -89.0f;
-
-	this->updateCameraVectors();
-}
-
-void Camera::SetPosition(const glm::vec3& pos)
-{
-	position = pos;
-}
-
-void Camera::SetDirection(const glm::vec3& dir)
-{
-	glm::vec3 front = dir;
-
+	float yaw, pitch;
 	if (std::abs(front.x) < 1e-6f && std::abs(front.z) < 1e-6f)
-		this->Yaw = 90.f;
+		yaw = 90.f;
 	else
-		this->Yaw = glm::degrees(atan2(front.z, front.x));
-	this->Pitch = glm::degrees(atan2(front.y, sqrt(front.x * front.x + front.z * front.z)));
+		yaw = glm::degrees(atan2(front.z, front.x));
+	pitch = glm::degrees(atan2(front.y, sqrt(front.x * front.x + front.z * front.z)));
 
-	if (Pitch > 89.0f)
-		Pitch = 89.0f;
-	if (Pitch < -89.0f)
-		Pitch = -89.0f;
-
-	updateCameraVectors();
+	updateCameraVectors(yaw, pitch, worldUp);
 }
 
-void Camera::SetFOV(float fov)
+void CameraFrontData::updateCameraVectors(float yaw, float pitch, const glm::vec3 worldUp)
 {
-	this->fov = fov;
-}
+	if (pitch > 89.0f)
+		pitch = 89.0f;
+	if (pitch < -89.0f)
+		pitch = -89.0f;
 
-void Camera::SetNearPlane(float distance)
-{
-	nearPlane = distance;
-}
-
-void Camera::SetFarPlane(float distance)
-{
-	farPlane = distance;
-}
-
-void Camera::updateCameraVectors()
-{
 	glm::vec3 newfront;
-	newfront.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-	newfront.y = sin(glm::radians(Pitch));
-	newfront.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+	newfront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+	newfront.y = sin(glm::radians(pitch));
+	newfront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 
-	this->cameraFront = glm::normalize(newfront);
-	this->cameraRight = glm::normalize(glm::cross(this->cameraFront, worldUp));
-	this->cameraUp = glm::normalize(glm::cross(this->cameraRight, this->cameraFront));
+	cameraFront = glm::normalize(newfront);
+	cameraRight = glm::normalize(glm::cross(cameraFront, worldUp));
+	cameraUp = glm::normalize(glm::cross(cameraRight, cameraFront));
 }

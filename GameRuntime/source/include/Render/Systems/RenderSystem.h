@@ -9,16 +9,17 @@
 #include "VulkanRenderEngine/Base/Light.h"
 #include "Script/IScriptModule.h"
 
-class RenderableVisiableModule : public IScriptModule
+class RenderableBaseModule : public IScriptModule
 {
 public:
 	inline static std::vector<std::string> FieldName = { "model", "light", "sprite" ,"laserbeam", "particle", "skybox" };
 
 public:
-	explicit RenderableVisiableModule(World* world);
+	explicit RenderableBaseModule(World* world);
 	virtual void Register(sol::state_view lua, sol::usertype<Entity>& entityType) override;
 
 	bool SetVisiable(const Entity& entity, const std::string& field, bool value);
+	bool SetColor(const Entity& entity, const glm::vec3& color);
 
 private:
 	World* _world = nullptr;

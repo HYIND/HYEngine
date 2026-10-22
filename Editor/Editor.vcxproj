@@ -169,6 +169,8 @@
     <ClInclude Include="Imgui\imstb_textedit.h" />
     <ClInclude Include="Imgui\imstb_truetype.h" />
     <ClInclude Include="source\include\AssetImportPopup.h" />
+    <ClInclude Include="source\include\EditorComponent.h" />
+    <ClInclude Include="source\include\EditorTags.h" />
     <ClInclude Include="source\include\IconManager.h" />
     <ClInclude Include="source\include\ImguiLayout.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />

@@ -18,6 +18,7 @@ static void RegisterAllComponents()
 	PropertiesHelper::RegisterComponent<TagFreeCamera>("FreeCameraProp");
 	PropertiesHelper::RegisterComponent<RenderModel>("Render Model");
 	PropertiesHelper::RegisterComponent<Script>("Script");
+	PropertiesHelper::RegisterComponent<TagCurrentControl>("CurrentControl");
 }
 
 std::once_flag init_flag;

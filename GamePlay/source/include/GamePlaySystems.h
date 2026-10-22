@@ -6,5 +6,5 @@
 #include "Systems/LightShowSystem.h"
 #include "Systems/MapBoundarySystem.h"
 #include "Systems/WeaponSystem.h"
-#include "Systems/MapBoundarySystem.h"
 #include "Systems/CameraFollowSystem.h"
+#include "Systems/TetrisSystem.h"
