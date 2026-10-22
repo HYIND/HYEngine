@@ -12,5 +12,5 @@ void Render_Thread(
 
 bool IsRenderThread();
 
-void WaitForInitOpenGL();
-bool IsInitOpenGL();
+void WaitForInitScene3D();
+bool IsInitScene3D();

@@ -328,7 +328,7 @@ int ImGuiMain()
 
 		ImguiLayout::DrawMainMenu(window, worldManager, projectManager);
 		ImguiLayout::DrawPlayControls(worldManager, projectManager);
-		worldManager->UpdateEditorFrame();
+		worldManager->UpdateEditorFrame(projectManager);
 		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
 		ImguiLayout::SetDockspace(firstFrame);
 		if (firstFrame) firstFrame = false;

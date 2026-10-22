@@ -12,7 +12,7 @@ bool D2DRenderContext::RenderContext::operator<(const D2DRenderContext::RenderCo
 void RenderFrameData::reset()
 {
 	D2D_Contexts.clear();
-	GL_Contexts.clear();
+	Scene3D_Contexts.clear();
 
 	skybox.reset();
 

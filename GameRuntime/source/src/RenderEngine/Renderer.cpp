@@ -36,7 +36,7 @@ glm::vec2 MapPosToRenderPos(const glm::vec2& mapPos)
 
 void RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<RenderFrameData>& framedata, RenderState& state)
 {
-	auto& contexts = framedata->GL_Contexts;
+	auto& contexts = framedata->Scene3D_Contexts;
 
 	auto& dirLightInfos = state.lights.dirLightInfos;
 	auto& pointLightInfos = state.lights.pointLightInfos;;
@@ -518,7 +518,7 @@ void Render::Renderer::InitVulkanRender(uint32_t scr_width, uint32_t scr_height)
 	}
 }
 
-int Render::Renderer::GetOpenGLWidth()
+int Render::Renderer::GetScene3DWidth()
 {
 	auto r = _vulkanRenderer;
 	if (!r)
@@ -526,7 +526,7 @@ int Render::Renderer::GetOpenGLWidth()
 	return r->GetWidth();
 }
 
-int Render::Renderer::GetOpenGLHeight()
+int Render::Renderer::GetScene3DHeight()
 {
 	auto r = _vulkanRenderer;
 	if (!r)
@@ -534,7 +534,7 @@ int Render::Renderer::GetOpenGLHeight()
 	return r->GetHeight();
 }
 
-std::shared_ptr<VulkanRenderer> Render::Renderer::GetOpenGLRender()
+std::shared_ptr<VulkanRenderer> Render::Renderer::GetScene3DRender()
 {
 	return _vulkanRenderer;
 }

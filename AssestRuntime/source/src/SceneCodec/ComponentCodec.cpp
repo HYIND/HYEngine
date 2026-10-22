@@ -627,7 +627,7 @@ static void RegisterGeneralCodec()
 				modelGuid = renderModel.model->GetAssetGUID();
 			}
 			return Json{
-				{"enabled", renderModel.enable},
+				{"enabled", renderModel.visible},
 				{"trans", EncodeMat4(renderModel.trans)},
 				{"modelGuid", std::move(modelGuid)}
 			};
@@ -645,7 +645,7 @@ static void RegisterGeneralCodec()
 			if (!DecodeMat4(data["trans"], renderModel.trans))
 				return false;
 
-			renderModel.enable = data["enabled"].get<bool>();
+			renderModel.visible = data["enabled"].get<bool>();
 			if (modelGuid.is_null())
 				renderModel.model.reset();
 			else

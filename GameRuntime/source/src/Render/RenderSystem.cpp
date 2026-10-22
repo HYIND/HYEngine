@@ -6,6 +6,58 @@
 
 using namespace Render;
 
+RenderableVisiableModule::RenderableVisiableModule(World* world) :_world(world) {}
+
+void RenderableVisiableModule::Register(sol::state_view lua, sol::usertype<Entity>& entityType)
+{
+	sol::table render = lua["Render"].get_or_create<sol::table>();
+
+	auto setVisiable = [this](const Entity& entity, const std::string& field, bool value) ->bool {
+		return SetVisiable(entity, field, value);
+		};
+
+	render.set_function("set_visible", setVisiable);
+
+	entityType.set("set_visible", setVisiable);
+}
+
+bool RenderableVisiableModule::SetVisiable(const Entity& entity, const std::string& field, bool value) {
+	if (!IsValid(_world, entity))
+		return false;
+
+	Renderable* comp = nullptr;
+
+	if (field == "model")
+	{
+		comp = entity.tryGetComponent<RenderModel>();
+	}
+	else if (field == "light")
+	{
+		comp = entity.tryGetComponent<RenderLight>();
+	}
+	else if (field == "sprite")
+	{
+		comp = entity.tryGetComponent<Sprite>();
+	}
+	else if (field == "laserbeam")
+	{
+		comp = entity.tryGetComponent<LaserBeamEmitter>();
+	}
+	else if (field == "particle")
+	{
+		comp = entity.tryGetComponent<Particle>();
+	}
+	else if (field == "skybox")
+	{
+		comp = entity.tryGetComponent<SkyBox>();
+	}
+
+	if (!comp)
+		return false;
+	comp->visible = value;
+	return true;
+}
+
 RenderSystem::RenderSystem()
 	:
 	_threadPool(0)
@@ -16,7 +68,7 @@ void RenderSystem::SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Ren
 	_triBuffer = triBuffer;
 }
 
-void RenderSystem::SetOpenGLRender(std::shared_ptr<VulkanRenderer> render)
+void RenderSystem::SetScene3DRender(std::shared_ptr<VulkanRenderer> render)
 {
 	_render = render;
 }
@@ -74,7 +126,7 @@ void RenderSystem::processSprite(std::shared_ptr<RenderFrameData>& framebuffer)
 	temp.reserve(entities.size());
 	for (auto [entity, transform, sprite] : entities)
 	{
-		if (!sprite.enable ||
+		if (!sprite.visible ||
 			!sprite.bitmap ||
 			sprite.opacity <= 0 ||
 			sprite.width <= 0 ||
@@ -111,7 +163,7 @@ void RenderSystem::processGIFAnimation(std::shared_ptr<RenderFrameData>& framebu
 	temp.reserve(entities.size());
 	for (auto [entity, transform, gifanimator] : entities)
 	{
-		if (!gifanimator.enable || !gifanimator.gifInfo)continue;
+		if (!gifanimator.visible || !gifanimator.gifInfo)continue;
 
 		UINT framecount = gifanimator.gifInfo->getFrameCount();
 		if (framecount <= 0 || gifanimator.giftotalTime <= 0.f) continue;
@@ -175,7 +227,7 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 	temp.reserve(entities.size());
 	for (auto [entity, transform, renderModel] : view)
 	{
-		if (!renderModel.enable || !renderModel.model) continue;
+		if (!renderModel.visible || !renderModel.model) continue;
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneModelRenderData>();
 		auto& writeBuffer = renderModel.renderView.transformTripleBuffer->acquireWriteBuffer();
@@ -202,8 +254,8 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 
 		temp.emplace_back(std::move(context));
 	}
-	LockGuard guard(_GL_SpinLock);
-	framebuffer->GL_Contexts.append_range(temp);
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -215,7 +267,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 	temp.reserve(views.size());
 	for (auto [entity, transform, renderLight] : views)
 	{
-		if (!renderLight.enable)
+		if (!renderLight.visible)
 			continue;
 
 		static auto setLightBaseParams = [](Light* light, BaseLightData* data) {
@@ -295,8 +347,8 @@ void RenderSystem::processLight(std::shared_ptr<Render::RenderFrameData>& frameb
 		}
 
 	}
-	LockGuard guard(_GL_SpinLock);
-	framebuffer->GL_Contexts.append_range(temp);
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -310,7 +362,7 @@ void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& fra
 	temp.reserve(particles.size());
 	for (auto& particle : particles)
 	{
-		if (!particle || !particle->enable || !particle->properties)
+		if (!particle || !particle->visible || !particle->properties)
 			continue;
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneEffectRenderData>();
@@ -322,8 +374,8 @@ void RenderSystem::processParticle(std::shared_ptr<Render::RenderFrameData>& fra
 
 		temp.emplace_back(std::move(context));
 	}
-	LockGuard guard(_GL_SpinLock);
-	framebuffer->GL_Contexts.append_range(temp);
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
 void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -333,7 +385,7 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& fr
 	temp.reserve(views.size());
 	for (auto [entity, emitter, transform] : views)
 	{
-		if (!emitter.enable || !emitter.enable || !emitter.properties)
+		if (!emitter.visible || !emitter.visible || !emitter.properties)
 			continue;
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneEffectRenderData>();
@@ -345,8 +397,8 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& fr
 
 		temp.emplace_back(std::move(context));
 	}
-	LockGuard guard(_GL_SpinLock);
-	framebuffer->GL_Contexts.append_range(temp);
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
 //void RenderSystem::processFirstPersonVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -407,7 +459,7 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::RenderFrameData>& fr
 //	context->type = VKRenderContext::RenderContextType::FirstPersonModel;
 //	context->data = renderdata;
 //
-//	framebuffer->GL_Contexts.emplace_back(context);
+//	framebuffer->Scene3D_Contexts.emplace_back(context);
 //}
 
 void RenderSystem::processSkybox(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera)
@@ -418,7 +470,7 @@ void RenderSystem::processSkybox(std::shared_ptr<Render::RenderFrameData>& frame
 
 	for (auto [entity, skybox] : view)
 	{
-		if (!skybox.enable || !skybox.cube)
+		if (!skybox.visible || !skybox.cube)
 			continue;
 
 		framebuffer->skybox = skybox.cube;

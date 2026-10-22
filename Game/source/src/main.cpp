@@ -384,7 +384,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
 				{
 					auto task = CoroTask::Run([]()->bool {
-						WaitForInitOpenGL();
+						WaitForInitScene3D();
 						GameWorldManager::Instance()->InitGameWorld();
 						return true;
 						});

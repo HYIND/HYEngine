@@ -281,7 +281,7 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	renderSystem.setPriority(-10000);
 
 	renderSystem.SetTriBuffer(_triBuffer);
-	renderSystem.SetOpenGLRender(_renderer);
+	renderSystem.SetScene3DRender(_renderer);
 
 	_world = world;
 
@@ -614,55 +614,65 @@ void WorldManager::StopWorldThread()
 	}
 }
 
-void WorldManager::UpdateEditorFrame()
+void WorldManager::UpdateEditorFrame(ProjectManager* projectManager)
 {
-	if (!_world || _editorState == EditorWorldState::Playing)
+	if (!_world || (_editorState != EditorWorldState::Editing && _editorState != EditorWorldState::Paused))
 		return;
 
 	_world->ProcessCommands();
 	const float deltaTime = 1000.f / 60.f;
-	if (_editorState == EditorWorldState::Editing || _editorState == EditorWorldState::Paused)
+
+
+	if (_editorState == EditorWorldState::Editing)
 	{
-		if (_editorState == EditorWorldState::Editing)
+		if (projectManager)
 		{
-			if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
-				physicsSystem->fixedUpdate(0.f);
-		}
-
-		for (Entity entity : _world->getAllEntity())
-		{
-			if (!entity.hasComponents<TagCurrentControl, TagFreeCamera, PlayerInput, Controller>())
-				continue;
-			auto& input = entity.getComponent<PlayerInput>();
-			auto& controller = entity.getComponent<Controller>();
-			if (FocusManager::Instance()->ShouldProcessInput())
+			static auto lastScriptCheck = Tool::GetTimestampMilliseconds();
+			if (auto now = Tool::GetTimestampMilliseconds(); now - lastScriptCheck >= 500)
 			{
-				input.setInput(PlayerInput::FORWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Forward)) & 0x8000);
-				input.setInput(PlayerInput::BACKWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Backward)) & 0x8000);
-				input.setInput(PlayerInput::LEFT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Left)) & 0x8000);
-				input.setInput(PlayerInput::RIGHT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Right)) & 0x8000);
-				input.setInput(PlayerInput::UP, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Up)) & 0x8000);
-				input.setInput(PlayerInput::DOWN, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Down)) & 0x8000);
-				MouseManager::Instance()->GetDelta(input.mouseDeltaX, input.mouseDeltaY);
+				auto changed = projectManager->CheckScriptAssetChanges();
+				if (!changed.empty())
+					ReloadScriptAssets(changed);
+				lastScriptCheck = Tool::GetTimestampMilliseconds();
 			}
-			else
-				input.reset();
-
-			controller.setForwardBackward(input.isPressed(PlayerInput::FORWARD) == input.isPressed(PlayerInput::BACKWARD)
-				? Controller::ForwardBackward::NONE
-				: input.isPressed(PlayerInput::FORWARD) ? Controller::ForwardBackward::FORWARD : Controller::ForwardBackward::BACKWARD);
-			controller.setLeftRight(input.isPressed(PlayerInput::LEFT) == input.isPressed(PlayerInput::RIGHT)
-				? Controller::LeftRight::NONE
-				: input.isPressed(PlayerInput::LEFT) ? Controller::LeftRight::LEFT : Controller::LeftRight::RIGHT);
-			controller.setUpDown(input.isPressed(PlayerInput::UP) == input.isPressed(PlayerInput::DOWN)
-				? Controller::UpDown::NONE
-				: input.isPressed(PlayerInput::UP) ? Controller::UpDown::UP : Controller::UpDown::DOWN);
-			controller.addMouseDelta(input.mouseDeltaX, input.mouseDeltaY);
-			input.reset();
 		}
-		if (auto* cameraSystem = _world->getSystem<CameraFollowSystem>())
-			cameraSystem->postUpdate(deltaTime);
+		if (auto* physicsSystem = _world->getSystem<PhysicsSystem>())
+			physicsSystem->fixedUpdate(0.f);
 	}
+
+	for (Entity entity : _world->getAllEntity())
+	{
+		if (!entity.hasComponents<TagCurrentControl, TagFreeCamera, PlayerInput, Controller>())
+			continue;
+		auto& input = entity.getComponent<PlayerInput>();
+		auto& controller = entity.getComponent<Controller>();
+		if (FocusManager::Instance()->ShouldProcessInput())
+		{
+			input.setInput(PlayerInput::FORWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Forward)) & 0x8000);
+			input.setInput(PlayerInput::BACKWARD, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Backward)) & 0x8000);
+			input.setInput(PlayerInput::LEFT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Left)) & 0x8000);
+			input.setInput(PlayerInput::RIGHT, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Right)) & 0x8000);
+			input.setInput(PlayerInput::UP, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Up)) & 0x8000);
+			input.setInput(PlayerInput::DOWN, GetAsyncKeyState(KeyMapManager::Instance()->GetKeyCode(Keyboard::Down)) & 0x8000);
+			MouseManager::Instance()->GetDelta(input.mouseDeltaX, input.mouseDeltaY);
+		}
+		else
+			input.reset();
+
+		controller.setForwardBackward(input.isPressed(PlayerInput::FORWARD) == input.isPressed(PlayerInput::BACKWARD)
+			? Controller::ForwardBackward::NONE
+			: input.isPressed(PlayerInput::FORWARD) ? Controller::ForwardBackward::FORWARD : Controller::ForwardBackward::BACKWARD);
+		controller.setLeftRight(input.isPressed(PlayerInput::LEFT) == input.isPressed(PlayerInput::RIGHT)
+			? Controller::LeftRight::NONE
+			: input.isPressed(PlayerInput::LEFT) ? Controller::LeftRight::LEFT : Controller::LeftRight::RIGHT);
+		controller.setUpDown(input.isPressed(PlayerInput::UP) == input.isPressed(PlayerInput::DOWN)
+			? Controller::UpDown::NONE
+			: input.isPressed(PlayerInput::UP) ? Controller::UpDown::UP : Controller::UpDown::DOWN);
+		controller.addMouseDelta(input.mouseDeltaX, input.mouseDeltaY);
+		input.reset();
+	}
+	if (auto* cameraSystem = _world->getSystem<CameraFollowSystem>())
+		cameraSystem->postUpdate(deltaTime);
 	if (auto* renderSystem = _world->getSystem<RenderSystem>())
 		renderSystem->postUpdate(deltaTime);
 }
@@ -1008,6 +1018,47 @@ void WorldManager::AddGeometry(GeometryType type, const glm::vec3& position, con
 				SetNameTag(entity, name);
 			});
 	}
+}
+
+void WorldManager::AddEmptyEntity(const glm::vec3& position, const std::string& name)
+{
+	_world->SubmitCommand([&, position = position, name = name](World& world)-> void {
+		Entity entity = world.createEntity();
+		auto& trans = entity.addComponent<Transform>();
+		trans.position = position;
+
+		AddPickProxy(entity);
+		if (!name.empty())
+			SetNameTag(entity, name);
+		});
+}
+
+void WorldManager::ReloadScriptAssets(const std::vector<std::shared_ptr<ScriptSourceData>>& changed)
+{
+	if (!_world || changed.empty())
+		return;
+
+	auto apply = [changed](World& world) {
+		for (auto [entity, script] : world.getViewWith<Script>())
+		{
+			if (!script.data || script.data->scriptGuid.empty())
+				continue;
+			for (auto& data : changed)
+			{
+				if (data->scriptGuid == script.data->scriptGuid)
+				{
+					script.data = data;
+					script.needReload = true;
+					break;
+				}
+			}
+		}
+		};
+
+	if (_world->isRunning())
+		_world->SubmitCommand(apply);
+	else
+		apply(*_world);
 }
 
 std::shared_ptr<VulkanRenderer> WorldManager::GetVulkanRener()

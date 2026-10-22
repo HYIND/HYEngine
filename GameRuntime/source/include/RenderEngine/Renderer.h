@@ -65,9 +65,9 @@ namespace Render
 
 		void InitVulkanRender(uint32_t scr_width, uint32_t scr_height);
 
-		int GetOpenGLWidth();
-		int GetOpenGLHeight();
-		std::shared_ptr<VulkanRenderer> GetOpenGLRender();
+		int GetScene3DWidth();
+		int GetScene3DHeight();
+		std::shared_ptr<VulkanRenderer> GetScene3DRender();
 
 	private:
 		void processSprite(std::shared_ptr<D2DRenderContext::SpriteRenderData> data);

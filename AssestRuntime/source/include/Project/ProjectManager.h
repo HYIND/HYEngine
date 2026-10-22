@@ -46,6 +46,9 @@ public:
 	std::shared_ptr<AssetObject> LoadAsset(AssetGUID guid);
 	bool SaveAsset(AssetGUID guid);
 
+public:
+	std::vector<std::shared_ptr<ScriptSourceData>> CheckScriptAssetChanges();
+
 private:
 	std::string GenerateGUID();
 	std::string GenerateAssetMetaPath(const AssetPath& path, AssetType type);

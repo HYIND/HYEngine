@@ -11,7 +11,7 @@ IWICImagingFactory* pIWICFactory = nullptr;
 IDWriteFactory* pIDWriteFactory = nullptr;
 
 IDXGISwapChain1* g_pSwapChain = nullptr;
-ID3D11Device* g_pD3DDevice = nullptr;			// 新增：用于 OpenGL 互操作
+ID3D11Device* g_pD3DDevice = nullptr;			// 新增：用于 OpenGL/VK 互操作
 ID3D11DeviceContext* g_pD3DContext = nullptr;
 
 void Need() {

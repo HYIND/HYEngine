@@ -256,13 +256,13 @@ bool ResourceManager::InitAudioResource()
 	return true;
 }
 
-bool ResourceManager::InitOpenGLResource(uint32_t mapFlag)
+bool ResourceManager::InitScene3DResource(uint32_t mapFlag)
 {
-	std::call_once(initOpenGLFlag, std::bind(&ResourceManager::InitOpenGLResourceInternal, this, mapFlag));
+	std::call_once(initScene3DFlag, std::bind(&ResourceManager::InitScene3DResourceInternal, this, mapFlag));
 	return true;
 }
 
-bool ResourceManager::InitOpenGLResourceInternal(uint32_t mapFlag)
+bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 {
 	ThreadPool pool;
 	pool.start();

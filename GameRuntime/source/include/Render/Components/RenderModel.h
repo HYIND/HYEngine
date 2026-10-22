@@ -20,11 +20,9 @@ struct RenderModel : public Renderable
 
 	RenderModel() {}
 	RenderModel(const RenderModel& other)
-		:model(other.model), trans(other.trans), renderView(VKRenderContext::TransFormView()){
-	}
+		:Renderable(other), model(other.model), trans(other.trans), renderView(VKRenderContext::TransFormView()) {}
 	RenderModel(std::shared_ptr<Model> model
-	) : model(model) {
-	}
+	) : model(model) {}
 
 	virtual void OnAdd(const Entity& e) {}
 	virtual void OnRemove(const Entity& e) {
@@ -39,8 +37,7 @@ struct FirstPersonRenderModel : public Renderable
 
 	FirstPersonRenderModel() {}
 	FirstPersonRenderModel(std::shared_ptr<Model> model
-	) : model(model) {
-	}
+	) : model(model) {}
 	virtual void OnRemove(const Entity& e) {
 		model.reset();
 	}

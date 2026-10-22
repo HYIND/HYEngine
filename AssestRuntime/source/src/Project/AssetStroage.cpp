@@ -21,7 +21,7 @@ public:
 	static bool SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
 public:
-	static bool RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset);
+	static bool RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset, std::shared_ptr<ScriptSourceData>* outData = nullptr);
 
 private:
 	static bool SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
@@ -29,7 +29,7 @@ private:
 	static bool SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 };
 
-bool AssetStroageHelper::RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset)
+bool AssetStroageHelper::RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset, std::shared_ptr<ScriptSourceData>* outData)
 {
 	if (!pathProvider || meta.type != AssetType::Script)
 		return false;
@@ -56,6 +56,10 @@ bool AssetStroageHelper::RefreshScriptIfChanged(const AssetMeta& meta, std::shar
 		data->source = std::move(desc.GetSource());
 		asset._data = data;
 	}
+
+	if (outData)
+		*outData = asset._data;
+
 	return true;
 }
 
@@ -81,7 +85,9 @@ std::shared_ptr<AssetObject> AssetStroage::LoadAsset(const AssetGUID& guid)
 			if (metaProvider && pathProvider)
 			{
 				if (auto meta = metaProvider->GetAssetMetaByGuid(guid))
+				{
 					AssetStroageHelper::RefreshScriptIfChanged(*meta, pathProvider, static_cast<ScriptAsset&>(*result));
+				}
 			}
 		}
 		return result;
@@ -146,6 +152,28 @@ bool AssetStroage::SaveAsset(const AssetGUID& guid, std::shared_ptr<AssetObject>
 		m_GuidToAsset[guid] = newAsset;
 		return true;
 	}
+}
+
+std::vector<std::shared_ptr<ScriptSourceData>> AssetStroage::CheckScriptChanges()
+{
+	std::vector<std::shared_ptr<ScriptSourceData>> changed;
+	for (auto& asset : m_GuidToAsset.GetValues())
+	{
+		if (!asset || asset->GetType() != AssetType::Script)
+			continue;
+		auto metaProvider = _metaProvider;
+		auto pathProvider = _pathProvider;
+		if (metaProvider && pathProvider)
+		{
+			if (auto meta = metaProvider->GetAssetMetaByGuid(asset->GetAssetGUID()))
+			{
+				std::shared_ptr<ScriptSourceData> data;
+				if (AssetStroageHelper::RefreshScriptIfChanged(*meta, pathProvider, static_cast<ScriptAsset&>(*asset), &data))
+					changed.push_back(std::move(data));
+			}
+		}
+	}
+	return changed;
 }
 
 void AssetStroage::ClearLoadedAsset() {
@@ -373,5 +401,15 @@ bool AssetStroageHelper::SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMet
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
 	ScriptAssetDescription desc;
 	desc.SetSource(script->source);
-	return desc.SaveToFile(fullMetaPath);
+	bool result = desc.SaveToFile(fullMetaPath);
+
+	if (result)
+	{
+		std::error_code ec;
+		auto writeTime = std::filesystem::last_write_time(fullMetaPath, ec);
+		if (!ec)
+			asset->_lastWriteTime = writeTime;
+	}
+
+	return result;
 }
