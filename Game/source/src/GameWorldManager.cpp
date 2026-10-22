@@ -921,13 +921,13 @@ void CreateTestSponzaScene(World& world)
 
 void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world)
 {
-	ResFactory->InitOpenGLResource(0);
+	ResFactory->InitScene3DResource(0);
 	CreateTestDustScene(*world);
 
-	//ResFactory->InitOpenGLResource(1);
+	//ResFactory->InitScene3DResource(1);
 	//CreateTestGameScene(*world);
 
-	//ResFactory->InitOpenGLResource(2);
+	//ResFactory->InitScene3DResource(2);
 	//CreateTestSponzaScene(*world);
 }
 
@@ -1072,7 +1072,7 @@ void GameWorldManager::InitGameWorld()
 	scriptSystem.setPriority(450);
 
 	renderSystem.SetTriBuffer(RenderManager::Instance()->getBufferManager());
-	renderSystem.SetOpenGLRender(RenderManager::Instance()->getRenderer()->GetOpenGLRender());
+	renderSystem.SetScene3DRender(RenderManager::Instance()->getRenderer()->GetScene3DRender());
 
 	LoadLocalGameMapInfoToWorld(_world);
 

@@ -263,6 +263,7 @@ static bool WantToAddPointLight = false;
 static bool WantToAddSpotLight = false;
 static bool WantToAddCube = false;
 static bool WantToAddSphere = false;
+static bool WantToAddEmptyEntity = false;
 
 extern VkDevice g_Device;
 
@@ -1078,6 +1079,10 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, P
 				}
 				ImGui::EndMenu();
 			}
+			if (ImGui::MenuItem("空实体"))
+			{
+				WantToAddEmptyEntity = true;
+			}
 			ImGui::EndMenu();
 		}
 
@@ -1382,13 +1387,57 @@ void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 	ImGui::Begin("Properties");
 	ImGui::Text("属性");
 	ImGui::Separator();
+	struct ComponentFactory
+	{
+		const char* name;
+		std::function<bool(Entity)> has;
+		std::function<void(Entity)> add;
+	};
+	static const std::vector<ComponentFactory> componentFactories = {
+		{ "Transform", [](Entity entity) { return entity.hasComponent<Transform>(); }, [](Entity entity) { entity.addComponent<Transform>(); } },
+		{ "Physics", [](Entity entity) { return entity.hasComponent<Physics>(); }, [](Entity entity) { entity.addComponent<Physics>(); } },
+		{ "Movement", [](Entity entity) { return entity.hasComponent<Movement>(); }, [](Entity entity) { entity.addComponent<Movement>(); } },
+		{ "Light", [](Entity entity) { return entity.hasComponent<RenderLight>(); }, [](Entity entity) { entity.addComponent<RenderLight>(); } },
+		{ "Camera", [](Entity entity) { return entity.hasComponent<CameraComponent>(); }, [](Entity entity) { entity.addComponent<CameraComponent>(); } },
+		{ "FreeCameraProp", [](Entity entity) { return entity.hasComponent<TagFreeCamera>(); }, [](Entity entity) { entity.addComponent<TagFreeCamera>(); } },
+		{ "Render Model", [](Entity entity) { return entity.hasComponent<RenderModel>(); }, [](Entity entity) { entity.addComponent<RenderModel>(); } },
+		{ "Script", [](Entity entity) { return entity.hasComponent<Script>(); }, [](Entity entity) { entity.addComponent<Script>(); } }
+	};
 
-	if (selectedEntity)
+	auto world = WorldManager::Instance()->GetWorld();
+	const bool entitySelected = world && selectedEntity && world->IsValidWorldEntity(selectedEntity);
+	if (entitySelected)
 	{
 		ImGui::Text("已选择: %d", selectedEntity.getId());
 		ImGui::Separator();
 		auto components = PropertiesHelper::GetAllComponents(selectedEntity);	// 获取所有组件
 		PropertiesHelper::DrawAllProperties(selectedEntity, components, projectManager);		// 绘制所有属性
+		ImGui::Spacing();
+		if (ImGui::Button("Add Component", ImVec2(-1.f, 36.f)))
+			ImGui::OpenPopup("AddComponentPopup");
+		if (ImGui::BeginPopupModal("AddComponentPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			ImGui::TextUnformatted("Select a component to add");
+			ImGui::Separator();
+			for (const auto& factory : componentFactories)
+			{
+				const bool alreadyAdded = factory.has(selectedEntity);
+				if (alreadyAdded)
+					ImGui::BeginDisabled();
+				if (ImGui::Selectable(factory.name))
+				{
+					if (world->IsValidWorldEntity(selectedEntity))
+						factory.add(selectedEntity);
+					ImGui::CloseCurrentPopup();
+				}
+				if (alreadyAdded)
+					ImGui::EndDisabled();
+			}
+			ImGui::Spacing();
+			if (ImGui::Button("Close"))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
 	}
 	else
 	{
@@ -1661,7 +1710,7 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 	ImGuizmo::SetRect(viewportPos.x, viewportPos.y,
 		viewportSize.x, viewportSize.y);
 
-	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere)
+	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere || WantToAddEmptyEntity)
 	{
 		auto triBuffer = worldManager->GetTriBuffer();
 		auto rayOrigin = triBuffer->acquireReadBuffer()->position;
@@ -1694,6 +1743,11 @@ void ImguiLayout::DrawSceneView(WorldManager* worldManager, ProjectManager* proj
 		{
 			worldManager->AddGeometry(GeometryType::Sphere, position);
 			WantToAddSphere = false;
+		}
+		if (WantToAddEmptyEntity)
+		{
+			worldManager->AddEmptyEntity(position);
+			WantToAddEmptyEntity = false;
 		}
 	}
 

@@ -16,8 +16,8 @@ void PropertiesHelper::RegisterComponent(const std::string& displayName)
 		if (changed)
 		{
 			auto world = entity.getWorld();
-			world->SubmitCommand([entity, temp, &component]->void {
-				component = temp;
+			world->SubmitCommand([entity, t = std::move(temp), &component]->void {
+				component = std::move(t);
 				OnComponentChange(entity, component);
 				});
 		}
@@ -237,7 +237,8 @@ inline bool PropertiesHelper::DrawComponent<RenderLight>(RenderLight& light)
 	}
 
 	// 绘制通用属性
-	anyChanged |= DrawPropertyField<Physics>("Render Light Shape", &light.renderCube);
+	anyChanged |= DrawPropertyField<RenderLight>("Render Light Shape", &light.renderCube);
+	anyChanged |= DrawPropertyField<RenderLight>("Visible", &light.visible);
 
 	// 根据类型绘制对应的光照数据
 	switch (light.type) {
@@ -296,6 +297,9 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		};
 
 	drawAssetPath("Model", comp.model->GetAssetGUID());
+
+	bool anyChanged = false;
+	anyChanged |= DrawPropertyField<RenderModel>("Visible", &comp.visible);
 
 	struct MaterialEdit
 	{
@@ -412,10 +416,9 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		for (const auto& edit : edits)
 			if (edit.slot < editedMeshInfos.size() && editedMeshInfos[edit.slot].material)
 				editedMeshInfos[edit.slot].material->SetProperty(edit.properties);
-		return true;
 	}
 
-	return false;
+	return anyChanged || !edits.empty();
 }
 
 template<>

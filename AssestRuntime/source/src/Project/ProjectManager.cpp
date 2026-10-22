@@ -550,6 +550,13 @@ bool ProjectManager::SaveAsset(AssetGUID guid)
 	return m_storage->SaveAsset(guid);
 }
 
+std::vector<std::shared_ptr<ScriptSourceData>> ProjectManager::CheckScriptAssetChanges()
+{
+	if (!m_isOpen || !m_storage)
+		return {};
+	return m_storage->CheckScriptChanges();
+}
+
 bool ProjectManager::CopyToProject(const std::string& filePath, const AssetPath& assetPath)
 {
 	fs::path fullAssetPath = fs::path(m_projectPath) / fs::path(assetPath);

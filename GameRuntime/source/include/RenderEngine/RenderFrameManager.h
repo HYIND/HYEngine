@@ -14,7 +14,7 @@ namespace Render
 	{
 		uint64_t frameId = 0;
 		std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
-		std::vector<std::shared_ptr<VKRenderContext::RenderContext>> GL_Contexts;
+		std::vector<std::shared_ptr<VKRenderContext::RenderContext>> Scene3D_Contexts;
 
 		std::shared_ptr<TextureCube> skybox;
 

@@ -20,6 +20,8 @@ public:
 	std::shared_ptr<AssetObject> LoadAsset(const AssetGUID& guid);
 	bool SaveAsset(const AssetGUID& guid, std::shared_ptr<AssetObject> newAsset = nullptr);
 
+	std::vector<std::shared_ptr<ScriptSourceData>> CheckScriptChanges();
+
 	void ClearLoadedAsset();
 
 private:

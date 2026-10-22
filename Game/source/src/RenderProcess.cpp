@@ -142,12 +142,12 @@ bool IsRenderThread()
 	return std::this_thread::get_id() == render_thread_id;
 }
 
-void WaitForInitOpenGL()
+void WaitForInitScene3D()
 {
 	InitManager.waitDone();
 }
 
-bool IsInitOpenGL()
+bool IsInitScene3D()
 {
 	return InitManager.isInitDone();
 }

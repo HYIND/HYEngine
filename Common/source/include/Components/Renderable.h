@@ -4,5 +4,5 @@
 
 struct Renderable : public IComponent
 {
-	bool enable = true;
+	bool visible = true;
 };

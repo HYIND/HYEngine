@@ -7,6 +7,22 @@
 #include "SpinLock.h"
 #include "Helper/SharedObjectPool.h"
 #include "VulkanRenderEngine/Base/Light.h"
+#include "Script/IScriptModule.h"
+
+class RenderableVisiableModule : public IScriptModule
+{
+public:
+	inline static std::vector<std::string> FieldName = { "model", "light", "sprite" ,"laserbeam", "particle", "skybox" };
+
+public:
+	explicit RenderableVisiableModule(World* world);
+	virtual void Register(sol::state_view lua, sol::usertype<Entity>& entityType) override;
+
+	bool SetVisiable(const Entity& entity, const std::string& field, bool value);
+
+private:
+	World* _world = nullptr;
+};
 
 struct Line2
 {
@@ -18,8 +34,10 @@ class RenderSystem :public System
 {
 public:
 	RenderSystem();
+	virtual void onAttach(World& world) override {}
+
 	void SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer);
-	void SetOpenGLRender(std::shared_ptr<VulkanRenderer> render);
+	void SetScene3DRender(std::shared_ptr<VulkanRenderer> render);
 
 public:
 	virtual void postUpdate(float deltaTime) override;
@@ -36,9 +54,9 @@ private:
 	void processParticle(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
 	void processLaserBeam(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
 
-//private:
-//	void processFirstPersonVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
-//	void processFirstPersonWeaponVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& entity);
+	//private:
+	//	void processFirstPersonVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
+	//	void processFirstPersonWeaponVisual(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& entity);
 
 private:
 	void processSkybox(std::shared_ptr<Render::RenderFrameData>& framebuffer, Entity& maincamera);
@@ -51,6 +69,6 @@ private:
 	std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> _triBuffer;
 	std::shared_ptr<VulkanRenderer> _render;
 	ThreadPool _threadPool;
-	SpinLock _GL_SpinLock;
+	SpinLock _Scene3D_SpinLock;
 	SpinLock _D2D_SpinLock;
 };

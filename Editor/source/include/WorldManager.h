@@ -47,7 +47,7 @@ public:
 	void PauseWorld();
 	void ContinueWorld();
 	void StopWorld();
-	void UpdateEditorFrame();
+	void UpdateEditorFrame(ProjectManager* projectManager);
 	bool PlayWorld();
 	void StopPlayback(ProjectManager* projectManager);
 	EditorWorldState GetEditorState() const;
@@ -76,6 +76,10 @@ public:
 
 	void AddLight(LightType type, const glm::vec3& position, const std::string& name = "");
 	void AddGeometry(GeometryType type, const glm::vec3& position, const std::string& name = "");
+	void AddEmptyEntity(const glm::vec3& position, const std::string& name = "");
+
+public:
+	void ReloadScriptAssets(const std::vector<std::shared_ptr<ScriptSourceData>>& changed);
 
 private:
 	DynamicFpsController controller;
@@ -104,4 +108,6 @@ private:
 	uint32_t pendingWidth = 0, pendingHeight = 0;
 	int64_t resizeTimeStamp = 0;
 	bool resizePending = false;
+
+
 };
