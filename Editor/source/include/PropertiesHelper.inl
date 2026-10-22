@@ -455,13 +455,33 @@ inline bool PropertiesHelper::DrawComponent<Script>(Script& comp, ProjectManager
 
 	changed |= ImGui::Checkbox("Enabled", &comp.enabled);
 	ImGui::SameLine();
-	ImGui::BeginDisabled(comp.needReload);
 	if (ImGui::Button("Reload"))
 	{
+		auto reloadScript = [&]() -> bool
+			{
+				if (!assetManager || !comp.data || comp.data->scriptGuid.empty())
+					return false;
+
+				auto& guid = comp.data->scriptGuid;
+				if (auto meta = assetManager->GetDatabase()->GetAssetMetaByGuid(guid))
+				{
+					if (meta->type != AssetType::Script)
+						return false;
+
+					auto asset = assetManager->LoadAsset(guid);
+					auto source = asset ? asset->AsScript() : nullptr;
+					if (!source)
+						return false;
+
+					comp.data = source;
+					return true;
+				}
+			};
+
+		reloadScript();
 		comp.needReload = true;
 		changed |= true;
 	}
-	ImGui::EndDisabled();
 	if (ImGui::Button("Drop script asset to replace", ImVec2(-FLT_MIN, 0.0f))) {}
 	if (ImGui::BeginDragDropTarget())
 	{

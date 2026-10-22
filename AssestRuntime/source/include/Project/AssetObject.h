@@ -5,6 +5,7 @@
 #include "VulkanRenderEngine/Base/Model.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Script/ScriptSourceData.h"
+#include <filesystem>
 
 class AssetStroage;
 class AssetStroageHelper;
@@ -27,6 +28,9 @@ public:
 	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
 	virtual std::shared_ptr<ScriptSourceData> AsScript();
+
+public:
+	virtual bool NeedUpdate() { return false; }
 
 protected:
 	AssetType _type;
@@ -136,6 +140,7 @@ public:
 
 private:
 	std::shared_ptr<ScriptSourceData> _data;
+	std::filesystem::file_time_type _lastWriteTime{};
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };
