@@ -16,6 +16,19 @@ private:
 	void RegisterMatrix4(sol::state_view lua);
 };
 
+class WorldModule : public IScriptModule
+{
+public:
+	explicit WorldModule(World* world);
+	virtual void Register(sol::state_view lua, sol::usertype<Entity>& entityType) override;
+
+private:
+	Entity CreateEntity();
+
+private:
+	World* _world = nullptr;
+};
+
 class TransformScriptModule : public IScriptModule
 {
 public:

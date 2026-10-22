@@ -3,6 +3,7 @@
 #include "CommonComponent.h"
 #include "GameRuntimeComponents.h"
 #include "ECSCore/World.h"
+#include "Systems/ScriptSystem.h"
 
 using namespace Render;
 
@@ -62,6 +63,13 @@ RenderSystem::RenderSystem()
 	:
 	_threadPool(0)
 {}
+
+void RenderSystem::onAttach(World & world) {
+	if (auto scriptSystem = world.getSystem<ScriptSystem>())
+	{
+		scriptSystem->RegisterScriptModule("RenderableVisiableModule", std::make_unique<RenderableVisiableModule>(&world));
+	}
+}
 
 void RenderSystem::SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer)
 {
