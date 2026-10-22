@@ -395,6 +395,28 @@ void GLMMathModule::RegisterMatrix4(sol::state_view lua)
 	);
 }
 
+WorldModule::WorldModule(World* world) :_world(world)
+{}
+
+void WorldModule::Register(sol::state_view lua, sol::usertype<Entity>& entityType)
+{
+	sol::table table = lua["World"].get_or_create<sol::table>();
+
+	table.set_function("createentity",
+		[this]() -> Entity { return CreateEntity(); }
+	);
+}
+
+Entity WorldModule::CreateEntity()
+{
+	if (!_world)
+		return Entity();
+
+	auto entity = _world->createEntity();
+	entity.addComponent<Transform>();
+	return entity;
+}
+
 std::tuple<bool, glm::vec3> TransformScriptModule::GetPosition(Entity entity) const
 {
 	if (!IsValid(_world, entity))
@@ -419,3 +441,4 @@ std::tuple<bool, glm::vec3> TransformScriptModule::GetDirection(Entity entity) c
 	auto dir = transform->GetDirection();
 	return { true, dir };
 }
+

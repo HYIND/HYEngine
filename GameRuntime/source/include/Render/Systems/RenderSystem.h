@@ -34,7 +34,7 @@ class RenderSystem :public System
 {
 public:
 	RenderSystem();
-	virtual void onAttach(World& world) override {}
+	virtual void onAttach(World& world) override;
 
 	void SetTriBuffer(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderFrameData>>> triBuffer);
 	void SetScene3DRender(std::shared_ptr<VulkanRenderer> render);
