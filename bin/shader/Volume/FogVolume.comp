@@ -79,6 +79,8 @@ vec3 CalcDirLightEffect(DirLight light, vec3 testPoint, vec3 viewDir)
     vec3 toLightDir = -light.direction;
     // vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, testPoint + toLightDir * 1e4);          // 光源到采样点之间的透光率
     vec3 tramsmittanceLightToTest = vec3(1.0);
+    if (light.volumeLightEffectByAtmospher && AtmoVolumeEnable)
+        tramsmittanceLightToTest *= AtmoTransmittance(testPoint + vec3(0, PlanetRadius, 0.f), (testPoint + toLightDir * 1e4) + vec3(0, PlanetRadius, 0.f));
     vec3 scattering = LightVolumeScattering(testPoint, toLightDir, viewDir);                                    // 散射光比例
 
     return tramsmittanceLightToTest * scattering * light.color * light.luxIntensity * light.volumetricScatteringIntensity;
@@ -104,6 +106,8 @@ vec3 CalcPointLightEffect(PointLight light, vec3 testPoint, vec3 viewDir)
 
     vec3 toLightDir = normalize(light.position - testPoint);
     vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, light.position);    // 光源到采样点之间的透光率
+    if (light.volumeLightEffectByAtmospher && AtmoVolumeEnable)
+        tramsmittanceLightToTest *= AtmoTransmittance(testPoint + vec3(0, PlanetRadius, 0.f), light.position + vec3(0, PlanetRadius, 0.f));
     vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                     // 散射光比例
 
     return tramsmittanceLightToTest * scattering * radiance * light.volumetricScatteringIntensity;
@@ -144,6 +148,8 @@ vec3 CalcSpotLightEffect(SpotLight light, vec3 testPoint, vec3 viewDir)
 
     vec3 toLightDir = normalize(light.position - testPoint);
     vec3 tramsmittanceLightToTest = LightVolumeTransmittance(testPoint, light.position);    // 光源到采样点之间的透光率
+    if (light.volumeLightEffectByAtmospher && AtmoVolumeEnable)
+        tramsmittanceLightToTest *= AtmoTransmittance(testPoint + vec3(0, PlanetRadius, 0.f), light.position + vec3(0, PlanetRadius, 0.f));
     vec3 scattering = LightVolumeScattering(testPoint, toLightDir, viewDir);                     // 散射光比例
 
     return tramsmittanceLightToTest * scattering * radiance * light.volumetricScatteringIntensity;
