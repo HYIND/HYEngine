@@ -35,22 +35,22 @@ Frustum::Frustum(const glm::mat4& viewProj)
 			return Plane(coeff, coeff.w);
 		};
 
+	// VK
 	leftFace = GetPlane(row3 + row0);
 	rightFace = GetPlane(row3 - row0);
 	bottomFace = GetPlane(row3 + row1);
 	topFace = GetPlane(row3 - row1);
-	nearFace = GetPlane(row3 + row2);
+	nearFace = GetPlane(row2);
 	farFace = GetPlane(row3 - row2);
 
-	// 8 个 NDC 角点（OpenGL：[-1,1]）
 	std::array<glm::vec4, 8> ndcCorners = {
-		glm::vec4(-1, -1, -1, 1),
+		glm::vec4(-1, -1, 0, 1),
 		glm::vec4(-1, -1,  1, 1),
-		glm::vec4(-1,  1, -1, 1),
+		glm::vec4(-1,  1, 0, 1),
 		glm::vec4(-1,  1,  1, 1),
-		glm::vec4(1, -1, -1, 1),
+		glm::vec4(1, -1, 0, 1),
 		glm::vec4(1, -1,  1, 1),
-		glm::vec4(1,  1, -1, 1),
+		glm::vec4(1,  1, 0, 1),
 		glm::vec4(1,  1,  1, 1)
 	};
 
