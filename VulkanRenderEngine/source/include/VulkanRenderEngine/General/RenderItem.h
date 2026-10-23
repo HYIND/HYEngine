@@ -17,6 +17,9 @@ namespace VKRenderObjectData
 		{
 			glm::mat4 transform;
 			glm::mat4 prevTransform;
+			// 所属物体的变换历史（shared_ptr 保证生命周期）。
+			// 分析阶段只填默认值，真正的 prev 由渲染线程在帧提交时解析
+			std::shared_ptr<VKRenderContext::TransformHistory> transformHistory;
 		};
 		struct MeshItem :public Item
 		{

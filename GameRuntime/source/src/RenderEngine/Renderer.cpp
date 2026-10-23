@@ -133,10 +133,8 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 	if (!data || !data->model)
 		return;
 
-	auto transform = data->transformView.transformTripleBuffer->acquireReadBuffer();
-	auto prevTransform = *data->transformView.prevRenderTransforms;
-
-	*data->transformView.prevRenderTransforms = transform;
+	auto& transform = data->transform;
+	auto transformHistory = data->transformHistory;
 
 	if (data->animatorViews.empty())
 	{
@@ -155,7 +153,8 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 			{
 				TransparentMeshItem item;
 				item.transform = transform;
-				item.prevTransform = prevTransform;
+				item.prevTransform = transform;
+				item.transformHistory = transformHistory;
 				item.meshinfo = info;
 				renderData.transparentMesh.push_back(item);
 			}
@@ -163,7 +162,8 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 			{
 				OpaqueMeshItem item;
 				item.transform = transform;
-				item.prevTransform = prevTransform;
+				item.prevTransform = transform;
+				item.transformHistory = transformHistory;
 				item.meshinfo = info;
 				renderData.opaqueMesh.push_back(item);
 
@@ -195,7 +195,8 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 			{
 				TransparentSkinnedMeshItem item;
 				item.transform = transform;
-				item.prevTransform = prevTransform;
+				item.prevTransform = transform;
+				item.transformHistory = transformHistory;
 				item.meshinfo = info;
 				item.animators = shadredAnimatorViews;
 				renderData.transparentSkinnedMesh.push_back(item);
@@ -209,7 +210,8 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 		{
 			OpaqueSkinnedModelItem item;
 			item.transform = transform;
-			item.prevTransform = prevTransform;
+			item.prevTransform = transform;
+			item.transformHistory = transformHistory;
 			item.models = std::move(meshInfos);
 			item.animators = shadredAnimatorViews;
 			renderData.opaqueSkinnedModel.push_back(item);

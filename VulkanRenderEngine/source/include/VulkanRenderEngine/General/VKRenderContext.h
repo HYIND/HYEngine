@@ -19,12 +19,14 @@ namespace VKRenderContext
 		std::shared_ptr<MatDatas> prevRenderMats = std::make_shared<MatDatas>();
 	};
 
-	struct TransFormView
+	// 物体变换历史：只有"帧真正被提交渲染"时才由渲染线程写一次。
+	// 同一物体的多个 item（不透明/透明、多个 mesh）共享这一份，
+	// 所以用 committedFrame 保证一帧只推进一次。
+	struct TransformHistory
 	{
-		using MatTripleBuffer = TripleBuffer<glm::mat4>;
-
-		std::shared_ptr<MatTripleBuffer> transformTripleBuffer = std::make_shared<MatTripleBuffer>();
-		std::shared_ptr<glm::mat4> prevRenderTransforms = std::make_shared<glm::mat4>();
+		glm::mat4 prevTransform{ 1.0f };
+		bool valid = false;
+		uint32_t committedFrame = 0xFFFFFFFFu;
 	};
 
 	struct BaseRenderData
@@ -33,13 +35,14 @@ namespace VKRenderContext
 
 	struct BaseModelRenderData :public BaseRenderData
 	{
+		glm::mat4 transform;
 		std::shared_ptr<Model> model;
 		std::vector<AnimatorView> animatorViews;
 	};
 
 	struct SceneModelRenderData :public BaseModelRenderData
 	{
-		TransFormView transformView;
+		std::shared_ptr<TransformHistory> transformHistory;
 	};
 
 	struct SceneEffectRenderData :public BaseRenderData
