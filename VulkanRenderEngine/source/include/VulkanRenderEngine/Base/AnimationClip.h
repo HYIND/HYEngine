@@ -4,11 +4,8 @@
 #include <map>
 #include <glm/glm.hpp>
 #include <assimp/scene.h>
-#include <assimp/Importer.hpp>
 #include <functional>
 #include "VulkanRenderEngine/Base/Bone.h"
-#include "VulkanRenderEngine/Base/Animation.h"
-#include "VulkanRenderEngine/Base/Model.h"
 
 struct AssimpNodeData
 {
@@ -18,13 +15,13 @@ struct AssimpNodeData
 	std::vector<AssimpNodeData> children;
 };
 
-class Animation
+class AnimationClip
 {
 public:
-	Animation(const std::string& animationPath);
-	Animation(const aiScene* scene, int index = 0);
+	AnimationClip(const std::string& animationPath);
+	AnimationClip(const aiScene* scene, int index = 0);
 
-	~Animation();
+	~AnimationClip();
 
 	float GetTicksPerSecond() const;
 	float GetDuration() const;
@@ -34,7 +31,7 @@ public:
 	bool TryGetCameraTransform(glm::mat4& mat);		//针对某些场景树自带Camera的情况，如第一人称动画
 
 private:
-	void ReadBones(const aiAnimation* animation);
+	void ReadBones(const aiAnimation* aiAni);
 	void ReadHierarchyData(AssimpNodeData& dest, const aiNode* src);
 
 	bool FindCameraTransForm(AssimpNodeData& data, glm::mat4& mat);
@@ -47,8 +44,8 @@ private:
 	AssimpNodeData m_RootNode;
 };
 
-class AnimationLoader
+class AnimationClipLoader
 {
 public:
-	static std::vector<std::shared_ptr<Animation>> LoadAnimationFile(const std::string& animationPath);
+	static std::vector<std::shared_ptr<AnimationClip>> LoadAnimationFile(const std::string& animationPath);
 };

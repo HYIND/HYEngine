@@ -5,9 +5,9 @@
 #include "VulkanRenderEngine/Base/Model.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
-#include "VulkanRenderEngine/Base/Animation.h"
+#include "VulkanRenderEngine/Base/AnimationClip.h"
 #include <map>
-#include <iostream>
+#include <string>
 
 namespace ResName
 {
@@ -56,7 +56,7 @@ namespace ResName
 
 	const std::string Sponza = "Sponza";
 
-	//Animation
+	//AnimationClip
 	const std::string AK47_Anim_Static =			"AK47_Anim_Static";
 	const std::string AK47_Anim_Draw =				"AK47_Anim_Draw";
 	const std::string AK47_Anim_Idle =				"AK47_Anim_Idle";
@@ -110,7 +110,7 @@ public:
 	std::shared_ptr<Model> GetModelRes(const std::string& name);
 	std::shared_ptr<Texture2D> GetTexture2DRes(const std::string& name);
 	std::shared_ptr<TextureCube> GetTextureCubeRes(const std::string& name);
-	std::shared_ptr<Animation> GetAnimationRes(const std::string& name);
+	std::shared_ptr<AnimationClip> GetAnimationRes(const std::string& name);
 private:
 	ResourceManager();
 	bool InitScene3DResourceInternal(uint32_t mapFlag = 0);
@@ -122,7 +122,7 @@ private:
 	std::map <std::string, std::shared_ptr<Model>> ModelRes;
 	std::map <std::string, std::shared_ptr<Texture2D>> Texture2DRes;
 	std::map <std::string, std::shared_ptr<TextureCube>> TextureCubeRes;
-	std::map <std::string, std::shared_ptr<Animation>> AnimationRes;
+	std::map <std::string, std::shared_ptr<AnimationClip>> AnimationRes;
 
 	std::once_flag initScene3DFlag;
 };

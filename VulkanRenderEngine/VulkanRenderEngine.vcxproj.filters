@@ -104,13 +104,13 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaImage.h">
       <Filter>头文件\VulkanRenderEngine\VKWrapper</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animation.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AnimationClip.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animdata.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Skeleton.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h">
@@ -517,7 +517,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Animator.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animation.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AnimationClip.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Bone.cpp">
@@ -600,6 +600,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousGaussFilter.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/Mesh.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 
 std::vector<vk::VertexInputAttributeDescription> Vertex::GetVertexInputAttributeDescription(uint32_t binding, uint32_t locaitonOffset)
@@ -75,17 +76,14 @@ vk::VertexInputBindingDescription Vertex::GetVertexInputBindingDescription(uint3
 
 
 Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
-	: _device(nullptr),
-	needSetup(true), needUpdateIndirectDraw(false), needUpdateBVH(true), needUpdateAABB(true),
+	:
+	needUpdateIndirectDraw(false), needUpdateBVH(true), needUpdateAABB(true),
 	_viVersion{ 0 }, _bvhversion{ 0 }, _aabbversion{ 0 }
 {
 	_uuid = Tool::GenerateSimpleUuid();
 
 	this->_vertices = vertices;
 	this->_indices = indices;
-
-	_device = VKCONTEXT->GetDevice().get();
-
 
 	SetDirty();
 }
@@ -95,45 +93,14 @@ Mesh::~Mesh()
 	IndirectDrawManager::Instance()->RetireMesh(*this);
 }
 
-void Mesh::Draw(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
-{
-	Need();
-
-	std::vector<vk::Buffer> vertexbuffers = { _vertexBuffer->GetHandle() };
-	std::vector<vk::DeviceSize> offsets = { 0 };
-
-	cmd->bindVertexBuffers(0, vertexbuffers, offsets);
-	cmd->bindIndexBuffer(_indexBuffer->GetHandle(), 0, vk::IndexType::eUint32);
-	cmd->drawIndexed(static_cast<uint32_t>(_indices.size()), 1, 0, 0, 0);
-}
-
-void Mesh::DrawInstanced(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, uint32_t count)
-{
-	Need();
-
-	std::vector<vk::Buffer> vertexbuffers = { _vertexBuffer->GetHandle() };
-	std::vector<vk::DeviceSize> offsets = { 0 };
-
-	cmd->bindVertexBuffers(0, vertexbuffers, offsets);
-	cmd->bindIndexBuffer(_indexBuffer->GetHandle(), 0, vk::IndexType::eUint32);
-	cmd->drawIndexed(static_cast<uint32_t>(_indices.size()), count, 0, 0, 0);
-}
-
 void Mesh::SetDirty()
 {
-	needSetup = true;
 	needUpdateIndirectDraw = true;
 	needUpdateAABB = true;
 	needUpdateBVH = true;
 	_viVersion++;
 	_bvhversion++;
 	_aabbversion++;
-}
-
-void Mesh::Need()
-{
-	if (needSetup)
-		SetupMesh();
 }
 
 void Mesh::CalculateTangentData()
@@ -344,59 +311,4 @@ void Mesh::SetNeedUpdateIndirectDraw(bool value)
 bool Mesh::GetNeedUpdateIndirectDraw() const
 {
 	return needUpdateIndirectDraw;
-}
-
-void Mesh::SetupMesh()
-{
-	// 计算缓冲区大小
-	VkDeviceSize vertexSize = _vertices.size() * sizeof(Vertex);
-	VkDeviceSize indexSize = _indices.size() * sizeof(unsigned int);
-
-	VkBufferCreateInfo vertexBufferInfo = {};
-	vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	vertexBufferInfo.size = vertexSize;
-	vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT |  // 支持更新
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // 如果用于 Indirect 或 Compute
-
-	VmaAllocationCreateInfo vertexAllocInfo = {};
-	vertexAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;  // 让 VMA 自动选择最优内存
-	vertexAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
-
-	_vertexBuffer = std::make_unique<VKWrapper::VmaBuffer>(
-		_device, vertexBufferInfo, vertexAllocInfo
-	);
-
-	VkBufferCreateInfo indexBufferInfo = {};
-	indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	indexBufferInfo.size = indexSize;
-	indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-
-	VmaAllocationCreateInfo indexAllocInfo = {};
-	indexAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-	indexAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
-
-	_indexBuffer = std::make_unique<VKWrapper::VmaBuffer>(
-		_device, indexBufferInfo, indexAllocInfo
-	);
-
-	UpdateGPUData();
-
-	needSetup = false;
-}
-
-void Mesh::UpdateGPUData()
-{
-	if (!_vertexBuffer || !_indexBuffer)
-		return;
-
-	VkDeviceSize vertexSize = _vertices.size() * sizeof(Vertex);
-	VkDeviceSize indexSize = _indices.size() * sizeof(unsigned int);
-
-	_vertexBuffer->Update(_vertices.data(), vertexSize, 0);
-	_indexBuffer->Update(_indices.data(), indexSize, 0);
 }

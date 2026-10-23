@@ -137,9 +137,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animation.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\AnimationClip.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Animdata.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Skeleton.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AtlasMap.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Bone.h" />
@@ -245,7 +245,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Animation.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\AnimationClip.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Animator.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\AssimpGlmHelpers.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\AtlasMap.cpp" />
@@ -258,6 +258,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Model.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Pipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\RayTracingPipeline.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2DArray.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\DynamicBlock.cpp" />
