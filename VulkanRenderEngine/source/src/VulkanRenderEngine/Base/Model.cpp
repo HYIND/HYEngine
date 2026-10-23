@@ -128,30 +128,6 @@ inline std::string GetExt(const std::string& path)
 	return fs::path(path).extension().string();
 }
 
-static void SetVertexBoneDataToDefault(Vertex& vertex)
-{
-	for (int i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; i++)
-	{
-		vertex.m_BoneIDs[i] = -1;
-		vertex.m_Weights[i] = 0.0f;
-	}
-}
-
-static void SetVertexBoneData(Vertex& vertex, int boneID, float weight)
-{
-	if (vertex.m_BoneIDs[GlobalConfig::Mesh_Max_Bone_Influence - 1] >= 0)
-		return;
-
-	for (int i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
-	{
-		if (vertex.m_BoneIDs[i] < 0)
-		{
-			vertex.m_Weights[i] = weight;
-			vertex.m_BoneIDs[i] = boneID;
-			break;
-		}
-	}
-}
 
 Model::Model(const std::string& path)
 {
@@ -370,8 +346,37 @@ void Model::loadModel(std::string const& path)
 	}
 
 	_directory = replace_path.substr(0, replace_path.find_last_of('/'));
+	bool hasSkinning = false;
+	for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
+	{
+		if (scene->mMeshes[meshIndex] && scene->mMeshes[meshIndex]->mNumBones > 0)
+		{
+			hasSkinning = true;
+			break;
+		}
+	}
+	if (hasSkinning)
+	{
+		_skeleton = std::make_shared<Skeleton>();
+		BuildSkeletonHierarchy(scene->mRootNode, SkeletonNode::InvalidIndex, "/" + std::string(scene->mRootNode->mName.C_Str()));
+	}
 
 	processNode(scene->mRootNode, scene);
+}
+
+void Model::BuildSkeletonHierarchy(aiNode* node, uint32_t parentIndex, const std::string& path)
+{
+	if (!node || !_skeleton)
+		return;
+
+	const std::string nodeName = node->mName.C_Str();
+	const uint32_t nodeIndex = _skeleton->AddNode(nodeName, path, parentIndex, AssimpGLMHelpers::ConvertMatrixToGLMFormat(node->mTransformation));
+	for (unsigned int childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
+	{
+		aiNode* child = node->mChildren[childIndex];
+		const std::string childName = child ? child->mName.C_Str() : std::string();
+		BuildSkeletonHierarchy(child, nodeIndex, path + "/" + childName + "[" + std::to_string(childIndex) + "]");
+	}
 }
 
 void Model::processNode(aiNode* node, const aiScene* scene)
@@ -397,7 +402,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	for (unsigned int i = 0; i < mesh->mNumVertices; i++)
 	{
 		Vertex vertex;
-		SetVertexBoneDataToDefault(vertex);
+		vertex.SetVertexBoneDataToDefault();
 
 		vertex.Position = AssimpGLMHelpers::GetGLMVec(mesh->mVertices[i]);
 
@@ -513,7 +518,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	}
 
 	float metallic = 0.f;
-	if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic) 
+	if (AI_SUCCESS == ai_material->Get(AI_MATKEY_METALLIC_FACTOR, metallic)
 		|| AI_SUCCESS == ai_material->Get(AI_MATKEY_SPECULAR_FACTOR, metallic)
 		|| AI_SUCCESS == ai_material->Get(AI_MATKEY_GLOSSINESS_FACTOR, metallic)
 		)
@@ -537,7 +542,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	return MeshInfo{ meshptr,material };
 }
 
-std::vector<LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
+std::vector<Model::LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
 {
 	std::vector<LoadedTexture> textures;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)
@@ -596,10 +601,6 @@ void Model::ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMe
 	if (!_skeleton)
 		_skeleton = std::make_shared<Skeleton>();
 
-	auto& boneInfoMap = _skeleton->BoneInfoMap;
-	int& boneCount = _skeleton->BoneCounter;
-
-	int realBoneCount = 0;
 	for (int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
 	{
 		auto weights = mesh->mBones[boneIndex]->mWeights;
@@ -608,31 +609,22 @@ void Model::ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMe
 		if (!mesh->mBones[boneIndex]->mWeights || mesh->mBones[boneIndex]->mNumWeights <= 0)
 			continue;
 
-		realBoneCount++;
-		int boneID = -1;
 		std::string boneName = mesh->mBones[boneIndex]->mName.C_Str();
-		if (boneInfoMap.find(boneName) == boneInfoMap.end())
+		const SkeletonNodeIndex nodeIndex = _skeleton->FindUniqueNodeByName(boneName);
+		if (nodeIndex == SkeletonNode::InvalidIndex)
 		{
-			BoneInfo newBoneInfo;
-			newBoneInfo.id = boneCount;
-			newBoneInfo.offset = AssimpGLMHelpers::ConvertMatrixToGLMFormat(mesh->mBones[boneIndex]->mOffsetMatrix);
-			boneInfoMap[boneName] = newBoneInfo;
-			boneID = boneCount;
-			boneCount++;
-		}
-		else
-		{
-			boneID = boneInfoMap[boneName].id;
+			std::cerr << "Assimp bone has no unique node in imported hierarchy: " << boneName << std::endl;
+			continue;
 		}
 
-		assert(boneID != -1);
+		const BoneID boneID = static_cast<BoneID>(nodeIndex);
 
 		for (int weightIndex = 0; weightIndex < numWeights; ++weightIndex)
 		{
 			int vertexId = weights[weightIndex].mVertexId;
 			float weight = weights[weightIndex].mWeight;
 			assert(vertexId <= vertices.size());
-			SetVertexBoneData(vertices[vertexId], boneID, weight);
+			vertices[vertexId].SetVertexBoneData(boneID, weight);
 		}
 	}
 }

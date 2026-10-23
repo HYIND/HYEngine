@@ -3,31 +3,56 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/BVHBuilder.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
-#include "VulkanRenderEngine/VKContext.h"
 #include "VulkanRenderEngine/VKWrapper/VmaBuffer.h"
 
+using BoneID = uint32_t;
 
-struct alignas(16) Vertex {
+struct alignas(16) Vertex 
+{
+	static constexpr BoneID InvalidBoneID = std::numeric_limits<BoneID>::max();
+
 	alignas(16) glm::vec3 Position;
 	alignas(16) glm::vec3 Normal;
 	alignas(16) glm::vec2 TexCoords;
 	alignas(16) glm::vec3 Tangent;
 	alignas(16) glm::vec3 Bitangent;
-	alignas(16) int m_BoneIDs[GlobalConfig::Mesh_Max_Bone_Influence] = { -1 };
+	alignas(16) BoneID m_BoneIDs[GlobalConfig::Mesh_Max_Bone_Influence] = { InvalidBoneID };
 	alignas(16) float m_Weights[GlobalConfig::Mesh_Max_Bone_Influence] = { 1.0f };
 
 	static std::vector<vk::VertexInputAttributeDescription> GetVertexInputAttributeDescription(uint32_t binding = 0, uint32_t locaitonOffset = 0);
 	static vk::VertexInputBindingDescription GetVertexInputBindingDescription(uint32_t binding = 0);
+
+	void SetVertexBoneDataToDefault()
+	{
+		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; i++)
+		{
+			m_BoneIDs[i] = Vertex::InvalidBoneID;
+			m_Weights[i] = 0.0f;
+		}
+	}
+
+	bool SetVertexBoneData(BoneID boneID, float weight)
+	{
+		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
+		{
+			if (m_BoneIDs[i] == Vertex::InvalidBoneID)
+			{
+				m_Weights[i] = weight;
+				m_BoneIDs[i] = boneID;
+				return true;
+			}
+		}
+		return false;
+	}
+
 };
+
 
 class Mesh
 {
 public:
 	Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices);
 	~Mesh();
-
-	void Draw(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
-	void DrawInstanced(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, uint32_t count);
 
 	void CalculateTangentData();	//计算切线和副切线
 
@@ -57,23 +82,12 @@ public:
 	bool GetNeedUpdateIndirectDraw() const;
 
 private:
-	VKCore::VulkanDevice* _device;
-	std::unique_ptr<VKWrapper::VmaBuffer> _vertexBuffer;
-	std::unique_ptr<VKWrapper::VmaBuffer> _indexBuffer;
-
-	void Need();
-	void SetupMesh();
-
-	void UpdateGPUData();
-
-private:
 	std::vector<Vertex> _vertices;
 	std::vector<unsigned int> _indices;
 
 	std::shared_ptr<BVHData> _bvhdata;
 	AABB _aabbdata;
 
-	bool needSetup;
 	bool needUpdateIndirectDraw;
 	bool needUpdateBVH;
 	bool needUpdateAABB;

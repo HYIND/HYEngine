@@ -111,7 +111,7 @@ void SetupTestWeapon(World& world, Entity& entity)
 
 	struct SkeletonAnimationData {
 		std::string name;
-		std::shared_ptr<Animation> ani;
+		std::shared_ptr<AnimationClip> ani;
 		bool initenable = false;
 	};
 	static auto setupWeaponAnimatorGroup = [](Entity weapon, std::shared_ptr<Model> model, const std::vector<SkeletonAnimationData>& datas)-> void

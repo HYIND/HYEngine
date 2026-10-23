@@ -29,7 +29,7 @@ struct SkeletonAnimatorGroup :public IComponent
 		animatorDatas.clear();
 	}
 
-	bool AddAnimator(const std::string& name, std::shared_ptr<Animation> ani, std::shared_ptr<Skeleton> skeleton, bool enable = false)
+	bool AddAnimator(const std::string& name, std::shared_ptr<AnimationClip> ani, std::shared_ptr<Skeleton> skeleton, bool enable = false)
 	{
 		if (!ani || !skeleton)
 			return false;

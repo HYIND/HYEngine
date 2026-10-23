@@ -9,7 +9,7 @@
 #include "VulkanRenderEngine/Base/Mesh.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/Material.h"
-#include "VulkanRenderEngine/Base/Animation.h"
+#include "VulkanRenderEngine/Base/Skeleton.h"
 
 struct AnalysisTextureAssetMeta
 {

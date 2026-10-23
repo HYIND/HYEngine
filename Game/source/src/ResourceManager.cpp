@@ -286,7 +286,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 				pool.submit([&]()->void {
 					{
 						ModelRes[ResName::AK47] = std::make_shared<Model>("Test/Weapon/AK47/test.fbx");
-						auto animations = AnimationLoader::LoadAnimationFile("Test/Weapon/AK47/test.fbx");
+						auto animations = AnimationClipLoader::LoadAnimationFile("Test/Weapon/AK47/test.fbx");
 						AnimationRes[ResName::AK47_Anim_Static] = animations[0];
 						AnimationRes[ResName::AK47_Anim_Draw] = animations[1];
 						AnimationRes[ResName::AK47_Anim_Idle] = animations[2];
@@ -492,7 +492,7 @@ std::shared_ptr<TextureCube> ResourceManager::GetTextureCubeRes(const std::strin
 	return it->second;
 }
 
-std::shared_ptr<Animation> ResourceManager::GetAnimationRes(const std::string& name)
+std::shared_ptr<AnimationClip> ResourceManager::GetAnimationRes(const std::string& name)
 {
 	auto it = AnimationRes.find(name);
 	if (it == AnimationRes.end())
