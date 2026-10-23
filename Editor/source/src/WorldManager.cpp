@@ -64,12 +64,10 @@ void SetNameTag(Entity entity, const std::string& name)
 	}
 }
 
-void LoadDefaultScene(WorldManager* manager)
+static void GeneralDefaultWorld(World& world)
 {
-	auto world = manager->GetWorld();
-
 	{
-		Entity entity = LightFactory::CreateDirLight(*world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
+		Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
 		AddPickProxy(entity);
 		SetNameTag(entity, "DirLight");
 	}
@@ -85,14 +83,14 @@ void LoadDefaultScene(WorldManager* manager)
 			"Test/skybox/box2/back.png"
 		};
 		static auto skyboxcube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
-		Entity entity = world->createEntityWithTag<TagSkyBox>();
+		Entity entity = world.createEntityWithTag<TagSkyBox>();
 		entity.addComponent<SkyBox>(skyboxcube);
 
 		SetNameTag(entity, "DefaultSkybox");
 	}
 
 	{
-		Entity cube = world->createEntity();
+		Entity cube = world.createEntity();
 		auto& trans = cube.addComponent<Transform>();
 		trans.position = { 0,3,0 };
 
@@ -113,7 +111,7 @@ void LoadDefaultScene(WorldManager* manager)
 	}
 
 	{
-		Entity entity = world->createEntity();
+		Entity entity = world.createEntity();
 		auto& trans = entity.addComponent<Transform>();
 		trans.position = { -3,3,0 };
 
@@ -164,7 +162,7 @@ void LoadDefaultScene(WorldManager* manager)
 	{
 		float radius = 3.0;
 
-		Entity sphere = world->createEntity();
+		Entity sphere = world.createEntity();
 		auto& trans = sphere.addComponent<Transform>();
 		trans.position = { 3,3,0 };
 		trans.scale = glm::vec3(radius / 0.5f);
@@ -204,7 +202,7 @@ void LoadDefaultScene(WorldManager* manager)
 		if (!meshInfo.empty())
 			meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
 
-		Entity floor = world->createEntity();
+		Entity floor = world.createEntity();
 		auto& trans = floor.addComponent<Transform>();
 		trans.position = glm::vec3(0, 0, 0);
 		trans.scale = glm::vec3(floorSize, 1.f, floorSize);
@@ -221,6 +219,19 @@ void LoadDefaultScene(WorldManager* manager)
 		AddPickProxy(floor);
 		SetNameTag(floor, "floor");
 	}
+}
+
+std::shared_ptr<SceneCodec> WorldManager::CreateDefaultSceneCodec()
+{
+	World defaultWorld;
+	GeneralDefaultWorld(defaultWorld);
+	RegisterSceneComponentCodecs();
+
+	auto scene = std::make_shared<SceneCodec>();
+	scene->SetName("DefaultScene");
+	if (!scene->Serialize(defaultWorld))
+		return nullptr;
+	return scene;
 }
 
 WorldManager* WorldManager::Instance() {
@@ -287,7 +298,7 @@ void WorldManager::CreateWorld(bool loadDefaultScene)
 	_world = world;
 
 	if (loadDefaultScene)
-		LoadDefaultScene(this);
+		GeneralDefaultWorld(*_world);
 
 	_world->update(16);
 }
@@ -394,8 +405,18 @@ bool WorldManager::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, 
 		model->SetAssetGUID(guid);
 		return model;
 		};
+	auto resolveMaterialAsset = [projectManager](const AssetGUID& guid) -> std::shared_ptr<Material> {
+		if (!projectManager)
+			return nullptr;
+		auto database = projectManager->GetDatabase();
+		auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+		if (!meta || meta->type != AssetType::Material)
+			return nullptr;
+		auto asset = projectManager->LoadAsset(guid);
+		return asset ? asset->AsMaterial() : nullptr;
+		};
 
-	if (!scene->Deserialize(*world, resolveScriptAsset, resolveModelAsset))
+	if (!scene->Deserialize(*world, resolveScriptAsset, resolveModelAsset, resolveMaterialAsset))
 		return false;
 
 	const auto& settings = scene->GetSettings();

@@ -6,6 +6,7 @@
 #include "PropertiesHelper.h"
 #include "IconManager.h"
 #include <filesystem>
+#include <fstream>
 #include <cmath>
 #include "Coroutine.h"
 #include "EditorTags.h"
@@ -43,6 +44,13 @@ struct MaterialOrigin
 };
 static MaterialOrigin s_materialOrigin;
 static std::string s_sceneSaveErrorMessage;
+enum class CreateAssetKind { None, Material, Scene, Script };
+static CreateAssetKind s_createAssetKind = CreateAssetKind::None;
+static bool s_showCreateAssetPopup = false;
+static bool s_requestCreateAssetPopup = false;
+static char s_createAssetName[256] = {};
+static std::string s_createAssetParentPath;
+static std::string s_createAssetError;
 
 static bool OpenProjectAndLoadDefaultScene(const std::string& filePath, ProjectManager* projectManager, WorldManager* worldManager)
 {
@@ -739,6 +747,27 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 	if (ImGui::BeginPopup("blank_context_menu"))
 	{
+		if (ImGui::BeginMenu("创建资产"))
+		{
+			auto beginCreateAsset = [&](CreateAssetKind kind)
+				{
+					s_createAssetKind = kind;
+					s_createAssetParentPath = currentPath.string();
+					s_createAssetName[0] = '\0';
+					s_createAssetError.clear();
+					s_requestCreateAssetPopup = true;
+				};
+			if (ImGui::MenuItem("材质"))
+				beginCreateAsset(CreateAssetKind::Material);
+			if (ImGui::MenuItem("场景"))
+				beginCreateAsset(CreateAssetKind::Scene);
+			if (ImGui::MenuItem("脚本"))
+				beginCreateAsset(CreateAssetKind::Script);
+			ImGui::EndMenu();
+		}
+
+		ImGui::Separator();
+
 		if (ImGui::MenuItem("新建文件夹"))
 		{
 			m_showNewFolderPopup = true;
@@ -752,6 +781,103 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 			// 下一帧自动重新读取
 		}
 
+		ImGui::EndPopup();
+	}
+
+	if (s_requestCreateAssetPopup)
+	{
+		ImGui::OpenPopup("创建资产");
+		s_requestCreateAssetPopup = false;
+		s_showCreateAssetPopup = true;
+	}
+	if (ImGui::BeginPopupModal("创建资产", &s_showCreateAssetPopup, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		const char* assetTypeName = s_createAssetKind == CreateAssetKind::Material ? "材质"
+			: s_createAssetKind == CreateAssetKind::Scene ? "场景" : "脚本";
+		const char* extension = s_createAssetKind == CreateAssetKind::Scene ? ".scene"
+			: s_createAssetKind == CreateAssetKind::Script ? ".lua" : "";
+		ImGui::Text("创建%s", assetTypeName);
+		ImGui::Text("目录: %s", s_createAssetParentPath.c_str());
+		ImGui::InputText("名称", s_createAssetName, sizeof(s_createAssetName));
+		if (extension[0] != '\0')
+			ImGui::SameLine(), ImGui::Text("%s", extension);
+
+		std::string name = s_createAssetName;
+		const bool validName = !name.empty() && name != "." && name != ".."
+			&& fs::path(name).filename().string() == name
+			&& name.find_first_of("/\\") == std::string::npos;
+		fs::path targetPath = fs::path(s_createAssetParentPath) / (name + extension);
+		bool canCreate = validName && !fs::exists(targetPath);
+		if (validName && fs::exists(targetPath))
+			ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "同名文件已存在");
+		if (validName && s_createAssetKind != CreateAssetKind::Material)
+		{
+			const auto relativePath = fs::relative(targetPath, projectManager->GetProjectFolderFullPath()).string();
+			auto database = projectManager->GetDatabase();
+			if (database && database->GetAssetMetaByPath(relativePath))
+			{
+				canCreate = false;
+				ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "资产数据库中已存在同路径资产");
+			}
+		}
+		if (!s_createAssetError.empty())
+			ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "%s", s_createAssetError.c_str());
+
+		if (ImGui::Button("创建", ImVec2(120, 0)) && canCreate)
+		{
+			bool created = false;
+			AssetMeta createdMeta;
+			try
+			{
+				if (s_createAssetKind == CreateAssetKind::Material)
+				{
+					created = projectManager->ImportMaterialAsset(targetPath.string(), MaterialProperties{}, {}, &createdMeta, true);
+				}
+				else if (s_createAssetKind == CreateAssetKind::Scene)
+				{
+					auto scene = WorldManager::CreateDefaultSceneCodec();
+					if (!scene)
+						s_createAssetError = "无法生成引擎默认世界场景。";
+					else
+					{
+						scene->SetName(name);
+						created = projectManager->CreateSceneAsset(targetPath.string(), *scene, &createdMeta);
+					}
+				}
+				else if (s_createAssetKind == CreateAssetKind::Script)
+				{
+					std::ofstream scriptFile(targetPath, std::ios::binary | std::ios::out);
+					if (scriptFile)
+					{
+						scriptFile.close();
+						created = projectManager->ImportScriptAsset(targetPath.string(), targetPath.string(), &createdMeta, true);
+						if (!created)
+							fs::remove(targetPath);
+					}
+				}
+			}
+			catch (const std::exception& exception)
+			{
+				s_createAssetError = exception.what();
+			}
+
+			if (created)
+			{
+				s_showCreateAssetPopup = false;
+				ImGui::CloseCurrentPopup();
+			}
+			else if (s_createAssetError.empty())
+			{
+				s_createAssetError = "创建资产失败。";
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消", ImVec2(120, 0)))
+		{
+			s_showCreateAssetPopup = false;
+			s_createAssetError.clear();
+			ImGui::CloseCurrentPopup();
+		}
 		ImGui::EndPopup();
 	}
 
@@ -2543,9 +2669,29 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, WorldManager* worldMana
 					auto rModel = entity.tryGetComponent<RenderModel>();
 					if (!rModel || !rModel->model)
 						return;
-					auto& meshInfos = rModel->model->getMeshInfos();
-					if (meshInfos.size() == 1)
-						meshInfos[0].material = material;
+				if (rModel->model->getMeshInfos().size() == 1)
+				{
+					const auto& currentMaterial = rModel->model->getMeshInfos()[0].material;
+					if (material->GetAssetGUID().empty()
+						&& currentMaterial && !currentMaterial->GetAssetGUID().empty())
+						return;
+
+					auto instanceModel = rModel->model->Clone(false, false, false);
+					auto& meshInfos = instanceModel->getMeshInfos();
+					meshInfos[0].material = material;
+					rModel->model = std::move(instanceModel);
+					const auto& materialGuid = material->GetAssetGUID();
+					if (materialGuid.empty())
+					{
+						rModel->materialOverrideGUIDs.erase(0);
+						rModel->materialOverrideProperties[0] = material->GetProperties();
+					}
+					else
+					{
+						rModel->materialOverrideGUIDs[0] = materialGuid;
+						rModel->materialOverrideProperties.erase(0);
+					}
+				}
 
 				}).get();
 		}
