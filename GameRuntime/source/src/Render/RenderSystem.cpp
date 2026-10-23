@@ -279,10 +279,8 @@ void RenderSystem::processModel(std::shared_ptr<RenderFrameData>& framebuffer, E
 
 		auto renderdata = std::make_shared<VKRenderContext::SceneModelRenderData>();
 
-		auto& writeBuffer = renderModel.renderView.transformTripleBuffer->acquireWriteBuffer();
-		writeBuffer = transform.GetMatrix() * renderModel.trans;
-		renderModel.renderView.transformTripleBuffer->submitWriteBuffer();
-		renderdata->transformView = renderModel.renderView;
+		renderdata->transform = transform.GetMatrix() * renderModel.trans;
+		renderdata->transformHistory = renderModel.transformHistory;
 
 		renderdata->model = renderModel.model;
 

@@ -956,7 +956,7 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 
 	{
 		auto guard = sync->MakeProgressGuard();
-		SetupRenderState(state);
+		SetupRenderState(data);
 	}
 
 	{
@@ -1067,36 +1067,101 @@ void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
 
 }
 
-void VulkanRenderer::SetupRenderState(std::shared_ptr<RenderState>& state)
+camera_compData VulkanRenderer::BuildCameraCompData(const RenderState& state) const
 {
-	auto cmd = VKCONTEXT->GetCommandBuffer();
+	const auto& camera = state.camera;
 
-	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
-	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
-
-	state->camera.prevUBO->WriteDataAsync(cmd, &_cameraCache, sizeof(camera_compData));
-
-	camera_compData cameraData;
-	cameraData.projection = state->camera.projection;
-	cameraData.view = state->camera.view;
+	camera_compData cameraData{};
+	cameraData.projection = camera.projection;
+	cameraData.view = camera.view;
 	cameraData.projView = cameraData.projection * cameraData.view;
-	cameraData.invProjection = glm::inverse(state->camera.projection);
-	cameraData.invView = glm::inverse(state->camera.view);
+	cameraData.invProjection = glm::inverse(camera.projection);
+	cameraData.invView = glm::inverse(camera.view);
 	cameraData.invProjView = glm::inverse(cameraData.projView);
 	glm::mat4 invTrans = glm::mat3(glm::transpose(cameraData.invView));
 	cameraData.invTransViewRow1 = invTrans[0];
 	cameraData.invTransViewRow2 = invTrans[1];
 	cameraData.invTransViewRow3 = invTrans[2];
-	cameraData.position = state->camera.position;
-	cameraData.direction = state->camera.direction;
-	cameraData.directionUp = state->camera.directionUp;
-	cameraData.directionRight = state->camera.directionRight;
-	cameraData.nearPlane = state->camera.nearPlane;
-	cameraData.farPlane = state->camera.farPlane;
-	cameraData.fov = state->camera.fov;
-	_cameraCache = cameraData;
+	cameraData.position = camera.position;
+	cameraData.direction = camera.direction;
+	cameraData.directionUp = camera.directionUp;
+	cameraData.directionRight = camera.directionRight;
+	cameraData.nearPlane = camera.nearPlane;
+	cameraData.farPlane = camera.farPlane;
+	cameraData.fov = camera.fov;
+	return cameraData;
+}
 
-	state->camera.curUBO->WriteDataAsync(cmd, &cameraData, sizeof(camera_compData));
+void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
+{
+	if (!data || !data->state)
+		return;
+
+	auto& state = *data->state;
+
+	// 相机：prev 取上一张真正提交过的帧，cur 取本帧
+	data->cameraCurData = BuildCameraCompData(state);
+	data->cameraPrevData = _cameraCacheValid ? _cameraCache : data->cameraCurData;
+	_cameraCache = data->cameraCurData;
+	_cameraCacheValid = true;
+
+	auto& renderData = state.objects.sceneRenderData;
+	const uint32_t frameIndex = state.renderRecord.frameIndex;
+
+	// 同一物体可能被拆成多个 item（不透明/透明、多个 mesh），它们共享同一份 history，
+	// 所以必须先把所有 item 的 prev 都解析完，再统一推进，否则后面的 item 会读到刚被推进的值。
+	auto resolve = [](auto& items)
+		{
+			std::for_each(
+				std::execution::par_unseq,
+				items.begin(),
+				items.end(),
+				[&](auto& item) {
+					if (!item.transformHistory)
+						return;
+					const auto& history = *item.transformHistory;
+					item.prevTransform = history.valid ? history.prevTransform : item.transform;// 第一次出现（或物体被剔除过几帧）时没有可用的 prev，退化成零运动
+				});
+		};
+
+	auto commit = [frameIndex](auto& items)
+		{
+			for (auto& item : items)
+			{
+				if (!item.transformHistory)
+					continue;
+				auto& history = *item.transformHistory;
+				if (history.committedFrame == frameIndex) // 同一物体的多个 item 拿到的是同一个 transform，一帧推进一次就够
+					continue;
+				history.prevTransform = item.transform;
+				history.valid = true;
+				history.committedFrame = frameIndex;
+			}
+		};
+
+	resolve(renderData.opaqueMesh);
+	resolve(renderData.transparentMesh);
+	resolve(renderData.opaqueSkinnedModel);
+	resolve(renderData.transparentSkinnedMesh);
+
+	commit(renderData.opaqueMesh);
+	commit(renderData.transparentMesh);
+	commit(renderData.opaqueSkinnedModel);
+	commit(renderData.transparentSkinnedMesh);
+}
+
+void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
+{
+	auto& state = data->state;
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
+	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
+
+	// 每帧各持一份在分发时解析好的数据，这里只上传；
+	// 不再读写成员缓存，多帧并行渲染时不会互相覆盖
+	state->camera.prevUBO->WriteDataAsync(cmd, &data->cameraPrevData, sizeof(camera_compData));
+	state->camera.curUBO->WriteDataAsync(cmd, &data->cameraCurData, sizeof(camera_compData));
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
 	state->framebuffer.width = scr_width;
@@ -1319,6 +1384,9 @@ void VulkanRenderer::ExecuteLoop()
 				data->state->renderRecord.frameStartMicroTimeStamp = Tool::GetTimestampMircoseconds();
 				data->state->option = _option;
 				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
+
+				ResolveFrameHistory(data);
+
 				data->handle = _frameTaskPool.submit([&, weakData = std::weak_ptr(data)]()->void
 					{
 						if (auto data = weakData.lock())

@@ -114,6 +114,10 @@ private:
 		std::shared_ptr<RenderTargetData> renderTarget;
 		std::shared_ptr<RenderState> state;
 		std::shared_ptr<ThreadPool::SubmitHandle<void>> handle;
+		// 在帧提交渲染时（串行分发点）解析出的相机数据：
+		// prev 来自上一张真正提交过的帧，cur 是本帧。各帧各持一份，互不干扰
+		camera_compData cameraPrevData{};
+		camera_compData cameraCurData{};
 	};
 
 	void DrawOffScreen(const std::shared_ptr<FrameData>& data);
@@ -121,7 +125,11 @@ private:
 	void PresentImage(std::shared_ptr<FrameData>& data);
 
 private:
-	void SetupRenderState(std::shared_ptr<RenderState>& state);
+	void ResolveFrameHistory(const std::shared_ptr<FrameData>& data);
+
+	camera_compData BuildCameraCompData(const RenderState& state) const;
+
+	void SetupRenderState(const std::shared_ptr<FrameData>& data);
 	void SetupIndirectDrawData(std::shared_ptr<RenderState>& state);
 
 	void FinishRendering(std::shared_ptr<RenderState>& state);
@@ -154,7 +162,9 @@ private:
 
 	std::vector<std::shared_ptr<RenderTargetData>> _renderTargets;
 
-	camera_compData _cameraCache;
+	// 上一张真正提交渲染的帧的相机数据（只在分发线程读写）
+	camera_compData _cameraCache{};
+	bool _cameraCacheValid = false;
 
 	struct {
 		uint32_t frameIndex = 0;
