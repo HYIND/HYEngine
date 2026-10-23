@@ -139,7 +139,8 @@ bool SceneCodec::Serialize(World& world, const std::function<bool(Entity)>& incl
 bool SceneCodec::Deserialize(
 	World& world,
 	const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset,
-	const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset) const
+	const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset,
+	const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset) const
 {
 	RegisterBuiltInCodecs();
 	const auto& codecs = GetComponentCodecs();
@@ -224,7 +225,33 @@ bool SceneCodec::Deserialize(
 			auto model = resolveModelAsset(guid);
 			if (!model || model->GetAssetGUID() != guid)
 				continue;
-			renderModel->model = std::move(model);
+
+			const bool hasOverrides = !renderModel->materialOverrideGUIDs.empty() || !renderModel->materialOverrideProperties.empty();
+			auto instanceModel = hasOverrides ? model->Clone(false, false, false) : std::move(model);
+			auto& meshInfos = instanceModel->getMeshInfos();
+			for (const auto& [index, overrideGuid] : renderModel->materialOverrideGUIDs)
+			{
+				if (index >= meshInfos.size())
+					continue;
+				auto& currentMaterial = meshInfos[index].material;
+				if (currentMaterial && currentMaterial->GetAssetGUID() == overrideGuid)
+					continue;
+				if (!resolveMaterialAsset)
+					continue;
+				auto overrideMaterial = resolveMaterialAsset(overrideGuid);
+				if (overrideMaterial && overrideMaterial->GetAssetGUID() == overrideGuid)
+					currentMaterial = std::move(overrideMaterial);
+			}
+			for (const auto& [index, properties] : renderModel->materialOverrideProperties)
+			{
+				if (index >= meshInfos.size())
+					continue;
+				auto& currentMaterial = meshInfos[index].material;
+				if (currentMaterial && !currentMaterial->GetAssetGUID().empty())
+					continue;
+				currentMaterial = std::make_shared<Material>(properties);
+			}
+			renderModel->model = std::move(instanceModel);
 		}
 	}
 	catch (const std::exception&)

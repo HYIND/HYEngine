@@ -332,8 +332,16 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 	{
 		size_t slot;
 		MaterialProperties properties;
+		std::shared_ptr<Material> material;
+		AssetGUID guid;
+	};
+	struct MaterialDrop
+	{
+		size_t slot;
+		std::shared_ptr<Material> material;
 	};
 	std::vector<MaterialEdit> edits;
+	std::vector<MaterialDrop> drops;
 	auto& meshInfos = comp.model->getMeshInfos();
 	for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 	{
@@ -365,7 +373,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 							auto asset = assetManager->LoadAsset(droppedMeta->guid);
 							auto replacement = asset ? asset->AsMaterial() : nullptr;
 							if (replacement)
-								material = std::move(replacement);
+								drops.push_back({ slot, std::move(replacement) });
 						}
 					}
 				}
@@ -410,7 +418,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 				slotChanged |= ImGui::Checkbox("Two Sided", &properties.twosided);
 
 				if (slotChanged)
-					edits.push_back({ slot, properties });
+					edits.push_back({ slot, properties, material, material->GetAssetGUID() });
 
 				const auto textureName = [](TextureType type) -> const char*
 					{
@@ -437,15 +445,71 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		ImGui::PopID();
 	}
 
-	if (!edits.empty())
+	std::shared_ptr<Model> instanceModel;
+	for (const auto& edit : edits)
 	{
-		auto& editedMeshInfos = comp.model->getMeshInfos();
-		for (const auto& edit : edits)
-			if (edit.slot < editedMeshInfos.size() && editedMeshInfos[edit.slot].material)
-				editedMeshInfos[edit.slot].material->SetProperty(edit.properties);
+		if (!edit.guid.empty())
+		{
+			if (edit.material)
+				edit.material->SetProperty(edit.properties);
+			if (assetManager)
+			{
+				auto asset = assetManager->LoadAsset(edit.guid);
+				auto materialAsset = asset ? std::dynamic_pointer_cast<MaterialAsset>(asset) : nullptr;
+				if (materialAsset)
+				{
+					materialAsset->SetProperties(edit.properties);
+					assetManager->SaveAsset(edit.guid);
+				}
+			}
+			continue;
+		}
+		else
+		{
+			if (!instanceModel)
+				instanceModel = comp.model->Clone(false, false, false);
+			auto& editedMeshInfos = instanceModel->getMeshInfos();
+			if (edit.slot >= editedMeshInfos.size())
+				continue;
+			auto materialInstance = editedMeshInfos[edit.slot].material
+				? editedMeshInfos[edit.slot].material->Clone()
+				: std::make_shared<Material>();
+			materialInstance->SetProperty(edit.properties);
+			editedMeshInfos[edit.slot].material = std::move(materialInstance);
+			const uint32_t index = static_cast<uint32_t>(edit.slot);
+			comp.materialOverrideGUIDs.erase(index);
+			comp.materialOverrideProperties[index] = edit.properties;
+		}
 	}
 
-	return anyChanged || !edits.empty();
+	if (!drops.empty())
+	{
+		if (!instanceModel)
+			instanceModel = comp.model->Clone(false, false, false);
+		auto& editedMeshInfos = instanceModel->getMeshInfos();
+		for (const auto& drop : drops)
+		{
+			if (drop.slot >= editedMeshInfos.size())
+				continue;
+			editedMeshInfos[drop.slot].material = drop.material;
+			const uint32_t index = static_cast<uint32_t>(drop.slot);
+			const auto& guid = drop.material->GetAssetGUID();
+			if (guid.empty())
+			{
+				comp.materialOverrideGUIDs.erase(index);
+				comp.materialOverrideProperties[index] = drop.material->GetProperties();
+			}
+			else
+			{
+				comp.materialOverrideGUIDs[index] = guid;
+				comp.materialOverrideProperties.erase(index);
+			}
+		}
+	}
+	if (instanceModel)
+		comp.model = std::move(instanceModel);
+
+	return anyChanged || !edits.empty() || !drops.empty();
 }
 
 template<>

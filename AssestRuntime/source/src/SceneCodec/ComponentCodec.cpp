@@ -626,10 +626,44 @@ static void RegisterGeneralCodec()
 					throw std::runtime_error("RenderModel has no asset GUID");
 				modelGuid = renderModel.model->GetAssetGUID();
 			}
+			Json materials = Json::array();
+			if (renderModel.model)
+			{
+				const auto& meshInfos = renderModel.model->getMeshInfos();
+				for (uint32_t index = 0; index < meshInfos.size(); ++index)
+				{
+					const auto& material = meshInfos[index].material;
+					if (!material)
+						continue;
+
+					const auto& guid = material->GetAssetGUID();
+					Json record = { {"index", index}, {"guid", guid} };
+					if (guid.empty())
+					{
+						const auto properties = material->GetProperties();
+						record["properties"] = {
+							{"albedo", EncodeVec3(properties.albedo)},
+							{"metallic", properties.metallic},
+							{"roughness", properties.roughness},
+							{"ambientOcclusion", properties.ambientOcclusion},
+							{"opacity", properties.opacity},
+							{"ior", properties.IOR},
+							{"emissionColor", EncodeVec3(properties.emissionColor)},
+							{"emissionStrength", properties.emissionStrength},
+							{"alphaMode", static_cast<uint32_t>(properties.alphamode)},
+							{"maskThreshold", properties.maskthreshold},
+							{"twoSided", properties.twosided}
+						};
+					}
+					materials.push_back(std::move(record));
+				}
+			}
+
 			return Json{
 				{"enabled", renderModel.visible},
 				{"trans", EncodeMat4(renderModel.trans)},
-				{"modelGuid", std::move(modelGuid)}
+				{"modelGuid", std::move(modelGuid)},
+				{"materials", std::move(materials)}
 			};
 		},
 		[](RenderModel& renderModel, const Json& data) {
@@ -646,6 +680,51 @@ static void RegisterGeneralCodec()
 				return false;
 
 			renderModel.visible = data["enabled"].get<bool>();
+			renderModel.materialOverrideGUIDs.clear();
+			renderModel.materialOverrideProperties.clear();
+			if (data.contains("materials"))
+			{
+				if (!data["materials"].is_array())
+					return false;
+				for (const auto& record : data["materials"])
+				{
+					if (!record.is_object()
+						|| !record.contains("index") || !record["index"].is_number_unsigned()
+						|| !record.contains("guid") || !record["guid"].is_string())
+						return false;
+					const uint32_t index = record["index"].get<uint32_t>();
+					const auto guid = record["guid"].get<std::string>();
+					if (!guid.empty())
+					{
+						renderModel.materialOverrideGUIDs[index] = guid;
+						continue;
+					}
+					if (!record.contains("properties") || !record["properties"].is_object())
+						return false;
+
+					const auto& p = record["properties"];
+					MaterialProperties properties;
+					uint32_t alphaMode = 0;
+					if (!p.contains("albedo") || !DecodeVec3(p["albedo"], properties.albedo)
+						|| !p.contains("emissionColor") || !DecodeVec3(p["emissionColor"], properties.emissionColor)
+						|| !p.contains("metallic") || !DecodeFiniteFloat(p["metallic"], properties.metallic)
+						|| !p.contains("roughness") || !DecodeFiniteFloat(p["roughness"], properties.roughness)
+						|| !p.contains("ambientOcclusion") || !DecodeFiniteFloat(p["ambientOcclusion"], properties.ambientOcclusion)
+						|| !p.contains("opacity") || !DecodeFiniteFloat(p["opacity"], properties.opacity)
+						|| !p.contains("ior") || !DecodeFiniteFloat(p["ior"], properties.IOR)
+						|| !p.contains("emissionStrength") || !DecodeFiniteFloat(p["emissionStrength"], properties.emissionStrength)
+						|| !p.contains("alphaMode") || !p["alphaMode"].is_number_unsigned()
+						|| !p.contains("maskThreshold") || !DecodeFiniteFloat(p["maskThreshold"], properties.maskthreshold)
+						|| !p.contains("twoSided") || !p["twoSided"].is_boolean())
+						return false;
+					alphaMode = p["alphaMode"].get<uint32_t>();
+					if (alphaMode > static_cast<uint32_t>(AlphaMode::Blend))
+						return false;
+					properties.alphamode = static_cast<AlphaMode>(alphaMode);
+					properties.twosided = p["twoSided"].get<bool>();
+					renderModel.materialOverrideProperties[index] = properties;
+				}
+			}
 			if (modelGuid.is_null())
 				renderModel.model.reset();
 			else

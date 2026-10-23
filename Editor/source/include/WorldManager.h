@@ -36,6 +36,7 @@ public:
 	void SetRender(std::shared_ptr<VulkanRenderer> renderer);
 	void InitDefaultWorld();
 	bool LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene, ProjectManager* projectManager);
+	static std::shared_ptr<SceneCodec> CreateDefaultSceneCodec();
 	static void RegisterSceneComponentCodecs();
 
 
