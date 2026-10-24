@@ -9,10 +9,7 @@
 class RayTraceReflectPass :public RenderPassBase
 {
 public:
-	RayTraceReflectPass(
-		const std::string& rayTraceComputerShaderPath,
-		const std::string& scaleComputerShaderPath
-	);
+	RayTraceReflectPass(const std::string& rayTraceComputerShaderPath);
 	~RayTraceReflectPass();
 
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
@@ -24,9 +21,6 @@ public:
 private:
 	struct FrameRenderData
 	{
-		glm::ivec2 drawSize;
-		glm::ivec2 scrSize;
-
 		std::shared_ptr<Texture2D> gPosition;
 		std::shared_ptr<Texture2D> gNormal;
 		std::shared_ptr<Texture2D> gDepthStencil;

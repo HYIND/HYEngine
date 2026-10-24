@@ -9,7 +9,6 @@ struct CubeParams {
 
 struct SSGIParams
 {
-	glm::ivec2 screenSize;
 	float tMin;
 	float tMax;
 	uint32_t maxBounce = 0;
@@ -71,8 +70,6 @@ void SSGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 		return;
 
 	FrameRenderData data;
-	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
-	data.drawSize = data.scrSize;
 
 	data.gPosition = ctx.GetInput(0);
 	data.gNormal = ctx.GetInput(1);
@@ -130,7 +127,6 @@ void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 	{
 
 		SSGIParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
 			.tMin = std::max(0.f, state.option.ssgiTraceParams.tMin),
 			.tMax = std::max(0.f, state.option.ssgiTraceParams.tMax),
 			.maxBounce = std::max(1u, std::min(state.option.ssgiTraceParams.maxBounceLimit, GlobalConfig::SSTrace_Max_Bounce_limit)),
@@ -163,6 +159,7 @@ bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, 
 	if (!target || target->IsEmpty())
 		return false;
 
+	auto size = target->GetSize();
 	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -217,7 +214,7 @@ bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, 
 
 
 	_ssgiShader.Bind(cmd, binding);
-	cmd->dispatch((data.drawSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (data.drawSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
 

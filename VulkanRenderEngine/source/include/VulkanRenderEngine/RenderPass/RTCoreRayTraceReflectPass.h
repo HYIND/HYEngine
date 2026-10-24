@@ -16,8 +16,7 @@ public:
 		const std::string& closestHitPath,
 		const std::string& anyHitPath,
 		const std::string& intersectionPath,
-		const std::string& callablePath,
-		const std::string& scaleComputerShaderPath
+		const std::string& callablePath
 	);
 	~RTCoreRayTraceReflectPass();
 
@@ -30,9 +29,6 @@ public:
 private:
 	struct FrameRenderData
 	{
-		glm::ivec2 drawSize;
-		glm::ivec2 scrSize;
-
 		std::shared_ptr<Texture2D> gPosition;
 		std::shared_ptr<Texture2D> gNormal;
 		std::shared_ptr<Texture2D> gDepthStencil;

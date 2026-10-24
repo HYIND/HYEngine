@@ -10,7 +10,6 @@ struct CubeParams {
 
 struct SSRParams
 {
-	glm::ivec2 screenSize;
 	float tMin;
 	float tMax;
 	uint32_t maxBounce = 0;
@@ -74,8 +73,6 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 		return;
 
 	FrameRenderData data;
-	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
-	data.drawSize = data.scrSize;
 
 	data.gPosition = ctx.GetInput(0);
 	data.gNormal = ctx.GetInput(1);
@@ -132,7 +129,6 @@ void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 
 	{
 		SSRParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
 			.tMin = std::max(0.f, state.option.ssrTraceParams.tMin),
 			.tMax = std::max(0.f, state.option.ssrTraceParams.tMax),
 			.maxBounce = std::max(1u, std::min(state.option.ssrTraceParams.maxBounceLimit, GlobalConfig::SSTrace_Max_Bounce_limit)),
@@ -164,7 +160,7 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 	if (!target || target->IsEmpty())
 		return false;
 
-
+	auto size = target->GetSize();
 	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -258,7 +254,7 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 	}
 
 	_ssrShader.Bind(cmd, binding);
-	cmd->dispatch((data.drawSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (data.drawSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitToQueue();
 

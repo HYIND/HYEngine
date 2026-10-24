@@ -493,7 +493,7 @@ int RayTraceOnSceenHZB(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout 
     return 0;
 }
 
-bool isEdge(vec2 texcoord, float depthThreshold)
+bool isEdge(vec2 texcoord, vec2 screenSize, float depthThreshold)
 {
     float centerDepth = texture(depthMap, texcoord).r;
     
@@ -528,7 +528,7 @@ bool traceScene(Ray ray, vec2 screenSize, uint RayMarchingMaxStep, inout vec2 uv
 {
 	// int result = RayTraceOnSceenHZB(ray, screenSize, RayMarchingMaxStep, uv);
 	int result = RayTraceOnSceen(ray, screenSize, RayMarchingMaxStep, uv);
-    if (result != 1 || isEdge(uv, 0.001) || !isNormalPass(uv, ray))
+    if (result != 1 || isEdge(uv, screenSize, 0.001) || !isNormalPass(uv, ray))
         return false;
     return true;
 }

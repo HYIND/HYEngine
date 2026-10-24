@@ -23,7 +23,6 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 //光追参数
 layout (binding = 5) uniform Params
 {
-    ivec2 screenSize;
     float tMin;
     float tMax;
     uint maxBounce;       // 最大反射次数
@@ -195,12 +194,14 @@ void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
 void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y || maxBounce < 0) {
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (pixelCoord.x >= imageSize.x || pixelCoord.y >= imageSize.y || maxBounce < 0) {
         return;
     }
 
     vec2 pixelCenter = vec2(pixelCoord) + 0.5;
-    vec2 uv = pixelCenter / screenSize;
+    vec2 uv = pixelCenter / imageSize;
 
     float depth = texture(depthMap, uv).r;
     if(depth >= 0.99994)

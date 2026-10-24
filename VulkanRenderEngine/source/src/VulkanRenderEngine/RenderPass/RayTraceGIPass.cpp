@@ -9,7 +9,6 @@ struct CubeParams {
 
 struct RayTraceParams
 {
-	glm::ivec2 screenSize;
 	float tMin = 0.f;
 	float tMax = 0.f;
 	uint32_t maxBounce = 0;
@@ -19,7 +18,7 @@ struct RayTraceParams
 };
 
 
-RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath, const std::string& scaleComputerShaderPath)
+RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath)
 	:
 	_firstDrawTemporal(true),
 	_enable(false)
@@ -58,21 +57,6 @@ RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath, co
 			_rayTraceShader.Create(config);
 	}
 
-	{
-		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
-		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
-		config.computePath = scaleComputerShaderPath;
-
-		config
-			.AddUnifromBuffer(0)
-			.AddStorageImage(1)
-			.AddStorageImage(2);
-
-		if (config.Validate())
-			_scaleShader.Create(config);
-	}
-
 	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
 }
 
@@ -92,8 +76,6 @@ void RayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 		return;
 
 	FrameRenderData data;
-	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
-	data.drawSize = data.scrSize;
 
 	data.gPosition = ctx.GetInput(0);
 	data.gNormal = ctx.GetInput(1);
@@ -148,7 +130,6 @@ void RayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 	{
 		//光追参数
 		RayTraceParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
 			.tMin = std::max(0.f, state.option.rayTraceGIParams.tMin),
 			.tMax = std::max(0.f, state.option.rayTraceGIParams.tMax),
 			.maxBounce = std::max((uint32_t)1, std::min(state.option.rayTraceGIParams.maxBounceLimit, GlobalConfig::RayTrace_Max_Bounce_limit)),
@@ -172,6 +153,7 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 	if (!target || target->IsEmpty())
 		return false;
 
+	auto size = target->GetSize();
 	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -235,7 +217,7 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 		binding.SetUniformTextureCube(cubeMap, vk::ImageAspectFlagBits::eColor, 15);
 
 	_rayTraceShader.Bind(cmd, binding);
-	cmd->dispatch((data.drawSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (data.drawSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
 	cmd->SubmitNow();
 
