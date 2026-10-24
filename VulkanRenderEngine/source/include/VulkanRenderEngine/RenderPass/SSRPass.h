@@ -17,9 +17,6 @@ public:
 private:
 	struct FrameRenderData
 	{
-		glm::ivec2 drawSize;
-		glm::ivec2 scrSize;
-
 		std::shared_ptr<Texture2D> gPosition;
 		std::shared_ptr<Texture2D> gNormal;
 		std::shared_ptr<Texture2D> gDepthStencil;

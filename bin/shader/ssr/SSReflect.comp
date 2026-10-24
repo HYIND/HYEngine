@@ -17,7 +17,6 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y) in;
 
 layout (binding = 0) uniform Params
 {
-    ivec2 screenSize;
     float tMin;
     float tMax;
     uint maxBounce;
@@ -62,7 +61,7 @@ vec3 traceRay(
     uint sampleId    
 )
 {
-    vec2 screenSize = textureSize(colorMap, 0);
+    vec2 imageSize = textureSize(colorMap, 0);
 
     vec3 colors[Max_Bounce_limit + 1];
     vec3 contributeFacts[Max_Bounce_limit + 1];
@@ -92,7 +91,7 @@ vec3 traceRay(
             vec2 random = getRandom(seed);
             ray.direction = ImportanceSampleGGX(prop.roughness, fragNormal, normalize(ray.origin - viewPos), random);
 
-            if (!traceScene(ray, screenSize, RayMarchingMaxStep, uv))
+            if (!traceScene(ray, imageSize, RayMarchingMaxStep, uv))
             {
                 if (CubeEnable)
                     captureCube = true;
@@ -184,11 +183,13 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 void main()
 {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    if (pixelCoord.x >= screenSize.x || pixelCoord.y >= screenSize.y)
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (pixelCoord.x >= imageSize.x || pixelCoord.y >= imageSize.y)
         return;
 
     vec2 pixelCenter = pixelCoord + 0.5;
-    vec2 uv = pixelCenter / screenSize;
+    vec2 uv = pixelCenter / imageSize;
 
     float depth = texture(depthMap, uv).r;
     if(depth >= 0.99994)

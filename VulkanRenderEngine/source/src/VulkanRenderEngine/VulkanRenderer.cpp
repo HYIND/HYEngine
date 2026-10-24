@@ -578,12 +578,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto t_generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
 		auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
 			"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-			"", "", "",
-			"shader/General/imagescale.comp");
+			"", "", ""
+		);
 		auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
 			"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-			"", "", "",
-			"shader/General/imagescale.comp");
+			"", "", ""
+		);
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
@@ -596,12 +596,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 	{
 		auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
 		auto t_reflectPass = std::make_unique<RayTraceReflectPass>(
-			"shader/RayTrace/RayTraceReflect.comp",
-			"shader/General/imagescale.comp"
+			"shader/RayTrace/RayTraceReflect.comp"
 		);
 		auto t_giPass = std::make_unique<RayTraceGIPass>(
-			"shader/RayTrace/RayTraceGI.comp",
-			"shader/General/imagescale.comp"
+			"shader/RayTrace/RayTraceGI.comp"
 		);
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
@@ -648,8 +646,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto gEmission = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
 
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
-	auto rayTraceReflect_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
-	auto rayTraceGI_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
+	auto rayTraceReflect_Output = resbuilder.CreateTexture((width * 2) / 3, (height * 2) / 3, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
+	auto rayTraceGI_Output = resbuilder.CreateTexture((width * 2) / 3, (height * 2) / 3, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
 	auto ssr_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
 	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");

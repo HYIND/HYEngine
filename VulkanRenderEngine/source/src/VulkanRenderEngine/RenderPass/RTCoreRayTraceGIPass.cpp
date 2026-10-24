@@ -9,7 +9,6 @@ struct CubeParams {
 
 struct RayTraceParams
 {
-	glm::ivec2 screenSize;
 	float tMin = 0.f;
 	float tMax = 0.f;
 	uint32_t maxBounce = 0;
@@ -25,8 +24,7 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 	const std::string& closestHitPath,
 	const std::string& anyHitPath,
 	const std::string& intersectionPath,
-	const std::string& callablePath,
-	const std::string& scaleComputerShaderPath
+	const std::string& callablePath
 )
 	:
 	_firstDrawTemporal(true),
@@ -66,21 +64,6 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 			_rayTraceShader.Create(config);
 	}
 
-	{
-		ComputePipelineConfig config;
-		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
-		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
-		config.computePath = scaleComputerShaderPath;
-
-		config
-			.AddUnifromBuffer(0)
-			.AddStorageImage(1)
-			.AddStorageImage(2);
-
-		if (config.Validate())
-			_scaleShader.Create(config);
-	}
-
 	_RayTraceParamsUBO = std::make_shared<UniformBlock>(sizeof(RayTraceParams));
 }
 
@@ -100,8 +83,6 @@ void RTCoreRayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 		return;
 
 	FrameRenderData data;
-	data.scrSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height);
-	data.drawSize = data.scrSize;
 
 	data.gPosition = ctx.GetInput(0);
 	data.gNormal = ctx.GetInput(1);
@@ -156,7 +137,6 @@ void RTCoreRayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 	{
 		//光追参数
 		RayTraceParams params{
-			.screenSize = glm::ivec2(state.framebuffer.width, state.framebuffer.height),
 			.tMin = std::max(0.f, state.option.rayTraceGIParams.tMin),
 			.tMax = std::max(0.f, state.option.rayTraceGIParams.tMax),
 			.maxBounce = std::max((uint32_t)1, std::min(state.option.rayTraceGIParams.maxBounceLimit, GlobalConfig::RayTrace_Max_Bounce_limit)),
@@ -181,6 +161,7 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 	if (!target || target->IsEmpty())
 		return false;
 
+	auto size = target->GetSize();
 	target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -246,7 +227,7 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 
 	_rayTraceShader.Bind(cmd, binding);
 	auto regionData = _rayTraceShader.GetSBTData();
-	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, data.drawSize.x, data.drawSize.y, 1);
+	cmd->traceRaysKHR(regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion, size.x, size.y, 1);
 
 	cmd->SubmitToQueue();
 

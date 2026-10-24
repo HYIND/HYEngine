@@ -17,20 +17,20 @@ layout (binding = 2) uniform samplerCube skybox;
 
 void main() {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 screenSize = imageSize(outputImage);
+    ivec2 imageSize = imageSize(outputImage);
 
-    if (coord.x >= screenSize.x || coord.y >= screenSize.y) 
+    if (coord.x >= imageSize.x || coord.y >= imageSize.y) 
         return;
 
-    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(screenSize);
+    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
 
     float depth = texture(depthMap, TexCoords).r;
     if (depth <= 0.99994)
         return;
 
     vec2 ndc = vec2(
-        (float(coord.x) / screenSize.x) * 2.0 - 1.0,
-        (float(coord.y) / screenSize.y) * 2.0 - 1.0
+        (float(coord.x) / imageSize.x) * 2.0 - 1.0,
+        (float(coord.y) / imageSize.y) * 2.0 - 1.0
     );
 
     // 构造远平面上的点（齐次坐标）
