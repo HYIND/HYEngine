@@ -75,14 +75,14 @@ void ScriptSystemVM::CheckScriptsChange()
 		bool needReload = script.needReload || !hasComponent;
 		if (needReload)
 		{
+			auto& runtime = hasComponent ? entity.getComponent<ScriptRuntime>() : entity.addComponent<ScriptRuntime>();
+
 			if (hasComponent)
 			{
-				auto& runtime = entity.getComponent<ScriptRuntime>();
 				if (runtime.env)
 					Stop(runtime);
 			}
 
-			auto& runtime = hasComponent ? entity.getComponent<ScriptRuntime>() : entity.addComponent<ScriptRuntime>();
 			if (Reload(entity, script, runtime))
 				Start(runtime);
 

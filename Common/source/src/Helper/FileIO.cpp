@@ -168,9 +168,17 @@ namespace FileIO
 	bool OpenOneFile(std::string& filePath, const std::map<std::string, std::string>& filters)
 	{
 		HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-		if (FAILED(hr)) return false;
-		bool result = ::OpenOneFileWithCom(filePath, filters);
-		CoUninitialize();
+
+		const bool needUninitialize = SUCCEEDED(hr);
+
+		if (FAILED(hr) && hr != RPC_E_CHANGED_MODE)
+			return false;
+
+		bool result = OpenOneFileWithCom(filePath, filters);
+
+		if (needUninitialize)
+			CoUninitialize();
+
 		return result;
 	}
 
