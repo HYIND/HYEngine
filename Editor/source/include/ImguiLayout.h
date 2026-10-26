@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "stdafx.h"
 
-#include "WorldManager.h"
+#include "EditorApp.h"
 #include "Project/ProjectManager.h"
 #include "AssetImportPopup.h"
 #include "CommonData/AssetGUIDDef.h"
@@ -11,21 +11,21 @@
 class ImguiLayout
 {
 public:
-	static void DrawMainMenu(GLFWwindow* window, WorldManager* worldManager, ProjectManager* projectManager);
-	static void DrawPlayControls(WorldManager* worldManager, ProjectManager* projectManager);
+	static void DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, ProjectManager* projectManager);
+	static void DrawPlayControls(EditorApp* editorApp, ProjectManager* projectManager);
 	static void SetDockspace(bool firstFrame);
-	static void DrawSceneObjectList(WorldManager* worldManager);
+	static void DrawSceneObjectList(EditorApp* editorApp);
 	static void DrawObjectProperties(ProjectManager* projectManager);
 	static void DrawAssetBrowser(ProjectManager* projectManager);
-	static void DrawSceneView(WorldManager* worldManager, ProjectManager* projectManager);
-	static void DrawOptions(WorldManager* worldManager);
-	static void DrawStatusBar(WorldManager* worldManager);
+	static void DrawSceneView(EditorApp* editorApp, ProjectManager* projectManager);
+	static void DrawOptions(EditorApp* editorApp);
+	static void DrawStatusBar(EditorApp* editorApp);
 
 public:
 	static void DropFile(const std::string& filePath, ProjectManager* projectManager, const ImVec2& mousePos);
 	static void DropFolder(const std::string& folderPath, ProjectManager* projectManager, const ImVec2& mousePos);
 
-	static void HandleAssetDrop(const AssetMeta& meta, WorldManager* worldManager, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
+	static void HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
 	static void HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
 	static void ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
 	static void OpenMaterialEditor(const AssetGUID& guid);

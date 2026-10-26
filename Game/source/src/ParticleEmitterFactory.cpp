@@ -1,7 +1,7 @@
 #include "Factory/ParticleEmitterFactory.h"
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"
-#include "GameRuntimeComponents.h"
+#include "PlatformRuntimeComponents.h"
 
 Entity ParticleEmitterFactory::CreateFireEmitter(World& world, const glm::vec3& position, const glm::quat& rotation)
 {

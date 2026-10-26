@@ -11,3 +11,5 @@ public:
 private:
 	float boundaryHeight = - 60.f;
 };
+
+HY_DECLARE_ECS_TYPE(MapBoundarySystem, "hy.gameplay.system.MapBoundary");

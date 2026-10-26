@@ -7,7 +7,7 @@
 
 void LightShowSystem::update(float deltaTime)
 {
-	auto lightEntities = m_world->getEntitiesWith<TagLightShowLight, TagLight, Transform, RenderLight>();
+	auto lightEntities = m_world->getEntitiesWith<TagLightShowLight, Transform, RenderLight>();
 	auto lightShowEntitiesView = m_world->getViewWith<TagLightShowEntity, LightShow, Transform, Physics, ModelProxy>();
 
 	for (Entity entity : lightShowEntitiesView.getEntities())

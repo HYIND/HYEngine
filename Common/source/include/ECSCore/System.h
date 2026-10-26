@@ -3,6 +3,7 @@
 #include <iostream>
 #include <assert.h>
 #include <functional>
+#include "ECSCore/TypeKey.h"
 
 class World;
 

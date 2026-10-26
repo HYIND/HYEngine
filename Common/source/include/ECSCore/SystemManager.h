@@ -61,6 +61,7 @@ private:
 private:
 	std::vector<SystemEntry> m_systems;
 	std::unordered_map<SystemTypeID, size_t> m_typeIdToIndex;
+	std::unordered_map<SystemTypeID, EcsTypeIdentity> m_typeIdentities;
 	World* m_world = nullptr;
 	bool m_needsSorting = false;
 };

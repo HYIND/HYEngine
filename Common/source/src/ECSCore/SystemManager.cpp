@@ -128,6 +128,7 @@ void SystemManager::clear()
 	}
 	m_systems.clear();
 	m_typeIdToIndex.clear();
+	m_typeIdentities.clear();
 	m_needsSorting = false;
 }
 

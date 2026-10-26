@@ -20,3 +20,5 @@ public:
 	virtual void onAttach(World& world);
 	virtual void update(float deltaTime) override;
 };
+
+HY_DECLARE_ECS_TYPE(TetrisSystem, "hy.gameplay.system.Tetris");

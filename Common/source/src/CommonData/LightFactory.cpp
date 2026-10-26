@@ -11,7 +11,7 @@ Entity LightFactory::CreateDirLight(
 	uint32_t shadowMapSize
 )
 {
-	Entity entity = world.createEntityWithTag<TagLight>();
+	Entity entity = world.createEntity();
 	DirectionalLightData light;
 	light.color = color;
 	light.luxIntensity = luxIntensity;
@@ -38,7 +38,7 @@ Entity LightFactory::CreateSpotLight(
 	uint32_t shadowMapSize
 )
 {
-	Entity entity = world.createEntityWithTag<TagLight>();
+	Entity entity = world.createEntity();
 	SpotLightData light;
 	light.color = color;
 	light.cdIntensity = cdIntensity;
@@ -64,7 +64,7 @@ Entity LightFactory::CreatePointLight(
 	uint32_t shadowMapSize
 )
 {
-	Entity entity = world.createEntityWithTag<TagLight>();
+	Entity entity = world.createEntity();
 	PointLightData light;
 	light.color = color;
 	light.cdIntensity = cdIntensity;

@@ -1,4 +1,4 @@
-﻿#include "Project/AssetAnalysisHelper.h"
+#include "Project/AssetAnalysisHelper.h"
 #include "Project/ProjectManager.h"
 #include "Helper/Tools.h"
 #include <nlohmann/json.hpp>
@@ -76,11 +76,6 @@ std::string ProjectManager::GenerateAssetMetaPath(const AssetPath& pathStr, Asse
 	}
 
 	return "";
-}
-
-ProjectManager* ProjectManager::Instance() {
-	static ProjectManager* instance = new ProjectManager();
-	return instance;
 }
 
 ProjectManager::ProjectManager() {

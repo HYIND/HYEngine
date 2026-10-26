@@ -167,7 +167,7 @@ struct RenderState
 		int64_t frameEndMicroTimeStamp = 0;			//帧完成时间
 	} renderRecord;
 
-	RenderOption option;
+	Scene3DRenderOption option;
 };
 
 class RenderStateBuilder

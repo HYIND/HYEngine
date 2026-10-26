@@ -16,15 +16,15 @@ public:
 	EntityID createEntity();
 	std::vector<EntityID> createMultiple(uint32_t count);
 	void destroyEntity(EntityID id);
-	void addComponent(EntityID id, ComponentTypeID componentTypeId);
-	void removeComponent(EntityID id, ComponentTypeID componentTypeId);
+	void addComponent(EntityID id, ComponentSlotID componentSlot);
+	void removeComponent(EntityID id, ComponentSlotID componentSlot);
 	void clearComponentMask(EntityID id);
 	bool isValid(EntityID id) const;
 	uint32_t getLivingEntityCount() const;
 	std::vector<EntityID> getAllActiveEntities() const;
 	void getAllActiveEntities(std::vector<EntityID>& out) const;
 	ComponentMask getEntityComponentMask(EntityID id);
-	bool setEntityComponentMasks(EntityID id, const std::vector<ComponentTypeID>& ids);
+	bool setEntityComponentMasks(EntityID id, const std::vector<ComponentSlotID>& slots);
 
 private:
 	// 实体存储

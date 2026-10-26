@@ -7,3 +7,5 @@ struct LightFollow :public IComponent
 {
 	Entity target;
 };
+
+HY_DECLARE_ECS_TYPE(LightFollow, "gameplay.light_follow");

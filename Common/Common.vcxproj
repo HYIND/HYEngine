@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -152,6 +152,7 @@
     <ClInclude Include="source\include\CommonSystems.h" />
     <ClInclude Include="source\include\CommonTags.h" />
     <ClInclude Include="source\include\Components\CameraComponent.h" />
+    <ClInclude Include="source\include\Components\CameraFollow.h" />
     <ClInclude Include="source\include\Components\Controller.h" />
     <ClInclude Include="source\include\Components\LifeTime.h" />
     <ClInclude Include="source\include\Components\ModelProxy.h" />
@@ -173,6 +174,7 @@
     <ClInclude Include="source\include\ECSCore\SystemManager.h" />
     <ClInclude Include="source\include\ECSCore\SystemTypes.h" />
     <ClInclude Include="source\include\ECSCore\Types.h" />
+    <ClInclude Include="source\include\ECSCore\TypeKey.h" />
     <ClInclude Include="source\include\ECSCore\View.h" />
     <ClInclude Include="source\include\ECSCore\World.h" />
     <ClInclude Include="source\include\Helper\DoubleBuffer.h" />
@@ -187,6 +189,7 @@
     <ClInclude Include="source\include\Script\IScriptModule.h" />
     <ClInclude Include="source\include\Script\ScriptSourceData.h" />
     <ClInclude Include="source\include\Script\ScriptSystemVM.h" />
+    <ClInclude Include="source\include\Systems\CameraFollowSystem.h" />
     <ClInclude Include="source\include\Systems\DestroySystem.h" />
     <ClInclude Include="source\include\Systems\LifeTimeSystem.h" />
     <ClInclude Include="source\include\Systems\PhysicsSystem.h" />
@@ -240,6 +243,7 @@
     <ClCompile Include="source\src\Script\BaseScriptModule.cpp" />
     <ClCompile Include="source\src\Script\IScriptModule.cpp" />
     <ClCompile Include="source\src\Script\ScriptSystemVM.cpp" />
+    <ClCompile Include="source\src\Systems\CameraFollowSystem.cpp" />
     <ClCompile Include="source\src\Systems\DestroySystem.cpp" />
     <ClCompile Include="source\src\Systems\LifeTimeSystem.cpp" />
     <ClCompile Include="source\src\Systems\PhysicsSystem.cpp" />

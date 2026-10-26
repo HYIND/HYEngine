@@ -41,9 +41,9 @@
 #define ReturnToHall 6304
 #define ReLoadMap 6305
 
-#define IDB_SETFPS_30 7301
-#define IDB_SETFPS_60 7302
-#define IDB_SETFPS_144 7303
+#define IDB_SETFPS_60 7301
+#define IDB_SETFPS_144 7302
+#define IDB_SETFPS_240 7303
 #define IDB_EXITOPTION 7304
 #define EDIT_EKY1_UP 7401
 #define EDIT_EKY1_DOWN 7402

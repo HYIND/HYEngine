@@ -89,3 +89,5 @@ private:
 	btDiscreteDynamicsWorld* phyWorld;
 	float fixedTimeStep = 1.f / 60.f;
 };
+
+HY_DECLARE_ECS_TYPE(PhysicsSystem, "hy.engine.system.Physics");

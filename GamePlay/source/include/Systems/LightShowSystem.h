@@ -11,3 +11,5 @@ public:
 private:
 	bool isEntityLighting(Entity& entity, Entity& lightEntity);
 };
+
+HY_DECLARE_ECS_TYPE(LightShowSystem, "hy.gameplay.system.LightShow");

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ECSCore/TypeKey.h"
+
 class Entity;
 
 class IComponent

@@ -42,3 +42,9 @@ struct WeaponShootEvent
 {
 	Entity source;
 };
+
+HY_DECLARE_ECS_TYPE(DamageEvent, "hy.gameplay.event.Damage");
+HY_DECLARE_ECS_TYPE(HealthChangedEvent, "hy.gameplay.event.HealthChanged");
+HY_DECLARE_ECS_TYPE(EntityDeathEvent, "hy.gameplay.event.EntityDeath");
+HY_DECLARE_ECS_TYPE(PickUpHealEvent, "hy.gameplay.event.PickUpHeal");
+HY_DECLARE_ECS_TYPE(WeaponShootEvent, "hy.gameplay.event.WeaponShoot");

@@ -15,3 +15,5 @@ struct WeaponBasic : public IComponent
 	float range = 1000.f;			// 有效范围
 	enum Mode { Single, Auto, Burst } fireMode = Auto;// 射击模式：单发、连发、三连发
 };
+
+HY_DECLARE_ECS_TYPE(WeaponBasic, "gameplay.weapon_basic");

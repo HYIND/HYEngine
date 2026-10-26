@@ -15,3 +15,5 @@ struct WeaponState : public IComponent
 	WeaponState() {}
 	WeaponState(int currentAmmo, int reserveAmmo) :currentAmmo(currentAmmo), reserveAmmo(reserveAmmo) {}
 };
+
+HY_DECLARE_ECS_TYPE(WeaponState, "gameplay.weapon_state");

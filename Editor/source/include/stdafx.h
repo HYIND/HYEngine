@@ -7,8 +7,7 @@
 
 #ifdef _DEBUG
 #pragma comment(lib, "AssetRuntime_d.lib")
-#pragma comment(lib, "GamePlay_d.lib")
-#pragma comment(lib, "GameRuntime_d.lib")
+#pragma comment(lib, "PlatformRuntime_d.lib")
 #pragma comment(lib, "shaderc_combinedd.lib")
 #pragma comment(lib, "VulkanRenderEngine_d.lib")
 #pragma comment(lib, "Common_d.lib")
@@ -41,8 +40,7 @@
 
 #else
 #pragma comment(lib, "AssetRuntime.lib")
-#pragma comment(lib, "GamePlay.lib")
-#pragma comment(lib, "GameRuntime.lib")
+#pragma comment(lib, "PlatformRuntime.lib")
 #pragma comment(lib, "shaderc_combined.lib")
 #pragma comment(lib, "VulkanRenderEngine.lib")
 #pragma comment(lib, "Common.lib")

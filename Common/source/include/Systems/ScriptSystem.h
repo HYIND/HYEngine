@@ -20,3 +20,5 @@ public:
 private:
 	std::unique_ptr<ScriptSystemVM> _impl;
 };
+
+HY_DECLARE_ECS_TYPE(ScriptSystem, "hy.engine.system.Script");

@@ -1,0 +1,220 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{2A56353A-E271-4FE5-99AB-F4257B0A0131}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Audio">
+      <UniqueIdentifier>{83499772-7306-4247-8A68-420BC525E3B3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Audio\Components">
+      <UniqueIdentifier>{0B9DAB71-D8DE-4E85-8A7C-8568822DFF23}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Audio\Systems">
+      <UniqueIdentifier>{8DA76E5E-D626-4532-A935-DF98FFFBFFF3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Helper">
+      <UniqueIdentifier>{4B5674EE-CE58-46A8-88EF-9892A4C86538}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Input">
+      <UniqueIdentifier>{7E228CBE-F38A-4A58-805C-9A6FCB980A7B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Input\Components">
+      <UniqueIdentifier>{AC3DFC1A-4F03-4167-94D7-B6193B8FE00D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Input\Systems">
+      <UniqueIdentifier>{59873611-A997-4F80-8F52-F8EC3A3440E8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Render">
+      <UniqueIdentifier>{61A33D68-E535-4FA7-8055-2501880B323A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Render\Components">
+      <UniqueIdentifier>{A96454B2-19D1-4829-AD5B-4898E8AD0699}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Render\Systems">
+      <UniqueIdentifier>{7995B864-9EEC-40E6-B5A4-63F968F1DFD7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\RenderEngine">
+      <UniqueIdentifier>{5063103C-3D50-44B1-B245-E1FDDF846569}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{BC979F5D-4721-4E39-BBF4-2593B349C17D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Audio">
+      <UniqueIdentifier>{4FC5ACA4-A4F4-4265-B639-C69775F45F3B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\GeneralManager">
+      <UniqueIdentifier>{9BB9CCBE-E1EB-499B-96D1-055F1927DCE2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Helper">
+      <UniqueIdentifier>{708028A5-A200-4804-8AB2-566B7E19FAED}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Input">
+      <UniqueIdentifier>{4929B543-7507-455F-9688-62FFEE4F4CE3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Render">
+      <UniqueIdentifier>{E475025A-F7E8-49E4-B05A-74563DD1A3FA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\RenderEngine">
+      <UniqueIdentifier>{D2D2FDA9-EFB1-45C1-B7C9-4B0716DD81DE}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\EngineRuntime.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\EngineSystemPriority.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Input\EngineInputContext.h">
+      <Filter>头文件\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Input\EngineKey.h">
+      <Filter>头文件\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Input\ControllerInput.h">
+      <Filter>头文件\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Input\Components\PlayerInput.h">
+      <Filter>头文件\Input\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Audio\Components\AudioSource.h">
+      <Filter>头文件\Audio\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Audio\Systems\AudioSystem.h">
+      <Filter>头文件\Audio\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PlatformRuntime.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PlatformRuntimeComponents.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PlatformRuntimeSystems.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PlatformRuntimeTags.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Helper\AudioTool.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h">
+      <Filter>头文件\Input\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\D2DTools.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\D2DWrapper.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\Renderer.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\Renderer3D.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\Renderer2D.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\RenderFrameDataAnalysis.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\RenderFrameManager.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\GIFAnimator.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\LaserBeamEmitter.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\ParticleEmitter.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\RenderBase.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\RenderModel.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\SkeletonAnimator.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\SkyBox.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\Sprite.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Systems\AnimationSystem.h">
+      <Filter>头文件\Render\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Systems\LaserBeamSystem.h">
+      <Filter>头文件\Render\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Systems\ParticleSystem.h">
+      <Filter>头文件\Render\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Systems\RenderSystem.h">
+      <Filter>头文件\Render\Systems</Filter>
+    </ClInclude>
+    <ClCompile Include="source\src\EngineRuntime.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Input\EngineInputContext.cpp">
+      <Filter>源文件\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Input\EngineKey.cpp">
+      <Filter>源文件\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Audio\AudioSystem.cpp">
+      <Filter>源文件\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PlatformRuntime.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Helper\AudioTool.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Input\LocalInputSystem.cpp">
+      <Filter>源文件\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\D2DTools.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\Renderer.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\Renderer3D.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\Renderer2D.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\RenderFrameDataAnalysis.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\RenderFrameManager.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Render\AnimationSystem.cpp">
+      <Filter>源文件\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Render\LaserBeamSystem.cpp">
+      <Filter>源文件\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Render\ParticleSystem.cpp">
+      <Filter>源文件\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Render\RenderSystem.cpp">
+      <Filter>源文件\Render</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

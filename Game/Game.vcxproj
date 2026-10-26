@@ -85,7 +85,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)public\include;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)public\include;$(ProjectDir)source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
@@ -106,7 +106,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Full</Optimization>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -133,7 +133,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -150,7 +150,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="public\include\ApplicationLayerCommunication\JsonProtocolClient.h" />
+    <ClInclude Include="source\include\GeneralManager\FocusManager.h" />
+  <ClInclude Include="source\include\GeneralManager\RenderManager.h" />
+    <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h" />
+  <ClInclude Include="source\include\GeneralManager\WindowHandleManager.h" />
+  <ClInclude Include="public\include\ApplicationLayerCommunication\JsonProtocolClient.h" />
     <ClInclude Include="public\include\command.h" />
     <ClInclude Include="public\include\EndPointConfig.h" />
     <ClInclude Include="public\include\GameDataDef.h" />
@@ -161,6 +165,7 @@
     <ClInclude Include="source\include\BusyLoaderDialog.h" />
     <ClInclude Include="source\include\Factory\CharacterFactory.h" />
     <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h" />
+    <ClInclude Include="source\include\GameEngine.h" />
     <ClInclude Include="source\include\Manager\BGMManager.h" />
     <ClInclude Include="source\include\Manager\GameWorldManager.h" />
     <ClInclude Include="source\include\Manager\LobbyManager.h" />
@@ -169,6 +174,7 @@
     <ClInclude Include="source\include\Manager\RequestManager.h" />
     <ClInclude Include="source\include\Manager\ResourceManager.h" />
     <ClInclude Include="source\include\Manager\UserInfoManager.h" />
+    <ClInclude Include="source\include\RenderEngine\VulkanPresentBridge.h" />
     <ClInclude Include="source\include\RenderProcess.h" />
     <ClInclude Include="source\include\Scene.h" />
     <ClInclude Include="source\include\stdafx.h" />
@@ -195,13 +201,19 @@
     <ClCompile Include="public\src\ServiceRegistryData.cpp" />
     <ClCompile Include="source\src\CharacterFactory.cpp" />
     <ClCompile Include="source\src\BGMManager.cpp" />
+    <ClCompile Include="source\src\GameEngine.cpp" />
     <ClCompile Include="source\src\BusyLoaderDialog.cpp" />
+    <ClCompile Include="source\src\GeneralManager\FocusManager.cpp" />
+  <ClCompile Include="source\src\GeneralManager\RenderManager.cpp" />
+    <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp" />
+  <ClCompile Include="source\src\GeneralManager\WindowHandleManager.cpp" />
     <ClCompile Include="source\src\GameWorldManager.cpp" />
     <ClCompile Include="source\src\LobbyManager.cpp" />
     <ClCompile Include="source\src\main.cpp" />
     <ClCompile Include="source\src\ConnectManager.cpp" />
     <ClCompile Include="source\src\MsgManager.cpp" />
     <ClCompile Include="source\src\ParticleEmitterFactory.cpp" />
+    <ClCompile Include="source\src\RenderEngine\VulkanPresentBridge.cpp" />
     <ClCompile Include="source\src\RenderProcess.cpp" />
     <ClCompile Include="source\src\RequestManager.cpp" />
     <ClCompile Include="source\src\ResourceManager.cpp" />

@@ -21,3 +21,5 @@ struct CameraComponent : public IComponent
 
 	CameraComponent() {};
 };
+
+HY_DECLARE_ECS_TYPE(CameraComponent, "engine.camera");

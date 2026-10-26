@@ -13,3 +13,5 @@ struct LightShow :public IComponent
 
 	LightShow() {};
 };
+
+HY_DECLARE_ECS_TYPE(LightShow, "gameplay.light_show");

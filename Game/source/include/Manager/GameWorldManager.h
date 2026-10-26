@@ -1,25 +1,17 @@
 #pragma once
 
 #include "ECSCore/World.h"
-#include <memory>
-#include <thread>
 
+// 这里不再持有 World，也不再有自己的一条线程。
 class GameWorldManager
 {
 public:
 	static GameWorldManager* Instance();
 
-	std::shared_ptr<World> GetGameWorld();
+	World* GetGameWorld();
 
 	void InitGameWorld();
 	void InitOnlineGameWorld();
-
-	void RunWorld();
-	void WorldLoop();
-	void PauseWorld();
-	void StopWorld();
-
-	std::shared_ptr<std::thread> GetWorldThread();
 
 public:
 	void SyncFromServerState(const json& js);
@@ -31,7 +23,6 @@ private:
 	GameWorldManager();
 
 private:
-	std::shared_ptr<World> _world;
-	std::shared_ptr<std::thread> _worldThread;
-	bool _stop;
+	// 非拥有指针：World 的寿命由引擎管理，引擎关场景后这里会被置空。
+	World* _world = nullptr;
 };

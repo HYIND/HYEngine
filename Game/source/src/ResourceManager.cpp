@@ -1,9 +1,10 @@
-#include "Manager/ResourceManager.h"
+﻿#include "Manager/ResourceManager.h"
 #include "GeneralManager/WindowHandleManager.h"
 #include "VulkanRenderEngine/General/RenderHelp.h"
 #include "resource.h"
 #include "glm/gtc/matrix_transform.hpp"
 #include "ThreadPool.h"
+#include "GameEngine.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
@@ -133,59 +134,12 @@ bool Need() {
 	if (!CreateD3DContext(main_hwnd))
 		return false;
 
-	IDXGIDevice* pDXGIDevice = nullptr;
-	hr = g_pD3DDevice->QueryInterface(IID_PPV_ARGS(&pDXGIDevice));
-	if (FAILED(hr)) return false;
-
-	hr = D2D1CreateFactory(
-		D2D1_FACTORY_TYPE_MULTI_THREADED,
-		IID_PPV_ARGS(&pD2DFactory)
-	);
-	if (FAILED(hr)) {
-		pDXGIDevice->Release();
+	// 2D 设备与渲染目标由引擎的 Renderer2D 创建：宿主只交出 D3D11 设备与交换链，
+	// 位图目标、D2D 工厂这些都归引擎内部管理。
+	auto& runtime = GameEngine::Instance().Runtime();
+	std::string render2DError;
+	if (!runtime.CreateRenderer2D(g_pD3DDevice, g_pSwapChain, &render2DError))
 		return false;
-	}
-
-	ID2D1Device* pD2DDevice = nullptr;
-	hr = pD2DFactory->CreateDevice(pDXGIDevice, &pD2DDevice);
-	pDXGIDevice->Release();
-	if (FAILED(hr)) return false;
-
-	hr = pD2DDevice->CreateDeviceContext(
-		D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-		&pRenderTarget
-	);
-	pD2DDevice->Release();
-	if (FAILED(hr)) return false;
-
-	// 获取后台缓冲区
-	ID3D11Texture2D* pBackBuffer = nullptr;
-	hr = g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-	if (FAILED(hr)) return false;
-
-	IDXGISurface* pSurface = nullptr;
-	hr = pBackBuffer->QueryInterface(IID_PPV_ARGS(&pSurface));
-	pBackBuffer->Release();
-	if (FAILED(hr)) return false;
-
-	// 从 DXGI Surface 创建 D2D 位图作为渲染目标
-	D2D1_BITMAP_PROPERTIES1 bitmapProps = {};
-	bitmapProps.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-	bitmapProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-	bitmapProps.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-
-	ID2D1Bitmap1* pTargetBitmap = nullptr;
-	hr = pRenderTarget->CreateBitmapFromDxgiSurface(
-		pSurface,
-		&bitmapProps,
-		&pTargetBitmap
-	);
-	pSurface->Release();
-	if (FAILED(hr)) return false;
-
-	// 设置为渲染目标
-	pRenderTarget->SetTarget(pTargetBitmap);
-	pTargetBitmap->Release();
 
 	if (pIDWriteFactory == nullptr) {
 		DWriteCreateFactory(

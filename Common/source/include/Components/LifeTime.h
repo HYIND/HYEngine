@@ -25,3 +25,5 @@ struct LifeTime :public IComponent
 		}
 	}
 };
+
+HY_DECLARE_ECS_TYPE(LifeTime, "hy.engine.component.LifeTime");

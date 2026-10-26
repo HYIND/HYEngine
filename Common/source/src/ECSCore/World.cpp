@@ -76,13 +76,29 @@ IComponent* World::tryGetComponentByID(const Entity& entity, ComponentTypeID com
 	return entity ? m_componentManager->tryGetComponentByID(entity.getId(), componentTypeId) : nullptr;
 }
 
+bool World::removeComponentByTypeID(const Entity& entity, ComponentTypeID componentTypeId)
+{
+	if (!IsValidWorldEntity(entity))
+		return false;
+
+	ComponentSlotID slot = 0;
+	if (!m_componentManager->tryGetComponentSlot(componentTypeId, slot))
+		return false;
+	if (!m_componentManager->removeComponentByID(entity, componentTypeId))
+		return false;
+
+	m_entityManager->removeComponent(entity.getId(), slot);
+	return true;
+}
+
 // ==== 查询 ====
 bool World::hasComponent(const Entity& entity, ComponentTypeID componentTypeId) const {
 	if (!IsValidWorldEntity(entity))
 		return false;
 
 	ComponentMask mask = m_entityManager->getEntityComponentMask(entity.getId());
-	return mask.test(componentTypeId);
+	ComponentSlotID slot = 0;
+	return m_componentManager->tryGetComponentSlot(componentTypeId, slot) && mask.test(slot);
 }
 
 uint32_t World::getAllEntityCount()
@@ -114,9 +130,9 @@ Entity World::DuplicateEntity(const Entity& srcEntity)
 	if (!newEntity)
 		return newEntity;
 
-	std::vector<ComponentTypeID> ids;
-	m_componentManager->DuplicateAllComponent(newEntity, srcEntity, ids);
-	m_entityManager->setEntityComponentMasks(newEntityId, ids);
+	std::vector<ComponentSlotID> slots;
+	m_componentManager->DuplicateAllComponent(newEntity, srcEntity, slots);
+	m_entityManager->setEntityComponentMasks(newEntityId, slots);
 
 	return newEntity;
 }

@@ -17,3 +17,5 @@ private:
 private:
 	void fireBullet(Entity& shooter, WeaponBasic& basic, WeaponState& state);
 };
+
+HY_DECLARE_ECS_TYPE(WeaponSystem, "hy.gameplay.system.Weapon");

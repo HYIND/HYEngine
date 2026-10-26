@@ -34,3 +34,5 @@ struct RenderLight : public Renderable
 		return std::get_if<T>(&data);
 	}
 };
+
+HY_DECLARE_ECS_TYPE(RenderLight, "engine.render_light");

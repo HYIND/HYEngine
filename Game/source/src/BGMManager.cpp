@@ -1,6 +1,7 @@
 #include "Manager/BGMManager.h"
 #include "Manager/ResourceManager.h"
-#include "GeneralManager/AudioDeviceManager.h"
+#include "GameEngine.h"
+#include "Helper/AudioTool.h"
 
 BGMManager* BGMManager::Instance()
 {
@@ -23,9 +24,9 @@ void BGMManager::SetEnableCurBGM()
 	{
 		if (_playing_audioPlayhandle)
 		{
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
+			if (auto device = GameEngine::Instance().Audio())
 			{
-				AudioDeviceManager::Instance()->GetDevice()->StopAudio(_playing_audioPlayhandle);
+				device->StopAudio(_playing_audioPlayhandle);
 				_playing_audioPlayhandle = AudioPlayHandle();
 				_playing_bgm_res = "";
 			}
@@ -37,7 +38,7 @@ void BGMManager::SetEnableCurBGM()
 			{
 				if (auto audio = ResFactory->GetAudioRes(_playing_bgm_res))
 				{
-					if (auto device = AudioDeviceManager::Instance()->GetDevice())
+					if (auto device = GameEngine::Instance().Audio())
 					{
 						_playing_audioPlayhandle = device->PlayAudio(
 							*audio,

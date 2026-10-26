@@ -102,7 +102,6 @@ Json SceneCodec::SaveToJson() const
 
 bool SceneCodec::Serialize(World& world, const std::function<bool(Entity)>& includeEntity)
 {
-	RegisterBuiltInCodecs();
 	std::vector<EntityData> entities;
 	const auto& codecs = GetComponentCodecs();
 
@@ -142,7 +141,6 @@ bool SceneCodec::Deserialize(
 	const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset,
 	const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset) const
 {
-	RegisterBuiltInCodecs();
 	const auto& codecs = GetComponentCodecs();
 	std::vector<Entity> entityHandles;
 	std::unordered_map<std::string, Entity> entitiesById;

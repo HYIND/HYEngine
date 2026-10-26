@@ -57,6 +57,9 @@
     <ClInclude Include="source\include\SceneCodec\SceneCodec.h">
       <Filter>头文件\SceneCodec</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\SceneCodec\BuiltInCodecs.h">
+      <Filter>头文件\SceneCodec</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\AssetRuntime.cpp">
@@ -84,6 +87,9 @@
       <Filter>源文件\SceneCodec</Filter>
     </ClCompile>
     <ClCompile Include="source\src\SceneCodec\SceneCodec.cpp">
+      <Filter>源文件\SceneCodec</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SceneCodec\BuiltInCodecs.cpp">
       <Filter>源文件\SceneCodec</Filter>
     </ClCompile>
   </ItemGroup>

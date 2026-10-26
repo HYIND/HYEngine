@@ -13,3 +13,5 @@ struct Transform2D :public IComponent
 		: position(pos), rotation(rot), scale(scl) {
 	}
 };
+
+HY_DECLARE_ECS_TYPE(Transform2D, "engine.transform2D");

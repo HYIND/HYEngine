@@ -42,9 +42,6 @@
     <ClInclude Include="source\include\GamePlaySystems.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Components\CameraFollow.h">
-      <Filter>头文件\Components</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\Components\Health.h">
       <Filter>头文件\Components</Filter>
     </ClInclude>
@@ -90,6 +87,9 @@
     <ClInclude Include="source\include\Systems\TetrisSystem.h">
       <Filter>头文件\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\GamePlayModule.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\GamePlay.cpp">
@@ -116,11 +116,11 @@
     <ClCompile Include="source\src\Helper\AnimatorHelper.cpp">
       <Filter>源文件\Helper</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\Systems\CameraFollowSystem.cpp">
-      <Filter>源文件\Systems</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\Systems\TetrisSystem.cpp">
       <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GamePlayModule.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
