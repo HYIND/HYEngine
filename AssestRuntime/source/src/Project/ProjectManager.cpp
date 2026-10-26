@@ -1,5 +1,6 @@
 #include "Project/AssetAnalysisHelper.h"
 #include "Project/ProjectManager.h"
+#include "UI/UiDocumentParser.h"
 #include "Helper/Tools.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -20,7 +21,9 @@ static const std::map<AssetType, std::string> metaPerfix = {
 	{ AssetType::Model,"Model" },
 	{ AssetType::Scene,"Scene" },
 	{ AssetType::Audio,"Au" },
-	{ AssetType::Script,"Script" }
+	{ AssetType::Script,"Script" },
+	{ AssetType::UiDocument,"UI" },
+	{ AssetType::UiStyle,"UIS" }
 };
 
 class ProjectAssetPathProvider :public IAssetFullPathProvider
@@ -411,6 +414,96 @@ bool ProjectManager::ImportScriptAsset(const std::string& sourcePathStr, const s
 	return true;
 }
 
+bool ProjectManager::ImportTextAsset(const std::string& sourcePathStr, const std::string& destPathStr, AssetType type, const std::string& expectedExtension, AssetMeta* out, bool autoSave)
+{
+	if (!m_isOpen || !fs::exists(sourcePathStr) || !fs::is_regular_file(sourcePathStr))
+		return false;
+	if (!Tool::IsSubDirectory(destPathStr, m_projectPath))
+		return false;
+
+	std::string extension = fs::path(sourcePathStr).extension().string();
+	std::transform(extension.begin(), extension.end(), extension.begin(),
+		[](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+	if (extension != expectedExtension)
+		return false;
+
+	fs::path absoluteDestPath = fs::absolute(destPathStr).lexically_normal();
+	fs::path projectPath = fs::absolute(m_projectPath).lexically_normal();
+	fs::path assetPath = fs::relative(absoluteDestPath, projectPath);
+	if (assetPath.empty() || assetPath.string().find("..") == 0)
+		return false;
+
+	if (auto existingMeta = m_database->GetAssetMetaByPath(assetPath.string()))
+	{
+		if (existingMeta->type != type)
+			return false;
+		if (out) *out = *existingMeta;
+		return true;
+	}
+
+	if (fs::exists(absoluteDestPath) && fs::weakly_canonical(sourcePathStr) != fs::weakly_canonical(absoluteDestPath.string()))
+		return false;
+	if (fs::weakly_canonical(sourcePathStr) != fs::weakly_canonical(absoluteDestPath.string()) &&
+		!CopyToProject(sourcePathStr, assetPath.string()))
+		return false;
+
+	AssetMeta meta;
+	meta.guid = GenerateGUID();
+	meta.type = type;
+	meta.path = assetPath.string();
+	meta.name = absoluteDestPath.filename().string();
+	if (!m_database->AddAssetMeta(meta))
+		return false;
+
+	if (autoSave && !SaveProject())
+	{
+		m_database->RemoveAssetMeta(meta.guid);
+		return false;
+	}
+
+	if (out) *out = meta;
+	return true;
+}
+
+bool ProjectManager::ImportUIDocumentAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out, bool autoSave)
+{
+	AssetMeta documentMeta;
+	if (!ImportTextAsset(filePath, assetPath, AssetType::UiDocument, ".ui", &documentMeta, false))
+		return false;
+
+	// 文档引用的样式按“相对文档的路径”找：源文件旁边有就一起导入，
+	// 并保持同样的相对路径，这样文档里的引用在工程内依然成立。
+	const std::filesystem::path sourceDir = std::filesystem::path(filePath).parent_path();
+	const std::filesystem::path destinationDir = std::filesystem::path(assetPath).parent_path();
+
+	for (const std::string& reference : UI::CollectStyleReferences(filePath))
+	{
+		const std::filesystem::path relative = std::filesystem::path(reference).lexically_normal();
+		if (relative.empty() || relative.is_absolute())
+			continue;
+
+		const std::filesystem::path styleSource = (sourceDir / relative).lexically_normal();
+		if (!std::filesystem::exists(styleSource) || !std::filesystem::is_regular_file(styleSource))
+			continue;
+
+		const std::filesystem::path styleAssetPath = (destinationDir / relative).lexically_normal();
+		const std::filesystem::path styleDestination = (std::filesystem::path(m_projectPath) / styleAssetPath).lexically_normal();
+
+		ImportUIStyleAsset(styleSource.string(), styleDestination.string(), nullptr, false);
+	}
+
+	if (autoSave && !SaveProject())
+		return false;
+
+	if (out) *out = documentMeta;
+	return true;
+}
+
+bool ProjectManager::ImportUIStyleAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out, bool autoSave)
+{
+	return ImportTextAsset(filePath, assetPath, AssetType::UiStyle, ".uistyle", out, autoSave);
+}
+
 bool ProjectManager::ImportMaterialAsset(const std::string& destPathStr, const MaterialProperties& prop, const std::map<TextureType, AssetGUID>& dependencyTexture, AssetMeta* out, bool autoSave)
 {
 	if (!m_isOpen) return false;
@@ -550,6 +643,13 @@ std::vector<std::shared_ptr<ScriptSourceData>> ProjectManager::CheckScriptAssetC
 	if (!m_isOpen || !m_storage)
 		return {};
 	return m_storage->CheckScriptChanges();
+}
+
+std::vector<std::shared_ptr<UI::ParseResult>> ProjectManager::CheckUIDocumentChanges()
+{
+	if (!m_isOpen || !m_storage)
+		return {};
+	return m_storage->CheckUIDocumentChanges();
 }
 
 bool ProjectManager::CopyToProject(const std::string& filePath, const AssetPath& assetPath)

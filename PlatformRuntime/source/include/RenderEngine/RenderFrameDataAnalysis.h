@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "VulkanRenderEngine/General/RenderState.h"
 
 #include <memory>

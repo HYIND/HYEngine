@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -25,8 +25,17 @@
     <Filter Include="头文件\SceneCodec">
       <UniqueIdentifier>{dcc7cc36-e4dc-4879-afb0-ace3a0c9e7f1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\UI">
+      <UniqueIdentifier>{8b8dd177-abcc-438d-9d20-ac30d289dde1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\UI">
+      <UniqueIdentifier>{5e894db7-ba0f-4ce8-a285-c3b4a93186cd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="source\include\UI\UiDocumentParser.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\AssetRuntime.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -91,6 +100,9 @@
     </ClCompile>
     <ClCompile Include="source\src\SceneCodec\BuiltInCodecs.cpp">
       <Filter>源文件\SceneCodec</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UI\UiDocumentParser.cpp">
+      <Filter>源文件\UI</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

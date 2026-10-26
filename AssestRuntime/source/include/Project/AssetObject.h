@@ -5,6 +5,7 @@
 #include "VulkanRenderEngine/Base/Model.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Script/ScriptSourceData.h"
+#include "UI/UiDocumentParser.h"
 #include <filesystem>
 
 class AssetStroage;
@@ -28,6 +29,8 @@ public:
 	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
 	virtual std::shared_ptr<ScriptSourceData> AsScript();
+	virtual std::shared_ptr<UI::ParseResult> AsUIDocument();
+	virtual std::shared_ptr<UI::UiStyle> AsUIStyle();
 
 public:
 	virtual bool NeedUpdate() { return false; }
@@ -140,6 +143,42 @@ public:
 
 private:
 	std::shared_ptr<ScriptSourceData> _data;
+	std::filesystem::file_time_type _lastWriteTime{};
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+
+// UI 文档（.ui）：保存解析结果，节点树、样式引用、每节点有效样式都在里面。
+class UIDocumentAsset : public AssetObject
+{
+public:
+	UIDocumentAsset();
+	virtual ~UIDocumentAsset() = default;
+	virtual std::shared_ptr<UI::ParseResult> AsUIDocument() override;
+
+	const std::shared_ptr<UI::ParseResult>& GetDocument() const { return _document; }
+
+private:
+	std::shared_ptr<UI::ParseResult> _document;
+	// 记录上次解析时文件的修改时间，用于热重载检测。
+	std::filesystem::file_time_type _lastWriteTime{};
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+// UI 样式（.uistyle）：单份样式资产，样式引用在文档解析时内联展开。
+class UIStyleAsset : public AssetObject
+{
+public:
+	UIStyleAsset();
+	virtual ~UIStyleAsset() = default;
+	virtual std::shared_ptr<UI::UiStyle> AsUIStyle() override;
+
+	const std::shared_ptr<UI::UiStyle>& GetStyle() const { return _style; }
+
+private:
+	std::shared_ptr<UI::UiStyle> _style;
 	std::filesystem::file_time_type _lastWriteTime{};
 	friend AssetStroage;
 	friend AssetStroageHelper;

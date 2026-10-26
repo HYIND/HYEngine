@@ -143,6 +143,7 @@
     <ClInclude Include="source\include\Project\AssetMeta.h" />
     <ClInclude Include="source\include\Project\AssetObject.h" />
     <ClInclude Include="source\include\Project\ProjectManager.h" />
+    <ClInclude Include="source\include\UI\UiDocumentParser.h" />
     <ClInclude Include="source\include\SceneCodec\BuiltInCodecs.h" />
     <ClInclude Include="source\include\SceneCodec\ComponentCodec.h" />
     <ClInclude Include="source\include\SceneCodec\SceneCodec.h" />
@@ -155,6 +156,7 @@
     <ClCompile Include="source\src\Project\AssetStroage.cpp" />
     <ClCompile Include="source\src\Project\AssetObject.cpp" />
     <ClCompile Include="source\src\Project\ProjectManager.cpp" />
+    <ClCompile Include="source\src\UI\UiDocumentParser.cpp" />
     <ClCompile Include="source\src\SceneCodec\BuiltInCodecs.cpp" />
     <ClCompile Include="source\src\SceneCodec\ComponentCodec.cpp" />
     <ClCompile Include="source\src\SceneCodec\SceneCodec.cpp" />

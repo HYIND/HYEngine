@@ -40,6 +40,9 @@
     <Filter Include="源文件\lua">
       <UniqueIdentifier>{4d3e4a54-8fb8-41fc-be3b-c65192a4166b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\UI">
+    	<UniqueIdentifier>{6c1d5f2b-7a63-4c8e-9f4d-2b1a0e5c7d91}</UniqueIdentifier>
+    </Filter>
     <Filter Include="头文件\Script">
       <UniqueIdentifier>{c41dd5c7-2204-48fb-91e2-257ee0d16923}</UniqueIdentifier>
     </Filter>
@@ -189,6 +192,15 @@
     <ClInclude Include="source\include\Components\Script.h">
       <Filter>头文件\Components</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Components\UIView.h">
+      <Filter>头文件\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\UI\UiTypes.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Systems\UIViewSystem.h">
+      <Filter>头文件\Systems</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\Systems\ScriptSystem.h">
       <Filter>头文件\Systems</Filter>
     </ClInclude>
@@ -258,6 +270,9 @@
       <Filter>源文件\lua\CommonData</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Systems\ScriptSystem.cpp">
+      <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Systems\UIViewSystem.cpp">
       <Filter>源文件\Systems</Filter>
     </ClCompile>
     <ClCompile Include="lua\ldebug.c">

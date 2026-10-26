@@ -1,4 +1,4 @@
-#include "Project/AssetObject.h"
+﻿#include "Project/AssetObject.h"
 #include "Project/AssetStroage.h"
 
 AssetType AssetObject::GetType() const {
@@ -22,6 +22,10 @@ std::shared_ptr<SceneCodec> AssetObject::AsScene() { return nullptr; }
 std::shared_ptr<AudioInfo> AssetObject::AsAudio() { return nullptr; }
 
 std::shared_ptr<ScriptSourceData> AssetObject::AsScript() { return nullptr; }
+
+std::shared_ptr<UI::ParseResult> AssetObject::AsUIDocument() { return nullptr; }
+
+std::shared_ptr<UI::UiStyle> AssetObject::AsUIStyle() { return nullptr; }
 
 StaticMeshAsset::StaticMeshAsset() { _type = AssetType::StaticMesh; }
 
@@ -174,3 +178,11 @@ void ScriptAsset::SetData(const std::shared_ptr<ScriptSourceData>& data)
 {
 	_data = data;
 }
+
+UIDocumentAsset::UIDocumentAsset() { _type = AssetType::UiDocument; }
+
+std::shared_ptr<UI::ParseResult> UIDocumentAsset::AsUIDocument() { return _document; }
+
+UIStyleAsset::UIStyleAsset() { _type = AssetType::UiStyle; }
+
+std::shared_ptr<UI::UiStyle> UIStyleAsset::AsUIStyle() { return _style; }

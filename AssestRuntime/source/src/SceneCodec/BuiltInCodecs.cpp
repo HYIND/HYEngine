@@ -1,4 +1,4 @@
-#include "SceneCodec/BuiltInCodecs.h"
+﻿#include "SceneCodec/BuiltInCodecs.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
@@ -547,6 +547,51 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 if (entity.hasComponent<ScriptRuntime>())
                     result &= world->removeComponentByTypeID(entity, ComponentType<ScriptRuntime>::getId());
                   return result;
+            }
+        }
+    ));
+
+    result.push_back(GenerateComponentCodec<UIView>(
+        "engine.uiview",
+        "UI View",
+        [](const UIView& view) {
+            return Json{
+                { "documentGuid", view.documentGuid },
+                { "layer", view.layer },
+                { "capturesInput", view.capturesInput },
+                { "enabled", view.enabled }
+            };
+        },
+        [](UIView& view, const Json& data) {
+            if (!data.is_object())
+                return false;
+
+            view.documentGuid = data.value("documentGuid", AssetGUID());
+            view.layer = data.value("layer", 0);
+            view.capturesInput = data.value("capturesInput", true);
+            view.enabled = data.value("enabled", true);
+            view.needReload = true;
+            return true;
+        },
+        {}, {}, {}, 1, {},
+        ComponentEditorBehavior{
+            .add =
+            [](Entity entity)
+            {
+                if (entity && !entity.hasComponent<UIView>())
+                    entity.addComponent<UIView>();
+            },
+            .remove =
+            [](Entity entity) -> bool
+            {
+                auto* world = entity.getWorld();
+                if (!world)
+                    return false;
+
+                bool result = world->removeComponentByTypeID(entity, ComponentType<UIView>::getId());
+                if (entity.hasComponent<UIViewRuntime>())
+                    result &= world->removeComponentByTypeID(entity, ComponentType<UIViewRuntime>::getId());
+                return result;
             }
         }
     ));

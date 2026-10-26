@@ -1,4 +1,4 @@
-﻿#include "RenderEngine/RenderFrameManager.h"
+﻿#include "RenderEngine/RenderFrameData.h"
 
 using namespace Render;
 
@@ -26,4 +26,9 @@ void Render3DFrameData::reset()
 void Render2DFrameData::reset()
 {
 	D2D_Contexts.clear();
+}
+
+void RenderUIFrameData::reset()
+{
+	views.clear();
 }

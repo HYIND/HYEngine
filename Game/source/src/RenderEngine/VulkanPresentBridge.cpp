@@ -1,41 +1,35 @@
-#include "RenderEngine/VulkanPresentBridge.h"
+﻿#include "RenderEngine/VulkanPresentBridge.h"
 
 #include "RenderEngine/D2DTools.h"
-#include "RenderEngine/Renderer3D.h"
+#include "RenderEngine/Renderer.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/VKContext.h"
-#include "VulkanRenderEngine/VulkanRenderer.h"
 
 
-bool VulkanPresentBridge::Initialize(Render::Renderer3D& renderer3D)
+bool VulkanPresentBridge::Initialize(Render::Renderer& renderer)
 {
 	if (_ready)
 		return true;
 
-	auto vulkanRenderer = renderer3D.GetVulkanRenderer();
-	if (!vulkanRenderer)
+	if (!renderer.HasRenderer())
 		return false;
 
 	if (!_sharedTexture)
-		_sharedTexture = CreateSharedTexture(g_pD3DDevice, vulkanRenderer->GetWidth(), vulkanRenderer->GetHeight(), DXGI_FORMAT_B8G8R8A8_UNORM);
+		_sharedTexture = CreateSharedTexture(g_pD3DDevice, renderer.GetRenderTargetWidth(), renderer.GetRenderTargetHeight(), DXGI_FORMAT_B8G8R8A8_UNORM);
 	if (!_sharedTexture)
 		return false;
 
-	_vulkanRenderer = vulkanRenderer;
+	_renderer = &renderer;
 	_ready = true;
 	return true;
 }
 
 void VulkanPresentBridge::PresentFrame() const
 {
-	if (!_ready || !_sharedTexture || !g_pSwapChain)
+	if (!_ready || !_sharedTexture || !g_pSwapChain || !_renderer)
 		return;
 
-	const auto& renderer = _vulkanRenderer;
-	if (!renderer)
-		return;
-
-	renderer->WaitImage([&](std::shared_ptr<Texture2D> tex, std::shared_ptr<RenderState> state) {
+	_renderer->WaitImage([&](std::shared_ptr<Texture2D> tex, std::shared_ptr<RenderState> state) {
 		if (!tex || !_sharedTexture->vulkanTexture)
 			return;
 

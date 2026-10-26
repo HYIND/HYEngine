@@ -628,6 +628,11 @@ void SceneEditor::UpdateEditorFrame(ProjectManager* projectManager)
             auto changed = projectManager->CheckScriptAssetChanges();
             if (!changed.empty())
                 ReloadScriptAssets(changed);
+
+            auto changedUI = projectManager->CheckUIDocumentChanges();
+            if (!changedUI.empty())
+                ReloadUIAssets();
+
             lastScriptCheck = Tool::GetTimestampMilliseconds();
         }
     }
@@ -850,6 +855,22 @@ void SceneEditor::AddEmptyEntity(const glm::vec3& position, const std::string& n
         if (!name.empty())
             SetNameTag(entity, name);
         });
+}
+
+void SceneEditor::ReloadUIAssets()
+{
+    if (!_world)
+        return;
+
+    auto apply = [](World& world) {
+        for (auto [entity, view] : world.getViewWith<UIView>())
+            view.needReload = true;
+        };
+
+    if (_world->isRunning())
+        _world->SubmitCommand(apply);
+    else
+        apply(*_world);
 }
 
 void SceneEditor::ReloadScriptAssets(const std::vector<std::shared_ptr<ScriptSourceData>>& changed)

@@ -1,4 +1,4 @@
-//-----------------------------------------------------------------------------
+﻿//-----------------------------------------------------------------------------
 // DEAR IMGUI COMPILE-TIME OPTIONS
 // Runtime options (clipboard callbacks, enabling various features, etc.) can generally be set via the ImGuiIO structure.
 // You can use ImGui::SetAllocatorFunctions() before calling ImGui::CreateContext() to rewire memory allocation functions.
@@ -148,3 +148,8 @@ namespace ImGui
     void MyFunction(const char* name, MyMatrix44* mtx);
 }
 */
+
+//---- ImGuiContext改成线程局部，以便多实例渲染不会出现全局变量访问冲突。
+struct ImGuiContext;
+extern thread_local ImGuiContext* ImGuiTLS;
+#define GImGui ImGuiTLS

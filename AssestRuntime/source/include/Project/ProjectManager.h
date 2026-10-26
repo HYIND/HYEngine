@@ -36,6 +36,10 @@ public:
 	bool ImportModelAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
 	bool ImportTextureAsset(const std::string& filePath, const std::string& assetPath, const TextureConfig& config, AssetMeta* out = nullptr, bool autoSave = true);
 	bool ImportScriptAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
+	bool ImportUIDocumentAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
+	bool ImportUIStyleAsset(const std::string& filePath, const std::string& assetPath, AssetMeta* out = nullptr, bool autoSave = true);
+	// .ui / .uistyle 这类"原样拷进工程"的文本资产共用这条导入逻辑。
+	bool ImportTextAsset(const std::string& filePath, const std::string& assetPath, AssetType type, const std::string& expectedExtension, AssetMeta* out, bool autoSave);
 	bool ImportMaterialAsset(const std::string& destPathStr, const MaterialProperties& prop, const std::map<TextureType, AssetGUID>& dependencyTexture, AssetMeta* out, bool autoSave = true);
 
 	bool DeleteAsset(const AssetGUID& guid);
@@ -53,6 +57,8 @@ public:
 
 public:
 	std::vector<std::shared_ptr<ScriptSourceData>> CheckScriptAssetChanges();
+	// UI 文档/样式文件变更检测（热重载）。
+	std::vector<std::shared_ptr<UI::ParseResult>> CheckUIDocumentChanges();
 
 private:
 	std::string GenerateGUID();

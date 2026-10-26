@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "RenderEngine/D2DRenderContext.h"
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "Helper/TripleBuffer.h"
 
 #include <memory>

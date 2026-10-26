@@ -44,6 +44,16 @@ static bool DetectType(const std::string& path, AssetType& type)
 		type = AssetType::Script;
 		return true;
 	}
+	if (ext == ".ui")
+	{
+		type = AssetType::UiDocument;
+		return true;
+	}
+	if (ext == ".uistyle")
+	{
+		type = AssetType::UiStyle;
+		return true;
+	}
 
 	return false;
 
@@ -127,7 +137,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		ImGui::PopID();
 
 		int currentItem = static_cast<int>(m_importAssetType);
-		const char* items[] = { "未知", "贴图", "音频", "材质", "静态网格体","模型", "场景", "脚本" };
+		const char* items[] = { "未知", "贴图", "音频", "材质", "静态网格体","模型", "场景", "脚本", "UI 文档", "UI 样式" };
 		if (ImGui::Combo("资产类型", &currentItem, items, IM_ARRAYSIZE(items)))
 			m_importAssetType = static_cast<AssetType>(currentItem);
 
@@ -149,6 +159,10 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		case AssetType::Audio:
 			break;
 		case AssetType::Script:
+			break;
+		case AssetType::UiDocument:
+			break;
+		case AssetType::UiStyle:
 			break;
 		default:
 			break;
@@ -183,6 +197,12 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 						break;
 					case AssetType::Script:
 						imported = projectManager->ImportScriptAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						break;
+					case AssetType::UiDocument:
+						imported = projectManager->ImportUIDocumentAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						break;
+					case AssetType::UiStyle:
+						imported = projectManager->ImportUIStyleAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
 						break;
 					default:
 						break;

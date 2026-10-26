@@ -6,6 +6,7 @@
 #include "Components/Controller.h"			// 基础控制
 #include "Components/Transform2D.h"			// 2D变换
 #include "Components/Script.h"				// Lua脚本引用
+#include "Components/UIView.h"				// UI 文档（屏幕空间控件树）
 
 // ================ 渲染基础 ===============
 #include "Components/Renderable.h"

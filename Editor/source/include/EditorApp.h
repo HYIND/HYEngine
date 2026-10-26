@@ -2,7 +2,7 @@
 
 #include "ECSCore/World.h"
 #include "VulkanRenderEngine/VulkanRenderer.h"
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "CommonSystems.h"
 #include "CommonData/LightData.h"
 #include "EngineRuntime.h"

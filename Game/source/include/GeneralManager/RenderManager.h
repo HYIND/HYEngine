@@ -3,7 +3,7 @@
 #include "RenderEngine/D2DTools.h"
 #include "RenderEngine/Renderer.h"
 #include "Helper/DynamicFpsController.h"
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "RenderEngine/VulkanPresentBridge.h"
 #include "Helper/TripleBuffer.h"
 #include <memory>

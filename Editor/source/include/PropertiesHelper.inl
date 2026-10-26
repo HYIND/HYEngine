@@ -1,4 +1,4 @@
-﻿#include "PropertiesHelper.h"
+#include "PropertiesHelper.h"
 #include "ImguiLayout.h"
 #include "SceneCodec/ComponentCodec.h"
 
@@ -647,6 +647,75 @@ inline bool PropertiesHelper::DrawComponent<Script>(Script& comp, ProjectManager
                     if (assetManager)
                         ImguiLayout::HandleScriptFileDrop(fileFullPath, ImguiLayout::selectedEntity, assetManager);
                 }
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    return changed;
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<UIView>(UIView& comp, ProjectManager* assetManager)
+{
+    bool changed = false;
+
+    auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+    auto meta = (database && !comp.documentGuid.empty()) ? database->GetAssetMetaByGuid(comp.documentGuid) : nullptr;
+
+    ImGui::TextUnformatted("UI Document");
+    ImGui::SameLine();
+    if (comp.documentGuid.empty())
+    {
+        ImGui::TextDisabled("Unlinked");
+    }
+    else if (!meta)
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Missing asset (%s)", comp.documentGuid.c_str());
+    }
+    else
+    {
+        ImGui::TextUnformatted(meta->name.c_str());
+        ImGui::TextDisabled("%s", meta->path.c_str());
+    }
+
+    changed |= ImGui::Checkbox("Enabled", &comp.enabled);
+    changed |= ImGui::Checkbox("Captures Input", &comp.capturesInput);
+    SetNextPropertyFieldWidth(130.0f, 0.55f);
+    changed |= ImGui::DragInt("Layer", &comp.layer, 0.1f, -10000, 10000);
+    if (ImGui::Button("Reload"))
+    {
+        comp.needReload = true;
+        changed = true;
+    }
+
+    // 和脚本组件一样：可以把资产面板里的 .ui 拖到这个按钮上替换。
+    if (ImGui::Button("Drop UI document to replace", ImVec2(-FLT_MIN, 0.0f))) {}
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+        {
+            const char* data = static_cast<const char*>(payload->Data);
+            if (data && *data && assetManager)
+            {
+                auto droppedMeta = database ? database->GetAssetMetaByGuid(AssetGUID(data)) : nullptr;
+                if (droppedMeta && droppedMeta->type == AssetType::UiDocument)
+                {
+                    comp.documentGuid = droppedMeta->guid;
+                    comp.needReload = true;
+                    changed = true;
+                }
+            }
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_FILE"))
+        {
+            const char* data = static_cast<const char*>(payload->Data);
+            if (data && strlen(data) > 0)
+            {
+                std::string fileFullPath(data);
+                std::string ext = fs::path(fileFullPath).extension().string();
+                if (ext == ".ui" && assetManager)
+                    ImguiLayout::HandleUIAssetFileDrop(fileFullPath, ImguiLayout::selectedEntity, assetManager);
             }
         }
         ImGui::EndDragDropTarget();

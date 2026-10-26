@@ -1,4 +1,4 @@
-#include "IconManager.h"
+﻿#include "IconManager.h"
 #include <filesystem>
 #include "VulkanRenderEngine/VKContext.h"
 
@@ -80,6 +80,9 @@ ImTextureID IconManager::GetIconByAssetType(AssetType type) const
 	else if (type == AssetType::Audio) {
 		return GetIcon("audio");
 	}
+	else if (type == AssetType::Script || type == AssetType::UiDocument || type == AssetType::UiStyle) {
+		return GetIcon("file");
+	}
 
 	return GetIcon("file");
 }
@@ -105,6 +108,9 @@ ImTextureID IconManager::GetIconByFilePath(const std::string& filePath) const
 	}
 	else if (ext == ".mp3" || ext == ".wav") {
 		return GetIcon("audio");
+	}
+	else if (ext == ".lua" || ext == ".ui" || ext == ".uistyle") {
+		return GetIcon("file");
 	}
 	return GetIcon("file");
 }
