@@ -1,6 +1,6 @@
 #include "Factory/CharacterFactory.h"
 #include "CommonComponent.h"
-#include "GameRuntimeComponents.h"
+#include "PlatformRuntimeComponents.h"
 #include "GamePlayComponents.h"
 
 Entity CharacterFactory::CreatePlayerCharacter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<Model> model)

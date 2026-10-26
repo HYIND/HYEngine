@@ -1,0 +1,17 @@
+#pragma once
+
+#include "ECSCore/IComponent.h"
+#include "VulkanRenderEngine/Base/TextureCube.h"
+
+struct SkyBox :public Renderable
+{
+	std::shared_ptr<TextureCube> cube;
+
+	SkyBox() {}
+	SkyBox(std::shared_ptr<TextureCube> cube) : cube(cube) {}
+	virtual void OnRemove(const Entity& e) {
+		cube.reset();
+	}
+};
+
+HY_DECLARE_ECS_TYPE(SkyBox, "hy.engine.component.SkyBox");

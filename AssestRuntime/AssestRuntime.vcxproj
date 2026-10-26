@@ -76,7 +76,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -97,7 +97,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
@@ -121,7 +121,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)GameRuntime\source\include;$(SolutionDir)GamePlay\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
@@ -143,6 +143,7 @@
     <ClInclude Include="source\include\Project\AssetMeta.h" />
     <ClInclude Include="source\include\Project\AssetObject.h" />
     <ClInclude Include="source\include\Project\ProjectManager.h" />
+    <ClInclude Include="source\include\SceneCodec\BuiltInCodecs.h" />
     <ClInclude Include="source\include\SceneCodec\ComponentCodec.h" />
     <ClInclude Include="source\include\SceneCodec\SceneCodec.h" />
   </ItemGroup>
@@ -154,6 +155,7 @@
     <ClCompile Include="source\src\Project\AssetStroage.cpp" />
     <ClCompile Include="source\src\Project\AssetObject.cpp" />
     <ClCompile Include="source\src\Project\ProjectManager.cpp" />
+    <ClCompile Include="source\src\SceneCodec\BuiltInCodecs.cpp" />
     <ClCompile Include="source\src\SceneCodec\ComponentCodec.cpp" />
     <ClCompile Include="source\src\SceneCodec\SceneCodec.cpp" />
   </ItemGroup>

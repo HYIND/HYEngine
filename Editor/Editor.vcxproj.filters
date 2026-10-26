@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClInclude Include="source\include\stdafx.h">
@@ -28,7 +28,16 @@
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\WorldManager.h">
+    <ClInclude Include="source\include\EditorApp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\SceneEditor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\ViewportCamera.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\EditorGlfwInput.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="source\include\ImguiLayout.h">
@@ -134,7 +143,13 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\WorldManager.cpp">
+    <ClCompile Include="source\src\EditorApp.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\SceneEditor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\ViewportCamera.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\ImguiLayout.cpp">
@@ -172,6 +187,9 @@
     </ClCompile>
     <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp">
       <Filter>Imgui\backend</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\EditorGlfwInput.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

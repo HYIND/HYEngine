@@ -12,3 +12,5 @@ public:
 private:
 	void processDestructions();
 };
+
+HY_DECLARE_ECS_TYPE(DestroySystem, "hy.engine.system.Destroy");

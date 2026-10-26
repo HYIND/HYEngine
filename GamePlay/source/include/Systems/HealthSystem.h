@@ -11,3 +11,5 @@ public:
 private:
 	void processDamageEvent(Entity source, Entity target, int damage);
 };
+
+HY_DECLARE_ECS_TYPE(HealthSystem, "hy.gameplay.system.Health");

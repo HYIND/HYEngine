@@ -75,3 +75,5 @@ struct Controller :public IComponent
 		pitch = newPitch;
 	}
 };
+
+HY_DECLARE_ECS_TYPE(Controller, "engine.controller");

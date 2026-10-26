@@ -1,4 +1,4 @@
-﻿
+
 #include "stdafx.h"
 #include "framework.h"
 #include "Editor.h"
@@ -12,7 +12,10 @@
 #pragma comment(lib, "legacy_stdio_definitions")
 #endif
 
-#include "WorldManager.h"
+#include "EditorApp.h"
+#include "EditorGlfwInput.h"
+#include "Input/EngineInputContext.h"
+#include "Input/EngineKey.h"
 
 #include <io.h>
 bool ShowConsole = false;
@@ -124,14 +127,74 @@ static void glfw_filedrop_callback(GLFWwindow* window, int count, const char* pa
 			continue;
 
 		if (fs::is_directory(fs::path(path)))
-			ImguiLayout::DropFolder(path, ProjectManager::Instance(), mousePos);
+			ImguiLayout::DropFolder(path, EditorApp::Instance()->GetProjectManager(), mousePos);
 		if (fs::is_regular_file(fs::path(path)))
-			ImguiLayout::DropFile(path, ProjectManager::Instance(), mousePos);
+			ImguiLayout::DropFile(path, EditorApp::Instance()->GetProjectManager(), mousePos);
 	}
 }
 
 static bool firstFrame = true;
 ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+// ---- 输入事件：GLFW 回调直接推给引擎的输入上下文 ----
+// 编辑器是 GLFW 宿主，键鼠是真正的窗口事件，不在 UI 帧里轮询 ImGui 的按键状态。
+// ImGui 的 GLFW 后端会把自己的回调链在"先注册的回调"后面，所以这些回调必须在
+// ImGui_ImplGlfw_InitForVulkan 之前注册，两边的回调才会都收到事件。
+static EngineInputContext* g_editorInputContext = nullptr;
+
+static bool ShouldForwardInputToEngine()
+{
+	if (g_editorInputContext == nullptr)
+		return false;
+
+	// 正在文本框里打字时，按键归 UI，不该带着相机/角色跑；
+	// 顺手清掉电平，免得打字期间按下的键在退出输入框后还是按下状态。
+	if (ImGui::GetIO().WantTextInput)
+	{
+		g_editorInputContext->ReleaseAllKeys();
+		return false;
+	}
+
+	return true;
+}
+
+static void glfw_key_callback(GLFWwindow* /*window*/, int key, int /*scancode*/, int action, int /*mods*/)
+{
+	if (!ShouldForwardInputToEngine())
+		return;
+
+	// 按住不放的自动重复没有意义：边沿由输入上下文按"抬起 -> 按下"锁存。
+	if (action == GLFW_REPEAT)
+		return;
+
+	const EngineKey engineKey = EngineKeyFromGlfwKey(key);
+	if (engineKey == EngineKey::Unknown)
+		return;
+
+	g_editorInputContext->SetKeyDown(engineKey, action != GLFW_RELEASE);
+}
+
+static void glfw_mouse_button_callback(GLFWwindow* /*window*/, int button, int action, int /*mods*/)
+{
+	if (!ShouldForwardInputToEngine())
+		return;
+
+	const EngineKey engineKey = EngineKeyFromGlfwMouseButton(button);
+	if (engineKey == EngineKey::Unknown)
+		return;
+
+	g_editorInputContext->SetKeyDown(engineKey, action != GLFW_RELEASE);
+}
+
+static void glfw_window_focus_callback(GLFWwindow* /*window*/, int focused)
+{
+	if (g_editorInputContext == nullptr)
+		return;
+
+	// 窗口失焦就收不到 keyup，必须主动清，否则相机会一直朝一个方向跑。
+	if (focused == GLFW_FALSE)
+		g_editorInputContext->ReleaseAllKeys();
+}
 
 #include "ImguiInit/VulkanInit.h"
 
@@ -157,39 +220,36 @@ int ImGuiMain()
 
 	glfwSetDropCallback(window, glfw_filedrop_callback);
 
-	// 2. 初始化 Vulkan
-	ImVector<const char*> extensions;
-	std::vector<std::string> extensionStrs;
+	// 2. 初始化 Vulkan：实例与设备由引擎创建，编辑器只拿句柄去接自己的 GLFW
+	//    表面和 ImGui 后端（交换链归 ImGui 后端，引擎不参与）。
 	uint32_t extensions_count = 0;
 	const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&extensions_count);
+
+	EngineRenderContextDesc renderContextDesc;
 	for (uint32_t i = 0; i < extensions_count; i++)
-	{
-		extensionStrs.push_back(glfw_extensions[i]);
-		extensions.push_back(glfw_extensions[i]);
-	}
-	//SetupVulkan((VkInstance)vulkanInstance->GetHandle());
+		renderContextDesc.instanceExtensions.push_back(glfw_extensions[i]);
 
-	auto vulkanInstance = VulkanRenderer::CreateInstance(extensionStrs);
+	auto* editorApp = EditorApp::Instance();
+	if (!editorApp->CreateRenderContext(renderContextDesc))
+		return 1;
 
+	auto vulkanContext = editorApp->GetVulkanContext();
+	if (!vulkanContext.valid)
+		return 1;
 
 	// 3. 创建窗口表面
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
-	VkResult err = glfwCreateWindowSurface((VkInstance)vulkanInstance->GetHandle(), window, g_Allocator, &surface);
-
-	auto vkRenderer = VulkanRenderer::CreateOnlyDevice(vulkanInstance);
-
-	WorldManager::Instance()->SetRender(vkRenderer);
-
+	VkResult err = glfwCreateWindowSurface((VkInstance)vulkanContext.instance, window, g_Allocator, &surface);
+	check_vk_result(err);
 
 	SetupVulkan(
-		VKCONTEXT->GetInstanceHandle(),
-		VKCONTEXT->GetDevice()->GetPhysicalDevice(),
-		VKCONTEXT->GetDevice()->GetHandle(),
-		VKCONTEXT->GetDevice()->GetGraphicsQueueFamily(),
-		VKCONTEXT->GetDevice()->GetGraphicsQueue(),
-		VKCONTEXT->GetDescriptorPool()
+		(VkInstance)vulkanContext.instance,
+		(VkPhysicalDevice)vulkanContext.physicalDevice,
+		(VkDevice)vulkanContext.device,
+		vulkanContext.graphicsQueueFamily,
+		(VkQueue)vulkanContext.graphicsQueue,
+		(VkDescriptorPool)vulkanContext.descriptorPool
 	);
-	check_vk_result(err);
 
 	int w, h;
 	glfwGetFramebufferSize(window, &w, &h);
@@ -261,6 +321,11 @@ int ImGuiMain()
 	}
 
 
+	g_editorInputContext = editorApp->GetInputContext().get();
+	glfwSetKeyCallback(window, glfw_key_callback);
+	glfwSetMouseButtonCallback(window, glfw_mouse_button_callback);
+	glfwSetWindowFocusCallback(window, glfw_window_focus_callback);
+
 	// 初始化 ImGui 后端
 	ImGui_ImplGlfw_InitForVulkan(window, true);
 
@@ -290,7 +355,7 @@ int ImGuiMain()
 	ImGuizmo::Enable(true);
 
 	{
-		WorldManager::Instance()->InitDefaultWorld();
+		EditorApp::Instance()->Scene().InitDefaultWorld();
 	}
 
 	glfwShowWindow(window);
@@ -318,27 +383,29 @@ int ImGuiMain()
 			continue;
 		}
 
+		editorApp->NewInputFrame();
+
 		// 开始 ImGui 帧
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		auto worldManager = WorldManager::Instance();
-		auto projectManager = ProjectManager::Instance();
+		auto editorApp = EditorApp::Instance();
+		auto projectManager = editorApp->GetProjectManager();
 
-		ImguiLayout::DrawMainMenu(window, worldManager, projectManager);
-		ImguiLayout::DrawPlayControls(worldManager, projectManager);
-		worldManager->UpdateEditorFrame(projectManager);
+		ImguiLayout::DrawMainMenu(window, editorApp, projectManager);
+		ImguiLayout::DrawPlayControls(editorApp, projectManager);
+		editorApp->Scene().UpdateEditorFrame(projectManager);
 		// ============ 创建 Dockspace（直接在主窗口内容区域） ============
 		ImguiLayout::SetDockspace(firstFrame);
 		if (firstFrame) firstFrame = false;
 		// ============ 创建各个窗口（会自动停靠到 Dockspace） ============
-		ImguiLayout::DrawSceneObjectList(worldManager);// 场景物体窗口 (左侧)
-		ImguiLayout::DrawOptions(worldManager);	// 场景物体窗口 (左侧)
+		ImguiLayout::DrawSceneObjectList(editorApp);// 场景物体窗口 (左侧)
+		ImguiLayout::DrawOptions(editorApp);	// 场景物体窗口 (左侧)
 		ImguiLayout::DrawObjectProperties(projectManager);// 属性面板 (右侧)
 		ImguiLayout::DrawAssetBrowser(projectManager);	// 资产管理 (底部)
-		ImguiLayout::DrawStatusBar(worldManager);// 底部状态栏
-		ImguiLayout::DrawSceneView(worldManager, projectManager);// 场景视图 (中间)
+		ImguiLayout::DrawStatusBar(editorApp);// 底部状态栏
+		ImguiLayout::DrawSceneView(editorApp, projectManager);// 场景视图 (中间)
 
 		// 渲染
 		ImGui::Render();

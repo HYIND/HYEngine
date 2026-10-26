@@ -1,4 +1,6 @@
 #include "BusyLoaderDialog.h"
+#include "GameEngine.h"
+#include "RenderEngine/Renderer.h"
 #include <string>
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -232,9 +234,10 @@ void BusyLoaderDialog::DrawAnimation() {
 	if (!m_renderTarget)
 	{
 		RECT rect;
-		if (GetClientRect(hWnd, &rect))
+		auto* renderer2D = GameEngine::Instance().Runtime().GetRenderer2D();
+		if (renderer2D && GetClientRect(hWnd, &rect))
 		{
-			pD2DFactory->CreateHwndRenderTarget(
+			renderer2D->GetFactory()->CreateHwndRenderTarget(
 				RenderTargetProperties(),
 				HwndRenderTargetProperties(hWnd, SizeU(rect.right - rect.left, rect.bottom - rect.top)),
 				&m_renderTarget

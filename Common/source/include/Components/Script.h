@@ -27,6 +27,8 @@ struct Script : public IComponent
 	}
 };
 
+HY_DECLARE_ECS_TYPE(Script, "engine.script");
+
 struct ScriptEnv
 {
 	// Lua 运行时环境
@@ -58,3 +60,5 @@ struct ScriptRuntime : public IComponent
 
 	bool ShouldDuplicate() const override { return false; }
 };
+
+HY_DECLARE_ECS_TYPE(ScriptRuntime, "hy.engine.component.ScriptRuntime");

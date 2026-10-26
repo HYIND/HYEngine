@@ -1,0 +1,26 @@
+
+#pragma once
+
+#include "ECSCore/IComponent.h"
+#include "VulkanRenderEngine/Base/LaserBeam.h"
+#include "CommonComponent.h"
+
+struct LaserBeamEmitter :public Renderable
+{
+	std::shared_ptr<LaserBeamProperties> properties;
+
+	LaserBeamEmitter() {}
+	LaserBeamEmitter(const glm::vec3& color)
+	{
+		properties = std::make_shared<LaserBeamProperties>();
+		properties->color = color;
+		properties->white_width = 0.05f;
+		properties->color_width = 0.05f;
+	}
+
+	virtual void OnRemove(const Entity& e) {
+		properties.reset();
+	}
+};
+
+HY_DECLARE_ECS_TYPE(LaserBeamEmitter, "hy.engine.component.LaserBeamEmitter");

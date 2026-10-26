@@ -9,12 +9,12 @@
 #include <set>
 #include <vector>
 #include <functional>
+#include <string>
+#include <stdexcept>
 
 #include "ECSCore/SystemTypes.h"
 
-using EventTypeID = uint32_t;
-
-inline std::atomic<EventTypeID> g_EventTypeCounter = 0;
+using EventTypeID = EcsTypeKey;
 
 class EventSystem
 {
@@ -25,8 +25,7 @@ private:
 	{
 		static EventTypeID getID()
 		{
-			static const EventTypeID id = g_EventTypeCounter.fetch_add(1);
-			return id;
+			return GetEcsTypeKey<T>();
 		}
 	};
 
@@ -67,9 +66,11 @@ public:
 	void Subscribe(std::function<void(Event&)> callback)
 	{
 		SystemTypeID systemId = SystemType<System>::getID();
+		RegisterIdentity(m_systemNames, systemId, GetEcsTypeIdentity<System>());
 		EventTypeIDToCallbackMap& map = SystemIDToEvent[systemId];
 
 		EventTypeID eventid = EventType<Event>::getID();
+		RegisterIdentity(m_eventNames, eventid, GetEcsTypeIdentity<Event>());
 		map[eventid] = std::make_unique<EventCallback<Event>>(callback);
 		EventTypeIDToSystemID[eventid].insert(systemId);
 	}
@@ -81,6 +82,7 @@ public:
 		EventTypeIDToCallbackMap& map = SystemIDToEvent[systemId];
 
 		EventTypeID eventid = EventType<Event>::getID();
+		RegisterIdentity(m_eventNames, eventid, GetEcsTypeIdentity<Event>());
 		map[eventid] = std::make_unique<EventCallback<Event>>(callback);
 		EventTypeIDToSystemID[eventid].insert(systemId);
 	}
@@ -90,6 +92,7 @@ public:
 	void Emit(Event& event)
 	{
 		EventTypeID id = EventType<Event>::getID();
+		RegisterIdentity(m_eventNames, id, GetEcsTypeIdentity<Event>());
 		if (EventTypeIDToSystemID.find(id) == EventTypeIDToSystemID.end())
 			return;
 
@@ -98,7 +101,7 @@ public:
 		{
 			EventTypeIDToCallbackMap& map = SystemIDToEvent[entityId];
 			if (map.find(id) == map.end())
-				return;
+				continue;
 			map[id]->invoke(&event);
 		}
 	}
@@ -127,7 +130,17 @@ public:
 	}
 
 private:
+	template<typename Id>
+	static void RegisterIdentity(std::unordered_map<Id, EcsTypeIdentity>& identities, Id id, const EcsTypeIdentity& identity)
+	{
+		auto [it, inserted] = identities.emplace(id, identity);
+		if (!inserted && (it->second.stableName != identity.stableName || it->second.nativeName != identity.nativeName))
+			throw std::runtime_error("ECS type identity collision: " + identity.stableName + " (" + identity.nativeName + ")");
+	}
+
 	using EventTypeIDToCallbackMap = std::unordered_map<EventTypeID, std::unique_ptr<IEventCallback>>;
 	std::unordered_map<SystemTypeID, EventTypeIDToCallbackMap> SystemIDToEvent;		//通过实体找到关注的事件组
 	std::unordered_map<EventTypeID, std::set<SystemTypeID>> EventTypeIDToSystemID;	//通过事件找到订阅的实体
+	std::unordered_map<EventTypeID, EcsTypeIdentity> m_eventNames;
+	std::unordered_map<SystemTypeID, EcsTypeIdentity> m_systemNames;
 };

@@ -1,4 +1,5 @@
 #include "Scene.h"
+#include "GameEngine.h"
 
 #include "Manager/ResourceManager.h"
 #include "Manager/UserInfoManager.h"
@@ -558,22 +559,22 @@ void Scene_Option::Load(RECT& rect)
 			L"帧率", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pHall_Format);
 		AddText(broder_left + len_x * 3 + 10, broder_top + len_y * 1,
 			broder_left + len_x * 4, broder_top + len_y * 2,
-			L"30", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
+			L"60", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
 		AddText(broder_left + len_x * 5 + 10, broder_top + len_y * 1,
 			broder_left + len_x * 6, broder_top + len_y * 2,
-			L"60", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
+			L"144", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
 		AddText(broder_left + len_x * 7 + 10, broder_top + len_y * 1,
 			broder_left + len_x * 8, broder_top + len_y * 2,
-			L"144", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
+			L"240", Brush::pWhite_Brush, Brush::pWhite_Brush, TextFormat::pPing_Format);
 		AddButton(broder_left + len_x * 3 - 12, broder_top + len_y * 1.5 - 12,
 			broder_left + len_x * 3 + 12, broder_top + len_y * 1.5 + 12,
-			IDB_SETFPS_30);
+			IDB_SETFPS_60);
 		AddButton(broder_left + len_x * 5 - 12, broder_top + len_y * 1.5 - 12,
 			broder_left + len_x * 5 + 12, broder_top + len_y * 1.5 + 12,
-			IDB_SETFPS_60);
+			IDB_SETFPS_144);
 		AddButton(broder_left + len_x * 7 - 12, broder_top + len_y * 1.5 - 12,
 			broder_left + len_x * 7 + 12, broder_top + len_y * 1.5 + 12,
-			IDB_SETFPS_144);
+			IDB_SETFPS_240);
 	}
 
 	{		/* 音量控制 */
@@ -924,15 +925,15 @@ void Scene_Option::DrawOption()
 	pRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(broder_left + len_x * 5, broder_top + len_y * 1.5), 10, 10), Brush::pWhite_Brush);
 	pRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(broder_left + len_x * 7, broder_top + len_y * 1.5), 10, 10), Brush::pWhite_Brush);
 
-	if (RenderManager::Instance()->getfpsController()->getGameTargetFps() == 30)
+	if (GameEngine::Instance().GetTargetFps() == 60)
 	{
 		pRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(broder_left + len_x * 3, broder_top + len_y * 1.5), 8, 8), Brush::pBlack_Brush);
 	}
-	else if (RenderManager::Instance()->getfpsController()->getGameTargetFps() == 60)
+	else if (GameEngine::Instance().GetTargetFps() == 144)
 	{
 		pRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(broder_left + len_x * 5, broder_top + len_y * 1.5), 8, 8), Brush::pBlack_Brush);
 	}
-	else if (RenderManager::Instance()->getfpsController()->getGameTargetFps() == 144)
+	else if (GameEngine::Instance().GetTargetFps() == 240)
 	{
 		pRenderTarget->FillEllipse(D2D1::Ellipse(D2D1::Point2F(broder_left + len_x * 7, broder_top + len_y * 1.5), 8, 8), Brush::pBlack_Brush);
 	}

@@ -4,4 +4,4 @@
 #include "Systems/PhysicsSystem.h"
 #include "Systems/DestroySystem.h"
 #include "Systems/ScriptSystem.h"
-
+#include "Systems/CameraFollowSystem.h"

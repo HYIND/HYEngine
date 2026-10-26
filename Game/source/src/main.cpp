@@ -11,15 +11,15 @@
 #include <commctrl.h>
 
 #include "GeneralManager/RenderManager.h"
-#include "GeneralManager/AudioDeviceManager.h"
+#include "GameEngine.h"
+#include "Input/EngineKey.h"
 #include "GeneralManager/FocusManager.h"
-#include "GeneralManager/MouseManager.h"
 #include "GeneralManager/WindowHandleManager.h"
 #include "Input/Systems/LocalInputSystem.h"
 
 #define MAX_LOADSTRING 100
 
-WCHAR szTitle[MAX_LOADSTRING] = L"Tank War";                  // 标题栏文本
+WCHAR szTitle[MAX_LOADSTRING] = L"HyTestGame";  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
 void LoadOption()
@@ -27,31 +27,26 @@ void LoadOption()
 	//FPS
 	{
 		UINT FPS = std::clamp(GetPrivateProfileInt(L"Video", L"FPS", 144, L"./option.ini"), UINT(1), UINT(500));
-		RenderManager::Instance()->getfpsController()->setGameTargetFps(FPS);
+		GameEngine::Instance().SetTargetFps(FPS);
 	}
 
 	//音频
-	if (auto& device = AudioDeviceManager::Instance()->GetDevice())
+	const auto& audioDevice = GameEngine::Instance().Audio();
+	if (audioDevice)
 	{
 		{
 			UINT masterVol = std::clamp(GetPrivateProfileInt(L"Audio", L"MasterVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			float volume = float(masterVol) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
-				device->SetMasterVolumn(volume);
+			audioDevice->SetMasterVolumn(float(masterVol) / 100.0f);
 		}
 
 		{
 			UINT musicVol = std::clamp(GetPrivateProfileInt(L"Audio", L"MusicVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			float volume = float(musicVol) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
-				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::BGM_Channel, volume);
+			audioDevice->SetChannelVolumn((AudioChannelID)AudioChannelDef::BGM_Channel, float(musicVol) / 100.0f);
 		}
 
 		{
 			UINT SFXVol = std::clamp(GetPrivateProfileInt(L"Audio", L"SFXVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			float volume = float(SFXVol) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
-				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::SoundEffects_Channel, volume);
+			audioDevice->SetChannelVolumn((AudioChannelID)AudioChannelDef::SoundEffects_Channel, float(SFXVol) / 100.0f);
 		}
 	}
 }
@@ -286,8 +281,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		WINDOWHANDLEMANAGER->SetHwnd(hWnd);
 		WINDOWHANDLEMANAGER->SetRect(rect);
 
+		std::string engineError;
+		if (!GameEngine::Instance().Initialize(&engineError))
+		{
+			MessageBoxA(hWnd, engineError.c_str(), "引擎初始化失败", MB_OK);
+			DestroyWindow(hWnd);
+			break;
+		}
+
 		if (ShowConsole)
 			CreateDebugConsole();
+
+		std::string renderError;
+		if (!GameEngine::Instance().CreateRenderer(static_cast<uint32_t>(rect.right - rect.left), static_cast<uint32_t>(rect.bottom - rect.top), &renderError))
+		{
+			MessageBoxA(hWnd, renderError.c_str(), "渲染初始化失败", MB_OK);
+			DestroyWindow(hWnd);
+			break;
+		}
 
 		bool result = Init_all_Resource();
 		if (!result)
@@ -298,16 +309,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		Set_CurScene(STATUS::Main);
 		LoadOption();
 		{
-			RenderManager::Instance()->getRenderer()->SetRenderTarget(pRenderTarget);
-			thread T(&Render_Thread,
-				RenderManager::Instance()->getRenderer(),
-				RenderManager::Instance()->getfpsController(),
-				RenderManager::Instance()->getBufferManager()
-			);
+			thread T(&Render_Thread);
 			T.detach();
 		}
-		SetTimer(hWnd, sceneTick, 20, NULL);
-		PostMessage(hWnd, WM_COMMAND, IDB_LOCALGAME, (LPARAM)hWnd);
+		SetTimer(hWnd, sceneTick, 6, NULL);
+		//PostMessage(hWnd, WM_COMMAND, IDB_LOCALGAME, (LPARAM)hWnd);
 		break;
 	}
 
@@ -323,6 +329,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			REQUESTMANAGER->RequestRoomInfo();
 			break;
 		case sceneTick:
+			if (auto input = GameEngine::Instance().Input())
+				input->NewFrame();
 			_Scene::CurScene->Tick();
 			break;
 		}
@@ -336,18 +344,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	}
 
+	case WM_KEYDOWN:
+	case WM_KEYUP:
+	{
+		// 只把按键的按下/抬起交给引擎，语义（哪个键等于前进）由 Controller 自己决定。
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKeyFromVirtualKey(int(wParam)), message == WM_KEYDOWN);
+		break;
+	}
+
 	case WM_KILLFOCUS:
 	{
 		FocusManager::Instance()->SetFocus(false);
 		MousePos::MoveX = -1;
 		MousePos::MoveY = -1;
-		MouseManager::Instance()->ReSet();
+		if (auto input = GameEngine::Instance().Input())
+		{
+			input->SetActive(false);
+			input->ReleaseAllKeys();
+		}
 		break;
 	}
 
 	case WM_SETFOCUS:
 	{
 		FocusManager::Instance()->SetFocus(true);
+		if (auto input = GameEngine::Instance().Input())
+		{
+			input->SetActive(true);
+			input->ReleaseAllKeys();
+		}
 		break;
 	}
 
@@ -397,7 +423,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 						ShowCursor(FALSE);
 						if (auto input = GameWorldManager::Instance()->GetGameWorld()->getSystem<LocalInputSystem>())
 							input->setEnabled(false);
-						GameWorldManager::Instance()->RunWorld();
+						GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
 						CoroTask::Run([]()->Task<void> {
 							co_await CoSleep(200ms);
 							if (auto input = GameWorldManager::Instance()->GetGameWorld()->getSystem<LocalInputSystem>())
@@ -467,24 +493,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				Set_CurScene(STATUS::Main);
 				break;
 			}
-			case IDB_SETFPS_30:
-			{
-				int frame = 30;
-				RenderManager::Instance()->getfpsController()->setGameTargetFps(frame);
-				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
-				break;
-			}
 			case IDB_SETFPS_60:
 			{
 				int frame = 60;
-				RenderManager::Instance()->getfpsController()->setGameTargetFps(frame);
+				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
 				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
 				break;
 			}
 			case IDB_SETFPS_144:
 			{
 				int frame = 144;
-				RenderManager::Instance()->getfpsController()->setGameTargetFps(frame);
+				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
+				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
+				break;
+			}
+			case IDB_SETFPS_240:
+			{
+				int frame = 240;
+				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
 				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
 				break;
 			}
@@ -736,7 +762,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				KillTimer(hWnd, room_refreash);
 
 				GameWorldManager::Instance()->InitOnlineGameWorld();
-				GameWorldManager::Instance()->RunWorld();
+				GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
 				Set_CurScene(STATUS::OnlineGame_Status);
 
 				break;
@@ -763,19 +789,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				// 暂停
 			case IDB_PAUSE:
 			{
-				GameWorldManager::Instance()->PauseWorld();
+				GameEngine::Instance().StopSceneThread();
 				int i = DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_PAUSE), hWnd, Pause);
 				switch (i) {
 				case 10:	//回到游戏
-					GameWorldManager::Instance()->RunWorld();
+					GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
 					break;
 				case 20:	//重新开始
-					GameWorldManager::Instance()->StopWorld();
+					GameEngine::Instance().StopSceneThread();
+					GameEngine::Instance().CloseScene();
 					GameWorldManager::Instance()->InitGameWorld();
-					GameWorldManager::Instance()->RunWorld();
+					GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
 					break;
 				case 30:	//回到主菜单
-					GameWorldManager::Instance()->StopWorld();
+					GameEngine::Instance().StopSceneThread();
+					GameEngine::Instance().CloseScene();
 					Set_CurScene(STATUS::Main);
 					break;
 				}
@@ -802,13 +830,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				case 20:	//退出游戏
 					if (REQUESTMANAGER->RequestLeaveGame().sync_wait())
 					{
-						GameWorldManager::Instance()->StopWorld();
+						GameEngine::Instance().StopSceneThread();
+						GameEngine::Instance().CloseScene();
 						Set_CurScene(STATUS::Hall_Status);
 						SetTimer(hWnd, hall_refreash, 4000, NULL);
 					}
 					break;
 					//case 30:	//回到主菜单
-					//	GameWorldManager::Instance()->StopWorld();
+					//	GameEngine::Instance().StopSceneThread();
+					//	GameEngine::Instance().CloseScene();
 					//	Set_CurScene(STATUS::Main);
 					//	break;
 				}
@@ -858,7 +888,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
 			pos = std::clamp(pos, (UINT)0, (UINT)100);
 			float volume = float(pos) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
+			if (auto device = GameEngine::Instance().Audio())
 				device->SetMasterVolumn(volume);
 
 			if (_Scene::SOption)
@@ -873,7 +903,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
 			pos = std::clamp(pos, (UINT)0, (UINT)100);
 			float volume = float(pos) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
+			if (auto device = GameEngine::Instance().Audio())
 				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::BGM_Channel, volume);
 
 			if (_Scene::SOption)
@@ -888,7 +918,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
 			pos = std::clamp(pos, (UINT)0, (UINT)100);
 			float volume = float(pos) / 100.0f;
-			if (auto device = AudioDeviceManager::Instance()->GetDevice())
+			if (auto device = GameEngine::Instance().Audio())
 				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::SoundEffects_Channel, volume);
 
 			if (_Scene::SOption)
@@ -906,25 +936,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		if (FocusManager::Instance()->ShouldProcessInput())
 		{
 			int mouseX = LOWORD(lParam), mouseY = HIWORD(lParam);
-			int lastMouseX = MousePos::MoveX, lastMouseY = MousePos::MoveY;
+			const int lastMouseX = MousePos::MoveX, lastMouseY = MousePos::MoveY;
+
+			auto status = Get_CurScene();
+			const bool inGame = status == STATUS::LocalGame_Status || status == STATUS::OnlineGame_Status;
+
+			// 鼠标位移直接交给引擎的输入上下文，玩法从 PlayerInput 的 mouseDelta 读。
+			if (lastMouseX >= 0 && lastMouseY >= 0)
+			{
+				if (auto input = GameEngine::Instance().Input())
+					input->AddMouseDelta(float(mouseX - lastMouseX), float(mouseY - lastMouseY));
+			}
 
 			MousePos::MoveX = mouseX;
 			MousePos::MoveY = mouseY;
 			if (_Scene::CurScene)
 				_Scene::CurScene->Move();
 
-			auto status = Get_CurScene();
-			if (status == STATUS::LocalGame_Status || status == STATUS::OnlineGame_Status)
+			if (inGame)
 			{
 				RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
-				POINT center = { main_rect.right / 2, main_rect.bottom / 2 };
+				const int centerClientX = main_rect.right / 2;
+				const int centerClientY = main_rect.bottom / 2;
+				POINT center = { centerClientX, centerClientY };
 				ClientToScreen(WINDOWHANDLEMANAGER->GetHwnd(), &center);
 				SetCursorPos(center.x, center.y);
 
-				if (lastMouseX != -1 && lastMouseX != -1)
-					MouseManager::Instance()->ReSet(main_rect.right / 2, main_rect.bottom / 2);
+				// 光标被拉回中心，下一次位移从中心开始算。
+				MousePos::MoveX = centerClientX;
+				MousePos::MoveY = centerClientY;
 			}
-			MouseManager::Instance()->InputPos(MousePos::MoveX, MousePos::MoveY);
 
 			InvalidateRect(hWnd, NULL, TRUE);
 		}
@@ -959,6 +1000,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	case WM_DESTROY:
 	{
+		GameEngine::Instance().StopSceneThread();
+		GameEngine::Instance().CloseScene();
+		GameEngine::Instance().Shutdown();
 		PostQuitMessage(0);
 		break;
 	}

@@ -55,8 +55,14 @@
     <ClCompile Include="source\src\ParticleEmitterFactory.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\VulkanPresentBridge.cpp">
+      <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="source\include\RenderEngine\VulkanPresentBridge.h">
+      <Filter>头文件\RenderEngine</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\RenderProcess.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -180,6 +186,12 @@
     <Filter Include="头文件\Factory">
       <UniqueIdentifier>{62fd375d-f7f3-4c88-a57b-c882acd7ba23}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\GeneralManager">
+      <UniqueIdentifier>{8f3a1c2b-5d84-4f61-9a0e-7c2d5b1e4a90}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\GeneralManager">
+      <UniqueIdentifier>{3b7e9d44-1c25-4a83-8f70-6e5b2d9c1f38}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Media Include="Resource\Default_Attacked.wav">
@@ -205,5 +217,47 @@
     <ResourceCompile Include="Game.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\GeneralManager\FocusManager.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\GeneralManager\RenderManager.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\GeneralManager\WindowHandleManager.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\GeneralManager\FocusManager.cpp">
+      <Filter>源文件\GeneralManager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp">
+      <Filter>源文件\GeneralManager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeneralManager\RenderManager.cpp">
+      <Filter>源文件\GeneralManager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeneralManager\WindowHandleManager.cpp">
+      <Filter>源文件\GeneralManager</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\include\GameEngine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\src\GameEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="头文件\RenderEngine" />
+    <Filter Include="源文件\RenderEngine" />
   </ItemGroup>
 </Project>

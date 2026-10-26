@@ -42,3 +42,5 @@ struct WeaponOwner : public IComponent {
 		}
 	}
 };
+
+HY_DECLARE_ECS_TYPE(WeaponOwner, "gameplay.weapon_owner");

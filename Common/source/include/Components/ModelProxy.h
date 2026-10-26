@@ -10,3 +10,5 @@ struct ModelProxy : public IComponent
 
 	ModelProxy(std::shared_ptr<ModelProxyData> proxy = nullptr) :data(proxy) {}
 };
+
+HY_DECLARE_ECS_TYPE(ModelProxy, "hy.engine.component.ModelProxy");

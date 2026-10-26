@@ -7,8 +7,7 @@
 #include "rfl/fields.hpp"
 
 #include "CommonComponent.h"
-#include "GameRuntimeComponents.h"
-#include "GamePlayComponents.h"
+#include "PlatformRuntimeComponents.h"
 
 #include "VulkanRenderEngine/RenderOption.h"
 
@@ -316,12 +315,39 @@ namespace rfl {
 			src.outercutOffAngle = ref.outercutOffAngle;
 		}
 	};
+
+    template <>
+    struct Reflector<CameraFollow> {
+
+        struct Data {
+            EntityID targetID;
+            glm::vec3 offset = glm::vec3(-1.0f, 3.0f, -3.0f);
+            float smoothSpeed = 5.0f;
+        };
+
+        using SrcType = CameraFollow;
+        using ReflType = Data;
+
+        static ReflType from(const SrcType& src) noexcept {
+            return Data{
+                .targetID = src.target.getId(),
+                .offset = src.offset,
+                .smoothSpeed = src.smoothSpeed
+            };
+        }
+
+        static void modify(SrcType& src, const ReflType& ref) noexcept {
+            src.offset = ref.offset;
+            src.smoothSpeed = ref.smoothSpeed;
+        }
+    };
 }
 
 enum class PropertyWidget
 {
 	Default,
-	Color
+	Color,
+    Const
 };
 
 template<typename T>
@@ -334,12 +360,23 @@ struct PropertyUI
 };
 
 template<>
-struct PropertyUI<RenderOption::ExponentialHeightFogParams>
+struct PropertyUI<Scene3DRenderOption::ExponentialHeightFogParams>
 {
 	static PropertyWidget GetWidget(std::string_view name)
 	{
 		if (name == "fogAlbedo")
 			return PropertyWidget::Color;
+		return PropertyWidget::Default;
+	}
+};
+
+template<>
+struct PropertyUI<CameraFollow>
+{
+	static PropertyWidget GetWidget(std::string_view name)
+	{
+		if (name == "targetID")
+			return PropertyWidget::Const;
 		return PropertyWidget::Default;
 	}
 };

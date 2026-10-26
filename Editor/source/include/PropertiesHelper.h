@@ -18,16 +18,18 @@ struct ComponentData
 	ComponentTypeID typeID;
 	std::string name;
 	IComponent* component = nullptr;
+	bool removable = true;
 };
 
 class PropertiesHelper
 {
 public:
 	using DrawFunction = std::function<void(Entity, IComponent*, ProjectManager*)>;
+	using RemoveFunction = std::function<bool(Entity)>;
 
 	// 注册组件
 	template<typename T>
-	static void RegisterComponent(const std::string& displayName);
+	static void RegisterComponent();
 	static std::vector<ComponentData> GetAllComponents(Entity entity);// 获取实体的所有组件
 	static void DrawAllProperties(Entity entity, const std::vector<ComponentData>& components, ProjectManager* assetManager);
 
@@ -39,8 +41,7 @@ public:
 	static bool DrawWithTitle(const std::string& title, T& data);
 
 private:
-	static std::unordered_map<ComponentTypeID, DrawFunction>& GetRegistry();
-	static std::unordered_map<ComponentTypeID, std::string>& GetComponentNames();
+	static std::unordered_map<ComponentTypeID, DrawFunction>& GetCustomDrawRegistry();
 
 	// 通用绘制模板
 	template<typename T>

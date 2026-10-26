@@ -64,6 +64,7 @@ public:
 	T* tryGetComponent(const Entity& entity);
 
 	IComponent* tryGetComponentByID(const Entity& entity, ComponentTypeID componentTypeId);
+	bool removeComponentByTypeID(const Entity& entity, ComponentTypeID componentTypeId);
 
 	// ==== 查询 ====
 	bool hasComponent(const Entity& entity, ComponentTypeID componentTypeId) const;

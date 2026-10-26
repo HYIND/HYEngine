@@ -28,3 +28,5 @@ struct Movement :public IComponent
 			currentWantJump = false;
 	}
 };
+
+HY_DECLARE_ECS_TYPE(Movement, "engine.movement");

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "vkstdafx.h"
 
 #include "VulkanRenderEngine/General/RenderItem.h"
@@ -21,22 +21,22 @@
 
 struct alignas(16) camera_compData
 {
-	alignas(16) glm::mat4 projection;
-	alignas(16) glm::mat4 view;
-	alignas(16) glm::mat4 projView;
-	alignas(16) glm::mat4 invProjection;
-	alignas(16) glm::mat4 invView;
-	alignas(16) glm::mat4 invProjView;
-	alignas(16) glm::vec3 invTransViewRow1;
-	alignas(16) glm::vec3 invTransViewRow2;
-	alignas(16) glm::vec3 invTransViewRow3;
-	alignas(16) glm::vec3 position;
-	alignas(16) glm::vec3 direction;
-	alignas(16) glm::vec3 directionUp;
-	alignas(16) glm::vec3 directionRight;
-	float nearPlane = 0.1f;
-	float farPlane = 1000.f;
-	float fov = 80.f;
+    alignas(16) glm::mat4 projection;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 projView;
+    alignas(16) glm::mat4 invProjection;
+    alignas(16) glm::mat4 invView;
+    alignas(16) glm::mat4 invProjView;
+    alignas(16) glm::vec3 invTransViewRow1;
+    alignas(16) glm::vec3 invTransViewRow2;
+    alignas(16) glm::vec3 invTransViewRow3;
+    alignas(16) glm::vec3 position;
+    alignas(16) glm::vec3 direction;
+    alignas(16) glm::vec3 directionUp;
+    alignas(16) glm::vec3 directionRight;
+    float nearPlane = 0.1f;
+    float farPlane = 1000.f;
+    float fov = 80.f;
 };
 
 enum class RenderMode { Present = 0, Offscreen };
@@ -44,154 +44,155 @@ enum class RenderMode { Present = 0, Offscreen };
 class VulkanRenderer
 {
 public:
-	// 提供CreateInstance扩展，用于创建vk实例，实例用于初始化VulkanRenderer
-	static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(const std::vector<std::string>& extensionNames);
-	static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(uint32_t extensionCount, const char** extensionNames);
+    // 提供CreateInstance扩展，用于创建vk实例，实例用于初始化VulkanRenderer
+    static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(const std::vector<std::string>& extensionNames);
+    static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(uint32_t extensionCount, const char** extensionNames);
 
-	static std::shared_ptr<VulkanRenderer> CreateForWindow(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool limitFrameRate = false);					// 创建窗口模式
-	static std::shared_ptr<VulkanRenderer> CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height);					// 创建离屏模式
+    static std::shared_ptr<VulkanRenderer> CreateForWindow(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool limitFrameRate = false);					// 创建窗口模式
+    static std::shared_ptr<VulkanRenderer> CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height);					// 创建离屏模式
 
-	// 用于分段初始化
-	// 仅创建设备、不初始化交换链和渲染目标
-	static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface);
-	static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance);
+    // 用于分段初始化
+    // 仅创建设备、不初始化交换链和渲染目标
+    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface);
+    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance);
+    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions);
 
-	// 分段初始化
-	// 初始化交换链和渲染目标
-	static bool CreateForWindow_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height, bool limitFrameRate = false);
-	static bool CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height);
-
-public:
-	VulkanRenderer();
-	~VulkanRenderer();
-
-	uint32_t GetWidth() const;
-	uint32_t GetHeight() const;
-	RenderOption GetOption() const;
-
-	void SetOption(RenderOption option);
-	void Resize(uint32_t width, uint32_t height);
-
-
-	void PushFrameState(std::shared_ptr<RenderState>& state);
-
-	void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
-	bool FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
-
-	void Run();
-	void Stop();
-	void ExecuteLoop();
-
-	uint32_t GetMaxFramesInFlight() const;
+    // 分段初始化
+    // 初始化交换链和渲染目标
+    static bool CreateForWindow_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height, bool limitFrameRate = false);
+    static bool CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height);
 
 public:
-	std::shared_ptr<VKCore::VulkanInstance> GetVulkanInstance() const;
-	std::shared_ptr<VKCore::VulkanSurface> GetVulkanSurface() const;
-	std::shared_ptr<VKCore::VulkanDevice> GetVulkanDevice() const;
-	std::shared_ptr<VKCore::VulkanSwapchain> GetVulkanSwapchain() const;
+    VulkanRenderer();
+    ~VulkanRenderer();
+
+    glm::u32vec2 GetSize() const;
+    uint32_t GetWidth() const;
+    uint32_t GetHeight() const;
+    Scene3DRenderOption GetOption() const;
+
+    void SetOption(Scene3DRenderOption option);
+    void Resize(uint32_t width, uint32_t height);
+
+    void PushFrameState(std::shared_ptr<RenderState>& state);
+
+    void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
+    bool FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
+
+    void Run();
+    void Stop();
+    void ExecuteLoop();
+
+    uint32_t GetMaxFramesInFlight() const;
+
+public:
+    std::shared_ptr<VKCore::VulkanInstance> GetVulkanInstance() const;
+    std::shared_ptr<VKCore::VulkanSurface> GetVulkanSurface() const;
+    std::shared_ptr<VKCore::VulkanDevice> GetVulkanDevice() const;
+    std::shared_ptr<VKCore::VulkanSwapchain> GetVulkanSwapchain() const;
 
 private:
-	void InitForWindow(uint32_t width, uint32_t height);
-	void InitForOffSceen(uint32_t width, uint32_t height);
-	void Init_Internal();
+    void InitForWindow(uint32_t width, uint32_t height);
+    void InitForOffSceen(uint32_t width, uint32_t height);
+    void Init_Internal();
 
-	void InitRenderTarget();
-	void InitRenderGraph();
-	void InitSceneRenderGraph();
-	void InitFirstPersonRenderGraph();
-
-private:
-	struct RenderTargetData {
-		std::shared_ptr<Texture2D> sceneColorBuffer;
-		std::shared_ptr<Texture2D> firstPersonColorBuffer;
-		std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
-		std::vector<std::shared_ptr<Texture2D>> bloomMipBuffers;
-		std::shared_ptr<Texture2D> finalColorBuffer;
-	};
-
-	struct FrameData {
-		std::shared_ptr<RenderGraph::Graph::FilghtSync> sync;
-		std::shared_ptr<RenderTargetData> renderTarget;
-		std::shared_ptr<RenderState> state;
-		std::shared_ptr<ThreadPool::SubmitHandle<void>> handle;
-		// 在帧提交渲染时（串行分发点）解析出的相机数据：
-		// prev 来自上一张真正提交过的帧，cur 是本帧。各帧各持一份，互不干扰
-		camera_compData cameraPrevData{};
-		camera_compData cameraCurData{};
-	};
-
-	void DrawOffScreen(const std::shared_ptr<FrameData>& data);
-
-	void PresentImage(std::shared_ptr<FrameData>& data);
+    void InitRenderTarget();
+    void InitRenderGraph();
+    void InitSceneRenderGraph();
+    void InitFirstPersonRenderGraph();
 
 private:
-	void ResolveFrameHistory(const std::shared_ptr<FrameData>& data);
+    struct RenderTargetData {
+        std::shared_ptr<Texture2D> sceneColorBuffer;
+        std::shared_ptr<Texture2D> firstPersonColorBuffer;
+        std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
+        std::vector<std::shared_ptr<Texture2D>> bloomMipBuffers;
+        std::shared_ptr<Texture2D> finalColorBuffer;
+    };
 
-	camera_compData BuildCameraCompData(const RenderState& state) const;
+    struct FrameData {
+        std::shared_ptr<RenderGraph::Graph::FilghtSync> sync;
+        std::shared_ptr<RenderTargetData> renderTarget;
+        std::shared_ptr<RenderState> state;
+        std::shared_ptr<ThreadPool::SubmitHandle<void>> handle;
+        // 在帧提交渲染时（串行分发点）解析出的相机数据：
+        // prev 来自上一张真正提交过的帧，cur 是本帧。各帧各持一份，互不干扰
+        camera_compData cameraPrevData{};
+        camera_compData cameraCurData{};
+    };
 
-	void SetupRenderState(const std::shared_ptr<FrameData>& data);
-	void SetupIndirectDrawData(std::shared_ptr<RenderState>& state);
+    void DrawOffScreen(const std::shared_ptr<FrameData>& data);
 
-	void FinishRendering(std::shared_ptr<RenderState>& state);
-
-	//void RenderFirstPersonLayer(RenderState& state);
+    void PresentImage(std::shared_ptr<FrameData>& data);
 
 private:
-	uint32_t scr_width;
-	uint32_t scr_height;
+    void ResolveFrameHistory(const std::shared_ptr<FrameData>& data);
 
-	std::shared_ptr<VKCore::VulkanInstance> _vulkanInstance;
-	std::shared_ptr<VKCore::VulkanDevice> _vulkanDevice;
+    camera_compData BuildCameraCompData(const RenderState& state) const;
 
-	RenderMode _mode;
+    void SetupRenderState(const std::shared_ptr<FrameData>& data);
+    void SetupIndirectDrawData(std::shared_ptr<RenderState>& state);
 
-	// ForWindow
-	std::shared_ptr<VKCore::VulkanSurface> _vulkanSurface;
-	std::shared_ptr<VKCore::VulkanSwapchain> _vulkanSwapchain;
-	std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _imageAcquiredSemaphores;
-	std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _renderFinishedSemaphores;
+    void FinishRendering(std::shared_ptr<RenderState>& state);
 
+    //void RenderFirstPersonLayer(RenderState& state);
 
-	//// FirstPersonLayer
-	//std::unique_ptr<FirstPersonPass> _firstPersonPass;
+private:
+    uint32_t scr_width;
+    uint32_t scr_height;
 
-	std::unique_ptr<PreCalculatePass> _preCalculatePass;
-	std::unique_ptr<CombinPass> _combinPass;
-	std::unique_ptr<BloomPass> _globalBloomPass;
-	std::unique_ptr<GlobalPostProcessPass> _globalPostProcessPass;
+    std::shared_ptr<VKCore::VulkanInstance> _vulkanInstance;
+    std::shared_ptr<VKCore::VulkanDevice> _vulkanDevice;
 
-	std::vector<std::shared_ptr<RenderTargetData>> _renderTargets;
+    RenderMode _mode;
 
-	// 上一张真正提交渲染的帧的相机数据（只在分发线程读写）
-	camera_compData _cameraCache{};
-	bool _cameraCacheValid = false;
-
-	struct {
-		uint32_t frameIndex = 0;
-		float prevEV100 = 1.0f;
-	}_record;
-
-	bool needFlipFinalY = false;
-
-	std::unique_ptr<RenderGraph::Graph> _sceneRenderGraph;
-
-	RenderOption _option;
+    // ForWindow
+    std::shared_ptr<VKCore::VulkanSurface> _vulkanSurface;
+    std::shared_ptr<VKCore::VulkanSwapchain> _vulkanSwapchain;
+    std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _imageAcquiredSemaphores;
+    std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _renderFinishedSemaphores;
 
 
-	uint32_t _maxFramesInFlight = 1;  // 最大在途帧数
+    //// FirstPersonLayer
+    //std::unique_ptr<FirstPersonPass> _firstPersonPass;
 
-	std::queue<std::shared_ptr<RenderState>> _candidateFrameStates;
-	SpinLock _candidateFrameStatesMutex;
+    std::unique_ptr<PreCalculatePass> _preCalculatePass;
+    std::unique_ptr<CombinPass> _combinPass;
+    std::unique_ptr<BloomPass> _globalBloomPass;
+    std::unique_ptr<GlobalPostProcessPass> _globalPostProcessPass;
 
-	SpinLock _executeMutex;
-	ConditionVariable _executeCV;
-	std::queue<std::shared_ptr<FrameData>> _runningFrames;
+    std::vector<std::shared_ptr<RenderTargetData>> _renderTargets;
 
-	RecursiveSpinLock _doneFramesMutex;
-	ConditionVariable _doneFramesCV;
-	std::queue<std::shared_ptr<FrameData>> _doneFrames;
+    // 上一张真正提交渲染的帧的相机数据（只在分发线程读写）
+    camera_compData _cameraCache{};
+    bool _cameraCacheValid = false;
 
-	ThreadPool _frameTaskPool;
-	bool _stop = true;
-	std::shared_ptr<std::thread> _exeLoopThread;
+    struct {
+        uint32_t frameIndex = 0;
+        float prevEV100 = 1.0f;
+    }_record;
+
+    bool needFlipFinalY = false;
+
+    std::unique_ptr<RenderGraph::Graph> _sceneRenderGraph;
+
+    Scene3DRenderOption _option;
+
+
+    uint32_t _maxFramesInFlight = 1;  // 最大在途帧数
+
+    std::queue<std::shared_ptr<RenderState>> _candidateFrameStates;
+    SpinLock _candidateFrameStatesMutex;
+
+    SpinLock _executeMutex;
+    ConditionVariable _executeCV;
+    std::queue<std::shared_ptr<FrameData>> _runningFrames;
+
+    RecursiveSpinLock _doneFramesMutex;
+    ConditionVariable _doneFramesCV;
+    std::queue<std::shared_ptr<FrameData>> _doneFrames;
+
+    ThreadPool _frameTaskPool;
+    bool _stop = true;
+    std::shared_ptr<std::thread> _exeLoopThread;
 };

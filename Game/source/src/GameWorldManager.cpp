@@ -6,11 +6,12 @@
 
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"
-#include "GameRuntimeComponents.h"
+#include "PlatformRuntimeComponents.h"
 
 #include "CommonSystems.h"
 #include "GamePlaySystems.h"
-#include "GameRuntimeSystems.h"
+#include "GamePlayModule.h"
+#include "PlatformRuntimeSystems.h"
 
 #include "CommonData/LightFactory.h"
 #include "Factory/CharacterFactory.h"
@@ -20,7 +21,11 @@
 #include "Scene.h"
 #include "GameDataDef.h"
 #include <format>
+#include <stdexcept>
 
+#include "GameEngine.h"
+#include "EngineRuntime.h"
+#include "Manager/GameWorldManager.h"
 #include "GeneralManager/FocusManager.h"
 #include "GeneralManager/RenderManager.h"
 #include "GeneralManager/WindowHandleManager.h"
@@ -31,7 +36,7 @@ void HandleKeyboardShortcuts()
 	if (!FocusManager::Instance()->ShouldProcessInput())
 		return;
 
-	RenderOption option = RenderManager::Instance()->GetOption();
+	Scene3DRenderOption option = RenderManager::Instance()->GetOption();
 
 	static bool s_rayTraceReflectEnable = option.flags.rayTraceReflectOn;
 	static bool s_rayTraceGIEnable = option.flags.rayTraceGIOn;
@@ -248,7 +253,7 @@ void CreateTestDustScene(World& world)
 {
 	if (auto cube = ResFactory->GetTextureCubeRes(ResName::skybox1))
 	{
-		Entity entity = world.createEntityWithTag<TagSkyBox>();
+		Entity entity = world.createEntity();
 		entity.addComponent<SkyBox>(cube);
 	}
 
@@ -438,21 +443,21 @@ void SetupeTestGameLight(World& world)
 	}
 
 	//{
-	//	Entity entity = world.createEntityWithTag<TagLight>();
+	//	Entity entity = world.createEntity();
 	//	auto light = std::make_shared<PointLight>(glm::vec3(10, 5, 100));
 	//	light->setColor(1.0f, 0, 0.0f);
 	//	auto& renderlight = entity.addComponent<RenderLight>(light);
 	//}
 
 	//{
-	//	Entity entity = world.createEntityWithTag<TagLight>();
+	//	Entity entity = world.createEntity();
 	//	auto light = std::make_shared<PointLight>(glm::vec3(0, 15, 100));
 	//	light->setColor(0, 1, 0);
 	//	auto& renderlight = entity.addComponent<RenderLight>(light);
 	//}
 
 	//{
-	//	Entity entity = world.createEntityWithTag<TagLight>();
+	//	Entity entity = world.createEntity();
 	//	auto light = std::make_shared<PointLight>(glm::vec3(0, 5, 110));
 	//	light->setColor(0, 0, 1);
 	//	auto& renderlight = entity.addComponent<RenderLight>(light);
@@ -460,7 +465,7 @@ void SetupeTestGameLight(World& world)
 
 	//for (int i = 0; i < 1; i++)
 	//{
-	//	Entity entity = world.createEntityWithTag<TagLight>();
+	//	Entity entity = world.createEntity();
 	//	auto light = std::make_shared<DirLight>(glm::vec3(-1, -1, -1));
 	//	light->setAmbientStrength(1.0f);
 	//	light->setDiffuseStrength(1.0f);
@@ -476,7 +481,7 @@ void CreateTestGameScene(World& world)
 {
 	if (auto cube = ResFactory->GetTextureCubeRes(ResName::skybox2))
 	{
-		Entity entity = world.createEntityWithTag<TagSkyBox>();
+		Entity entity = world.createEntity();
 		entity.addComponent<SkyBox>(cube);
 	}
 
@@ -907,22 +912,22 @@ void CreateTestSponzaScene(World& world)
 	}
 
 	{
-		//Entity entity = world.createEntityWithTag<TagLight>();
+		//Entity entity = world.createEntity();
 		//auto light = std::make_shared<PointLight>(glm::vec3(0, 25, 0));
 		//auto& renderlight = entity.addComponent<RenderLight>(light);
 	}
 }
 
-void LoadLocalGameMapInfoToWorld(std::shared_ptr<World>& world)
+void LoadLocalGameMapInfoToWorld(World& world)
 {
-	ResFactory->InitScene3DResource(0);
-	CreateTestDustScene(*world);
+	//ResFactory->InitScene3DResource(0);
+	//CreateTestDustScene(world);
 
-	//ResFactory->InitScene3DResource(1);
-	//CreateTestGameScene(*world);
+	ResFactory->InitScene3DResource(1);
+	CreateTestGameScene(world);
 
 	//ResFactory->InitScene3DResource(2);
-	//CreateTestSponzaScene(*world);
+	//CreateTestSponzaScene(world);
 }
 
 
@@ -996,7 +1001,9 @@ void GameWorldManager::ProcessEliminateInfo(const json& js)
 
 void GameWorldManager::ProcessGameOver(const json& js)
 {
-	StopWorld();
+	// 对局结束后引擎那边的场景也要停掉，World 归引擎所有。
+	GameEngine::Instance().StopSceneThread();
+	GameEngine::Instance().Runtime().CloseScene();
 	if (!js.contains("gameid") || !js["gameid"].is_string())
 		return;
 	if (!js.contains("winnerid") || !js["winnerid"].is_string())
@@ -1019,57 +1026,23 @@ void GameWorldManager::ProcessGameOver(const json& js)
 	}
 }
 
-GameWorldManager::GameWorldManager()
-	:_stop(true)
-{
-}
+GameWorldManager::GameWorldManager() = default;
 
 void GameWorldManager::InitGameWorld()
 {
-	_world = std::make_shared<World>();
+	auto& runtime = GameEngine::Instance().Runtime();
+	const bool opened = runtime.OpenEmptyScene([this](World& world)
+	{
+		_world = &world;
 
+		LoadLocalGameMapInfoToWorld(world);
+		return true;
+	});
 
-	// 通过World注册系统
-	auto& scriptSystem = _world->registerSystem<ScriptSystem>();
-	auto& inputSystem = _world->registerSystem<LocalInputSystem>();
-	auto& movementSystem = _world->registerSystem<MovementSystem>();
-	auto& renderSystem = _world->registerSystem<RenderSystem>();
-	auto& lifetimeSystem = _world->registerSystem<LifetimeSystem>();
-	auto& physicsSystem = _world->registerSystem<PhysicsSystem>();
-	auto& destroySystem = _world->registerSystem<DestroySystem>();
-	auto& healthSystem = _world->registerSystem<HealthSystem>();
-	auto& audioSystem = _world->registerSystem<AudioSystem>();
-	auto& cameraFollowSystem = _world->registerSystem<CameraFollowSystem>();
-	auto& weaponSystem = _world->registerSystem<WeaponSystem>();
-	auto& animationSystem = _world->registerSystem<AnimationSystem>();
-	auto& mapBoundarySystem = _world->registerSystem<MapBoundarySystem>();
-	auto& lightShowSystem = _world->registerSystem<LightShowSystem>();
-	auto& lightFollowSystem = _world->registerSystem<LightFollowSystem>();
-	auto& particleSystem = _world->registerSystem<ParticleSystem>();
-	auto& laserBeamSystem = _world->registerSystem<LaserBeamSystem>();
+	if (!opened)
+		throw std::runtime_error("Game 场景打开失败：引擎没有接受空场景回调");
 
-	mapBoundarySystem.SetBoundaryHeight(-60.f);
-
-	lifetimeSystem.setPriority(10000);
-	inputSystem.setPriority(1000);
-	movementSystem.setPriority(500);
-	weaponSystem.setPriority(400);
-	mapBoundarySystem.setPriority(350);
-	physicsSystem.setPriority(300);
-	laserBeamSystem.setPriority(250);
-	particleSystem.setPriority(200);
-	cameraFollowSystem.setPriority(-3000);
-	lightFollowSystem.setPriority(-3100);
-	destroySystem.setPriority(-8000);
-	animationSystem.setPriority(-9000);
-	renderSystem.setPriority(-10000);
-	scriptSystem.setPriority(450);
-
-	renderSystem.SetTriBuffer(RenderManager::Instance()->getBufferManager());
-	renderSystem.SetScene3DRender(RenderManager::Instance()->getRenderer()->GetScene3DRender());
-
-	LoadLocalGameMapInfoToWorld(_world);
-
+	_world = runtime.GetWorld();
 }
 
 void GameWorldManager::InitOnlineGameWorld()
@@ -1112,67 +1085,7 @@ void GameWorldManager::InitOnlineGameWorld()
 	//auto& boundary = map_boundary.addComponent<BoundaryPhysisc>(MapBoundary::left, MapBoundary::top, MapBoundary::right, MapBoundary::bottom);
 }
 
-std::shared_ptr<World> GameWorldManager::GetGameWorld()
+World* GameWorldManager::GetGameWorld()
 {
 	return _world;
-}
-
-
-void GameWorldManager::RunWorld()
-{
-	if (!_world || _world->isRunning())
-		return;
-
-	// 启动世界
-	_world->setLogicDeltaTime(1000.f / 165.f);
-	_world->setFixedDeltaTime(1000.f / 60.f);
-	_world->start();
-	_stop = false;
-	_worldThread = std::make_shared<std::thread>(&GameWorldManager::WorldLoop, this);
-}
-
-void GameWorldManager::WorldLoop()
-{
-	uint32_t targetfps = (1000.f / std::min(_world->getFixedDeltaTime(), _world->getLogicDeltaTime())) + 1;
-	DynamicFpsController fpscontroller(targetfps);
-	fpscontroller.reset();
-
-	// 主循环
-	while (!_stop)
-	{
-		float dt = fpscontroller.getTimeDiffMS();
-
-		HandleKeyboardShortcuts();
-		_world->update(dt);
-
-		fpscontroller.run();
-	}
-}
-
-void GameWorldManager::PauseWorld()
-{
-	_stop = true;
-	if (_worldThread)
-	{
-		if (_worldThread->joinable())
-			_worldThread->join();
-		_worldThread.reset();
-	}
-}
-
-void GameWorldManager::StopWorld()
-{
-	_stop = true;
-	if (_worldThread)
-	{
-		if (_worldThread->joinable())
-			_worldThread->join();
-		_worldThread.reset();
-	}
-	_world.reset();
-}
-
-std::shared_ptr<std::thread> GameWorldManager::GetWorldThread()
-{
-	return _worldThread;
 }

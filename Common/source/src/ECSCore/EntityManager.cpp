@@ -54,17 +54,17 @@ void EntityManager::destroyEntity(EntityID id)
 	livingEntityCount--;
 }
 
-void EntityManager::addComponent(EntityID id, ComponentTypeID componentTypeId)
+void EntityManager::addComponent(EntityID id, ComponentSlotID componentSlot)
 {
 	if (isValid(id)) {
-		componentMasks[id].set(componentTypeId);
+		componentMasks[id].set(componentSlot);
 	}
 }
 
-void EntityManager::removeComponent(EntityID id, ComponentTypeID componentTypeId)
+void EntityManager::removeComponent(EntityID id, ComponentSlotID componentSlot)
 {
 	if (isValid(id)) {
-		componentMasks[id].reset(componentTypeId);
+		componentMasks[id].reset(componentSlot);
 	}
 }
 
@@ -73,14 +73,14 @@ ComponentMask EntityManager::getEntityComponentMask(EntityID id)
 	return componentMasks[id];
 }
 
-bool EntityManager::setEntityComponentMasks(EntityID id, const std::vector<ComponentTypeID>& ids)
+bool EntityManager::setEntityComponentMasks(EntityID id, const std::vector<ComponentSlotID>& slots)
 {
 	if (!isValid(id))
 		return false;
 
 	auto& masks = componentMasks[id];
-	for (ComponentTypeID id : ids)
-		masks.set(id);
+	for (ComponentSlotID slot : slots)
+		masks.set(slot);
 
 	return true;
 }

@@ -43,3 +43,5 @@ struct Health :public IComponent
 		return static_cast<float>(currentHealth) / maxHealth;
 	}
 };
+
+HY_DECLARE_ECS_TYPE(Health, "gameplay.health");

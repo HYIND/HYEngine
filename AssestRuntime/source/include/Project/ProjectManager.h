@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "AssetDescription.h"
 #include "AssetDatabase.h"
@@ -8,7 +8,12 @@
 class ProjectManager
 {
 public:
-	static ProjectManager* Instance();
+	// 工程状态归引擎所有（EngineRuntime 持有唯一实例），宿主通过引擎拿指针，
+	// 不再用全局单例，免得编辑器/游戏/服务器各自持有一份“当前工程”。
+	ProjectManager();
+	~ProjectManager() = default;
+	ProjectManager(const ProjectManager&) = delete;
+	ProjectManager& operator=(const ProjectManager&) = delete;
 
 	// 项目操作
 	bool CreateProject(const std::string& filePath, const std::string& name);
@@ -57,8 +62,6 @@ private:
 	void DeleteAssetsInFolderPrivate(const fs::path& folderPath);
 
 private:
-	ProjectManager();
-
 	std::shared_ptr<AssetDatabase> m_database;
 	std::shared_ptr<AssetStroage> m_storage;
 

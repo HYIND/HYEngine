@@ -55,8 +55,8 @@ T& World::addComponent(const Entity& entity, Args&&... args) {
 	T& component = m_componentManager->addComponent<T>(entity, std::forward<Args>(args)...);
 
 	// 更新实体掩码
-	size_t typeId = ComponentType<T>::getId();
-	m_entityManager->addComponent(entity.getId(), typeId);
+	ComponentSlotID slot = m_componentManager->getComponentSlot<T>();
+	m_entityManager->addComponent(entity.getId(), slot);
 
 	return component;
 }
@@ -70,8 +70,8 @@ void World::removeComponent(const Entity& entity) {
 	m_componentManager->removeComponent<T>(entity);
 
 	// 2. 更新实体掩码
-	size_t typeId = ComponentType<T>::getId();
-	m_entityManager->removeComponent(entity.getId(), typeId);
+	ComponentSlotID slot = m_componentManager->getComponentSlot<T>();
+	m_entityManager->removeComponent(entity.getId(), slot);
 }
 
 
@@ -96,7 +96,8 @@ bool World::hasComponent(const Entity& entity) const {
 	if (!IsValidWorldEntity(entity))
 		return false;
 
-	return hasComponent(entity, ComponentType<T>::getId());
+	ComponentSlotID slot = m_componentManager->getComponentSlot<T>();
+	return m_entityManager->getEntityComponentMask(entity.getId()).test(slot);
 }
 
 template<typename... Ts>
@@ -205,7 +206,7 @@ void World::Emit(Args && ...args)
 template<typename ...Ts>
 ComponentMask World::getComponentMask() const {
 	ComponentMask mask;
-	((mask.set(ComponentType<Ts>::getId())), ...);
+	((mask.set(m_componentManager->getComponentSlot<Ts>())), ...);
 	return mask;
 }
 

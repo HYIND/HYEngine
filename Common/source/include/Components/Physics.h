@@ -141,6 +141,8 @@ struct Physics :public IComponent
 	bool forceRecalculate = false;
 };
 
+HY_DECLARE_ECS_TYPE(Physics, "engine.physics");
+
 // === 运行时数据 ===
 struct PhysicsRuntime :public IComponent
 {
@@ -216,3 +218,5 @@ struct PhysicsRuntime :public IComponent
 
 	virtual bool ShouldDuplicate() const override { return false; }
 };
+
+HY_DECLARE_ECS_TYPE(PhysicsRuntime, "hy.engine.component.PhysicsRuntime");

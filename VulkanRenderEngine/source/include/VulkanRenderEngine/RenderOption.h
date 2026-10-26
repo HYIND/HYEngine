@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-struct RenderOption
+struct Scene3DRenderOption
 {
 	struct RayTraceGeneralParams {
 		float maxDistance = 750;				// 反射最大计算距离
