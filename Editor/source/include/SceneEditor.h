@@ -68,6 +68,8 @@ public:
     void AddEmptyEntity(const glm::vec3& position, const std::string& name = "");
 
     void ReloadScriptAssets(const std::vector<std::shared_ptr<ScriptSourceData>>& changed);
+    // UI 文档/样式文件变了：把所有 UIView 标脏，交给 UIViewSystem 重新加载。
+    void ReloadUIAssets();
 
 private:
     bool OpenEditorScene(const std::function<bool(World&)>& populateScene);

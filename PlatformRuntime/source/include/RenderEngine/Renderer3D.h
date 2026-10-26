@@ -2,7 +2,7 @@
 
 #include "Helper/DynamicFpsController.h"
 #include "Helper/TripleBuffer.h"
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "VulkanRenderEngine/VulkanRenderer.h"
 
 #include <glm/glm.hpp>

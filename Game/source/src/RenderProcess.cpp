@@ -1,4 +1,4 @@
-﻿#include "RenderProcess.h"
+#include "RenderProcess.h"
 #include "GeneralManager/RenderManager.h"
 #include <chrono>
 #include <thread>
@@ -86,9 +86,9 @@ void Render_Thread()
 	render_thread_id = std::this_thread::get_id();
 
 	auto bridge = RenderManager::Instance()->getVulkanBridge();
-	auto renderer3D = GameEngine::Instance().Runtime().GetRenderer3D();
-	if (bridge && renderer3D)
-		bridge->Initialize(*renderer3D);
+	auto* renderer = GameEngine::Instance().Runtime().GetRenderer();
+	if (bridge && renderer)
+		bridge->Initialize(*renderer);
 
 	InitManager.Init(new Task<void>(CoroTask::Run([]()->void {})));
 
@@ -111,7 +111,7 @@ void Render_Thread()
 			if (renderer2D)
 				renderer2D->Clear(1.f, 1.f, 1.f, 1.f);
 
-			if (isrunningworld && renderer3D)
+			if (isrunningworld && renderer)
 			{
 				if (bridge)
 					bridge->PresentFrame();

@@ -28,6 +28,8 @@ public:
 	static void HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
 	static void HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
 	static void ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
+	static void HandleUIAssetFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
+	static void ApplyUIAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
 	static void OpenMaterialEditor(const AssetGUID& guid);
 
 private:

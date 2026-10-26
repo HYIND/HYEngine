@@ -82,13 +82,10 @@
 #include "GLFW/glfw3.h"
 
 // ImGui
-#define IMGUI_DEFINE_MATH_OPERATORS 
-#define IMGUI_IMPL_VULKAN_USE_VOLK
-#define IMGUI_IMPL_VULKAN_VOLK_FILENAME <volk/volk.h>
 #include "imgui.h"
-#include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 #include "imgui_internal.h"
+#include "imgui_impl_glfw.h"
 
 // ImGuizmo
 #include "ImGuizmo.h"

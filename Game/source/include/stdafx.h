@@ -6,7 +6,7 @@
 
 
 #ifdef _DEBUG
-#pragma comment(lib, "GamePlay_d.lib")
+#pragma comment(lib, "GamePlayModule_d.lib")
 #pragma comment(lib, "PlatformRuntime_d.lib")
 #pragma comment(lib, "VulkanRenderEngine_d.lib")
 #pragma comment(lib, "Common_d.lib")
@@ -38,7 +38,7 @@
 #pragma comment(lib, "LinearMath_Debug.lib")
 
 #else
-#pragma comment(lib, "GamePlay.lib")
+#pragma comment(lib, "GamePlayModule.lib")
 #pragma comment(lib, "PlatformRuntime.lib")
 #pragma comment(lib, "AssetRuntime.lib")
 #pragma comment(lib, "VulkanRenderEngine.lib")

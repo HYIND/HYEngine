@@ -176,6 +176,7 @@ static void RegisterAllComponents()
     PropertiesHelper::RegisterComponent<TagFreeCamera>();
     PropertiesHelper::RegisterComponent<RenderModel>();
     PropertiesHelper::RegisterComponent<Script>();
+    PropertiesHelper::RegisterComponent<UIView>();
     PropertiesHelper::RegisterComponent<TagCurrentControl>();
     PropertiesHelper::RegisterComponent<CameraFollow>();
 }

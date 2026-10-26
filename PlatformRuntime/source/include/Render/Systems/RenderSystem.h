@@ -2,7 +2,7 @@
 
 #include "ECSCore/Entity.h"
 #include "ECSCore/System.h"
-#include "RenderEngine/RenderFrameManager.h"
+#include "RenderEngine/RenderFrameData.h"
 #include "RenderEngine/Renderer.h"
 #include "SpinLock.h"
 #include "Helper/SharedObjectPool.h"
@@ -39,6 +39,7 @@ public:
 
     void SetTriBuffer3D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render3DFrameData>>> triBuffer);
     void SetTriBuffer2D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render2DFrameData>>> triBuffer);
+    void SetTriBufferUI(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderUIFrameData>>> triBuffer);
 
 public:
     virtual void postUpdate(float deltaTime) override;
@@ -48,6 +49,9 @@ private:
     void processSprite(std::shared_ptr<Render::Render2DFrameData> framebuffer);
     void processGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer);
     void processDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer);
+
+    // 从 UIViewRuntime 收集这一帧要画的 UI 文档，按 layer 排序。
+    void processUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer);
 
 private:
     void processModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
@@ -62,13 +66,13 @@ private:
     void processSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
 
 private:
-    // 相机只读取表现数据（位置/朝向/fov 等），projection/view 由 Renderer3D 按目标尺寸算。
 	void SyncGLCamera(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
 
 private:
     std::vector<Line2> _DebugLines;
     std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render3DFrameData>>> _triBuffer3D;
     std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render2DFrameData>>> _triBuffer2D;
+    std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderUIFrameData>>> _triBufferUI;
     ThreadPool _threadPool;
     SpinLock _Scene3D_SpinLock;
     SpinLock _D2D_SpinLock;

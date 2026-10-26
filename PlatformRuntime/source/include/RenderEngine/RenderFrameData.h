@@ -7,6 +7,7 @@
 #include "VulkanRenderEngine/General/VKRenderContext.h"
 #include "RenderEngine/D2DRenderContext.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
+#include "UI/UiTypes.h"
 
 namespace Render
 {
@@ -32,6 +33,20 @@ namespace Render
 	struct Render2DFrameData
 	{
 		std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
+
+		void reset();
+	};
+
+	// UI 这一帧要画的东西：由 RenderSystem 从 UIViewRuntime 收集，按 layer 排好序。
+	struct RenderUIFrameData
+	{
+		struct View
+		{
+			std::shared_ptr<UI::ParseResult> document;  // 解析好的 UI 文档（含每节点有效样式）
+			int layer = 0;                             // 大的后画
+		};
+
+		std::vector<View> views;
 
 		void reset();
 	};

@@ -161,6 +161,9 @@
     <ClInclude Include="source\include\Components\Renderable.h" />
     <ClInclude Include="source\include\Components\RenderLight.h" />
     <ClInclude Include="source\include\Components\Script.h" />
+    <ClInclude Include="source\include\Components\UIView.h" />
+    <ClInclude Include="source\include\UI\UiTypes.h" />
+    <ClInclude Include="source\include\Systems\UIViewSystem.h" />
     <ClInclude Include="source\include\Components\Transform.h" />
     <ClInclude Include="source\include\Components\Transform2D.h" />
     <ClInclude Include="source\include\ECSCore\ComponentArray.h" />
@@ -248,6 +251,7 @@
     <ClCompile Include="source\src\Systems\LifeTimeSystem.cpp" />
     <ClCompile Include="source\src\Systems\PhysicsSystem.cpp" />
     <ClCompile Include="source\src\Systems\ScriptSystem.cpp" />
+    <ClCompile Include="source\src\Systems\UIViewSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source\include\ECSCore\Entity.inl" />

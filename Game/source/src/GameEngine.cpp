@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "GameEngine.h"
 
 #include "EngineRuntime.h"
@@ -110,7 +110,10 @@ bool GameEngine::CreateRenderer(uint32_t width, uint32_t height, std::string* er
 	}
 
 	renderer3D->StartBackend();
-	renderer3D->Start();
+	if (auto* renderer = m_runtime->GetRenderer())
+		renderer->Start();
+	else
+		renderer3D->Start();
 	return true;
 }
 

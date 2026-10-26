@@ -7,24 +7,6 @@
     <ClInclude Include="Editor.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Imgui\imconfig.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\imgui.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\imgui_internal.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\imstb_rectpack.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\imstb_textedit.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="Imgui\imstb_truetype.h">
-      <Filter>Imgui</Filter>
-    </ClInclude>
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h">
       <Filter>Imgui\backend</Filter>
     </ClInclude>
@@ -82,9 +64,6 @@
     <ClInclude Include="ImguiInit\VulkanInit.h">
       <Filter>头文件\ImguiInit</Filter>
     </ClInclude>
-    <ClInclude Include="Imgui\backend\imgui_impl_vulkan.h">
-      <Filter>Imgui\backend</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\EditorComponent.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -122,21 +101,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Imgui\imgui.cpp">
-      <Filter>Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\imgui_demo.cpp">
-      <Filter>Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\imgui_draw.cpp">
-      <Filter>Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\imgui_tables.cpp">
-      <Filter>Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\imgui_widgets.cpp">
-      <Filter>Imgui</Filter>
-    </ClCompile>
     <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp">
       <Filter>Imgui\backend</Filter>
     </ClCompile>
@@ -184,9 +148,6 @@
     </ClCompile>
     <ClCompile Include="ImguiInit\VulkanInit.cpp">
       <Filter>源文件\ImguiInit</Filter>
-    </ClCompile>
-    <ClCompile Include="Imgui\backend\imgui_impl_vulkan.cpp">
-      <Filter>Imgui\backend</Filter>
     </ClCompile>
     <ClCompile Include="source\src\EditorGlfwInput.cpp">
       <Filter>源文件</Filter>
