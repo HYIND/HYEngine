@@ -28,12 +28,18 @@ HY_DECLARE_ECS_TYPE(UIView, "engine.uiview");
 
 struct UIViewRuntime : public IComponent
 {
+	// 共享的资产数据（所有引用同一份 .ui 的实体共用）。
 	std::shared_ptr<UI::ParseResult> document;
+
+	// 这个实体自己的运行时状态（开关/滑块/焦点/输入缓冲），和文档分开存。
+	std::shared_ptr<UI::UiInstanceState> instance;
+
 	bool faulted = false;
 
 	void OnRemove(const Entity& entity) override
 	{
 		document.reset();
+		instance.reset();
 		faulted = false;
 	}
 

@@ -1,4 +1,4 @@
-
+﻿
 #include "stdafx.h"
 #include "framework.h"
 #include "Editor.h"
@@ -186,6 +186,29 @@ static void glfw_mouse_button_callback(GLFWwindow* /*window*/, int button, int a
 	g_editorInputContext->SetKeyDown(engineKey, action != GLFW_RELEASE);
 }
 
+// 字符输入：编辑器自己的 ImGui 要收到，引擎那套 UI（RendererUI）也要收到，
+// 所以这里接管 GLFW 的回调后两边都转发一次。
+static void glfw_char_callback(GLFWwindow* /*window*/, unsigned int codepoint)
+{
+	ImGui::GetIO().AddInputCharacter(codepoint);
+
+	if (!ShouldForwardInputToEngine() || g_editorInputContext == nullptr)
+		return;
+
+	char utf8[5] = {};
+	ImTextCharToUtf8(utf8, codepoint);
+	g_editorInputContext->PushTextInput(utf8);
+}
+
+// 滚轮：编辑器自己的 ImGui 由后端处理，引擎 UI 需要我们自己转一份。
+static void glfw_scroll_callback(GLFWwindow* /*window*/, double /*xoffset*/, double yoffset)
+{
+	if (!ShouldForwardInputToEngine() || g_editorInputContext == nullptr)
+		return;
+
+	g_editorInputContext->PushMouseWheel(static_cast<float>(yoffset));
+}
+
 static void glfw_window_focus_callback(GLFWwindow* /*window*/, int focused)
 {
 	if (g_editorInputContext == nullptr)
@@ -329,6 +352,10 @@ int ImGuiMain()
 	// 初始化 ImGui 后端
 	ImGui_ImplGlfw_InitForVulkan(window, true);
 
+	// 字符回调要在 ImGui 后端之后注册（它会覆盖后端自己的 CharCallback，我们手动转发）。
+	glfwSetCharCallback(window, glfw_char_callback);
+	glfwSetScrollCallback(window, glfw_scroll_callback);
+
 	ImGui_ImplVulkan_InitInfo init_info = {};
 	init_info.Instance = g_Instance;
 	init_info.PhysicalDevice = g_PhysicalDevice;
@@ -381,6 +408,15 @@ int ImGuiMain()
 		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0) {
 			ImGui_ImplGlfw_Sleep(10);
 			continue;
+		}
+
+		// 引擎 UI 的拾取需要窗口坐标下的鼠标位置；视口矩形由 DrawSceneView 每帧写入。
+		if (auto inputContext = editorApp->GetInputContext())
+		{
+			double cursorX = 0.0;
+			double cursorY = 0.0;
+			glfwGetCursorPos(window, &cursorX, &cursorY);
+			inputContext->SetMousePosition(static_cast<float>(cursorX), static_cast<float>(cursorY));
 		}
 
 		editorApp->NewInputFrame();

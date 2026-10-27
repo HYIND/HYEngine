@@ -64,6 +64,8 @@ bool EngineRuntime::Initialize(const EngineRuntimeConfig& config)
 	if (m_config.HasModule(EngineRuntimeModule::Render))
 		m_renderer = std::make_unique<Render::Renderer>();
 
+	m_renderer->SetUiInputContext(m_inputContext);
+
 	// 工程对象由运行时持有：场景加载、资产解析都走它
 	m_project = std::make_unique<ProjectManager>();
 

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "vkstdafx.h"
 
@@ -7,24 +7,18 @@
 
 #include "Helper/TripleBuffer.h"
 #include "RenderEngine/RenderFrameData.h"
+#include "Input/EngineInputContext.h"
+
+#include <string>
+#include <vector>
 
 struct ImGuiContext;
 struct ImDrawList;
+struct ImFont;
 class Texture2D;
 
 namespace Render
 {
-	// UI 叠加层：只做一件事——拿一张现成的纹理，把 ImGui 这一帧画在它上面。
-	//
-	// 没有自己的目标纹理、没有尺寸、没有格式：
-	//   target 是谁，就画在谁身上（loadOp=Load，靠 ImGui 的预乘 alpha 叠上去）；
-	//   DisplaySize 每帧从 target 取；格式也只看 target，变了就把后端管线重建一次。
-	//
-	// ImGui 上下文与 Vulkan 后端都是懒加载：第一次 Render 时才建，宿主不需要初始化它。
-	// 用的是独立的 ImGuiContext，和编辑器自己那套互不影响。
-	//
-	// 现在还没有“画什么”的来源：等 RenderSystem 侧把 UIFrameData（UI 资产/布局组件
-	// 收集出来的那一帧）推送过来，DrawUiContent 按它画。在那之前这里只走空帧。
 	class RendererUI
 	{
 	public:
@@ -41,11 +35,29 @@ namespace Render
 		using FrameBuffer = TripleBuffer<std::shared_ptr<RenderUIFrameData>>;
 		std::shared_ptr<FrameBuffer> GetFrameBuffer() const { return m_frameBuffer; }
 
+		// 输入源：宿主把鼠标/文字喂进 EngineInputContext，这里每帧读一次翻成 ImGuiIO 事件。
+		void SetInputContext(std::shared_ptr<EngineInputContext> context) { m_input = std::move(context); }
+
+		// 这一帧 UI 上发生的交互事件（取走即清空）。
+		struct UiEvent
+		{
+			std::string command;
+			int legacyId = 0;
+			std::string nodeName;
+			float value = 0.0f;   // 开关/滑块这类控件回传的值
+			std::string itemId;   // 列表行被点中时回传该行的业务标识
+		};
+		std::vector<UiEvent> PollEvents();
+
 	private:
 		// 按 RenderUIFrameData 画这一帧的内容。
 		void DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame);
 		void DrawNode(::ImDrawList* drawList, const UI::UiNode& node,
-			const UI::ParseResult& parsed, float scaleX, float scaleY, float offsetX, float offsetY);
+			const UI::ParseResult& parsed, UI::UiInstanceState* instance,
+			float scaleX, float scaleY, float offsetX, float offsetY);
+
+		// 把 EngineInputContext 里的鼠标/文字翻成 ImGuiIO 事件（坐标换算到渲染目标像素）。
+		void FeedInput(float targetWidth, float targetHeight);
 
 		bool EnsureContext();
 		// ImGui 的 Vulkan 后端跟着颜色格式建管线：格式变了要重建一次。
@@ -55,11 +67,20 @@ namespace Render
 	private:
 		ImGuiContext* m_context = nullptr;
 
+		// 常规/粗体两套字形
+		ImFont* m_font = nullptr;
+		ImFont* m_boldFont = nullptr;
+
 		vk::Format m_format = vk::Format::eUndefined;
 		bool m_backendReady = false;
 
 		std::chrono::steady_clock::time_point m_lastFrameTime{};
 
 		std::shared_ptr<FrameBuffer> m_frameBuffer;
+		std::shared_ptr<EngineInputContext> m_input;
+		std::vector<UiEvent> m_events;
+
+		// 没有实例状态时的兜底（例如调试用的一帧数据没带 instance）。
+		UI::UiNodeState m_fallbackState;
 	};
 }
