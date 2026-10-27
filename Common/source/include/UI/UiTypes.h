@@ -95,6 +95,21 @@ namespace UI
 		std::string itemId;   // 列表行被点中时回传该行的业务标识
 	};
 
+	// 文本节点绑定到另一个节点的运行时值（例如滑动条右边的百分比）。
+	struct UiNodeBinding
+	{
+		std::string node;    // 目标节点名
+		std::string format;  // printf 风格格式串，缺省 "%.0f"
+		int targetId = 0;    // 解析期回填的目标节点 id
+	};
+
+	// combo 的一个选项。
+	struct UiOption
+	{
+		std::string text;
+		int value = 0;
+	};
+
 	struct UiNode
 	{
 		int id = 0;            // 解析时按遍历顺序分配，同一份文档内稳定，供运行时按节点存状态
@@ -122,10 +137,16 @@ namespace UI
 		// scrolllist 的行高（虚拟坐标；<=0 用默认值）
 		float rowHeight = 0.0f;
 
+		// combo 的选项（选中值存 UiNodeState::value，即选项下标）
+		std::vector<UiOption> options;
+
 		std::optional<StyleFields> inlineStyle;  // 节点内联字段，优先级最高
 		std::map<std::string, StyleFields> inlineStates;  // 节点内联的 hover/pressed 等状态覆盖
 		UiEvent onClick;
 		UiEvent onChange;
+
+		// 该节点的文本/数值来自另一个节点（可选）
+		std::optional<UiNodeBinding> bind;
 
 		std::vector<UiNode> children;
 	};

@@ -345,7 +345,33 @@ namespace UI
 			result.inlineStyle = ReadNodeInlineStyle(node);
 			result.inlineStates = ReadInlineStates(node);
 			result.onClick = ReadEvent(node, "onClick");
+			if (node.contains("options") && node["options"].is_array())
+			{
+				for (const auto &option : node["options"])
+				{
+					if (!option.is_object())
+						continue;
+
+					UiOption item;
+					if (option.contains("text") && option["text"].is_string())
+						item.text = option["text"].get<std::string>();
+					if (option.contains("value") && option["value"].is_number())
+						item.value = option["value"].get<int>();
+					result.options.push_back(std::move(item));
+				}
+			}
+
 			result.onChange = ReadEvent(node, "onChange");
+			if (node.contains("bind") && node["bind"].is_object())
+			{
+				UiNodeBinding binding;
+				if (node["bind"].contains("node") && node["bind"]["node"].is_string())
+					binding.node = node["bind"]["node"].get<std::string>();
+				if (node["bind"].contains("format") && node["bind"]["format"].is_string())
+					binding.format = node["bind"]["format"].get<std::string>();
+				if (!binding.node.empty())
+					result.bind = std::move(binding);
+			}
 
 			if (node.contains("children") && node["children"].is_array())
 			{
@@ -538,6 +564,22 @@ namespace UI
 			out.sourceDescription = description.str();
 		}
 
+		// 把 bind.node（节点名）解析成节点 id：运行时按 id 取该节点的值。
+		static void ResolveBindings(UiNode &node, const std::unordered_map<std::string, int> &ids, std::string &error)
+		{
+			if (node.bind && !node.bind->node.empty())
+			{
+				auto it = ids.find(node.bind->node);
+				if (it == ids.end())
+					error += (error.empty() ? "" : "\n") + std::string("节点 ") + node.name + " 的 bind 指向不存在的节点：" + node.bind->node;
+				else
+					node.bind->targetId = it->second;
+			}
+
+			for (auto &child : node.children)
+				ResolveBindings(child, ids, error);
+		}
+
 		void AssignNodeIds(UiNode &node, int &nextId)
 		{
 			node.id = nextId++;
@@ -657,6 +699,7 @@ namespace UI
 		AssignNodeIds(result.document.root, nodeId);
 		ResolveNodeTree(result.document.root, result);
 		CollectNodeIds(result.document.root, result.nodeIds);
+		ResolveBindings(result.document.root, result.nodeIds, result.error);
 
 		result.ok = result.error.empty();
 		return result;

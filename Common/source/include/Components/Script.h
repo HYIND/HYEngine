@@ -11,6 +11,11 @@ struct Script : public IComponent
 	bool needReload = true;
 
 	Script() = default;
+	Script(const Script& other) {
+		data = other.data;
+		enabled = other.enabled;
+		needReload = true;
+	}
 	Script(const std::shared_ptr<ScriptSourceData>& data) :data(data) {}
 	Script(const std::string& source, const AssetGUID& scriptGuid = "")
 	{
