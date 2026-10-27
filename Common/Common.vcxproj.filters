@@ -9,10 +9,6 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="头文件\Helper">
       <UniqueIdentifier>{c6df2688-4f75-4ad5-b8c0-6191197de162}</UniqueIdentifier>
     </Filter>
@@ -41,7 +37,7 @@
       <UniqueIdentifier>{4d3e4a54-8fb8-41fc-be3b-c65192a4166b}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\UI">
-    	<UniqueIdentifier>{6c1d5f2b-7a63-4c8e-9f4d-2b1a0e5c7d91}</UniqueIdentifier>
+      <UniqueIdentifier>{6c1d5f2b-7a63-4c8e-9f4d-2b1a0e5c7d91}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\Script">
       <UniqueIdentifier>{c41dd5c7-2204-48fb-91e2-257ee0d16923}</UniqueIdentifier>
@@ -51,6 +47,9 @@
     </Filter>
     <Filter Include="源文件\lua\CommonData">
       <UniqueIdentifier>{7de3507b-64a2-4310-ad08-a73c803abbe3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\UI">
+      <UniqueIdentifier>{0248ade3-bc2b-4026-ae94-fde9a1104b74}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -222,6 +221,9 @@
     <ClInclude Include="source\include\Components\CameraFollow.h">
       <Filter>头文件\Components</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\UI\UiDom.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\Helper\DynamicPacker.cpp">
@@ -382,6 +384,9 @@
     </ClCompile>
     <ClCompile Include="source\src\Systems\CameraFollowSystem.cpp">
       <Filter>源文件\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UI\UiDom.cpp">
+      <Filter>源文件\UI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

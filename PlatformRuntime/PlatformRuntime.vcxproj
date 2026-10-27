@@ -155,6 +155,7 @@
     <ClInclude Include="source\include\RenderEngine\Renderer.h" />
     <ClInclude Include="source\include\RenderEngine\Renderer3D.h" />
     <ClInclude Include="source\include\RenderEngine\RendererUI.h" />
+    <ClInclude Include="source\include\UI\UICommandBus.h" />
     <ClInclude Include="imgui\include\imgui.h" />
     <ClInclude Include="imgui\include\imgui_internal.h" />
     <ClInclude Include="imgui\include\imconfig.h" />
@@ -191,6 +192,7 @@
     <ClCompile Include="source\src\RenderEngine\Renderer.cpp" />
     <ClCompile Include="source\src\RenderEngine\Renderer3D.cpp" />
     <ClCompile Include="source\src\RenderEngine\RendererUI.cpp" />
+    <ClCompile Include="source\src\UI\UICommandBus.cpp" />
     <ClCompile Include="imgui\src\imgui.cpp" />
     <ClCompile Include="imgui\src\imgui_demo.cpp" />
     <ClCompile Include="imgui\src\imgui_draw.cpp" />

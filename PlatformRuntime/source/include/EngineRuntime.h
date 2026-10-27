@@ -1,13 +1,16 @@
-﻿#pragma once
+#pragma once
 
 #include "ECSCore/World.h"
 #include "SceneCodec/ComponentCodec.h"
+#include "SceneCodec/ModuleHostServices.h"
+#include "UI/UICommandBus.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -183,6 +186,21 @@ public:
     void CloseScene();
     World* GetWorld() const noexcept { return m_world.get(); }
 
+    // ---- 场景切换：登记 / 执行两段式 ----
+    // 任何线程都能 Request，它只是登记"想切过去"的意图，立刻返回。真正的切换必须由
+    // 宿主在帧边界调 PumpSceneChanges：那里才能安全地 join 场景线程、重建 World。
+    // 场景线程自己不能执行切换——它会 join 到自己，那是死锁。
+    void RequestSceneChange(const std::string& sceneAsset, SceneOpenHooks hooks = {});
+    bool HasPendingSceneChange() const noexcept { return m_hasPendingScene; }
+    // 有登记就切一次、并按原节拍重启场景线程；返回是否真的切了。宿主每帧调一次。
+    bool PumpSceneChanges(std::string* error = nullptr);
+
+    // UI 命令总线：宿主/编辑器用它做校验和诊断（GetCommands / PendingCount）；
+    // 模块拿到的是 ModuleHostServices 里的同一个指针。
+    UI::UICommandBus& GetUICommands() noexcept { return m_uiCommands; }
+    // 上一次 Pump 的结果，没人认领的命令名都在里面，给宿主/编辑器做诊断。
+    const UI::PumpReport& GetLastUiPumpReport() const noexcept { return m_lastPumpReport; }
+
     std::shared_ptr<EngineInputContext> GetInputContext() const noexcept { return m_inputContext; }
 
 private:
@@ -191,6 +209,13 @@ private:
     void SceneThreadLoop();
     // 只在 Shutdown 里用：模块必须在它们供给的场景销毁之后才卸载。
     void UnloadModules();
+
+    // 渲染线程的 sink 落点：只入队，不派发。
+    void OnUiEvents(const std::vector<UI::UiEvent>& events);
+    // 场景线程每帧调：把队列里的 UI 事件派发给模块的 handler。
+    void PumpUiEvents();
+    // 模块经 ModuleHostServices 回调进来的切场景入口（调用线程不限）。
+    static void OnModuleRequestSceneChange(void* owner, const char* sceneAsset);
 
     EngineRuntimeConfig m_config;
     std::shared_ptr<World> m_world;
@@ -202,4 +227,21 @@ private:
     std::unique_ptr<Render::Renderer> m_renderer;
     std::unique_ptr<NComponentCodec::EngineModuleManager> m_moduleManager;
     bool m_initialized = false;
+
+    // UI 事件总线不随场景重建：模块的订阅不会因为换场景而丢。
+    UI::UICommandBus m_uiCommands;
+    UI::PumpReport m_lastPumpReport;
+
+    // 交给模块的宿主服务。它必须活得比模块久（模块随时可能回调进来，包括切场景）。
+    NComponentCodec::ModuleHostServices m_hostServices;
+
+    // 待执行的场景切换。登记和执行分开，中间只隔一个帧边界。
+    std::mutex m_pendingSceneMutex;
+    std::string m_pendingSceneAsset;
+    SceneOpenHooks m_pendingSceneHooks;
+    std::atomic<bool> m_hasPendingScene{ false };
+
+    // 启动场景线程时用的步长，切完场景要按同样节拍重启。
+    float m_logicDeltaMilliseconds = 16.0f;
+    float m_fixedDeltaMilliseconds = 16.0f;
 };

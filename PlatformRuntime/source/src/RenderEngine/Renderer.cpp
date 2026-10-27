@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "RenderEngine/Renderer.h"
 #include "RenderEngine/Renderer3D.h"
 #include "RenderEngine/Renderer2D.h"
@@ -110,6 +110,10 @@ void Renderer::WaitImage(const WaitImageCallback& callback)
 		{
 			 _uiRender->Render(tex);
 
+			// 事件是 Render 里面（ImGui 控件判定时）产生的，所以只能在这里、同一线程紧接着取。
+			if (_uiEventSink)
+				_uiEventSink(_uiRender->PollEvents());
+
 			if (callback)
 				callback(tex, state);
 		});
@@ -119,6 +123,11 @@ void Renderer::SetUiInputContext(std::shared_ptr<EngineInputContext> context)
 {
 	if (_uiRender)
 		_uiRender->SetInputContext(std::move(context));
+}
+
+void Renderer::SetUiEventSink(std::function<void(std::vector<UI::UiEvent>)> sink)
+{
+	_uiEventSink = std::move(sink);
 }
 
 void Renderer::BindRenderSystem(RenderSystem& renderSystem)

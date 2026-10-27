@@ -146,6 +146,7 @@
     <ClInclude Include="source\include\UI\UiDocumentParser.h" />
     <ClInclude Include="source\include\SceneCodec\BuiltInCodecs.h" />
     <ClInclude Include="source\include\SceneCodec\ComponentCodec.h" />
+    <ClInclude Include="source\include\SceneCodec\ModuleHostServices.h" />
     <ClInclude Include="source\include\SceneCodec\SceneCodec.h" />
   </ItemGroup>
   <ItemGroup>

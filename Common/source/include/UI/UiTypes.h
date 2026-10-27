@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 // UI 资产的纯数据定义：文档（结构）与样式（外观）两类，互不依赖渲染，也不依赖资产层。
 // 放在 Common 里是因为 UIView / UIViewRuntime 组件要用；解析器（读 JSON）在 AssestRuntime。
@@ -7,11 +7,12 @@
 #include <deque>
 #include <map>
 #include <memory>
-#include <unordered_map>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "CriticalSectionLock.h"
 
 namespace UI
 {
@@ -87,12 +88,18 @@ namespace UI
 		float h = 0.0f;
 	};
 
+	// UI 上发生的一次交互。渲染层产出、经 UICommandBus 送到模块。
+	// command 是路由键（.ui 里 onClick/onChange 的 command 字段），其余都是这次交互的载荷。
 	struct UiEvent
 	{
 		std::string command;
 		int legacyId = 0;
+		// 产生这条事件的节点名（诊断用：日志和"没人认领"的报错都靠它定位）。
+		std::string node;
 		float value = 0.0f;   // 滑块/开关这类带数值的控件回传值
 		std::string itemId;   // 列表行被点中时回传该行的业务标识
+		// textinput 提交时的文本内容，其余控件为空。
+		std::string text;
 	};
 
 	// 文本节点绑定到另一个节点的运行时值（例如滑动条右边的百分比）。
@@ -183,9 +190,31 @@ namespace UI
 
 		// textinput 的编辑缓冲（UTF-8），每个实例各一份。
 		std::array<char, 256> text{};
+
+		// ---- 外部（模块 / 宿主）可写的展示状态 ----
+		// 只有这些字段被改过才生效，没改过就是资产里声明的样子。
+
+		bool enabled = true;   // false = 不参与命中，画成半透明
+		bool visible = true;   // false = 整棵子树都不画
+
+		bool hasLabel = false; // 只有真设置过才覆盖资产文本，否则写个空串会把文字抹掉
+		std::string label;     // 覆盖 text / button / toggle 的文字
+
+		bool hasOptions = false;
+		std::vector<UiOption> options; // 覆盖 combo 的选项表
+
+		// scrolllist：是否启用选中态。false = 纯展示列表（能滚能看，不可点选）。
+		// 选中了哪一行不用另存，沿用 value（行下标），和 combo 的"选中值 = 下标"同一套规则。
+		bool selected = false;
 	};
 
 	// 一个 UIView 实例的运行时状态（按 UiNode::id 索引）。
+	//
+	// 跨线程约定：渲染线程在画这一层 UI 的整段时间里持有 mutex；
+	// 场景线程（模块通过 UI::Element 读写）每次操作短暂持有。
+	// 用的是工程自己的 CriticalSectionLock（Windows 上是 CRITICAL_SECTION），
+	// 它是递归锁：同一线程重复进入不会自锁，所以拿锁的地方可以放心互相调用。
+	// 副作用是这个结构体不能拷贝（CriticalSectionLock 不可拷贝），只放在 shared_ptr 里。
 	struct UiInstanceState
 	{
 		std::unordered_map<int, UiNodeState> nodes;
@@ -193,6 +222,8 @@ namespace UI
 		// 运行时塞进来的行数据：键是节点 id。
 		std::unordered_map<int, std::vector<UiListItem>> lists;   // scrolllist
 		std::unordered_map<int, std::deque<std::string>> texts;   // textblock
+
+		mutable CriticalSectionLock mutex;
 
 		UiNodeState& Get(int nodeId) { return nodes[nodeId]; }
 	};

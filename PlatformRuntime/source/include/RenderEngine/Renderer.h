@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "RenderEngine/D2DTools.h"
 #include "RenderEngine/D2DRenderContext.h"
@@ -37,6 +37,10 @@ namespace Render
 
 		// UI 的输入源：宿主那边填的 EngineInputContext，引擎 UI 每帧读一次做拾取。
 		void SetUiInputContext(std::shared_ptr<EngineInputContext> context);
+		// UI 交互事件的出口。渲染线程在 WaitImage 里取走这一帧的事件后调它，
+		// 所以回调里只能入队，不能派发（派发要 World，必须在场景线程上）。
+		// 传空表示不取事件（事件会攒在 RendererUI 里，直到有人来取）。
+		void SetUiEventSink(std::function<void(std::vector<UI::UiEvent>)> sink);
 		// 后端与生命周期：3D 的设备、目标、帧循环都由这里统一转发，宿主只面对这一层；
 		// UI 复用 3D 每帧产出的那张纹理，没有自己的目标、尺寸和格式。
 		void SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
@@ -65,5 +69,6 @@ namespace Render
 		std::unique_ptr<Renderer3D> _renderer3D;
 		std::unique_ptr<Renderer2D> _renderer2D;
 		std::unique_ptr<RendererUI> _uiRender;
+		std::function<void(const std::vector<UI::UiEvent>&)> _uiEventSink;
 	};
 }
