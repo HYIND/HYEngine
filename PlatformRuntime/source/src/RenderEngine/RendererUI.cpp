@@ -257,7 +257,7 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	bool clicked = false;
 	if (interactive && node.type != "textinput" && w > 0.0f && h > 0.0f)
 	{
-		ImGui::PushID(&node);
+		ImGui::PushID(node.id);
 		ImGui::SetCursorScreenPos(ImVec2(x, y));
 		ImGui::InvisibleButton("##ui_node", ImVec2(w, h));
 		hovered = ImGui::IsItemHovered();
@@ -435,6 +435,98 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		return;
 	}
 
+	// ---- 下拉框：关闭态自己画（吃 tint/圆角/文字样式），展开列表交给 ImGui 的 popup ----
+	if (node.type == "combo")
+	{
+		UI::UiNodeState& comboState = instance ? instance->Get(node.id) : m_fallbackState;
+
+		int selected = 0;
+		if (!node.options.empty())
+		{
+			if (!comboState.initialized)
+			{
+				comboState.initialized = true;
+				for (int i = 0; i < static_cast<int>(node.options.size()); ++i)
+				{
+					if (node.options[static_cast<size_t>(i)].value == static_cast<int>(node.value))
+					{
+						selected = i;
+						break;
+					}
+				}
+				comboState.value = static_cast<float>(selected);
+			}
+
+			selected = static_cast<int>(comboState.value);
+			const int last = static_cast<int>(node.options.size()) - 1;
+			selected = selected < 0 ? 0 : (selected > last ? last : selected);
+		}
+
+		const char* preview = node.options.empty() ? "" : node.options[static_cast<size_t>(selected)].text.c_str();
+
+		ImFont* comboFont = (style->bold && *style->bold && m_boldFont) ? m_boldFont : (m_font ? m_font : ImGui::GetFont());
+		const float comboFontSize = std::round((style->fontSize ? *style->fontSize : 20.0f) * scaleY);
+		const float comboPadY = std::max(0.0f, std::round((h - comboFontSize) * 0.5f));
+		const float comboPadX = std::round(std::min(scaleX, scaleY) * 10.0f) + 2.0f;
+
+		ImGui::SetCursorScreenPos(ImVec2(x, y));
+		ImGui::PushID(node.id);
+		ImGui::PushFont(comboFont, comboFontSize);
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(comboPadX, comboPadY));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+		// 关闭态的背景我们自己画，这里把 ImGui 的框和箭头都隐掉。
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(255, 255, 255, 16));
+		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(255, 255, 255, 24));
+		ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+		ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(24, 28, 36, 245));
+		ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(64, 120, 200, 180));
+		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(76, 140, 220, 200));
+		ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(90, 160, 240, 220));
+		ImGui::SetNextItemWidth(w);
+
+		if (ImGui::BeginCombo("##ui_combo", preview, ImGuiComboFlags_HeightLarge | ImGuiComboFlags_NoArrowButton))
+		{
+			for (int i = 0; i < static_cast<int>(node.options.size()); ++i)
+			{
+				const UI::UiOption& option = node.options[static_cast<size_t>(i)];
+				const bool isSelected = (i == selected);
+
+				if (ImGui::Selectable(option.text.c_str(), isSelected))
+				{
+					comboState.value = static_cast<float>(i);
+					if (!node.onChange.command.empty())
+						m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, static_cast<float>(option.value), option.text });
+				}
+
+				if (isSelected)
+					ImGui::SetItemDefaultFocus();
+			}
+
+			ImGui::EndCombo();
+		}
+
+		ImGui::PopStyleColor(8);
+		ImGui::PopStyleVar(3);
+		ImGui::PopFont();
+
+		// 右侧小三角：提示可以展开（ImGui 自带的箭头跟着 FrameBg 一起被透明掉了）。
+		const float unit = std::min(scaleX, scaleY);
+		const float arrowX = x + w - std::round(unit * 18.0f);
+		const float arrowY = y + h * 0.5f;
+		const float arrowSize = std::round(unit * 6.0f);
+		drawList->AddTriangleFilled(ImVec2(arrowX - arrowSize, arrowY - arrowSize * 0.6f),
+			ImVec2(arrowX + arrowSize, arrowY - arrowSize * 0.6f),
+			ImVec2(arrowX, arrowY + arrowSize * 0.8f), textColor);
+
+		ImGui::PopID();
+
+		for (const auto& child : node.children)
+			DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
+		return;
+	}
+
 	// ---- 文本输入：编辑行为交给 ImGui::InputText，背景和 placeholder 自己画 ----
 	if (node.type == "textinput")
 	{
@@ -556,6 +648,15 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 
 	// 文本 / 按钮文字
 	std::string label = node.text;
+	// 绑定：从别的节点的运行时值格式化出文本（例如滑动条右边的百分比）。
+	if (node.bind && node.bind->targetId != 0)
+	{
+		const UI::UiNodeState& boundState = instance ? instance->Get(node.bind->targetId) : m_fallbackState;
+		char boundBuffer[64];
+		std::snprintf(boundBuffer, sizeof(boundBuffer),
+			node.bind->format.empty() ? "%.0f" : node.bind->format.c_str(), static_cast<double>(boundState.value));
+		label = boundBuffer;
+	}
 	if (node.type == "button" && label.empty())
 		label = node.name;
 
@@ -634,6 +735,8 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 
 	ImDrawList* drawList = ImGui::GetWindowDrawList();
 
+	int viewIndex = 0;
+
 	for (const auto& view : frame->views)
 	{
 		if (!view.document || !view.document->ok)
@@ -657,7 +760,10 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 			offsetY = (displaySize.y - space * scale) * 0.5f;
 		}
 
+		// 同一份文档可能被多个 UIView 复用，节点 id 只在文档内唯一，必须按视图再隔离一层。
+		ImGui::PushID(viewIndex++);
 		DrawNode(drawList, document.root, *view.document, view.instance.get(), scaleX, scaleY, offsetX, offsetY);
+		ImGui::PopID();
 	}
 
 	ImGui::End();

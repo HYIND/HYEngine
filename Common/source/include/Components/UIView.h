@@ -14,6 +14,15 @@ struct UIView : public IComponent
 	bool enabled = true;
 	bool needReload = true;
 
+	UIView() = default;
+	UIView(const UIView& other) {
+		documentGuid = other.documentGuid;
+		layer = other.layer;
+		capturesInput = other.capturesInput;
+		enabled = other.enabled;
+		needReload = true;
+	}
+
 	void OnRemove(const Entity& entity) override
 	{
 		documentGuid.clear();
