@@ -115,6 +115,12 @@ void Renderer::WaitImage(const WaitImageCallback& callback)
 		});
 }
 
+void Renderer::SetUiInputContext(std::shared_ptr<EngineInputContext> context)
+{
+	if (_uiRender)
+		_uiRender->SetInputContext(std::move(context));
+}
+
 void Renderer::BindRenderSystem(RenderSystem& renderSystem)
 {
 	renderSystem.SetTriBuffer3D(_renderer3D ? _renderer3D->GetFrameBuffer() : nullptr);

@@ -4,6 +4,11 @@
 #include "VulkanRenderEngine/VKContext.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 
+#include <utility>
+
+
+#include <deque>
+
 #include "imgui.h"
 
 #include <algorithm>
@@ -56,9 +61,21 @@ bool RendererUI::EnsureContext()
 
 	ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath, 18.0f, &fontConfig, glyphRanges);
 	if (font == nullptr)
+	{
 		io.Fonts->AddFontDefault();
+		m_font = io.Fonts->Fonts.empty() ? nullptr : io.Fonts->Fonts[0];
+	}
 	else
+	{
 		io.FontDefault = font;
+		m_font = font;
+	}
+
+	// 粗体单独加载一个字重文件
+	const char* boldFontPath = "C:/Windows/Fonts/msyhbd.ttc";
+	m_boldFont = io.Fonts->AddFontFromFileTTF(boldFontPath, 18.0f, &fontConfig, glyphRanges);
+	if (m_boldFont == nullptr)
+		m_boldFont = m_font;
 
 	ImGui::SetCurrentContext(previous);
 
@@ -145,33 +162,145 @@ void RendererUI::Shutdown()
 	m_lastFrameTime = {};
 }
 
+void RendererUI::FeedInput(float targetWidth, float targetHeight)
+{
+	if (!m_input)
+		return;
+
+	const EngineInputFrame frame = m_input->ReadFrame();
+	ImGuiIO& io = ImGui::GetIO();
+
+	// 窗口坐标 -> 渲染目标像素坐标；没有视口矩形时把鼠标挪到画面外（不命中任何节点）。
+	float mouseX = -FLT_MAX;
+	float mouseY = -FLT_MAX;
+	if (frame.viewportWidth > 0.0f && frame.viewportHeight > 0.0f && targetWidth > 0.0f && targetHeight > 0.0f)
+	{
+		mouseX = (frame.mouseX - frame.viewportX) * (targetWidth / frame.viewportWidth);
+		mouseY = (frame.mouseY - frame.viewportY) * (targetHeight / frame.viewportHeight);
+	}
+
+	io.AddMousePosEvent(mouseX, mouseY);
+	io.AddMouseButtonEvent(0, frame.active && frame.IsKeyDown(EngineKey::MouseLeft));
+	io.AddMouseButtonEvent(1, frame.active && frame.IsKeyDown(EngineKey::MouseRight));
+	io.AddMouseButtonEvent(2, frame.active && frame.IsKeyDown(EngineKey::MouseMiddle));
+
+	if (!frame.textInput.empty())
+		io.AddInputCharactersUTF8(frame.textInput.c_str());
+
+	// 滚轮：UI 列表/文本滚动靠它。
+	if (frame.mouseWheel != 0.0f)
+		io.AddMouseWheelEvent(0.0f, frame.mouseWheel);
+
+	// 键盘：每帧同步一次电平，边沿和重复都由 ImGui 自己处理。
+	const auto down = [&frame](EngineKey key) { return frame.active && frame.IsKeyDown(key); };
+	const auto keyOf = [](EngineKey key) { return static_cast<int>(key); };
+
+	// 字母与数字在两边都是连续段，直接按偏移映射。
+	for (int i = 0; i < 26; ++i)
+		io.AddKeyEvent(static_cast<ImGuiKey>(ImGuiKey_A + i), down(static_cast<EngineKey>(keyOf(EngineKey::A) + i)));
+	for (int i = 0; i < 10; ++i)
+		io.AddKeyEvent(static_cast<ImGuiKey>(ImGuiKey_0 + i), down(static_cast<EngineKey>(keyOf(EngineKey::Num0) + i)));
+	for (int i = 0; i < 12; ++i)
+		io.AddKeyEvent(static_cast<ImGuiKey>(ImGuiKey_F1 + i), down(static_cast<EngineKey>(keyOf(EngineKey::F1) + i)));
+
+	const std::pair<EngineKey, ImGuiKey> plainKeys[] = {
+		{ EngineKey::Escape, ImGuiKey_Escape }, { EngineKey::Tab, ImGuiKey_Tab },
+		{ EngineKey::CapsLock, ImGuiKey_CapsLock }, { EngineKey::Space, ImGuiKey_Space },
+		{ EngineKey::Enter, ImGuiKey_Enter }, { EngineKey::Backspace, ImGuiKey_Backspace },
+		{ EngineKey::Delete, ImGuiKey_Delete }, { EngineKey::Insert, ImGuiKey_Insert },
+		{ EngineKey::Home, ImGuiKey_Home }, { EngineKey::End, ImGuiKey_End },
+		{ EngineKey::PageUp, ImGuiKey_PageUp }, { EngineKey::PageDown, ImGuiKey_PageDown },
+		{ EngineKey::ArrowUp, ImGuiKey_UpArrow }, { EngineKey::ArrowDown, ImGuiKey_DownArrow },
+		{ EngineKey::ArrowLeft, ImGuiKey_LeftArrow }, { EngineKey::ArrowRight, ImGuiKey_RightArrow },
+		{ EngineKey::LeftShift, ImGuiKey_LeftShift }, { EngineKey::RightShift, ImGuiKey_RightShift },
+		{ EngineKey::LeftCtrl, ImGuiKey_LeftCtrl }, { EngineKey::RightCtrl, ImGuiKey_RightCtrl },
+		{ EngineKey::LeftAlt, ImGuiKey_LeftAlt }, { EngineKey::RightAlt, ImGuiKey_RightAlt },
+		{ EngineKey::Minus, ImGuiKey_Minus }, { EngineKey::Equal, ImGuiKey_Equal },
+		{ EngineKey::LeftBracket, ImGuiKey_LeftBracket }, { EngineKey::RightBracket, ImGuiKey_RightBracket },
+		{ EngineKey::Backslash, ImGuiKey_Backslash }, { EngineKey::Semicolon, ImGuiKey_Semicolon },
+		{ EngineKey::Quote, ImGuiKey_Apostrophe }, { EngineKey::Comma, ImGuiKey_Comma },
+		{ EngineKey::Period, ImGuiKey_Period }, { EngineKey::Slash, ImGuiKey_Slash },
+		{ EngineKey::Grave, ImGuiKey_GraveAccent },
+	};
+	for (const auto& [engineKey, imguiKey] : plainKeys)
+		io.AddKeyEvent(imguiKey, down(engineKey));
+
+	// 组合键：ImGui 要求修饰键单独再报一次。
+	io.AddKeyEvent(ImGuiMod_Ctrl, down(EngineKey::LeftCtrl) || down(EngineKey::RightCtrl));
+	io.AddKeyEvent(ImGuiMod_Shift, down(EngineKey::LeftShift) || down(EngineKey::RightShift));
+	io.AddKeyEvent(ImGuiMod_Alt, down(EngineKey::LeftAlt) || down(EngineKey::RightAlt));
+}
+
 void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI::ParseResult& parsed,
-	float scaleX, float scaleY, float offsetX, float offsetY)
+	UI::UiInstanceState* instance, float scaleX, float scaleY, float offsetX, float offsetY)
 {
 	const UI::ResolvedNodeStyle* resolved = nullptr;
 	auto it = parsed.resolved.find(&node);
 	if (it != parsed.resolved.end())
 		resolved = &it->second;
 
-	const UI::StyleFields* style = resolved ? &resolved->effective : nullptr;
+	// 这一帧该节点的最终外观：基础态 + 交互状态覆盖。
+	UI::StyleFields fields;
+	if (resolved)
+		fields = resolved->effective;
 
 	const float x = offsetX + node.rect.x * scaleX;
 	const float y = offsetY + node.rect.y * scaleY;
 	const float w = node.rect.w * scaleX;
 	const float h = node.rect.h * scaleY;
 
-	const float opacity = (style && style->opacity) ? *style->opacity : 1.0f;
-	const float rounding = (style && style->cornerRadius) ? (*style->cornerRadius) * std::min(scaleX, scaleY) : 0.0f;
+	const bool interactive = node.type == "button" || node.type == "toggle" ||
+		node.type == "slider" || node.type == "textinput";
+
+	bool hovered = false;
+	bool active = false;
+	bool clicked = false;
+	if (interactive && node.type != "textinput" && w > 0.0f && h > 0.0f)
+	{
+		ImGui::PushID(&node);
+		ImGui::SetCursorScreenPos(ImVec2(x, y));
+		ImGui::InvisibleButton("##ui_node", ImVec2(w, h));
+		hovered = ImGui::IsItemHovered();
+		active = ImGui::IsItemActive();
+
+		if (resolved)
+		{
+			if (hovered)
+			{
+				auto state = resolved->states.find("hover");
+				if (state != resolved->states.end())
+					UI::MergeFields(fields, state->second);
+			}
+			if (active)
+			{
+				auto state = resolved->states.find("pressed");
+				if (state != resolved->states.end())
+					UI::MergeFields(fields, state->second);
+			}
+		}
+
+		// 按下并在同一个节点上松开，才算一次点击。
+		clicked = hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+		ImGui::PopID();
+
+		if (clicked && !node.onClick.command.empty())
+			m_events.push_back(UiEvent{ node.onClick.command, node.onClick.legacyId, node.name, 0.0f });
+	}
+
+	const UI::StyleFields* style = &fields;
+
+	const float opacity = style->opacity ? *style->opacity : 1.0f;
+	const float rounding = style->cornerRadius ? (*style->cornerRadius) * std::min(scaleX, scaleY) : 0.0f;
 
 	ImU32 fill = 0;
-	if (style && style->tint)
+	if (style->tint)
 	{
 		const UI::Vec4& tint = *style->tint;
 		fill = ImGui::ColorConvertFloat4ToU32(ImVec4(tint.r, tint.g, tint.b, tint.a * opacity));
 	}
 
 	ImU32 textColor = IM_COL32(255, 255, 255, static_cast<int>(255.0f * opacity));
-	if (style && style->color)
+	if (style->color)
 	{
 		const UI::Vec4& color = *style->color;
 		textColor = ImGui::ColorConvertFloat4ToU32(ImVec4(color.r, color.g, color.b, color.a * opacity));
@@ -180,30 +309,298 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	if (fill != 0 && node.type != "text")
 		drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), fill, rounding);
 
+	// ---- 滚动列表：行数据来自实例，滚动交给 ImGui 子窗口 ----
+	if (node.type == "scrolllist")
+	{
+		const float rowHeight = std::max(1.0f, std::round((node.rowHeight > 0.0f ? node.rowHeight : 44.0f) * scaleY));
+		std::vector<UI::UiListItem> fallbackItems;
+		const std::vector<UI::UiListItem>* items = nullptr;
+		if (instance)
+		{
+			auto it = instance->lists.find(node.id);
+			if (it != instance->lists.end())
+				items = &it->second;
+		}
+		if (!items)
+		{
+			// 没有运行时数据时，用文档里 children 的 text 当静态行（写死的演示/占位列表）。
+			for (const auto& child : node.children)
+			{
+				if (child.text.empty())
+					continue;
+
+				UI::UiListItem row;
+				row.text = child.text;
+				fallbackItems.push_back(std::move(row));
+			}
+			items = &fallbackItems;
+		}
+
+		ImGui::SetCursorScreenPos(ImVec2(x, y));
+		ImGui::PushID(node.id);
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+		if (ImGui::BeginChild("##ui_scrolllist", ImVec2(w, h), ImGuiChildFlags_None, ImGuiWindowFlags_None))
+		{
+			const ImU32 rowText = textColor;
+			ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(255, 255, 255, 40));
+			ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(255, 255, 255, 64));
+			ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(255, 255, 255, 96));
+			ImGui::PushStyleColor(ImGuiCol_Text, rowText);
+
+			ImGuiListClipper clipper;
+			clipper.Begin(static_cast<int>(items->size()), rowHeight);
+			while (clipper.Step())
+			{
+				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+				{
+					const UI::UiListItem& item = (*items)[i];
+					const bool disabled = item.disabled;
+					if (disabled)
+						ImGui::BeginDisabled();
+
+					ImGui::PushID(i);
+					const bool selected = false;
+					if (ImGui::Selectable(item.text.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, rowHeight)))
+					{
+						const UI::UiEvent& event = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ? node.onClick : node.onChange;
+						if (!event.command.empty() || event.legacyId != 0)
+							m_events.push_back(UiEvent{ event.command, event.legacyId, node.name, static_cast<float>(i), item.id });
+					}
+					ImGui::PopID();
+
+					if (disabled)
+						ImGui::EndDisabled();
+				}
+			}
+
+			ImGui::PopStyleColor(4);
+		}
+		ImGui::EndChild();
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+		ImGui::PopID();
+		return;
+	}
+
+	// ---- 多行文本：行数据来自实例，默认粘底 ----
+	if (node.type == "textblock")
+	{
+		std::deque<std::string> fallbackLines;
+		const std::deque<std::string>* lines = nullptr;
+		if (instance)
+		{
+			auto it = instance->texts.find(node.id);
+			if (it != instance->texts.end())
+				lines = &it->second;
+		}
+		if (!lines)
+		{
+			// 没有运行时数据时，用文档里 children 的 text 当静态行。
+			for (const auto& child : node.children)
+			{
+				if (!child.text.empty())
+					fallbackLines.push_back(child.text);
+			}
+			if (fallbackLines.empty())
+			{
+				// 连静态行都没有：造几行假消息，方便先看排版效果。
+				for (int i = 0; i < 12; ++i)
+					fallbackLines.push_back("[系统] 测试消息 " + std::string(i < 9 ? "0" : "") + std::to_string(i + 1)
+						+ "：这是一行占位文本，用来观察换行、行距与滚动。");
+			}
+			lines = &fallbackLines;
+		}
+
+		ImGui::SetCursorScreenPos(ImVec2(x, y));
+		ImGui::PushID(node.id);
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+		if (ImGui::BeginChild("##ui_textblock", ImVec2(w, h), ImGuiChildFlags_None, ImGuiWindowFlags_None))
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+			for (const auto& line : *lines)
+				ImGui::TextWrapped("%s", line.c_str());
+
+			// 贴底：只有本来就在底部时才跟随新行，用户上翻时不打扰。
+			const float scrollY = ImGui::GetScrollY();
+			const float scrollMax = ImGui::GetScrollMaxY();
+			if (scrollMax <= 0.0f || scrollY >= scrollMax - 4.0f)
+				ImGui::SetScrollHereY(1.0f);
+
+			ImGui::PopStyleColor();
+		}
+		ImGui::EndChild();
+		ImGui::PopStyleColor();
+		ImGui::PopID();
+		return;
+	}
+
+	// ---- 文本输入：编辑行为交给 ImGui::InputText，背景和 placeholder 自己画 ----
+	if (node.type == "textinput")
+	{
+		UI::UiNodeState& inputState = instance ? instance->Get(node.id) : m_fallbackState;
+
+		ImFont* inputFont = (style->bold && *style->bold && m_boldFont) ? m_boldFont : (m_font ? m_font : ImGui::GetFont());
+		const float inputFontSize = std::round((style->fontSize ? *style->fontSize : 20.0f) * scaleY);
+		const float padY = std::max(0.0f, std::round((h - inputFontSize) * 0.5f));
+		const float padX = std::round(std::min(scaleX, scaleY) * 10.0f) + 2.0f;
+
+		ImGui::SetCursorScreenPos(ImVec2(x, y));
+		ImGui::PushID(node.id);
+		ImGui::PushFont(inputFont, inputFontSize);
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padX, padY));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+		// 背景我们自己画过了：输入框本身只画文字和光标。
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, IM_COL32(0, 0, 0, 0));
+		ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+		ImGui::SetNextItemWidth(w);
+
+		const bool bufferEmpty = inputState.text[0] == '\0';
+		ImGui::InputText("##ui_textinput", inputState.text.data(), inputState.text.size());
+		const bool inputActive = ImGui::IsItemActive();
+
+		if (ImGui::IsItemDeactivatedAfterEdit() && !node.onChange.command.empty())
+			m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, 0.0f });
+
+		// maxLength：超出的部分直接截掉（InputText 只受缓冲容量限制）。
+		if (node.maxLength > 0 && static_cast<int>(std::strlen(inputState.text.data())) > node.maxLength)
+			inputState.text[node.maxLength] = '\0';
+
+		ImGui::PopStyleColor(4);
+		ImGui::PopStyleVar(3);
+		ImGui::PopFont();
+		ImGui::PopID();
+
+		// placeholder：为空且没在编辑时自己画（ImGui 的 hint 颜色不能单独配）。
+		if (bufferEmpty && !inputActive && !node.placeholder.empty())
+		{
+			const ImU32 placeholderColor = (textColor & 0x00FFFFFFu) | (static_cast<ImU32>(255.0f * opacity * 0.45f) << 24);
+			const ImVec2 hintSize = inputFont->CalcTextSizeA(inputFontSize, FLT_MAX, 0.0f, node.placeholder.c_str());
+			drawList->AddText(inputFont, inputFontSize,
+				ImVec2(std::round(x + padX), std::round(y + (h - hintSize.y) * 0.5f)),
+				placeholderColor, node.placeholder.c_str());
+		}
+
+		for (const auto& child : node.children)
+			DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
+		return;
+	}
+
+	// ---- 带数值的控件：progress / slider / toggle ----
+	// 运行时值不能写回节点（UI 文档是资产、多个实例共享），存在 m_nodeStates 里，按节点指针索引。
+	UI::UiNodeState& state = instance ? instance->Get(node.id) : m_fallbackState;
+	if (!state.initialized)
+	{
+		state.value = node.value;
+		state.toggled = node.value > 0.0f;
+		state.initialized = true;
+	}
+
+	const float rangeMin = node.minValue;
+	const float rangeMax = (node.maxValue > node.minValue) ? node.maxValue : (node.minValue + 1.0f);
+	const bool ranged = node.type == "slider" || node.type == "progress";
+
+	// 滑块：按住时按鼠标位置换算成值，按 step 吸附。
+	if (node.type == "slider" && active && w > 0.0f)
+	{
+		const float t = std::clamp((ImGui::GetIO().MousePos.x - x) / w, 0.0f, 1.0f);
+		float next = rangeMin + t * (rangeMax - rangeMin);
+		if (node.step > 0.0f)
+			next = rangeMin + std::round((next - rangeMin) / node.step) * node.step;
+		state.value = std::clamp(next, rangeMin, rangeMax);
+	}
+
+	float ratio = ranged ? (state.value - rangeMin) / (rangeMax - rangeMin) : 0.0f;
+	ratio = std::clamp(ratio, 0.0f, 1.0f);
+
+	// 前景色：优先用样式里的 color（通常和底色对比明显），没有再退回白色。
+	const ImU32 accent = textColor;
+
+	if (node.type == "progress" || node.type == "slider")
+	{
+		if (ratio > 0.0f)
+			drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + w * ratio, y + h), accent, rounding);
+
+		if (node.type == "slider")
+		{
+			const float knobRadius = std::max(h * 0.55f, 6.0f);
+			const float knobX = std::clamp(x + w * ratio, x + knobRadius, x + w - knobRadius);
+			drawList->AddCircleFilled(ImVec2(knobX, y + h * 0.5f), knobRadius, IM_COL32(245, 248, 255, 235));
+
+			if (clicked && !node.onChange.command.empty())
+				m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.value });
+		}
+	}
+	else if (node.type == "toggle")
+	{
+		if (clicked)
+		{
+			state.toggled = !state.toggled;
+			if (!node.onChange.command.empty())
+				m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.toggled ? 1.0f : 0.0f });
+		}
+
+		// 钮：h 的 10% 留边，直径 = h - 2*pad，开时靠右、关时靠左。
+		const float pad = std::max(h * 0.10f, 1.0f);
+		const float radius = std::max((h - pad * 2.0f) * 0.5f, 1.0f);
+		const float centerX = state.toggled ? (x + w - pad - radius) : (x + pad + radius);
+		drawList->AddCircleFilled(ImVec2(centerX, y + h * 0.5f), radius, IM_COL32(248, 250, 255, 240));
+
+		// 打开时描一圈亮边，状态一眼可见。
+		if (state.toggled)
+			drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), accent, rounding, 0, 2.0f);
+	}
+
 	// 文本 / 按钮文字
 	std::string label = node.text;
 	if (node.type == "button" && label.empty())
 		label = node.name;
 
+	if (node.type == "progress" && node.showPercent && label.empty())
+	{
+		char buffer[32];
+		std::snprintf(buffer, sizeof(buffer), "%d%%", static_cast<int>(std::lround(ratio * 100.0f)));
+		label = buffer;
+	}
+	if (node.type == "textinput" && label.empty())
+		label = node.placeholder;
+
 	if (!label.empty())
 	{
-		ImFont* font = ImGui::GetFont();
-		const float fontSize = (style && style->fontSize ? *style->fontSize : 20.0f) * scaleY;
+		const bool wantBold = style->bold && *style->bold;
+		ImFont* font = (wantBold && m_boldFont) ? m_boldFont : (m_font ? m_font : ImGui::GetFont());
+
+		// 字号取整：非整数字号会让字形边缘重新采样，看起来发虚。
+		const float fontSize = std::round((style->fontSize ? *style->fontSize : 20.0f) * scaleY);
 		const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label.c_str());
 
 		float textX = x;
 		float textY = y + (h - textSize.y) * 0.5f;
-		const std::string align = (style && style->align) ? *style->align : "center";
+		const std::string align = style->align ? *style->align : "center";
 		if (align == "center")
 			textX = x + (w - textSize.x) * 0.5f;
 		else if (align == "right")
 			textX = x + w - textSize.x;
 
+		// 对齐到整数像素：ImGui 的文字是按像素栅格的，落在半个像素上就会重影/发虚。
+		textX = std::round(textX);
+		textY = std::round(textY);
+
 		drawList->AddText(font, fontSize, ImVec2(textX, textY), textColor, label.c_str());
 	}
 
 	for (const auto& child : node.children)
-		DrawNode(drawList, child, parsed, scaleX, scaleY, offsetX, offsetY);
+		DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
+}
+
+std::vector<RendererUI::UiEvent> RendererUI::PollEvents()
+{
+	std::vector<UiEvent> events;
+	events.swap(m_events);
+	return events;
 }
 
 void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
@@ -215,7 +612,27 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 	if (displaySize.x <= 0.0f || displaySize.y <= 0.0f)
 		return;
 
-	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	// 用一个全屏隐形窗口承载交互控件；视觉仍然画在窗口的 draw list 上。
+	ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+	ImGui::SetNextWindowSize(displaySize);
+	const ImGuiWindowFlags windowFlags =
+		ImGuiWindowFlags_NoDecoration |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoFocusOnAppearing |
+		ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoBackground |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_NoScrollWithMouse |
+		ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+	if (!ImGui::Begin("##EngineUIRoot", nullptr, windowFlags))
+	{
+		ImGui::End();
+		return;
+	}
+
+	ImDrawList* drawList = ImGui::GetWindowDrawList();
 
 	for (const auto& view : frame->views)
 	{
@@ -240,8 +657,10 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 			offsetY = (displaySize.y - space * scale) * 0.5f;
 		}
 
-		DrawNode(drawList, document.root, *view.document, scaleX, scaleY, offsetX, offsetY);
+		DrawNode(drawList, document.root, *view.document, view.instance.get(), scaleX, scaleY, offsetX, offsetY);
 	}
+
+	ImGui::End();
 }
 
 void RendererUI::Render(const std::shared_ptr<Texture2D>& target)
@@ -276,6 +695,8 @@ void RendererUI::Render(const std::shared_ptr<Texture2D>& target)
 	ImGuiIO& io = ImGui::GetIO();
 	io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
 	io.DeltaTime = deltaMilliseconds / 1000.0f;
+
+	FeedInput(static_cast<float>(width), static_cast<float>(height));
 
 	ImGui_ImplVulkan_NewFrame();
 	ImGui::NewFrame();

@@ -1,4 +1,4 @@
-#include "UI/UiDocumentParser.h"
+﻿#include "UI/UiDocumentParser.h"
 
 #include "nlohmann/json.hpp"
 
@@ -10,6 +10,16 @@
 
 namespace UI
 {
+	// 节点名 -> 节点 id（重名取第一个），宿主按名字塞列表/文本行时用。
+	static void CollectNodeIds(const UiNode &node, std::unordered_map<std::string, int> &outIds)
+	{
+		if (!node.name.empty() && outIds.find(node.name) == outIds.end())
+			outIds.emplace(node.name, node.id);
+
+		for (const auto &child : node.children)
+			CollectNodeIds(child, outIds);
+	}
+
 	namespace
 	{
 		using Json = nlohmann::json;
@@ -249,6 +259,18 @@ namespace UI
 					any = true;
 				}
 			}
+			// 节点自带的 background 块（tint / cornerRadius / texture / slice）同样算内联样式，
+			// 这样单文件 demo 不用为每种颜色单独建样式资产。
+			if (node.contains("background") && node["background"].is_object())
+			{
+				ReadBackgroundFields(node["background"], fields);
+				any = true;
+			}
+			if (node.contains("background") && node["background"].is_object())
+			{
+				ReadBackgroundFields(node["background"], fields);
+				any = true;
+			}
 			if (node.contains("textStyle"))
 			{
 				StyleFields textFields;
@@ -260,6 +282,22 @@ namespace UI
 			if (!any)
 				return std::nullopt;
 			return fields;
+		}
+
+		// 节点自带的 states 块：让它不依赖样式资产也能表达 hover/pressed。
+		std::map<std::string, StyleFields> ReadInlineStates(const Json &node)
+		{
+			std::map<std::string, StyleFields> states;
+			if (!node.contains("states") || !node["states"].is_object())
+				return states;
+
+			for (auto it = node["states"].begin(); it != node["states"].end(); ++it)
+			{
+				if (!it.value().is_object())
+					continue;
+				states[it.key()] = ReadStyleFields(it.value());
+			}
+			return states;
 		}
 
 		UiNode ParseNode(const Json &node)
@@ -285,7 +323,27 @@ namespace UI
 				result.rect.h = ReadFloat(rect, "h", 0.0f);
 			}
 
+			// 数值与文本输入相关字段：控件不同但字段名统一，取值都做存在性判断。
+			if (node.contains("min") && node["min"].is_number())
+				result.minValue = node["min"].get<float>();
+			if (node.contains("max") && node["max"].is_number())
+				result.maxValue = node["max"].get<float>();
+			if (node.contains("value") && node["value"].is_number())
+				result.value = node["value"].get<float>();
+			if (node.contains("step") && node["step"].is_number())
+				result.step = node["step"].get<float>();
+			if (node.contains("placeholder") && node["placeholder"].is_string())
+				result.placeholder = node["placeholder"].get<std::string>();
+			if (node.contains("maxLength") && node["maxLength"].is_number_integer())
+				result.maxLength = node["maxLength"].get<int>();
+			if (node.contains("showPercent") && node["showPercent"].is_boolean())
+				result.showPercent = node["showPercent"].get<bool>();
+
+	if (node.contains("rowHeight") && node["rowHeight"].is_number())
+		result.rowHeight = node["rowHeight"].get<float>();
+
 			result.inlineStyle = ReadNodeInlineStyle(node);
+			result.inlineStates = ReadInlineStates(node);
 			result.onClick = ReadEvent(node, "onClick");
 			result.onChange = ReadEvent(node, "onChange");
 
@@ -466,11 +524,25 @@ namespace UI
 				description << (description.tellp() > 0 ? " > " : "") << "inline";
 			}
 
+			// 3) 节点内联状态覆盖样式里的同名状态
+			for (const auto &[stateName, stateFields] : node.inlineStates)
+			{
+				MergeFields(out.states[stateName], stateFields);
+				description << (description.tellp() > 0 ? " > " : "") << "inline:" << stateName;
+			}
+
 			if (description.tellp() <= 0)
 				description << "（无样式）";
 
 			out.effective = effective;
 			out.sourceDescription = description.str();
+		}
+
+		void AssignNodeIds(UiNode &node, int &nextId)
+		{
+			node.id = nextId++;
+			for (UiNode &child : node.children)
+				AssignNodeIds(child, nextId);
 		}
 
 		void ResolveNodeTree(const UiNode &node, ParseResult &result)
@@ -581,7 +653,10 @@ namespace UI
 		}
 
 		// 再算每个节点的有效样式
+		int nodeId = 1;
+		AssignNodeIds(result.document.root, nodeId);
 		ResolveNodeTree(result.document.root, result);
+		CollectNodeIds(result.document.root, result.nodeIds);
 
 		result.ok = result.error.empty();
 		return result;

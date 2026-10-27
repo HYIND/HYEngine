@@ -198,6 +198,7 @@ void RenderSystem::processUI(std::shared_ptr<Render::RenderUIFrameData> framebuf
 
 		Render::RenderUIFrameData::View item;
 		item.document = runtime.document;
+		item.instance = runtime.instance;
 		item.layer = view.layer;
 		framebuffer->views.push_back(std::move(item));
 	}

@@ -42,8 +42,9 @@ namespace Render
 	{
 		struct View
 		{
-			std::shared_ptr<UI::ParseResult> document;  // 解析好的 UI 文档（含每节点有效样式）
-			int layer = 0;                             // 大的后画
+			std::shared_ptr<UI::ParseResult> document;      // 解析好的 UI 文档（含每节点有效样式），共享只读
+			std::shared_ptr<UI::UiInstanceState> instance;  // 该实例自己的运行时状态（开关/滑块等）
+			int layer = 0;                                  // 大的后画
 		};
 
 		std::vector<View> views;

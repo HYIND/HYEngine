@@ -3,10 +3,14 @@
 // UI 资产的纯数据定义：文档（结构）与样式（外观）两类，互不依赖渲染，也不依赖资产层。
 // 放在 Common 里是因为 UIView / UIViewRuntime 组件要用；解析器（读 JSON）在 AssestRuntime。
 
+#include <array>
+#include <deque>
 #include <map>
 #include <memory>
+#include <unordered_map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace UI
@@ -87,10 +91,13 @@ namespace UI
 	{
 		std::string command;
 		int legacyId = 0;
+		float value = 0.0f;   // 滑块/开关这类带数值的控件回传值
+		std::string itemId;   // 列表行被点中时回传该行的业务标识
 	};
 
 	struct UiNode
 	{
+		int id = 0;            // 解析时按遍历顺序分配，同一份文档内稳定，供运行时按节点存状态
 		std::string type;      // panel / image / text / button / slider / textinput / toggle ...
 		std::string name;
 		std::string styleRef;  // 节点上写的 style 名（文档 styles 表里的键）
@@ -99,7 +106,24 @@ namespace UI
 		std::string text;
 		std::string texture;
 
+		// 带数值的控件（slider / toggle / progress / scrolllist）
+		float minValue = 0.0f;
+		float maxValue = 100.0f;
+		float value = 0.0f;
+		float step = 1.0f;
+
+		// 文本输入
+		std::string placeholder;
+		int maxLength = 0;
+
+		// progress 是否在中间显示百分比
+		bool showPercent = false;
+
+		// scrolllist 的行高（虚拟坐标；<=0 用默认值）
+		float rowHeight = 0.0f;
+
 		std::optional<StyleFields> inlineStyle;  // 节点内联字段，优先级最高
+		std::map<std::string, StyleFields> inlineStates;  // 节点内联的 hover/pressed 等状态覆盖
 		UiEvent onClick;
 		UiEvent onChange;
 
@@ -118,6 +142,38 @@ namespace UI
 
 		UiNode root;
 		std::string sourcePath;
+	};
+
+	// 单个节点的运行时值。文档是资产、被多个实例共享，
+	// 所以开关/滑块/输入框的当前值必须放在"实例"这一层，不能写回 UiNode。
+	// 列表的一行：文本 + 业务侧的自定义标识（房间 id 之类）。
+	struct UiListItem
+	{
+		std::string text;
+		std::string id;
+		bool disabled = false;
+	};
+
+	struct UiNodeState
+	{
+		float value = 0.0f;
+		bool toggled = false;
+		bool initialized = false;
+
+		// textinput 的编辑缓冲（UTF-8），每个实例各一份。
+		std::array<char, 256> text{};
+	};
+
+	// 一个 UIView 实例的运行时状态（按 UiNode::id 索引）。
+	struct UiInstanceState
+	{
+		std::unordered_map<int, UiNodeState> nodes;
+
+		// 运行时塞进来的行数据：键是节点 id。
+		std::unordered_map<int, std::vector<UiListItem>> lists;   // scrolllist
+		std::unordered_map<int, std::deque<std::string>> texts;   // textblock
+
+		UiNodeState& Get(int nodeId) { return nodes[nodeId]; }
 	};
 
 	// 解析一个节点后算出来的最终外观：基础字段 + 各状态覆盖。
@@ -158,5 +214,14 @@ namespace UI
 
 		// 每个节点最终算出来的外观（供调试打印）。
 		std::map<const UiNode*, ResolvedNodeStyle> resolved;
+
+		// 节点名 -> 节点 id（重名时取第一个），宿主按名字塞列表/文本行时用。
+		std::unordered_map<std::string, int> nodeIds;
+
+		int FindNodeId(const std::string& name) const
+		{
+			auto it = nodeIds.find(name);
+			return it != nodeIds.end() ? it->second : 0;
+		}
 	};
 }

@@ -50,12 +50,14 @@ void UIViewSystem::update(float deltaTime)
 			if (hasComponent)
 			{
 				runtime.document.reset();
+				runtime.instance.reset();
 				runtime.faulted = false;
 			}
 
 			if (auto document = LoadDocument(uiView.documentGuid, _loader))
 			{
 				runtime.document = std::move(document);
+				runtime.instance = std::make_shared<UI::UiInstanceState>();
 			}
 			else
 			{

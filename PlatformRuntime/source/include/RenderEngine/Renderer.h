@@ -31,6 +31,12 @@ namespace Render
 		const Renderer3D* GetRenderer3D() const noexcept { return _renderer3D.get(); }
 		Renderer2D* GetRenderer2D() noexcept { return _renderer2D.get(); }
 		const Renderer2D* GetRenderer2D() const noexcept { return _renderer2D.get(); }
+
+		RendererUI* GetRendererUI() noexcept { return _uiRender.get(); }
+		const RendererUI* GetRendererUI() const noexcept { return _uiRender.get(); }
+
+		// UI 的输入源：宿主那边填的 EngineInputContext，引擎 UI 每帧读一次做拾取。
+		void SetUiInputContext(std::shared_ptr<EngineInputContext> context);
 		// 后端与生命周期：3D 的设备、目标、帧循环都由这里统一转发，宿主只面对这一层；
 		// UI 复用 3D 每帧产出的那张纹理，没有自己的目标、尺寸和格式。
 		void SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);

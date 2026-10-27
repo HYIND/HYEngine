@@ -14,6 +14,7 @@
 #include <vector>
 #include "Coroutine.h"
 #include "EditorTags.h"
+#include "Input/EngineInputContext.h"
 
 #include <Windows.h>
 #include <shellapi.h>
@@ -2168,6 +2169,9 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 	// 获取场景视口区域
 	ImVec2 viewportPos = ImGui::GetCursorScreenPos();
 	ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+	// 引擎 UI（ImGui 拾取）要知道渲染目标摆在窗口的哪块矩形里。
+	if (auto inputContext = editorApp->GetInputContext())
+		inputContext->SetViewportRect(viewportPos.x, viewportPos.y, viewportSize.x, viewportSize.y);
 	ImGuizmo::SetRect(viewportPos.x, viewportPos.y,
 		viewportSize.x, viewportSize.y);
 
