@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "vkstdafx.h"
 
@@ -38,16 +38,9 @@ namespace Render
 		// 输入源：宿主把鼠标/文字喂进 EngineInputContext，这里每帧读一次翻成 ImGuiIO 事件。
 		void SetInputContext(std::shared_ptr<EngineInputContext> context) { m_input = std::move(context); }
 
-		// 这一帧 UI 上发生的交互事件（取走即清空）。
-		struct UiEvent
-		{
-			std::string command;
-			int legacyId = 0;
-			std::string nodeName;
-			float value = 0.0f;   // 开关/滑块这类控件回传的值
-			std::string itemId;   // 列表行被点中时回传该行的业务标识
-		};
-		std::vector<UiEvent> PollEvents();
+		// 这一帧 UI 上发生的交互事件（取走即清空）。事件结构体由 Common 的 UI::UiEvent 定义，
+		// 渲染层只负责产出，派发是 UICommandBus 的事。
+		std::vector<UI::UiEvent> PollEvents();
 
 	private:
 		// 按 RenderUIFrameData 画这一帧的内容。
@@ -78,7 +71,7 @@ namespace Render
 
 		std::shared_ptr<FrameBuffer> m_frameBuffer;
 		std::shared_ptr<EngineInputContext> m_input;
-		std::vector<UiEvent> m_events;
+		std::vector<UI::UiEvent> m_events;
 
 		// 没有实例状态时的兜底（例如调试用的一帧数据没带 instance）。
 		UI::UiNodeState m_fallbackState;

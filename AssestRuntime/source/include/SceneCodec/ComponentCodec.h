@@ -187,6 +187,7 @@ namespace NComponentCodec
         ModuleHost host = ModuleHost::Game;
         const char* moduleId = nullptr;
         void* hostServices = nullptr;
+        const char* modulePathName = nullptr;
     };
 
     struct EngineModuleAPI

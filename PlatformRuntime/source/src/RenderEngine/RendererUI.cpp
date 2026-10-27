@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "RenderEngine/RendererUI.h"
 
 #include "VulkanRenderEngine/VKContext.h"
@@ -249,13 +249,28 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	const float w = node.rect.w * scaleX;
 	const float h = node.rect.h * scaleY;
 
-	const bool interactive = node.type == "button" || node.type == "toggle" ||
-		node.type == "slider" || node.type == "textinput";
+	// 实例状态：visible / enabled 是节点级基础属性，最先判定。
+	// visible = false 时整棵子树都不画（下面的 children 递归根本走不到），也不参与命中。
+	UI::UiNodeState& nodeState = instance ? instance->Get(node.id) : m_fallbackState;
+	if (!nodeState.visible)
+		return;
+
+	const bool declaresClick = !node.onClick.command.empty() || node.onClick.legacyId != 0;
+	const bool declaresChange = !node.onChange.command.empty() || node.onChange.legacyId != 0;
+
+	// 这些类型自己就是 ImGui 控件，命中判定归控件自己，外面不要再套一层不可见按钮。
+	const bool ownsWidget = node.type == "textinput" || node.type == "combo" || node.type == "scrolllist";
+
+	// 只要声明了 onClick / onChange，任何类型都该能被点中：
+	// panel / image / text / textblock / progress 以前根本没做命中测试，事件永远不会发。
+	// enabled = false 的节点不参与命中，视觉上再压一半透明度（下面 opacity 处）。
+	const bool hitTestable = nodeState.enabled && (declaresClick || declaresChange || node.type == "button" ||
+		node.type == "toggle" || node.type == "slider") && !ownsWidget && w > 0.0f && h > 0.0f;
 
 	bool hovered = false;
 	bool active = false;
 	bool clicked = false;
-	if (interactive && node.type != "textinput" && w > 0.0f && h > 0.0f)
+	if (hitTestable)
 	{
 		ImGui::PushID(node.id);
 		ImGui::SetCursorScreenPos(ImVec2(x, y));
@@ -282,14 +297,16 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		// 按下并在同一个节点上松开，才算一次点击。
 		clicked = hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
 		ImGui::PopID();
-
-		if (clicked && !node.onClick.command.empty())
-			m_events.push_back(UiEvent{ node.onClick.command, node.onClick.legacyId, node.name, 0.0f });
 	}
+
+	// 所有类型的 onClick 统一在这一处发；控件自己的 onChange 在各自分支里发，
+	// 因此 toggle / slider 可以同时声明两者。
+	if (clicked && declaresClick)
+		m_events.push_back(UI::UiEvent{ node.onClick.command, node.onClick.legacyId, node.name, 0.0f });
 
 	const UI::StyleFields* style = &fields;
 
-	const float opacity = style->opacity ? *style->opacity : 1.0f;
+	const float opacity = (style->opacity ? *style->opacity : 1.0f) * (nodeState.enabled ? 1.0f : 0.5f);
 	const float rounding = style->cornerRadius ? (*style->cornerRadius) * std::min(scaleX, scaleY) : 0.0f;
 
 	ImU32 fill = 0;
@@ -336,6 +353,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 			items = &fallbackItems;
 		}
 
+		if (!nodeState.enabled)
+			ImGui::BeginDisabled();
+
 		ImGui::SetCursorScreenPos(ImVec2(x, y));
 		ImGui::PushID(node.id);
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
@@ -360,12 +380,20 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 						ImGui::BeginDisabled();
 
 					ImGui::PushID(i);
-					const bool selected = false;
-					if (ImGui::Selectable(item.text.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, rowHeight)))
+
+					// selected 决定这个列表能不能点选：
+					//   true  = 可交互列表，点中的行高亮并回传（下标在 value 里，和 combo 同一套规则）
+					//   false = 展示列表，行只是"能看"，不高亮也不发事件
+					const bool selectable = nodeState.selected;
+					const bool rowSelected = selectable && i == static_cast<int>(nodeState.value);
+
+					if (ImGui::Selectable(item.text.c_str(), rowSelected,
+							selectable ? ImGuiSelectableFlags_AllowDoubleClick : ImGuiSelectableFlags_Disabled,
+							ImVec2(0.0f, rowHeight)))
 					{
 						const UI::UiEvent& event = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ? node.onClick : node.onChange;
 						if (!event.command.empty() || event.legacyId != 0)
-							m_events.push_back(UiEvent{ event.command, event.legacyId, node.name, static_cast<float>(i), item.id });
+							m_events.push_back(UI::UiEvent{ event.command, event.legacyId, node.name, static_cast<float>(i), item.id });
 					}
 					ImGui::PopID();
 
@@ -380,6 +408,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
 		ImGui::PopID();
+
+		if (!nodeState.enabled)
+			ImGui::EndDisabled();
 		return;
 	}
 
@@ -440,15 +471,21 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	{
 		UI::UiNodeState& comboState = instance ? instance->Get(node.id) : m_fallbackState;
 
+		if (!nodeState.enabled)
+			ImGui::BeginDisabled();
+
+		// 选项表可以被外部整体替换（按语言/等级换一组选项），没替换过就用资产里声明的。
+		const std::vector<UI::UiOption>& comboOptions = comboState.hasOptions ? comboState.options : node.options;
+
 		int selected = 0;
-		if (!node.options.empty())
+		if (!comboOptions.empty())
 		{
 			if (!comboState.initialized)
 			{
 				comboState.initialized = true;
-				for (int i = 0; i < static_cast<int>(node.options.size()); ++i)
+				for (int i = 0; i < static_cast<int>(comboOptions.size()); ++i)
 				{
-					if (node.options[static_cast<size_t>(i)].value == static_cast<int>(node.value))
+					if (comboOptions[static_cast<size_t>(i)].value == static_cast<int>(node.value))
 					{
 						selected = i;
 						break;
@@ -458,11 +495,11 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 			}
 
 			selected = static_cast<int>(comboState.value);
-			const int last = static_cast<int>(node.options.size()) - 1;
+			const int last = static_cast<int>(comboOptions.size()) - 1;
 			selected = selected < 0 ? 0 : (selected > last ? last : selected);
 		}
 
-		const char* preview = node.options.empty() ? "" : node.options[static_cast<size_t>(selected)].text.c_str();
+		const char* preview = comboOptions.empty() ? "" : comboOptions[static_cast<size_t>(selected)].text.c_str();
 
 		ImFont* comboFont = (style->bold && *style->bold && m_boldFont) ? m_boldFont : (m_font ? m_font : ImGui::GetFont());
 		const float comboFontSize = std::round((style->fontSize ? *style->fontSize : 20.0f) * scaleY);
@@ -486,18 +523,20 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(90, 160, 240, 220));
 		ImGui::SetNextItemWidth(w);
 
-		if (ImGui::BeginCombo("##ui_combo", preview, ImGuiComboFlags_HeightLarge | ImGuiComboFlags_NoArrowButton))
+		const bool comboOpen = ImGui::BeginCombo("##ui_combo", preview, ImGuiComboFlags_HeightLarge | ImGuiComboFlags_NoArrowButton);
+		const bool comboClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+		if (comboOpen)
 		{
-			for (int i = 0; i < static_cast<int>(node.options.size()); ++i)
+			for (int i = 0; i < static_cast<int>(comboOptions.size()); ++i)
 			{
-				const UI::UiOption& option = node.options[static_cast<size_t>(i)];
+				const UI::UiOption& option = comboOptions[static_cast<size_t>(i)];
 				const bool isSelected = (i == selected);
 
 				if (ImGui::Selectable(option.text.c_str(), isSelected))
 				{
 					comboState.value = static_cast<float>(i);
 					if (!node.onChange.command.empty())
-						m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, static_cast<float>(option.value), option.text });
+						m_events.push_back(UI::UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, static_cast<float>(option.value), option.text });
 				}
 
 				if (isSelected)
@@ -506,6 +545,10 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 
 			ImGui::EndCombo();
 		}
+
+		// 展开下拉本身也算一次 onClick；选项变化仍然走 onChange。
+		if (comboClicked && !node.onClick.command.empty())
+			m_events.push_back(UI::UiEvent{ node.onClick.command, node.onClick.legacyId, node.name, 0.0f });
 
 		ImGui::PopStyleColor(8);
 		ImGui::PopStyleVar(3);
@@ -522,6 +565,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 
 		ImGui::PopID();
 
+		if (!nodeState.enabled)
+			ImGui::EndDisabled();
+
 		for (const auto& child : node.children)
 			DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
 		return;
@@ -531,6 +577,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	if (node.type == "textinput")
 	{
 		UI::UiNodeState& inputState = instance ? instance->Get(node.id) : m_fallbackState;
+
+		if (!nodeState.enabled)
+			ImGui::BeginDisabled();
 
 		ImFont* inputFont = (style->bold && *style->bold && m_boldFont) ? m_boldFont : (m_font ? m_font : ImGui::GetFont());
 		const float inputFontSize = std::round((style->fontSize ? *style->fontSize : 20.0f) * scaleY);
@@ -554,8 +603,12 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		ImGui::InputText("##ui_textinput", inputState.text.data(), inputState.text.size());
 		const bool inputActive = ImGui::IsItemActive();
 
+		// 点进输入框也算一次 onClick（聚焦时触发），模块可以据此做"开始输入"。
+		if (!node.onClick.command.empty() && ImGui::IsItemClicked())
+			m_events.push_back(UI::UiEvent{ node.onClick.command, node.onClick.legacyId, node.name, 0.0f });
+
 		if (ImGui::IsItemDeactivatedAfterEdit() && !node.onChange.command.empty())
-			m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, 0.0f });
+			m_events.push_back(UI::UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, 0.0f, std::string(), inputState.text.data() });
 
 		// maxLength：超出的部分直接截掉（InputText 只受缓冲容量限制）。
 		if (node.maxLength > 0 && static_cast<int>(std::strlen(inputState.text.data())) > node.maxLength)
@@ -565,6 +618,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		ImGui::PopStyleVar(3);
 		ImGui::PopFont();
 		ImGui::PopID();
+
+		if (!nodeState.enabled)
+			ImGui::EndDisabled();
 
 		// placeholder：为空且没在编辑时自己画（ImGui 的 hint 颜色不能单独配）。
 		if (bufferEmpty && !inputActive && !node.placeholder.empty())
@@ -582,8 +638,8 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	}
 
 	// ---- 带数值的控件：progress / slider / toggle ----
-	// 运行时值不能写回节点（UI 文档是资产、多个实例共享），存在 m_nodeStates 里，按节点指针索引。
-	UI::UiNodeState& state = instance ? instance->Get(node.id) : m_fallbackState;
+	// 运行时值不能写回节点（UI 文档是资产、多个实例共享），存在实例状态里，按节点 id 索引。
+	UI::UiNodeState& state = nodeState;
 	if (!state.initialized)
 	{
 		state.value = node.value;
@@ -596,13 +652,21 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 	const bool ranged = node.type == "slider" || node.type == "progress";
 
 	// 滑块：按住时按鼠标位置换算成值，按 step 吸附。
+	bool sliderDragged = false;
 	if (node.type == "slider" && active && w > 0.0f)
 	{
 		const float t = std::clamp((ImGui::GetIO().MousePos.x - x) / w, 0.0f, 1.0f);
 		float next = rangeMin + t * (rangeMax - rangeMin);
 		if (node.step > 0.0f)
 			next = rangeMin + std::round((next - rangeMin) / node.step) * node.step;
-		state.value = std::clamp(next, rangeMin, rangeMax);
+		next = std::clamp(next, rangeMin, rangeMax);
+
+		// 拖动过程中值真的变了才算一次 onChange，避免每帧刷同样的值。
+		if (next != state.value)
+		{
+			state.value = next;
+			sliderDragged = true;
+		}
 	}
 
 	float ratio = ranged ? (state.value - rangeMin) / (rangeMax - rangeMin) : 0.0f;
@@ -622,8 +686,8 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 			const float knobX = std::clamp(x + w * ratio, x + knobRadius, x + w - knobRadius);
 			drawList->AddCircleFilled(ImVec2(knobX, y + h * 0.5f), knobRadius, IM_COL32(245, 248, 255, 235));
 
-			if (clicked && !node.onChange.command.empty())
-				m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.value });
+			if ((clicked || sliderDragged) && !node.onChange.command.empty())
+				m_events.push_back(UI::UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.value });
 		}
 	}
 	else if (node.type == "toggle")
@@ -632,7 +696,7 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		{
 			state.toggled = !state.toggled;
 			if (!node.onChange.command.empty())
-				m_events.push_back(UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.toggled ? 1.0f : 0.0f });
+				m_events.push_back(UI::UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, state.toggled ? 1.0f : 0.0f });
 		}
 
 		// 钮：h 的 10% 留边，直径 = h - 2*pad，开时靠右、关时靠左。
@@ -646,8 +710,10 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 			drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), accent, rounding, 0, 2.0f);
 	}
 
-	// 文本 / 按钮文字
+	// 文本 / 按钮文字：资产里的文字 → 外部设置的 label → 绑定值（绑定最后覆盖）
 	std::string label = node.text;
+	if (nodeState.hasLabel)
+		label = nodeState.label;
 	// 绑定：从别的节点的运行时值格式化出文本（例如滑动条右边的百分比）。
 	if (node.bind && node.bind->targetId != 0)
 	{
@@ -697,9 +763,9 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
 }
 
-std::vector<RendererUI::UiEvent> RendererUI::PollEvents()
+std::vector<UI::UiEvent> RendererUI::PollEvents()
 {
-	std::vector<UiEvent> events;
+	std::vector<UI::UiEvent> events;
 	events.swap(m_events);
 	return events;
 }
@@ -762,7 +828,16 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 
 		// 同一份文档可能被多个 UIView 复用，节点 id 只在文档内唯一，必须按视图再隔离一层。
 		ImGui::PushID(viewIndex++);
-		DrawNode(drawList, document.root, *view.document, view.instance.get(), scaleX, scaleY, offsetX, offsetY);
+		{
+			// 绘制期间独占这个实例：场景线程的 UI::Element 写入要等这一帧画完，
+			// 免得节点表在 DrawNode 持有引用时被插入/重排。
+			// 锁是递归的（CriticalSectionLock），绘制路径里万一再调到 UI::Element 也不会自锁。
+			std::unique_lock<CriticalSectionLock> instanceLock;
+			if (view.instance)
+				instanceLock = std::unique_lock<CriticalSectionLock>(view.instance->mutex);
+
+			DrawNode(drawList, document.root, *view.document, view.instance.get(), scaleX, scaleY, offsetX, offsetY);
+		}
 		ImGui::PopID();
 	}
 

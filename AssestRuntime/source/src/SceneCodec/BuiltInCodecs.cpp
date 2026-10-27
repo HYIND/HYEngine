@@ -1,4 +1,4 @@
-﻿#include "SceneCodec/BuiltInCodecs.h"
+#include "SceneCodec/BuiltInCodecs.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
@@ -557,6 +557,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
         [](const UIView& view) {
             return Json{
                 { "documentGuid", view.documentGuid },
+                { "viewName", view.viewName },
                 { "layer", view.layer },
                 { "capturesInput", view.capturesInput },
                 { "enabled", view.enabled }
@@ -567,13 +568,29 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 return false;
 
             view.documentGuid = data.value("documentGuid", AssetGUID());
+            // 老场景没有 viewName：存成空串（无名视图），不猜名字，免得串到别的视图上。
+            view.viewName = data.value("viewName", std::string());
             view.layer = data.value("layer", 0);
             view.capturesInput = data.value("capturesInput", true);
             view.enabled = data.value("enabled", true);
             view.needReload = true;
             return true;
         },
-        {}, {}, {}, 1, {},
+        {}, {}, {}, 1,
+        std::vector<ComponentProperty>{
+            ComponentProperty{
+                .fieldId = "viewName",
+                .displayName = "View Name",
+                .kind = EditorPropertyKind::String,
+                .read = [](Entity entity) -> Json { return entity.getComponent<UIView>().viewName; },
+                .write = [](Entity entity, const Json& value) -> bool {
+                    if (!value.is_string())
+                        return false;
+                    entity.getComponent<UIView>().viewName = value.get<std::string>();
+                    return true;
+                }
+            }
+        },
         ComponentEditorBehavior{
             .add =
             [](Entity entity)

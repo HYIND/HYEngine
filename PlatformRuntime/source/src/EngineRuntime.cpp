@@ -1,4 +1,4 @@
-﻿#include "EngineRuntime.h"
+#include "EngineRuntime.h"
 #include "Audio/Systems/AudioSystem.h"
 #include "Input/EngineInputContext.h"
 #include "Input/Systems/LocalInputSystem.h"
@@ -64,7 +64,15 @@ bool EngineRuntime::Initialize(const EngineRuntimeConfig& config)
 	if (m_config.HasModule(EngineRuntimeModule::Render))
 		m_renderer = std::make_unique<Render::Renderer>();
 
-	m_renderer->SetUiInputContext(m_inputContext);
+	if (m_renderer)
+	{
+		m_renderer->SetUiInputContext(m_inputContext);
+		// UI 事件的出口。这个回调在渲染线程上被调用，所以它只做入队，派发交给场景线程。
+		m_renderer->SetUiEventSink([this](const std::vector<UI::UiEvent>& events)
+			{
+				OnUiEvents(std::move(events));
+			});
+	}
 
 	// 工程对象由运行时持有：场景加载、资产解析都走它
 	m_project = std::make_unique<ProjectManager>();
@@ -85,6 +93,8 @@ void EngineRuntime::Shutdown()
 	UnloadModules();
 	if (m_renderer)
 	{
+		// 先摘掉 sink：外部渲染线程可能还在 WaitImage 里，不能让它回调到半销毁的运行时。
+		m_renderer->SetUiEventSink(nullptr);
 		if (auto* renderer3D = m_renderer->GetRenderer3D())
 			renderer3D->Shutdown();
 		if (auto* renderer2D = m_renderer->GetRenderer2D())
@@ -356,7 +366,14 @@ bool EngineRuntime::LoadModules(const std::string& directory, std::string* error
 		return false;
 	}
 
-	auto manager = std::make_unique<NComponentCodec::EngineModuleManager>(ToModuleHost(m_config.host.host));
+	// 模块拿到的宿主服务：指向引擎自己的成员，活得比模块久。追加字段时只改这里和
+	// ModuleHostServices，不用升 EngineModuleApiVersion（模块按 size 判断能不能读）。
+	m_hostServices.uiCommands = &m_uiCommands;
+	m_hostServices.sceneServiceOwner = this;
+	m_hostServices.requestSceneChange = &EngineRuntime::OnModuleRequestSceneChange;
+
+	auto manager = std::make_unique<NComponentCodec::EngineModuleManager>(
+		ToModuleHost(m_config.host.host), &m_hostServices);
 	std::string moduleError;
 	if (!manager->LoadModulesFromDirectory(directory, &moduleError))
 	{
@@ -373,6 +390,11 @@ void EngineRuntime::UnloadModules()
 {
 	if (!m_moduleManager)
 		return;
+
+	// 先撤订阅再卸 DLL：总线表里留着指向已卸载代码段的 std::function 就是野指针。
+	for (const auto& moduleId : m_moduleManager->GetLoadedModuleIds())
+		m_uiCommands.UnregisterByModule(moduleId);
+
 	m_moduleManager->UnloadAll();
 	m_moduleManager.reset();
 }
@@ -381,6 +403,10 @@ void EngineRuntime::StepEditorFrame(float deltaMilliseconds)
 {
 	if (!m_world || m_world->isRunning())
 		return;
+
+	// 编辑态没有 world->update，也就没有系统 update 帮忙派发 UI 事件，所以在这里补一次。
+	// 放在最前面：handler 写下的界面状态能在这一帧的 RenderSystem::postUpdate 里被看到。
+	PumpUiEvents();
 
 	m_world->ProcessCommands();
 
@@ -418,13 +444,17 @@ void EngineRuntime::StartSceneThread(float logicDeltaMilliseconds, float fixedDe
 	m_world->setFixedDeltaTime(fixedDeltaMilliseconds);
 	m_world->start();
 
+	// 记下来：切完场景要按同样的节拍把线程重新拉起来。
+	m_logicDeltaMilliseconds = logicDeltaMilliseconds;
+	m_fixedDeltaMilliseconds = fixedDeltaMilliseconds;
+
 	m_sceneStop = false;
 	m_sceneThread = std::make_shared<std::thread>(&EngineRuntime::SceneThreadLoop, this);
 }
 
 void EngineRuntime::SceneThreadLoop()
 {
-	World* world = m_world.get();
+	auto world = m_world;
 	if (!world)
 		return;
 
@@ -436,6 +466,19 @@ void EngineRuntime::SceneThreadLoop()
 	fpsController.reset();
 	while (!m_sceneStop)
 	{
+		// 派发放在 update 之前：UI 每帧的快照是在 update 内部的 RenderSystem::postUpdate
+		// 里生成的，handler 写下的界面状态要赶上这一帧。
+		PumpUiEvents();
+
+		// 有切场景请求就只退出循环，绝不在这里执行切换：切换要 join 这条线程，
+		// 自己 join 自己是死锁。真正执行的是宿主的 PumpSceneChanges。
+		if (m_hasPendingScene)
+		{
+			world->stop();
+			m_sceneStop = true;
+			break;
+		}
+
 		world->update(fpsController.getTimeDiffMS());
 		fpsController.run();
 	}
@@ -579,4 +622,72 @@ void EngineRuntime::CloseScene()
 	if (m_world)
 		m_world->ProcessCommands();
 	m_world.reset();
+}
+
+void EngineRuntime::OnUiEvents(const std::vector<UI::UiEvent>& events)
+{
+	// 渲染线程的落点：只入队。这里绝对不能派发——派发要 World，而 World 归场景线程。
+	m_uiCommands.Post(std::move(events));
+}
+
+void EngineRuntime::PumpUiEvents()
+{
+	if (!m_world)
+		return;
+
+	// 队列空了就是一次加锁 + 一次空 swap，可以每帧调。
+	m_lastPumpReport = m_uiCommands.Pump(*m_world);
+}
+
+void EngineRuntime::RequestSceneChange(const std::string& sceneAsset, SceneOpenHooks hooks)
+{
+	if (sceneAsset.empty())
+		return;
+
+	{
+		std::lock_guard<std::mutex> lock(m_pendingSceneMutex);
+		m_pendingSceneAsset = sceneAsset;
+		m_pendingSceneHooks = std::move(hooks);
+	}
+	m_hasPendingScene = true;
+}
+
+bool EngineRuntime::PumpSceneChanges(std::string* error)
+{
+	if (!m_hasPendingScene)
+		return false;
+
+	std::string sceneAsset;
+	SceneOpenHooks hooks;
+	{
+		std::lock_guard<std::mutex> lock(m_pendingSceneMutex);
+		sceneAsset = std::move(m_pendingSceneAsset);
+		hooks = std::move(m_pendingSceneHooks);
+		m_pendingSceneAsset.clear();
+		m_pendingSceneHooks = {};
+	}
+	// 先清标志再执行：切失败了也不该每帧重试同一个坏场景。
+	m_hasPendingScene = false;
+
+	if (sceneAsset.empty())
+		return false;
+
+	// 请求方（模块 handler）跑在场景线程上，它已经自己退出了循环；这里 join 是真的等它
+	// 收尾，不会自己等自己。用 m_sceneThread 判"原来是不是线程化的"—— World 在循环
+	// 退出前就被 stop 了，isRunning() 这时候一定是 false。
+	const bool wasThreaded = static_cast<bool>(m_sceneThread);
+	StopSceneThread();
+
+	const bool opened = OpenScene(sceneAsset, hooks, error);
+	if (wasThreaded && opened)
+		StartSceneThread(m_logicDeltaMilliseconds, m_fixedDeltaMilliseconds);
+	return opened;
+}
+
+void EngineRuntime::OnModuleRequestSceneChange(void* owner, const char* sceneAsset)
+{
+	auto* runtime = static_cast<EngineRuntime*>(owner);
+	if (!runtime || !sceneAsset)
+		return;
+	runtime->RequestSceneChange(sceneAsset);
 }

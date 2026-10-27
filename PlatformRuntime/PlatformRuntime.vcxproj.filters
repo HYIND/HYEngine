@@ -58,6 +58,12 @@
     <Filter Include="ImGui">
       <UniqueIdentifier>{f44db5e5-574e-41c5-b30a-bc078080e69a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\UI">
+      <UniqueIdentifier>{170e8070-8458-491a-9b77-0611ecdc1d64}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\UI">
+      <UniqueIdentifier>{eb4a4208-fd38-49bb-a4a9-fb11cdaf838f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="source\include\EngineRuntime.h">
@@ -222,6 +228,9 @@
     <ClCompile Include="source\src\Render\RenderSystem.cpp">
       <Filter>源文件\Render</Filter>
     </ClCompile>
+    <ClInclude Include="source\include\UI\UICommandBus.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\include\imconfig.h">
@@ -264,6 +273,9 @@
     </ClCompile>
     <ClCompile Include="imgui\src\imgui_widgets.cpp">
       <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UI\UICommandBus.cpp">
+      <Filter>源文件\UI</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
