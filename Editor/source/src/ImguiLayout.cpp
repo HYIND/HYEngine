@@ -3025,7 +3025,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 					if (!RayCastFromMouse(world, entity))
 						return;
 
-					auto rModel = entity.tryGetComponent<RenderModel>();
+					auto rModel = entity.tryGetComponent<RenderStaticModel>();
 					if (!rModel || !rModel->model)
 						return;
 					if (rModel->model->GetMeshInfos().size() == 1)

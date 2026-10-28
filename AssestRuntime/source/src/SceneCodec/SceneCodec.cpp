@@ -1,6 +1,6 @@
 #include "SceneCodec/SceneCodec.h"
 #include "Components/Script.h"
-#include "Render/Components/RenderModel.h"
+#include "Render/Components/RenderStaticModel.h"
 #include "VulkanRenderEngine/Base/StaticModel.h"
 
 using namespace NComponentCodec;
@@ -213,7 +213,7 @@ bool SceneCodec::Deserialize(
 
 		for (Entity entity : entityHandles)
 		{
-			auto renderModel = entity.tryGetComponent<RenderModel>();
+			auto renderModel = entity.tryGetComponent<RenderStaticModel>();
 			if (!renderModel || !renderModel->model)
 				continue;
 

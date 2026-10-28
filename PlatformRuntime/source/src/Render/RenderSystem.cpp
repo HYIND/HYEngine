@@ -30,7 +30,7 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 		if (modelName != "DefaultCube")
 			return false;
 
-		auto& comp = entity.hasComponent<RenderModel>() ? entity.getComponent<RenderModel>() : entity.addComponent<RenderModel>();
+		auto& comp = entity.hasComponent<RenderStaticModel>() ? entity.getComponent<RenderStaticModel>() : entity.addComponent<RenderStaticModel>();
 
 		if (modelName == "DefaultCube")
 			comp.model = DefaultCube->Clone(false, true);
@@ -55,7 +55,7 @@ bool RenderableBaseModule::SetVisiable(const Entity& entity, const std::string& 
 
 	if (field == "model")
 	{
-		comp = entity.tryGetComponent<RenderModel>();
+		comp = entity.tryGetComponent<RenderStaticModel>();
 	}
 	else if (field == "light")
 	{
@@ -89,7 +89,7 @@ bool RenderableBaseModule::SetColor(const Entity& entity, const glm::vec3& color
 	if (!IsValid(_world, entity))
 		return false;
 
-	auto comp = entity.tryGetComponent<RenderModel>();
+	auto comp = entity.tryGetComponent<RenderStaticModel>();
 	if (!comp || !comp->model)
 		return false;
 
@@ -318,10 +318,10 @@ void RenderSystem::processDebugLines(std::shared_ptr<Render::Render2DFrameData> 
 
 void RenderSystem::processModel(std::shared_ptr<Render3DFrameData> framebuffer, Entity maincamera)
 {
-	auto entities = m_world->getEntitiesWith<Transform, RenderModel>();
+	auto entities = m_world->getEntitiesWith<Transform, RenderStaticModel>();
 	auto& cameraComponent = maincamera.getComponent<CameraComponent>();
 
-	auto view = m_world->getViewWith<Transform, RenderModel>();
+	auto view = m_world->getViewWith<Transform, RenderStaticModel>();
 	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
 	temp.reserve(entities.size());
 	for (auto [entity, transform, renderModel] : view)

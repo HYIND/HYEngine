@@ -6,7 +6,7 @@
 
 #include "Audio\Components\AudioSource.h"
 
-#include "Render\Components\RenderModel.h"
+#include "Render\Components\RenderStaticModel.h"
 #include "Render\Components\SkeletonAnimator.h"
 #include "Render\Components\ParticleEmitter.h"
 #include "Render\Components\LaserBeamEmitter.h"

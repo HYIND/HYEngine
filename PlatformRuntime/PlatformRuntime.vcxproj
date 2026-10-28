@@ -172,7 +172,7 @@
     <ClInclude Include="source\include\Render\Components\LaserBeamEmitter.h" />
     <ClInclude Include="source\include\Render\Components\ParticleEmitter.h" />
     <ClInclude Include="source\include\Render\Components\RenderBase.h" />
-    <ClInclude Include="source\include\Render\Components\RenderModel.h" />
+    <ClInclude Include="source\include\Render\Components\RenderStaticModel.h" />
     <ClInclude Include="source\include\Render\Components\SkeletonAnimator.h" />
     <ClInclude Include="source\include\Render\Components\SkyBox.h" />
     <ClInclude Include="source\include\Render\Components\Sprite.h" />

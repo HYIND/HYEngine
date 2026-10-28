@@ -380,7 +380,7 @@ inline bool PropertiesHelper::DrawComponent<RenderLight>(RenderLight& light)
 }
 
 template<>
-inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, ProjectManager* assetManager)
+inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel& comp, ProjectManager* assetManager)
 {
 	if (!comp.model)
 	{
@@ -413,7 +413,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 	drawAssetPath("StaticModel", comp.model->GetAssetGUID());
 
 	bool anyChanged = false;
-	anyChanged |= DrawPropertyField<RenderModel>("Visible", &comp.visible);
+	anyChanged |= DrawPropertyField<RenderStaticModel>("Visible", &comp.visible);
 
 	struct MaterialEdit
 	{
