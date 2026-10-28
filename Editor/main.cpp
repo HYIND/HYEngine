@@ -200,9 +200,10 @@ static void glfw_char_callback(GLFWwindow* /*window*/, unsigned int codepoint)
 	g_editorInputContext->PushTextInput(utf8);
 }
 
-// 滚轮：编辑器自己的 ImGui 由后端处理，引擎 UI 需要我们自己转一份。
 static void glfw_scroll_callback(GLFWwindow* /*window*/, double /*xoffset*/, double yoffset)
 {
+	ImGui::GetIO().AddMouseWheelEvent(0.0f, static_cast<float>(yoffset));
+
 	if (!ShouldForwardInputToEngine() || g_editorInputContext == nullptr)
 		return;
 
