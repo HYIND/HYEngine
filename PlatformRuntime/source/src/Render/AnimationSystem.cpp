@@ -3,6 +3,7 @@
 #include "Render/Systems/AnimationSystem.h"
 #include "ECSCore/World.h"
 #include "CommonEventDef.h"
+#include "Render/Components/SkeletonPose.h"
 
 void AnimationSystem::onAttach(World& world)
 {
@@ -41,6 +42,8 @@ void AnimationSystem::postUpdate(float deltaTime)
 	for (auto& entity : entities)
 	{
 		bool isAnyAniPlaying = false;
+		const std::vector<glm::mat4>* palette = nullptr;
+
 		auto& aniGroup = entity.getComponent<SkeletonAnimatorGroup>();
 		for (auto& [name, ani_data] : aniGroup.animatorDatas)
 		{
@@ -60,40 +63,27 @@ void AnimationSystem::postUpdate(float deltaTime)
 			}
 
 			ani_data->animator->SetTime((float)ani_data->curPlayTimeMs / 1000.f);
-			if (ani_data->renderView.matTripleBuffer)
-			{
-				auto& triMats = ani_data->renderView.matTripleBuffer->acquireWriteBuffer();
-				auto& mats = ani_data->animator->GetFinalBoneMatrices();
-				if (mats.size() != triMats.size())
-					triMats.resize(mats.size());
+			if (!palette)
+				palette = &ani_data->animator->GetFinalBoneMatrices();
 
-				for (int i = 0; i < mats.size(); i++)
-					triMats[i] = mats[i];
-
-				ani_data->renderView.matTripleBuffer->submitWriteBuffer();
-			}
 			isAnyAniPlaying = true;
 		}
 
 		if (!isAnyAniPlaying && aniGroup.ExistAnimator("Static"))
 		{
 			auto ani_data = aniGroup.GetAnimatorData("Static");
-			if (!ani_data)
+			if (!ani_data || !ani_data->animator)
 				continue;
 
 			ani_data->animator->SetTime(0.f);
-			if (ani_data->renderView.matTripleBuffer)
-			{
-				auto& triMats = ani_data->renderView.matTripleBuffer->acquireWriteBuffer();
-				auto& mats = ani_data->animator->GetFinalBoneMatrices();
-				if (mats.size() != triMats.size())
-					triMats.resize(mats.size());
-
-				for (int i = 0; i < mats.size(); i++)
-					triMats[i] = mats[i];
-
-				ani_data->renderView.matTripleBuffer->submitWriteBuffer();
-			}
+			palette = &ani_data->animator->GetFinalBoneMatrices();
 		}
+
+		auto& pose = entity.hasComponent<SkeletonPose>() ? entity.getComponent<SkeletonPose>() : entity.addComponent<SkeletonPose>();
+		if (palette)
+			pose.palette.matrices = *palette;
+		else
+			pose.palette.matrices.clear();
+
 	}
 }

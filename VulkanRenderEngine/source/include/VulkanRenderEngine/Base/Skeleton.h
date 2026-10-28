@@ -21,6 +21,7 @@ struct SkeletonNode
 	std::string name;
 	std::string path;
 	glm::mat4 bindLocalTransform{ 1.0f };
+	glm::mat4 inverseBindTransform{ 1.0f };
 };
 
 struct Skeleton
@@ -35,3 +36,17 @@ struct Skeleton
 
 	std::shared_ptr<Skeleton> Clone() const;
 };
+
+struct aiNode;
+
+
+struct SkeletonIndex
+{
+	Skeleton skeleton;
+	std::unordered_map<const aiNode*, SkeletonNodeIndex> nodeIds;
+};
+
+SkeletonIndex BuildSkeletonIndex(aiNode* rootNode);
+
+// 单独加载一份骨架资产。骨骼名可能重复，所以蒙皮的逆绑定矩阵按 aiNode 指针取。
+std::shared_ptr<Skeleton> LoadSkeleton(const std::string& path);

@@ -34,7 +34,7 @@ private:
 	bool SetupStaticBufferData(
 		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		GraphicsBindingRecord& binding,
-		std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
+		std::vector<VKRenderObjectData::SceneStaticRenderData::MeshItem>& items,
 		VKRenderObjectData::RenderIndex& renderIndex,
 		std::vector<IndirectDrawCommand>& oneSideCommands,
 		std::vector<IndirectDrawCommand>& twoSideCommands

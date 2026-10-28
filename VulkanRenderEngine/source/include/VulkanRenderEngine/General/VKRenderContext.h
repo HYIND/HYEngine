@@ -5,23 +5,13 @@
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/Base/Animator.h"
 #include "VulkanRenderEngine/Base/StaticModel.h"
+#include "VulkanRenderEngine/Base/SkinnedModel.h"
 #include "VulkanRenderEngine/Base/Effect.h"
 #include "Helper/TripleBuffer.h"
 
 namespace VKRenderContext
 {
-	struct AnimatorView
-	{
-		using MatDatas = std::vector<glm::mat4>;
-		using MatDatasTripleBuffer = TripleBuffer<MatDatas>;
 
-		std::shared_ptr<MatDatasTripleBuffer> matTripleBuffer = std::make_shared<MatDatasTripleBuffer>();
-		std::shared_ptr<MatDatas> prevRenderMats = std::make_shared<MatDatas>();
-	};
-
-	// 物体变换历史：只有"帧真正被提交渲染"时才由渲染线程写一次。
-	// 同一物体的多个 item（不透明/透明、多个 mesh）共享这一份，
-	// 所以用 committedFrame 保证一帧只推进一次。
 	struct TransformHistory
 	{
 		glm::mat4 prevTransform{ 1.0f };
@@ -33,31 +23,37 @@ namespace VKRenderContext
 	{
 	};
 
-	struct BaseModelRenderData :public BaseRenderData
+	struct ModelRenderData :public BaseRenderData
 	{
 		glm::mat4 transform;
-		std::shared_ptr<StaticModel> model;
-		std::vector<AnimatorView> animatorViews;
-	};
-
-	struct SceneModelRenderData :public BaseModelRenderData
-	{
 		std::shared_ptr<TransformHistory> transformHistory;
-	};
-
-	struct SceneEffectRenderData :public BaseRenderData
-	{
-		std::shared_ptr<BaseEffectProperties> properties;
-	};
-
-	struct FirstPersonRenderData :public BaseModelRenderData
-	{
-		glm::mat4 cameraView;
 	};
 
 	struct BaseLightData :public BaseRenderData
 	{
 		bool renderCube;
+	};
+
+	struct EffectRenderData :public BaseRenderData
+	{
+		std::shared_ptr<BaseEffectProperties> properties;
+	};
+
+	struct StaticModelRenderData :public ModelRenderData
+	{
+		std::shared_ptr<StaticModel> model;
+	};
+
+	struct BonePalette
+	{
+		std::vector<glm::mat4> matrices;
+	};
+
+	struct SkinnedModelRenderData :public ModelRenderData
+	{
+		std::shared_ptr<SkinnedModel> model;
+		// 每帧在 RenderSystem 里新建一份，之后整条链共享同一个指针
+		std::shared_ptr<BonePalette> palette;
 	};
 
 	struct DirLightRenderData :public BaseLightData
@@ -78,10 +74,10 @@ namespace VKRenderContext
 	enum class RenderContextType
 	{
 		StaticModel,
+		SkinnedModel,
 		DirLight,
 		PointLight,
 		SpotLight,
-		FirstPersonModel,
 		Effect
 	};
 

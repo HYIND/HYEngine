@@ -1183,13 +1183,13 @@ void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 
     resolve(renderData.opaqueMesh);
     resolve(renderData.transparentMesh);
-    resolve(renderData.opaqueSkinnedModel);
-    resolve(renderData.transparentSkinnedMesh);
+    resolve(state.objects.sceneSkinnedRenderData.opaqueSkinnedMesh);
+    resolve(state.objects.sceneSkinnedRenderData.transparentSkinnedMesh);
 
     commit(renderData.opaqueMesh);
     commit(renderData.transparentMesh);
-    commit(renderData.opaqueSkinnedModel);
-    commit(renderData.transparentSkinnedMesh);
+    commit(state.objects.sceneSkinnedRenderData.opaqueSkinnedMesh);
+    commit(state.objects.sceneSkinnedRenderData.transparentSkinnedMesh);
 }
 
 void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
@@ -1235,37 +1235,6 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 
     {
         auto& items = state->objects.sceneRenderData.transparentMesh;
-        for (auto& item : items)
-        {
-            auto& material = item.meshinfo.material;
-            auto& mesh = item.meshinfo.mesh;
-
-            if (material->GetNeedUpdateIndirectDraw())
-                willUpdateMaterials.insert(material.get());
-            if (mesh->GetNeedUpdateIndirectDraw())
-                willUpdateMeshs.insert(mesh.get());
-        }
-    }
-
-    {
-        auto& items = state->objects.sceneRenderData.opaqueSkinnedModel;
-        for (auto& item : items)
-        {
-            for (auto& info : item.models)
-            {
-                auto& material = info.material;
-                auto& mesh = info.mesh;
-
-                if (material->GetNeedUpdateIndirectDraw())
-                    willUpdateMaterials.insert(material.get());
-                if (mesh->GetNeedUpdateIndirectDraw())
-                    willUpdateMeshs.insert(mesh.get());
-            }
-        }
-    }
-
-    {
-        auto& items = state->objects.sceneRenderData.transparentSkinnedMesh;
         for (auto& item : items)
         {
             auto& material = item.meshinfo.material;

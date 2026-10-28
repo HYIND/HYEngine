@@ -1,4 +1,4 @@
-﻿#include "Render/Systems/RenderSystem.h"
+#include "Render/Systems/RenderSystem.h"
 #include "Components/UIView.h"
 #include "Render/Systems/ParticleSystem.h"
 #include "CommonComponent.h"
@@ -143,12 +143,11 @@ void RenderSystem::postUpdate(float deltaTime)
 		{
 			Entity maincamera = entities[0];
 
-			tasks.push_back(_threadPool.submit([&] {processModel(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {processLight(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {processParticle(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {processLaserBeam(framebuffer3D, maincamera); }));
-			//tasks.push_back(_threadPool.submit([&] {processFirstPersonVisual(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {processSkybox(framebuffer3D, maincamera); }));
+			tasks.push_back(_threadPool.submit([&] {ProcessModel(framebuffer3D, maincamera); }));
+			tasks.push_back(_threadPool.submit([&] {ProcessLight(framebuffer3D, maincamera); }));
+			tasks.push_back(_threadPool.submit([&] {ProcessParticle(framebuffer3D, maincamera); }));
+			tasks.push_back(_threadPool.submit([&] {ProcessLaserBeam(framebuffer3D, maincamera); }));
+			tasks.push_back(_threadPool.submit([&] {ProcessSkybox(framebuffer3D, maincamera); }));
 			tasks.push_back(_threadPool.submit([&] {SyncGLCamera(framebuffer3D, maincamera); }));
 		}
 	}
@@ -157,16 +156,16 @@ void RenderSystem::postUpdate(float deltaTime)
 	auto framebuffer2D = triBuffer2D ? triBuffer2D->acquireWriteBuffer() : nullptr;
 	if (framebuffer2D)
 	{
-		tasks.push_back(std::move(_threadPool.submit([&] {processSprite(framebuffer2D); })));
-		tasks.push_back(std::move(_threadPool.submit([&] {processGIFAnimation(framebuffer2D); })));
-		tasks.push_back(std::move(_threadPool.submit([&] {processDebugLines(framebuffer2D); })));
+		tasks.push_back(std::move(_threadPool.submit([&] {ProcessSprite(framebuffer2D); })));
+		tasks.push_back(std::move(_threadPool.submit([&] {ProcessGIFAnimation(framebuffer2D); })));
+		tasks.push_back(std::move(_threadPool.submit([&] {ProcessDebugLines(framebuffer2D); })));
 	}
 
 	auto triBufferUI = _triBufferUI;
 	auto framebufferUI = triBufferUI ? triBufferUI->acquireWriteBuffer() : nullptr;
 	if (framebufferUI)
 	{
-		tasks.push_back(std::move(_threadPool.submit([&] {processUI(framebufferUI); })));
+		tasks.push_back(std::move(_threadPool.submit([&] {ProcessUI(framebufferUI); })));
 	}
 
 	if (!tasks.empty())
@@ -185,7 +184,7 @@ void RenderSystem::postUpdate(float deltaTime)
 		triBufferUI->submitWriteBuffer();
 }
 
-void RenderSystem::processUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer)
+void RenderSystem::ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer)
 {
 	if (!framebuffer)
 		return;
@@ -215,7 +214,7 @@ void RenderSystem::pushDebugLine(const Line2& line)
 	_DebugLines.push_back(line);
 }
 
-void RenderSystem::processSprite(std::shared_ptr<Render::Render2DFrameData> framebuffer)
+void RenderSystem::ProcessSprite(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
 	auto entities = m_world->getViewWith<Transform2D, Sprite>();
 
@@ -252,7 +251,7 @@ void RenderSystem::processSprite(std::shared_ptr<Render::Render2DFrameData> fram
 	framebuffer->D2D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer)
+void RenderSystem::ProcessGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
 	auto entities = m_world->getViewWith<Transform2D, GIFAnimator>();
 	if (entities.empty())
@@ -295,7 +294,7 @@ void RenderSystem::processGIFAnimation(std::shared_ptr<Render::Render2DFrameData
 	framebuffer->D2D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer)
+void RenderSystem::ProcessDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
 	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
 	temp.reserve(_DebugLines.size());
@@ -316,35 +315,21 @@ void RenderSystem::processDebugLines(std::shared_ptr<Render::Render2DFrameData> 
 	framebuffer->D2D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processModel(std::shared_ptr<Render3DFrameData> framebuffer, Entity maincamera)
+void RenderSystem::ProcessStaticModel(std::shared_ptr<Render3DFrameData> framebuffer, Entity maincamera)
 {
-	auto entities = m_world->getEntitiesWith<Transform, RenderStaticModel>();
-	auto& cameraComponent = maincamera.getComponent<CameraComponent>();
-
 	auto view = m_world->getViewWith<Transform, RenderStaticModel>();
 	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
-	temp.reserve(entities.size());
+	temp.reserve(view.size());
 	for (auto [entity, transform, renderModel] : view)
 	{
 		if (!renderModel.visible || !renderModel.model) continue;
 
-		auto renderdata = std::make_shared<VKRenderContext::SceneModelRenderData>();
+		auto renderdata = std::make_shared<VKRenderContext::StaticModelRenderData>();
 
 		renderdata->transform = transform.GetMatrix() * renderModel.trans;
 		renderdata->transformHistory = renderModel.transformHistory;
 
 		renderdata->model = renderModel.model;
-
-		if (entity.hasComponent<SkeletonAnimatorGroup>())
-		{
-			auto& animatorGroup = entity.getComponent<SkeletonAnimatorGroup>();
-			for (auto& [name, anidata] : animatorGroup.animatorDatas)
-			{
-				if (!anidata || !anidata->animator || !anidata->enable)
-					continue;
-				renderdata->animatorViews.push_back(anidata->renderView);
-			}
-		}
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
 		context->type = VKRenderContext::RenderContextType::StaticModel;
@@ -356,7 +341,50 @@ void RenderSystem::processModel(std::shared_ptr<Render3DFrameData> framebuffer, 
 	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processLight(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+void RenderSystem::ProcessModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+{
+	ProcessStaticModel(framebuffer, maincamera);
+	ProcessSkinnedModel(framebuffer, maincamera);
+}
+
+void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+{
+	auto view = m_world->getViewWith<Transform, RenderSkinnedModel>();
+	if (view.empty())
+		return;
+
+	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
+	temp.reserve(view.size());
+	for (auto [entity, transform, renderModel] : view)
+	{
+		if (!renderModel.visible || !renderModel.model)
+			continue;
+
+		auto renderdata = std::make_shared<VKRenderContext::SkinnedModelRenderData>();
+
+		renderdata->transform = transform.GetMatrix() * renderModel.trans;
+		renderdata->transformHistory = renderModel.transformHistory;
+		renderdata->model = renderModel.model;
+
+		if (entity.hasComponent<SkeletonPose>())
+		{
+			auto& pose = entity.getComponent<SkeletonPose>();
+			if (!pose.palette.matrices.empty())
+				renderdata->palette = std::make_shared<VKRenderContext::BonePalette>(pose.palette);
+		}
+
+		auto context = std::make_shared<VKRenderContext::RenderContext>();
+		context->type = VKRenderContext::RenderContextType::SkinnedModel;
+		context->data = renderdata;
+
+		temp.emplace_back(std::move(context));
+	}
+
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->Scene3D_Contexts.append_range(temp);
+}
+
+void RenderSystem::ProcessLight(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
 {
 	auto views = m_world->getViewWith<Transform, RenderLight>();
 	auto& cameraComponent = maincamera.getComponent<CameraComponent>();
@@ -449,7 +477,7 @@ void RenderSystem::processLight(std::shared_ptr<Render::Render3DFrameData> frame
 	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processParticle(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+void RenderSystem::ProcessParticle(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
 {
 	auto particleSystem = m_world->getSystem<ParticleSystem>();
 	if (!particleSystem)
@@ -463,7 +491,7 @@ void RenderSystem::processParticle(std::shared_ptr<Render::Render3DFrameData> fr
 		if (!particle || !particle->visible || !particle->properties)
 			continue;
 
-		auto renderdata = std::make_shared<VKRenderContext::SceneEffectRenderData>();
+		auto renderdata = std::make_shared<VKRenderContext::EffectRenderData>();
 		renderdata->properties = particle->properties->Clone();
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -476,7 +504,7 @@ void RenderSystem::processParticle(std::shared_ptr<Render::Render3DFrameData> fr
 	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
-void RenderSystem::processLaserBeam(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+void RenderSystem::ProcessLaserBeam(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
 {
 	auto views = m_world->getViewWith<LaserBeamEmitter, Transform>();
 	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
@@ -486,7 +514,7 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::Render3DFrameData> f
 		if (!emitter.visible || !emitter.visible || !emitter.properties)
 			continue;
 
-		auto renderdata = std::make_shared<VKRenderContext::SceneEffectRenderData>();
+		auto renderdata = std::make_shared<VKRenderContext::EffectRenderData>();
 		renderdata->properties = emitter.properties;
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -499,54 +527,7 @@ void RenderSystem::processLaserBeam(std::shared_ptr<Render::Render3DFrameData> f
 	framebuffer->Scene3D_Contexts.append_range(temp);
 }
 
-//void RenderSystem::processFirstPersonWeaponVisual(std::shared_ptr<Render::Render3DFrameData>& framebuffer, Entity& entity)
-//{
-//	if (!entity.hasComponent<WeaponOwner>())
-//		return;
-//
-//	auto& weaponOwner = entity.getComponent<WeaponOwner>();
-//	auto curWeapon = weaponOwner.getCurrentWeapon();
-//	if (!curWeapon)
-//		return;
-//
-//	auto* fpsModel = curWeapon.tryGetComponent<FirstPersonRenderModel>();
-//	if (!fpsModel || !fpsModel->model)
-//		return;
-//
-//
-//	auto renderdata = std::make_shared<VKRenderContext::FirstPersonRenderData>();
-//	renderdata->model = fpsModel->model;
-//	renderdata->cameraView = fpsModel->cameraView;
-//
-//	if (auto* aniGroup = curWeapon.tryGetComponent<SkeletonAnimatorGroup>())
-//	{
-//		bool isAnyAniPlaying = false;
-//		for (auto& [name, anidata] : aniGroup->animatorDatas)
-//		{
-//			if (!anidata || !anidata->animator || !anidata->enable)
-//				continue;
-//
-//			renderdata->animatorViews.push_back(anidata->renderView);
-//			isAnyAniPlaying = true;
-//		}
-//
-//		if (!isAnyAniPlaying && aniGroup->ExistAnimator("Static"))
-//		{
-//			if (auto anidata = aniGroup->GetAnimatorData("Static"))
-//			{
-//				renderdata->animatorViews.push_back(anidata->renderView);
-//			}
-//		}
-//	}
-//
-//	auto context = std::make_shared<VKRenderContext::RenderContext>();
-//	context->type = VKRenderContext::RenderContextType::FirstPersonModel;
-//	context->data = renderdata;
-//
-//	framebuffer->Scene3D_Contexts.emplace_back(context);
-//}
-
-void RenderSystem::processSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+void RenderSystem::ProcessSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
 {
 	auto view = m_world->getViewWith<SkyBox>();
 	if (view.empty())

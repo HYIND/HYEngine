@@ -2,6 +2,7 @@
 
 #include "ModelBase.h"
 #include "SkinnedMesh.h"
+#include "Skeleton.h"
 #include "Material.h"
 
 struct SkinnedMeshInfo
@@ -10,18 +11,11 @@ struct SkinnedMeshInfo
 	std::shared_ptr<Material> material;
 };
 
-class StaticModel :public ModelBase
+class SkinnedModel :public ModelBase
 {
-private:
-	struct LoadedTexture {
-		std::shared_ptr<Texture2D> tex;
-		std::string path;
-		TextureConfig config;
-	};
-
 public:
-	StaticModel(const std::string& path);
-	StaticModel();
+	SkinnedModel(const std::string& path);
+	SkinnedModel();
 
 	void AddMesh(std::shared_ptr<SkinnedMesh>& mesh, std::shared_ptr<Material> material = nullptr);
 	std::vector<SkinnedMeshInfo>& GetMeshInfos();
@@ -41,14 +35,14 @@ public:
 		CloneConfig(bool cloneMesh, bool cloneMaterial)
 			:cloneMesh(cloneMesh), cloneMaterial(cloneMaterial) {}
 	};
-	std::shared_ptr<StaticModel> Clone(const CloneConfig& config = {});
-	std::shared_ptr<StaticModel> Clone(bool clonemesh, bool clonematerial);
+	std::shared_ptr<SkinnedModel> Clone(const CloneConfig& config = {});
+	std::shared_ptr<SkinnedModel> Clone(bool clonemesh, bool clonematerial);
 
 private:
 	void LoadModel(std::string const& path);
-	void ProcessNode(aiNode* node, const aiScene* scene);
+	void ProcessNode(aiNode* node, const aiScene* scene, const SkeletonIndex& index);
 
-	SkinnedMeshInfo ProcessMesh(aiMesh* mesh, const aiScene* scene);
+	SkinnedMeshInfo ProcessMesh(aiMesh* mesh, const aiScene* scene, const SkeletonIndex& index);
 
 private:
 	std::vector<SkinnedMeshInfo> _meshes;

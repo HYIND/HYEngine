@@ -818,6 +818,52 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
             return true;
         }));
 
+    result.push_back(GenerateComponentCodec<RenderSkinnedModel>(
+        "engine.render_skinned_model",
+        "Render SkinnedModel",
+        [](const RenderSkinnedModel& renderModel) {
+            Json modelGuid = nullptr;
+            if (renderModel.model)
+            {
+                if (renderModel.model->GetAssetGUID().empty())
+                    throw std::runtime_error("RenderSkinnedModel has no asset GUID");
+                modelGuid = renderModel.model->GetAssetGUID();
+            }
+
+            return Json{
+                { "enabled", renderModel.visible },
+                { "trans", EncodeMat4(renderModel.trans) },
+                { "modelGuid", std::move(modelGuid) }
+            };
+        },
+        [](RenderSkinnedModel& renderModel, const Json& data) {
+            if (!data.is_object()
+                || !data.contains("enabled") || !data["enabled"].is_boolean()
+                || !data.contains("trans")
+                || !data.contains("modelGuid"))
+                return false;
+
+            const auto& modelGuid = data["modelGuid"];
+            if (!modelGuid.is_null() && !modelGuid.is_string())
+                return false;
+            if (!DecodeMat4(data["trans"], renderModel.trans))
+                return false;
+
+            renderModel.visible = data["enabled"].get<bool>();
+
+            if (modelGuid.is_null())
+                renderModel.model.reset();
+            else
+            {
+                const auto guid = modelGuid.get<std::string>();
+                if (guid.empty())
+                    return false;
+                renderModel.model = std::make_shared<SkinnedModel>();
+                renderModel.model->SetAssetGUID(guid);
+            }
+            return true;
+        }));
+
     result.push_back(GenerateComponentCodec<RenderLight>(
         "engine.render_light",
         "RenderLight",

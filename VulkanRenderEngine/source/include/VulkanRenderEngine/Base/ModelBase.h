@@ -12,6 +12,112 @@
 #include <sstream>
 #include <vector>
 
+inline std::map<TextureType, TextureConfig> TextureConfigMap =
+{
+	// ========== 颜色类贴图（必须三线性，开启AF） ==========
+	{
+		TextureType::Albedo,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			true
+		}
+	},
+	{
+		TextureType::Emissive,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			true
+		}
+	},
+
+	{
+		TextureType::Normal,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			false
+		}
+	},
+	{
+		TextureType::Roughness,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			false
+		}
+	},
+	{
+		TextureType::Metallic,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			false
+		}
+	},
+	{
+		TextureType::MetallicRoughness,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			true,
+			false
+		}
+	},
+	{
+		TextureType::AO,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			false,
+			false
+		}
+	},
+
+	{
+		TextureType::Height,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			false,
+			false
+		}
+	},
+	{
+		TextureType::Opacity,
+		{
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerAddressMode::eClampToEdge,
+			vk::SamplerAddressMode::eClampToEdge,
+			false,
+			false
+		}
+	}
+};
+
 
 class ModelBase
 {

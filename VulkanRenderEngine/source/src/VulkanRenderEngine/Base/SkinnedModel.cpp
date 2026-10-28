@@ -1,5 +1,5 @@
 #include "vkstdafx.h"
-#include "VulkanRenderEngine/Base/StaticModel.h"
+#include "VulkanRenderEngine/Base/SkinnedModel.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 
 #include <assimp/Importer.hpp>
@@ -17,156 +17,34 @@
 
 namespace fs = std::filesystem;
 
-static std::map<TextureType, TextureConfig> TextureConfigMap =
-{
-	// ========== 颜色类贴图（必须三线性，开启AF） ==========
-	{
-		TextureType::Albedo,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			true
-		}
-	},
-	{
-		TextureType::Emissive,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			true
-		}
-	},
-
-	{
-		TextureType::Normal,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::Roughness,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::Metallic,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::MetallicRoughness,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::AO,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			false,
-			false
-		}
-	},
-
-	{
-		TextureType::Height,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			false,
-			false
-		}
-	},
-	{
-		TextureType::Opacity,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eClampToEdge,
-			vk::SamplerAddressMode::eClampToEdge,
-			false,
-			false
-		}
-	}
-};
-
 inline std::string GetExt(const std::string& path)
 {
 	return fs::path(path).extension().string();
 }
 
 
-StaticModel::StaticModel(const std::string& path)
+SkinnedModel::SkinnedModel(const std::string& path)
 {
 	LoadModel(path);
 }
 
-StaticModel::StaticModel()
+SkinnedModel::SkinnedModel()
 {}
 
-void StaticModel::AddMesh(std::shared_ptr<StaticMesh>& mesh, std::shared_ptr<Material> material)
+void SkinnedModel::AddMesh(std::shared_ptr<SkinnedMesh>& mesh, std::shared_ptr<Material> material)
 {
-	StaticMeshInfo info;
+	SkinnedMeshInfo info;
 	info.mesh = mesh;
 	info.material = material;
 	_meshes.push_back(std::move(info));
 }
 
-std::vector<StaticMeshInfo>& StaticModel::GetMeshInfos()
+std::vector<SkinnedMeshInfo>& SkinnedModel::GetMeshInfos()
 {
 	return _meshes;
 }
 
-AABB StaticModel::GetAABB()
-{
-	AABB aabb;
-	for (auto& info : _meshes)
-	{
-		auto& mesh = info.mesh;
-		if (!mesh)
-			continue;
-
-		auto meshaabb = mesh->GetAABB();
-		aabb.extend(meshaabb.min);
-		aabb.extend(meshaabb.max);
-	}
-	return aabb;
-}
-
-void StaticModel::MakeScale(const glm::vec3& scale)
+void SkinnedModel::MakeScale(const glm::vec3& scale)
 {
 	if (scale.x == 1.0f && scale.y == 1.0f && scale.z == 1.0f)
 		return;
@@ -193,7 +71,7 @@ void StaticModel::MakeScale(const glm::vec3& scale)
 	}
 }
 
-void StaticModel::MakeTranslate(const glm::vec3& trans)
+void SkinnedModel::MakeTranslate(const glm::vec3& trans)
 {
 	if (trans.x == 0.0f && trans.y == 0.0f && trans.z == 0.0f)
 		return;
@@ -222,7 +100,7 @@ void StaticModel::MakeTranslate(const glm::vec3& trans)
 	}
 }
 
-void StaticModel::MakeRotate(float angle, const glm::vec3& axis)
+void SkinnedModel::MakeRotate(float angle, const glm::vec3& axis)
 {
 	if (angle == 0.0f)
 		return;
@@ -251,7 +129,7 @@ void StaticModel::MakeRotate(float angle, const glm::vec3& axis)
 	}
 }
 
-void StaticModel::MakeTransform(const glm::mat4& mat)
+void SkinnedModel::MakeTransform(const glm::mat4& mat)
 {
 	if (mat == glm::mat4(1.0f))
 		return;
@@ -279,14 +157,14 @@ void StaticModel::MakeTransform(const glm::mat4& mat)
 	}
 }
 
-std::shared_ptr<StaticModel> StaticModel::Clone(bool clonemesh, bool clonematerial)
+std::shared_ptr<SkinnedModel> SkinnedModel::Clone(bool clonemesh, bool clonematerial)
 {
-	return Clone(StaticModel::CloneConfig(clonemesh, clonematerial));
+	return Clone(SkinnedModel::CloneConfig(clonemesh, clonematerial));
 }
 
-std::shared_ptr<StaticModel> StaticModel::Clone(const StaticModel::CloneConfig& config)
+std::shared_ptr<SkinnedModel> SkinnedModel::Clone(const SkinnedModel::CloneConfig& config)
 {
-	auto other = std::make_shared<StaticModel>();
+	auto other = std::make_shared<SkinnedModel>();
 	other->_assetGUID = _assetGUID;
 
 	if (config.cloneMaterial)
@@ -297,7 +175,7 @@ std::shared_ptr<StaticModel> StaticModel::Clone(const StaticModel::CloneConfig& 
 
 	for (auto& info : _meshes)
 	{
-		std::shared_ptr<StaticMesh> mesh;
+		std::shared_ptr<SkinnedMesh> mesh;
 		std::shared_ptr<Material> material;
 
 		if (info.mesh)
@@ -305,56 +183,51 @@ std::shared_ptr<StaticModel> StaticModel::Clone(const StaticModel::CloneConfig& 
 		if (info.material)
 			material = config.cloneMaterial ? info.material->Clone() : info.material;
 
-		other->_meshes.push_back(StaticMeshInfo{ mesh,material });
+		other->_meshes.push_back(SkinnedMeshInfo{ mesh,material });
 	}
 
 	return other;
 }
 
-void StaticModel::LoadModel(std::string const& path)
+void SkinnedModel::LoadModel(std::string const& path)
 {
 	std::string replace_path = path;
 	std::replace(replace_path.begin(), replace_path.end(), '\\', '/');
 	_filepath = path;
 
 	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(replace_path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
-	//const aiScene* scene = importer.ReadFile(replace_path, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
+	const aiScene* scene = importer.ReadFile(replace_path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace | aiProcess_PopulateArmatureData);
 
-	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) // if is Not Zero
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
 	{
 		std::cout << "ERROR::ASSIMP:: " << importer.GetErrorString() << std::endl;
 		return;
 	}
 
 	_directory = replace_path.substr(0, replace_path.find_last_of('/'));
-	bool hasSkinning = false;
-	for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
-	{
-		if (scene->mMeshes[meshIndex] && scene->mMeshes[meshIndex]->mNumBones > 0)
-		{
-			hasSkinning = true;
-			break;
-		}
-	}
 
-	ProcessNode(scene->mRootNode, scene);
+	// 没有任何骨骼的模型也照常加载：所有顶点都会停在 InvalidBoneID，
+	// 绑定上去就是普通静态网格，不用在第二套缓冲和两套 path 之间再分叉。
+	// 编号只在 BuildSkeletonIndex 里定义一次，骨架资产和蒙皮用同一张表
+	SkeletonIndex index = BuildSkeletonIndex(scene->mRootNode);
+
+	ProcessNode(scene->mRootNode, scene, index);
 }
 
-void StaticModel::ProcessNode(aiNode* node, const aiScene* scene)
+void SkinnedModel::ProcessNode(aiNode* node, const aiScene* scene, const SkeletonIndex& index)
 {
 	for (unsigned int i = 0; i < node->mNumMeshes; i++)
 	{
 		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-		_meshes.push_back(std::move(ProcessMesh(mesh, scene)));
+		_meshes.push_back(std::move(ProcessMesh(mesh, scene, index)));
 	}
 	for (unsigned int i = 0; i < node->mNumChildren; i++)
 	{
-		ProcessNode(node->mChildren[i], scene);
+		ProcessNode(node->mChildren[i], scene, index);
 	}
 }
 
-StaticMeshInfo StaticModel::ProcessMesh(aiMesh* mesh, const aiScene* scene)
+SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, const SkeletonIndex& index)
 {
 	// data to fill
 	std::vector<Vertex> vertices;
@@ -371,7 +244,7 @@ StaticMeshInfo StaticModel::ProcessMesh(aiMesh* mesh, const aiScene* scene)
 			vertex.Normal = AssimpGLMHelpers::GetGLMVec(mesh->mNormals[i]);
 		}
 
-		if (mesh->HasTextureCoords(0)) // does the mesh contain texture coordinates?
+		if (mesh->HasTextureCoords(0))
 		{
 			vertex.TexCoords.x = mesh->mTextureCoords[0][i].x;
 			vertex.TexCoords.y = mesh->mTextureCoords[0][i].y;
@@ -495,7 +368,93 @@ StaticMeshInfo StaticModel::ProcessMesh(aiMesh* mesh, const aiScene* scene)
 		material->SetTwoSided(twoSided != 0);
 	}
 
-	auto meshptr = std::make_shared<StaticMesh>(std::move(vertices), std::move(indices));
+	std::vector<SkinnedData> skinned(vertices.size());
+	for (auto& data : skinned)
+		data.SetVertexBoneDataToDefault();
 
-	return StaticMeshInfo{ meshptr,material };
+	uint32_t unresolvedBones = 0;
+	uint32_t byNameFallback = 0;
+	uint32_t overflowVertices = 0;
+	uint32_t unweightedVertices = 0;
+
+	if (mesh->mNumBones > 0)
+	{
+		for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
+		{
+			const aiBone* bone = mesh->mBones[boneIndex];
+			if (!bone)
+				continue;
+
+			SkeletonNodeIndex nodeIndex = SkeletonNode::InvalidIndex;
+			if (bone->mNode)
+			{
+				const auto it = index.nodeIds.find(bone->mNode);
+				if (it != index.nodeIds.end())
+					nodeIndex = it->second;
+			}
+
+			if (nodeIndex == SkeletonNode::InvalidIndex)
+			{
+				// 导入器没填 mNode 时的兜底：按名字查，重名会返回 InvalidIndex
+				nodeIndex = index.skeleton.FindUniqueNodeByName(bone->mName.C_Str());
+				if (nodeIndex != SkeletonNode::InvalidIndex)
+					++byNameFallback;
+			}
+
+			if (nodeIndex == SkeletonNode::InvalidIndex)
+			{
+				++unresolvedBones;
+				continue;
+			}
+
+			for (unsigned int i = 0; i < bone->mNumWeights; ++i)
+			{
+				const aiVertexWeight& weight = bone->mWeights[i];
+				if (weight.mVertexId >= vertices.size())
+					continue;
+
+				if (!skinned[weight.mVertexId].SetVertexBoneData(static_cast<BoneID>(nodeIndex), weight.mWeight))
+					++overflowVertices;
+			}
+		}
+	}
+
+	// 归一化：缺失的影响会让和小于 1，不归一化模型会被拉向原点
+	for (auto& data : skinned)
+	{
+		float sum = 0.0f;
+		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
+		{
+			if (data.m_BoneIDs[i] == SkinnedData::InvalidBoneID)
+				continue;
+			sum += data.m_Weights[i];
+		}
+
+		if (sum <= 0.0f)
+		{
+			++unweightedVertices;
+			continue;
+		}
+
+		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
+		{
+			if (data.m_BoneIDs[i] == SkinnedData::InvalidBoneID)
+				continue;
+			data.m_Weights[i] /= sum;
+		}
+	}
+
+	if (mesh->mNumBones > 0 && (unresolvedBones > 0 || overflowVertices > 0 || byNameFallback > 0 || unweightedVertices > 0))
+	{
+		std::cerr << "skinned mesh in " << _filepath
+			<< ": bones matched by name=" << byNameFallback
+			<< ", unresolved=" << unresolvedBones
+			<< ", vertices over " << GlobalConfig::Mesh_Max_Bone_Influence << " influences=" << overflowVertices
+			<< ", unweighted vertices=" << unweightedVertices
+			<< std::endl;
+	}
+
+	auto meshptr = std::make_shared<SkinnedMesh>(vertices, indices, skinned);
+
+	return SkinnedMeshInfo{ meshptr,material };
 }

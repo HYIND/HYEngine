@@ -1,6 +1,6 @@
 ﻿#include "Project/AssetAnalysisHelper.h"
 
-#include "VulkanRenderEngine/GlobalConfig.h"
+#include "VulkanRenderEngine/Base/ModelBase.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
@@ -18,115 +18,8 @@
 #include "VulkanRenderEngine/Base/AssimpGlmHelpers.h"
 
 #include <filesystem>
-#include <map>
 
 namespace fs = std::filesystem;
-
-static std::map<TextureType, TextureConfig> TextureConfigMap =
-{
-	// ========== 颜色类贴图（必须三线性，开启AF） ==========
-	{
-		TextureType::Albedo,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			true
-		}
-	},
-	{
-		TextureType::Emissive,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			true
-		}
-	},
-
-	{
-		TextureType::Normal,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::Roughness,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::Metallic,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::MetallicRoughness,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			true,
-			false
-		}
-	},
-	{
-		TextureType::AO,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			false,
-			false
-		}
-	},
-
-	{
-		TextureType::Height,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eRepeat,
-			vk::SamplerAddressMode::eRepeat,
-			false,
-			false
-		}
-	},
-	{
-		TextureType::Opacity,
-		{
-			vk::Filter::eLinear,
-			vk::Filter::eLinear,
-			vk::SamplerAddressMode::eClampToEdge,
-			vk::SamplerAddressMode::eClampToEdge,
-			false,
-			false
-		}
-	}
-};
 
 inline std::string GetExt(const std::string& path)
 {

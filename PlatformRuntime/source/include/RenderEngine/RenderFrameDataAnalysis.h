@@ -14,15 +14,16 @@ namespace Render
 		static void AnalysisRenderFrameData(std::shared_ptr<Render3DFrameData>& framedata, RenderState& state);
 
 	private:
-		static void processSceneModel(
+		static void ProcessStaticModel(
 			RenderState& state,
-			VKRenderObjectData::SceneRenderData& renderData,
-			const std::shared_ptr<VKRenderContext::SceneModelRenderData>& data
+			VKRenderObjectData::SceneStaticRenderData& renderData,
+			const std::shared_ptr<VKRenderContext::StaticModelRenderData>& data
 		);
-		static void processFirstPersonModel(
+		static void ProcessSkinnedModel(
 			RenderState& state,
-			VKRenderObjectData::FirstPersonRenderData& renderData,
-			const std::shared_ptr<VKRenderContext::FirstPersonRenderData>& data);
+			VKRenderObjectData::SceneSkinnedRenderData& renderData,
+			const std::shared_ptr<VKRenderContext::SkinnedModelRenderData>& data
+		);
 	};
 
 }
