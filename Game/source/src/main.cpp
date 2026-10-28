@@ -484,7 +484,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			{
 				if (auto input = GameEngine::Instance().Input())
 				{
-					input->AddMouseDelta(float(mouseX - lastMouseX), float(mouseY - lastMouseY));
+					input->SetMouseDelta(float(mouseX - lastMouseX), float(mouseY - lastMouseY));
 					input->SetMousePosition(float(mouseX), float(mouseY));
 				}
 			}

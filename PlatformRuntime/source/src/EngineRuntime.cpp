@@ -606,7 +606,8 @@ void EngineRuntime::CloseScene()
 
 void EngineRuntime::OnUiEvents(const std::vector<UI::UiEvent>& events)
 {
-	m_messages.Post(std::move(events));
+	if (!events.empty())
+		m_messages.Post(std::move(events));
 }
 
 void EngineRuntime::PumpUiEvents()

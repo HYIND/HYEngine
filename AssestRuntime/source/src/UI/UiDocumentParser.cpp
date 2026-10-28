@@ -11,12 +11,12 @@
 namespace UI
 {
 	// 节点名 -> 节点 id（重名取第一个），宿主按名字塞列表/文本行时用。
-	static void CollectNodeIds(const UiNode &node, std::unordered_map<std::string, int> &outIds)
+	static void CollectNodeIds(const UiNode& node, std::unordered_map<std::string, int>& outIds)
 	{
 		if (!node.name.empty() && outIds.find(node.name) == outIds.end())
 			outIds.emplace(node.name, node.id);
 
-		for (const auto &child : node.children)
+		for (const auto& child : node.children)
 			CollectNodeIds(child, outIds);
 	}
 
@@ -33,7 +33,7 @@ namespace UI
 		}
 
 		// 处理 "." 与 ".."，产出不带 "./" 前缀的规范路径。
-		std::string NormalizePath(const std::string &path)
+		std::string NormalizePath(const std::string& path)
 		{
 			std::string forward = ToForwardSlashes(path);
 			const bool absolute = !forward.empty() && forward.front() == '/';
@@ -67,7 +67,7 @@ namespace UI
 			return result;
 		}
 
-		std::string DirName(const std::string &path)
+		std::string DirName(const std::string& path)
 		{
 			const std::string normalized = NormalizePath(path);
 			const size_t slash = normalized.find_last_of('/');
@@ -76,7 +76,7 @@ namespace UI
 			return normalized.substr(0, slash);
 		}
 
-		std::string JoinPath(const std::string &base, const std::string &relative)
+		std::string JoinPath(const std::string& base, const std::string& relative)
 		{
 			if (base.empty())
 				return NormalizePath(relative);
@@ -85,7 +85,7 @@ namespace UI
 
 		// ---------- 读取 ----------
 
-		bool ReadJsonFile(const std::string &path, Json &out, std::string &error)
+		bool ReadJsonFile(const std::string& path, Json& out, std::string& error)
 		{
 			std::ifstream ifs(ToForwardSlashes(path), std::ios::binary);
 			if (!ifs)
@@ -98,7 +98,7 @@ namespace UI
 			{
 				out = Json::parse(ifs, nullptr, true, true);
 			}
-			catch (const std::exception &ex)
+			catch (const std::exception& ex)
 			{
 				error = std::string("JSON 解析失败：") + path + "：" + ex.what();
 				return false;
@@ -108,14 +108,14 @@ namespace UI
 
 		// ---------- 字段读取 ----------
 
-		float ReadFloat(const Json &object, const char *key, float fallback)
+		float ReadFloat(const Json& object, const char* key, float fallback)
 		{
 			if (!object.is_object() || !object.contains(key) || !object[key].is_number())
 				return fallback;
 			return object[key].get<float>();
 		}
 
-		bool ReadVec4(const Json &value, Vec4 &out)
+		bool ReadVec4(const Json& value, Vec4& out)
 		{
 			if (!value.is_array() || value.size() < 3)
 				return false;
@@ -126,7 +126,7 @@ namespace UI
 			return true;
 		}
 
-		bool ReadPadding(const Json &value, Padding &out)
+		bool ReadPadding(const Json& value, Padding& out)
 		{
 			if (!value.is_object())
 				return false;
@@ -137,7 +137,7 @@ namespace UI
 			return true;
 		}
 
-		bool ReadSlice(const Json &value, Slice &out)
+		bool ReadSlice(const Json& value, Slice& out)
 		{
 			if (!value.is_object())
 				return false;
@@ -149,7 +149,7 @@ namespace UI
 		}
 
 		// 从一段样式的 "text" 子对象里读文本字段。
-		void ReadTextFields(const Json &text, StyleFields &fields)
+		void ReadTextFields(const Json& text, StyleFields& fields)
 		{
 			if (!text.is_object())
 				return;
@@ -178,7 +178,7 @@ namespace UI
 		}
 
 		// 从一段样式的 "background" 子对象里读背景字段。
-		void ReadBackgroundFields(const Json &background, StyleFields &fields)
+		void ReadBackgroundFields(const Json& background, StyleFields& fields)
 		{
 			if (!background.is_object())
 				return;
@@ -200,7 +200,7 @@ namespace UI
 				fields.cornerRadius = background["cornerRadius"].get<float>();
 		}
 
-		StyleFields ReadStyleFields(const Json &object)
+		StyleFields ReadStyleFields(const Json& object)
 		{
 			StyleFields fields;
 			if (!object.is_object())
@@ -220,13 +220,13 @@ namespace UI
 
 		// ---------- 文档 ----------
 
-		UiEvent ReadEvent(const Json &object, const char *key)
+		UiEvent ReadEvent(const Json& object, const char* key)
 		{
 			UiEvent event;
 			if (!object.is_object() || !object.contains(key) || !object[key].is_object())
 				return event;
 
-			const Json &value = object[key];
+			const Json& value = object[key];
 			if (value.contains("command") && value["command"].is_string())
 				event.command = value["command"].get<std::string>();
 			if (value.contains("legacyId") && value["legacyId"].is_number_integer())
@@ -235,7 +235,7 @@ namespace UI
 		}
 
 		// 节点自带的字段（texture / fit / color / textStyle）当作内联样式，优先级最高。
-		std::optional<StyleFields> ReadNodeInlineStyle(const Json &node)
+		std::optional<StyleFields> ReadNodeInlineStyle(const Json& node)
 		{
 			StyleFields fields;
 			bool any = false;
@@ -285,7 +285,7 @@ namespace UI
 		}
 
 		// 节点自带的 states 块：让它不依赖样式资产也能表达 hover/pressed。
-		std::map<std::string, StyleFields> ReadInlineStates(const Json &node)
+		std::map<std::string, StyleFields> ReadInlineStates(const Json& node)
 		{
 			std::map<std::string, StyleFields> states;
 			if (!node.contains("states") || !node["states"].is_object())
@@ -300,7 +300,7 @@ namespace UI
 			return states;
 		}
 
-		UiNode ParseNode(const Json &node)
+		UiNode ParseNode(const Json& node)
 		{
 			UiNode result;
 			if (node.contains("type") && node["type"].is_string())
@@ -316,7 +316,7 @@ namespace UI
 
 			if (node.contains("rect") && node["rect"].is_object())
 			{
-				const Json &rect = node["rect"];
+				const Json& rect = node["rect"];
 				result.rect.x = ReadFloat(rect, "x", 0.0f);
 				result.rect.y = ReadFloat(rect, "y", 0.0f);
 				result.rect.w = ReadFloat(rect, "w", 0.0f);
@@ -339,8 +339,8 @@ namespace UI
 			if (node.contains("showPercent") && node["showPercent"].is_boolean())
 				result.showPercent = node["showPercent"].get<bool>();
 
-	if (node.contains("rowHeight") && node["rowHeight"].is_number())
-		result.rowHeight = node["rowHeight"].get<float>();
+			if (node.contains("rowHeight") && node["rowHeight"].is_number())
+				result.rowHeight = node["rowHeight"].get<float>();
 			// 列表行能不能点：不写就是默认 true（可点），纯展示的列表写 false。
 			if (node.contains("selectable") && node["selectable"].is_boolean())
 				result.selectable = node["selectable"].get<bool>();
@@ -350,7 +350,7 @@ namespace UI
 			result.onClick = ReadEvent(node, "onClick");
 			if (node.contains("options") && node["options"].is_array())
 			{
-				for (const auto &option : node["options"])
+				for (const auto& option : node["options"])
 				{
 					if (!option.is_object())
 						continue;
@@ -378,14 +378,14 @@ namespace UI
 
 			if (node.contains("children") && node["children"].is_array())
 			{
-				for (const Json &child : node["children"])
+				for (const Json& child : node["children"])
 					result.children.push_back(ParseNode(child));
 			}
 
 			return result;
 		}
 
-		UiDocument ParseDocument(const Json &root, const std::string &sourcePath)
+		UiDocument ParseDocument(const Json& root, const std::string& sourcePath)
 		{
 			UiDocument document;
 			document.sourcePath = sourcePath;
@@ -416,7 +416,7 @@ namespace UI
 
 		// ---------- 样式 ----------
 
-		UiStyle ParseStyle(const Json &root, const std::string &sourcePath)
+		UiStyle ParseStyle(const Json& root, const std::string& sourcePath)
 		{
 			UiStyle style;
 			style.sourcePath = sourcePath;
@@ -438,11 +438,11 @@ namespace UI
 		}
 
 		// 引用解析：先按文档目录，再按工程基路径。
-		bool ResolveStylePath(const std::string &reference,
-			const std::string &documentPath,
-			const ResolveContext &context,
-			std::string &resolvedPath,
-			std::string &error)
+		bool ResolveStylePath(const std::string& reference,
+			const std::string& documentPath,
+			const ResolveContext& context,
+			std::string& resolvedPath,
+			std::string& error)
 		{
 			const std::string documentDirectory = DirName(documentPath);
 			const std::string candidates[2] = {
@@ -450,7 +450,7 @@ namespace UI
 				context.projectRoot.empty() ? std::string() : JoinPath(context.projectRoot, reference)
 			};
 
-			for (const std::string &candidate : candidates)
+			for (const std::string& candidate : candidates)
 			{
 				if (candidate.empty() || !context.exists)
 					continue;
@@ -463,18 +463,18 @@ namespace UI
 
 			std::ostringstream stream;
 			stream << "样式引用找不到：" << reference << "（文档 " << documentPath << "）；尝试过：";
-			for (const std::string &candidate : candidates)
+			for (const std::string& candidate : candidates)
 				stream << (candidate.empty() ? std::string("<跳过>") : candidate) << "  ";
 			error = stream.str();
 			return false;
 		}
 
 		// 递归加载样式并展开 extends：父在前，子覆盖。
-		std::shared_ptr<UiStyle> LoadStyle(const std::string &reference,
-			const std::string &documentPath,
-			const ResolveContext &context,
-			std::set<std::string> &visiting,
-			std::string &error)
+		std::shared_ptr<UiStyle> LoadStyle(const std::string& reference,
+			const std::string& documentPath,
+			const ResolveContext& context,
+			std::set<std::string>& visiting,
+			std::string& error)
 		{
 			std::string resolvedPath;
 			if (!ResolveStylePath(reference, documentPath, context, resolvedPath, error))
@@ -505,7 +505,7 @@ namespace UI
 				MergeFields(merged, style->base);
 				style->base = merged;
 
-				for (const auto &[stateName, fields] : parent->states)
+				for (const auto& [stateName, fields] : parent->states)
 				{
 					auto existing = style->states.find(stateName);
 					if (existing == style->states.end())
@@ -522,9 +522,9 @@ namespace UI
 			return style;
 		}
 
-		void ResolveNode(const UiNode &node,
-			const ParseResult &result,
-			ResolvedNodeStyle &out)
+		void ResolveNode(const UiNode& node,
+			const ParseResult& result,
+			ResolvedNodeStyle& out)
 		{
 			std::ostringstream description;
 
@@ -554,7 +554,7 @@ namespace UI
 			}
 
 			// 3) 节点内联状态覆盖样式里的同名状态
-			for (const auto &[stateName, stateFields] : node.inlineStates)
+			for (const auto& [stateName, stateFields] : node.inlineStates)
 			{
 				MergeFields(out.states[stateName], stateFields);
 				description << (description.tellp() > 0 ? " > " : "") << "inline:" << stateName;
@@ -568,7 +568,7 @@ namespace UI
 		}
 
 		// 把 bind.node（节点名）解析成节点 id：运行时按 id 取该节点的值。
-		static void ResolveBindings(UiNode &node, const std::unordered_map<std::string, int> &ids, std::string &error)
+		static void ResolveBindings(UiNode& node, const std::unordered_map<std::string, int>& ids, std::string& error)
 		{
 			if (node.bind && !node.bind->node.empty())
 			{
@@ -579,28 +579,28 @@ namespace UI
 					node.bind->targetId = it->second;
 			}
 
-			for (auto &child : node.children)
+			for (auto& child : node.children)
 				ResolveBindings(child, ids, error);
 		}
 
-		void AssignNodeIds(UiNode &node, int &nextId)
+		void AssignNodeIds(UiNode& node, int& nextId)
 		{
 			node.id = nextId++;
-			for (UiNode &child : node.children)
+			for (UiNode& child : node.children)
 				AssignNodeIds(child, nextId);
 		}
 
-		void ResolveNodeTree(const UiNode &node, ParseResult &result)
+		void ResolveNodeTree(const UiNode& node, ParseResult& result)
 		{
 			ResolvedNodeStyle resolvedStyle;
 			ResolveNode(node, result, resolvedStyle);
 			result.resolved[&node] = resolvedStyle;
 
-			for (const UiNode &child : node.children)
+			for (const UiNode& child : node.children)
 				ResolveNodeTree(child, result);
 		}
 
-		std::string FormatVec4(const Vec4 &value)
+		std::string FormatVec4(const Vec4& value)
 		{
 			char buffer[96];
 			std::snprintf(buffer, sizeof(buffer), "[%.2f,%.2f,%.2f,%.2f]", value.r, value.g, value.b, value.a);
@@ -614,10 +614,10 @@ namespace UI
 			return buffer;
 		}
 
-		void DumpNode(const UiNode &node,
-			const ParseResult &result,
+		void DumpNode(const UiNode& node,
+			const ParseResult& result,
 			int depth,
-			std::ostringstream &out)
+			std::ostringstream& out)
 		{
 			std::string indent(static_cast<size_t>(depth) * 2, ' ');
 
@@ -629,10 +629,10 @@ namespace UI
 			auto it = result.resolved.find(&node);
 			if (it != result.resolved.end())
 			{
-				const ResolvedNodeStyle &resolvedStyle = it->second;
+				const ResolvedNodeStyle& resolvedStyle = it->second;
 				out << "  <- " << resolvedStyle.sourceDescription;
 
-				const StyleFields &fields = resolvedStyle.effective;
+				const StyleFields& fields = resolvedStyle.effective;
 				if (fields.fontSize)
 					out << "  fontSize=" << FormatFloat(*fields.fontSize);
 				if (fields.color)
@@ -649,7 +649,7 @@ namespace UI
 				{
 					out << "  states[";
 					bool first = true;
-					for (const auto &[stateName, _] : resolvedStyle.states)
+					for (const auto& [stateName, _] : resolvedStyle.states)
 					{
 						if (!first)
 							out << ",";
@@ -667,12 +667,12 @@ namespace UI
 
 			out << "\n";
 
-			for (const UiNode &child : node.children)
+			for (const UiNode& child : node.children)
 				DumpNode(child, result, depth + 1, out);
 		}
 	}
 
-	ParseResult ParseDocumentFile(const std::string &filePath, const ResolveContext &context)
+	ParseResult ParseDocumentFile(const std::string& filePath, const ResolveContext& context)
 	{
 		ParseResult result;
 		const std::string documentPath = NormalizePath(filePath);
@@ -684,7 +684,7 @@ namespace UI
 		result.document = ParseDocument(json, documentPath);
 
 		// 先解析所有样式别名（文档 styles 表）
-		for (const auto &[alias, reference] : result.document.styleMap)
+		for (const auto& [alias, reference] : result.document.styleMap)
 		{
 			std::set<std::string> visiting;
 			std::string error;
@@ -708,8 +708,8 @@ namespace UI
 		return result;
 	}
 
-	bool ParseStyleFile(const std::string &filePath, const ResolveContext &context,
-		UiStyle &outStyle, std::string &error)
+	bool ParseStyleFile(const std::string& filePath, const ResolveContext& context,
+		UiStyle& outStyle, std::string& error)
 	{
 		std::set<std::string> visiting;
 		auto style = LoadStyle(filePath, std::string(), context, visiting, error);
@@ -720,7 +720,7 @@ namespace UI
 		return true;
 	}
 
-	std::string DumpResolved(const ParseResult &result)
+	std::string DumpResolved(const ParseResult& result)
 	{
 		std::ostringstream out;
 
@@ -733,7 +733,7 @@ namespace UI
 		if (!result.document.styleMap.empty())
 		{
 			out << "styles:\n";
-			for (const auto &[alias, reference] : result.document.styleMap)
+			for (const auto& [alias, reference] : result.document.styleMap)
 			{
 				out << "  " << alias << " -> " << reference;
 				auto it = result.styles.find(alias);
@@ -759,34 +759,34 @@ namespace UI
 
 namespace UI
 {
-	std::vector<std::string> CollectStyleReferences(const std::string &filePath)
+	std::vector<std::string> CollectStyleReferences(const std::string& filePath)
 	{
-	std::vector<std::string> references;
+		std::vector<std::string> references;
 
-	nlohmann::json root;
-	std::string error;
-	if (!ReadJsonFile(filePath, root, error))
-		return references;
+		nlohmann::json root;
+		std::string error;
+		if (!ReadJsonFile(filePath, root, error))
+			return references;
 
-	auto styles = root.find("styles");
-	if (styles == root.end() || !styles->is_object())
-		return references;
+		auto styles = root.find("styles");
+		if (styles == root.end() || !styles->is_object())
+			return references;
 
-	for (const auto &entry : styles->items())
-	{
-		if (!entry.value().is_string())
-			continue;
-		std::string reference = entry.value().get<std::string>();
-		if (reference.empty())
-			continue;
-		for (char &c : reference)
+		for (const auto& entry : styles->items())
 		{
-			if (c == '\\')
-				c = '/';
+			if (!entry.value().is_string())
+				continue;
+			std::string reference = entry.value().get<std::string>();
+			if (reference.empty())
+				continue;
+			for (char& c : reference)
+			{
+				if (c == '\\')
+					c = '/';
+			}
+			references.push_back(std::move(reference));
 		}
-		references.push_back(std::move(reference));
-	}
 
-	return references;
-}
+		return references;
+	}
 }
