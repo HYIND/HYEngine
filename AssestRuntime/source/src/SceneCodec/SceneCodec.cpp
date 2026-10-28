@@ -1,7 +1,7 @@
 #include "SceneCodec/SceneCodec.h"
 #include "Components/Script.h"
 #include "Render/Components/RenderModel.h"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 
 using namespace NComponentCodec;
 
@@ -138,7 +138,7 @@ bool SceneCodec::Serialize(World& world, const std::function<bool(Entity)>& incl
 bool SceneCodec::Deserialize(
 	World& world,
 	const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset,
-	const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset,
+	const std::function<std::shared_ptr<StaticModel>(const AssetGUID&)>& resolveModelAsset,
 	const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset) const
 {
 	const auto& codecs = GetComponentCodecs();
@@ -225,8 +225,8 @@ bool SceneCodec::Deserialize(
 				continue;
 
 			const bool hasOverrides = !renderModel->materialOverrideGUIDs.empty() || !renderModel->materialOverrideProperties.empty();
-			auto instanceModel = hasOverrides ? model->Clone(false, false, false) : std::move(model);
-			auto& meshInfos = instanceModel->getMeshInfos();
+			auto instanceModel = hasOverrides ? model->Clone(false, false) : std::move(model);
+			auto& meshInfos = instanceModel->GetMeshInfos();
 			for (const auto& [index, overrideGuid] : renderModel->materialOverrideGUIDs)
 			{
 				if (index >= meshInfos.size())

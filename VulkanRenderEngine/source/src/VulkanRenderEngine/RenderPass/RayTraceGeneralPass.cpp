@@ -80,7 +80,7 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		ssbo->WriteData(&padding, sizeof(padding), 0);
 		};
 
-	static auto getTriangleData = [](Mesh& mesh, std::vector<comp_Triangle>& triangles, std::vector<comp_Triangle_Extension>& triangleExts)
+	static auto getTriangleData = [](StaticMesh& mesh, std::vector<comp_Triangle>& triangles, std::vector<comp_Triangle_Extension>& triangleExts)
 		{
 			auto& vertices = mesh.GetVertices();
 			auto& indices = mesh.GetIndices();

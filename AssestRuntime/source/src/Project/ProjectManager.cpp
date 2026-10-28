@@ -18,7 +18,7 @@ static const std::map<AssetType, std::string> metaPerfix = {
 	{ AssetType::Texture,"Tex" },
 	{ AssetType::StaticMesh,"SM" },
 	{ AssetType::Material,"Mat" },
-	{ AssetType::Model,"Model" },
+	{ AssetType::StaticModel,"StaticModel" },
 	{ AssetType::Scene,"Scene" },
 	{ AssetType::Audio,"Au" },
 	{ AssetType::Script,"Script" },
@@ -313,7 +313,7 @@ bool ProjectManager::ImportModelAsset(const std::string& sourcePathStr, const st
 
 	AssetMeta meta;
 	meta.guid = GenerateGUID();
-	meta.type = AssetType::Model;
+	meta.type = AssetType::StaticModel;
 	meta.path = GenerateAssetMetaPath(assetPath.string(), meta.type);
 	meta.name = fs::path(meta.path).filename().string();
 

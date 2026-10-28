@@ -2,7 +2,7 @@
 
 #include "RenderEngine/D2DTools.h"
 #include "Helper/AudioTool.h"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
 #include "VulkanRenderEngine/Base/AnimationClip.h"
@@ -39,7 +39,7 @@ namespace ResName
 	const std::string skybox1 = "skybox1";
 	const std::string skybox2 = "skybox2";
 
-	//Model
+	//StaticModel
 	const std::string Quad = "Quad";
 	const std::string Cube = "Cube";
 	const std::string Sphere = "Sphere";
@@ -107,7 +107,7 @@ public:
 	ID2D1Bitmap* GetBitMapRes(const std::string& name);
 	GIFINFO* GetGIFRes(const std::string& name);
 	std::shared_ptr<AudioInfo> GetAudioRes(const std::string& name);
-	std::shared_ptr<Model> GetModelRes(const std::string& name);
+	std::shared_ptr<StaticModel> GetModelRes(const std::string& name);
 	std::shared_ptr<Texture2D> GetTexture2DRes(const std::string& name);
 	std::shared_ptr<TextureCube> GetTextureCubeRes(const std::string& name);
 	std::shared_ptr<AnimationClip> GetAnimationRes(const std::string& name);
@@ -119,7 +119,7 @@ private:
 	std::map <std::string, ID2D1Bitmap* > BitMapRes;
 	std::map <std::string, GIFINFO*> GIFRes;
 	std::map <std::string, std::shared_ptr<AudioInfo>> AUDIORes;
-	std::map <std::string, std::shared_ptr<Model>> ModelRes;
+	std::map <std::string, std::shared_ptr<StaticModel>> ModelRes;
 	std::map <std::string, std::shared_ptr<Texture2D>> Texture2DRes;
 	std::map <std::string, std::shared_ptr<TextureCube>> TextureCubeRes;
 	std::map <std::string, std::shared_ptr<AnimationClip>> AnimationRes;

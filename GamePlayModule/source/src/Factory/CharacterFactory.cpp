@@ -3,7 +3,7 @@
 #include "PlatformRuntimeComponents.h"
 #include "GamePlayComponents.h"
 
-Entity CharacterFactory::CreatePlayerCharacter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<Model> model)
+Entity CharacterFactory::CreatePlayerCharacter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<StaticModel> model)
 {
 	Entity character = world.createEntityWithTag<TagCharacter>();
 	character.addComponent<TagPlayer>();

@@ -297,7 +297,7 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 			auto asset = project->LoadAsset(guid);
 			return asset ? asset->AsScript() : nullptr;
 			};
-		auto resolveModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<Model> {
+		auto resolveModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<StaticModel> {
 			if (guid == "DefaultCube")
 				return RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
 			if (guid == "DefaultSphere")
@@ -311,15 +311,15 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 			auto asset = project->LoadAsset(guid);
 			if (!asset)
 				return nullptr;
-			if (meta->type == AssetType::Model)
-				return asset->AsModel();
+			if (meta->type == AssetType::StaticModel)
+				return asset->AsStaticModel();
 			if (meta->type != AssetType::StaticMesh)
 				return nullptr;
 
 			auto meshes = asset->AsStaticMesh();
 			if (meshes.empty())
 				return nullptr;
-			auto model = std::make_shared<Model>();
+			auto model = std::make_shared<StaticModel>();
 			for (auto& mesh : meshes)
 				model->AddMesh(mesh, std::make_shared<Material>());
 			model->SetAssetGUID(guid);

@@ -2981,7 +2981,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 	{
 		if (auto meshes = assetObject->AsStaticMesh(); !meshes.empty())
 		{
-			auto model = std::make_shared<Model>();
+			auto model = std::make_shared<StaticModel>();
 			for (auto mesh : meshes)
 				model->AddMesh(mesh, std::make_shared<Material>());
 			model->SetAssetGUID(meta.guid);
@@ -3028,15 +3028,15 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 					auto rModel = entity.tryGetComponent<RenderModel>();
 					if (!rModel || !rModel->model)
 						return;
-					if (rModel->model->getMeshInfos().size() == 1)
+					if (rModel->model->GetMeshInfos().size() == 1)
 					{
-						const auto& currentMaterial = rModel->model->getMeshInfos()[0].material;
+						const auto& currentMaterial = rModel->model->GetMeshInfos()[0].material;
 						if (material->GetAssetGUID().empty()
 							&& currentMaterial && !currentMaterial->GetAssetGUID().empty())
 							return;
 
-						auto instanceModel = rModel->model->Clone(false, false, false);
-						auto& meshInfos = instanceModel->getMeshInfos();
+						auto instanceModel = rModel->model->Clone(false, false);
+						auto& meshInfos = instanceModel->GetMeshInfos();
 						meshInfos[0].material = material;
 						rModel->model = std::move(instanceModel);
 						const auto& materialGuid = material->GetAssetGUID();
@@ -3056,9 +3056,9 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 		}
 		break;
 	}
-	case AssetType::Model:
+	case AssetType::StaticModel:
 	{
-		if (auto model = assetObject->AsModel())
+		if (auto model = assetObject->AsStaticModel())
 		{
 			auto entity = editorApp->Scene().CreateModelEntity(model);
 			if (!entity)

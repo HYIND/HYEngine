@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vkstdafx.h"
-#include "VulkanRenderEngine/Base/Mesh.h"
+#include "VulkanRenderEngine/Base/StaticMesh.h"
 #include "VulkanRenderEngine/Base/Material.h"
 #include "SegmentBufferManager.h"
 #include "GeneralSegmentBuffer.h"
@@ -54,10 +54,10 @@ class IndirectDrawManager
 public:
 	static std::shared_ptr<IndirectDrawManager> Instance();
 
-	// Mesh相关
-	void SetupMesh(Mesh& mesh);
-	void RetireMesh(Mesh& mesh);
-	bool GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta);
+	// StaticMesh相关
+	void SetupStaticMesh(StaticMesh& mesh);
+	void RetireStaticMesh(StaticMesh& mesh);
+	bool GetIndirectDrawMeta(StaticMesh& mesh, IndirectDrawMeta& meta);
 	std::shared_ptr<VertexBufferBlock> GetVertexBlock() const;
 	std::shared_ptr<IndexBufferBlock> GetIndexBlock() const;
 
@@ -74,7 +74,7 @@ public:
 	void WithMaterialWriteLock(const std::function<void()>& call);
 	void WithMeshMaterialWriteLock(const std::function<void()>& call);
 
-	void SetupMesh_LockFree(Mesh& mesh);
+	void SetupStaticMesh_LockFree(StaticMesh& mesh);
 	void SetupMaterial_LockFree(Material& material);
 
 	void WithMeshSharedLock(const std::function<void()>& call);
@@ -83,7 +83,7 @@ public:
 
 	bool GetMaterialIndex_LockFree(Material& material, uint64_t& index) const;
 	bool GetMaterialIndex_LockFree(Material& material, uint32_t& index) const;
-	bool GetIndirectDrawMeta_LockFree(Mesh& mesh, IndirectDrawMeta& meta);
+	bool GetIndirectDrawMeta_LockFree(StaticMesh& mesh, IndirectDrawMeta& meta);
 
 public:
 	void DeleteMesh(const std::string& uuid);
@@ -94,7 +94,7 @@ private:
 private:
 	SegmentBufferManager<VertexBufferSegmentBuffer, std::string> _VertexManager;
 	SegmentBufferManager<IndexBufferSegmentBuffer, std::string> _IndexManager;
-	mutable SharedLock _meshMutex;
+	mutable SharedLock _statiMeshMutex;
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _MaterialManager;
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _ShadowMaterialManager;

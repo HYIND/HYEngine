@@ -36,10 +36,8 @@ private:
 public:
 	LightShadowDepthPass(
 		const std::string& dirLightShadowStaticMeshVertexShaderPath,
-		const std::string& dirLightShadowSkinnedMeshVertexShaderPath,
 		const std::string& dirLightShadowFragmentShaderPath,
 		const std::string& pointLightShadowStaticMeshVertexShaderPath,
-		const std::string& pointLightShadowSkinnedMeshVertexShaderPath,
 		const std::string& pointLightShadowFragmentShaderPath
 	);
 	virtual ~LightShadowDepthPass();
@@ -93,15 +91,11 @@ private:
 		PreRecordData& data,
 		DynamicRenderInfo& renderInfo,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
-		std::shared_ptr<GraphicsPipeline>& shader_Skinned,
-		GraphicsBindingRecord& shader_StaticMesh_Binding,
-		GraphicsBindingRecord& shader_Skinned_Binding
+		GraphicsBindingRecord& shader_StaticMesh_Binding
 	);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthStaticMeshShader;
-	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthSkinnedShader;
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthStaticMeshShader;
-	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthSkinnedShader;
 	std::shared_ptr<ComputePipeline> _frustumCullingShader;
 };

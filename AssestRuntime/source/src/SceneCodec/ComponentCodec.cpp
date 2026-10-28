@@ -214,7 +214,7 @@ void NComponentCodec::EngineModuleManager::LoadModulesFromDirectory(const fs::pa
 		if (!entry.is_regular_file() || entry.path().extension() != ".dll") continue;
 		std::string error;
 		if (!LoadModule(entry.path(), &error))
-			std::cout << std::format("error when LoadModule with path = {}, error = {}", entry.path().string(), error);
+			std::cout << std::format("error when LoadModule with path = {}, error = {}\n", entry.path().string(), error);
 	}
 }
 

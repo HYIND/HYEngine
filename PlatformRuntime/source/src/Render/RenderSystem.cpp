@@ -33,7 +33,7 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 		auto& comp = entity.hasComponent<RenderModel>() ? entity.getComponent<RenderModel>() : entity.addComponent<RenderModel>();
 
 		if (modelName == "DefaultCube")
-			comp.model = DefaultCube->Clone(false, true, true);
+			comp.model = DefaultCube->Clone(false, true);
 
 		};
 
@@ -93,7 +93,7 @@ bool RenderableBaseModule::SetColor(const Entity& entity, const glm::vec3& color
 	if (!comp || !comp->model)
 		return false;
 
-	for (auto& info : comp->model->getMeshInfos())
+	for (auto& info : comp->model->GetMeshInfos())
 	{
 		if (info.material)
 			info.material->SetAlbedo(color);
@@ -347,7 +347,7 @@ void RenderSystem::processModel(std::shared_ptr<Render3DFrameData> framebuffer, 
 		}
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
-		context->type = VKRenderContext::RenderContextType::Model;
+		context->type = VKRenderContext::RenderContextType::StaticModel;
 		context->data = renderdata;
 
 		temp.emplace_back(std::move(context));

@@ -10,11 +10,11 @@
 #include "VulkanRenderEngine/General/VKRenderContext.h"
 #include <unordered_map>
 
-extern class Model;
+extern class StaticModel;
 
 struct RenderModel : public Renderable
 {
-	std::shared_ptr<Model> model;
+	std::shared_ptr<StaticModel> model;
 	std::unordered_map<uint32_t, AssetGUID> materialOverrideGUIDs;
 	std::unordered_map<uint32_t, MaterialProperties> materialOverrideProperties;
 	glm::mat4 trans = glm::mat4(1.0f);
@@ -22,7 +22,7 @@ struct RenderModel : public Renderable
 	std::shared_ptr<VKRenderContext::TransformHistory> transformHistory = std::make_shared<VKRenderContext::TransformHistory>();
 
 	RenderModel() {}
-	RenderModel(std::shared_ptr<Model> model
+	RenderModel(std::shared_ptr<StaticModel> model
 	) : model(model) {}
 
 	RenderModel(const RenderModel& other)
@@ -84,11 +84,11 @@ HY_DECLARE_ECS_TYPE(RenderModel, "engine.render_model");
 
 struct FirstPersonRenderModel : public Renderable
 {
-	std::shared_ptr<Model> model;
+	std::shared_ptr<StaticModel> model;
 	glm::mat4 cameraView = glm::mat4(1.0f);
 
 	FirstPersonRenderModel() {}
-	FirstPersonRenderModel(std::shared_ptr<Model> model
+	FirstPersonRenderModel(std::shared_ptr<StaticModel> model
 	) : model(model) {}
 	virtual void OnRemove(const Entity& e) {
 		model.reset();

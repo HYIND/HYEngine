@@ -296,7 +296,7 @@ std::shared_ptr<AssetObject> AssetStroageHelper::LoadAsset(AssetMeta& meta, std:
 		return LoadTexture(meta, pathProvider);
 	case AssetType::Material:
 		return LoadMaterial(meta, pathProvider);
-	case AssetType::Model:
+	case AssetType::StaticModel:
 		return LoadModel(meta, pathProvider);
 	case AssetType::Scene:
 		return LoadScene(meta, pathProvider);
@@ -448,7 +448,7 @@ bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta
 		return false;
 	case AssetType::Material:
 		return SaveMaterial(std::static_pointer_cast<MaterialAsset>(asset), meta, pathProvider);
-	case AssetType::Model:
+	case AssetType::StaticModel:
 		return false;
 	case AssetType::Scene:
 		return SaveScene(std::static_pointer_cast<SceneAsset>(asset), meta, pathProvider);

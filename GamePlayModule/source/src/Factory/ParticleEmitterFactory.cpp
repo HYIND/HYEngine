@@ -76,7 +76,7 @@ Entity ParticleEmitterFactory::CreateVortexEmitter(World& world, const glm::vec3
 	return emitterEntity;
 }
 
-Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<Model> model)
+Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<StaticModel> model)
 {
 	Entity emitterEntity = world.createEntity();
 
@@ -106,7 +106,7 @@ Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& 
 	emitter.emitterParams.burstAmount = 0;
 	emitter.emitterParams.burstInterval = 2.f;
 
-	emitter.emitterParams.type = ParticleType::Model;
+	emitter.emitterParams.type = ParticleType::StaticModel;
 	emitter.emitterParams.model = model;
 
 	return emitterEntity;

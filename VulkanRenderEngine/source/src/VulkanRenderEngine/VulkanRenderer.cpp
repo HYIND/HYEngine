@@ -596,18 +596,15 @@ void VulkanRenderer::InitSceneRenderGraph()
 
     auto lightingShadowDepthPass = std::make_unique<LightShadowDepthPass>(
         "shader/lighting/AMDViewport_Dirlightshadow_StaticMesh.vs",
-        "shader/lighting/AMDViewport_Dirlightshadow_Skinned.vs",
         "shader/lighting/AMDViewport_Dirlightshadow.fs",
         "shader/lighting/AMDViewport_Pointlightshadow_StaticMesh.vs",
-        "shader/lighting/AMDViewport_Pointlightshadow_Skinned.vs",
         "shader/lighting/AMDViewport_Pointlightshadow.fs"
     );
 
     auto geometryPass = std::make_unique<GeometryPass>(
         "shader/gbuffer/geometrypass_StaticMesh.vs",
-        "shader/gbuffer/geometrypass_StaticMesh.fs",
-        "shader/gbuffer/geometrypass_SkinnedMesh.vs",
-        "shader/gbuffer/geometrypass_SkinnedMesh.fs");
+        "shader/gbuffer/geometrypass_StaticMesh.fs"
+    );
 
     auto ssaoPass = std::make_unique<SSAOPass>("shader/ssao/ssao.comp", "shader/ssao/ssaoblur.comp");
 
@@ -1218,7 +1215,7 @@ void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
 void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 {
     std::unordered_set<Material*> willUpdateMaterials;
-    std::unordered_set<Mesh*> willUpdateMeshs;
+    std::unordered_set<StaticMesh*> willUpdateMeshs;
 
     auto indirectManager = IndirectDrawManager::Instance();
 
@@ -1288,7 +1285,7 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
                 [&](auto& meshptr) {
                     if (meshptr->GetNeedUpdateIndirectDraw())
                     {
-                        indirectManager->SetupMesh_LockFree(*meshptr);
+                        indirectManager->SetupStaticMesh_LockFree(*meshptr);
                         meshptr->SetNeedUpdateIndirectDraw(false);
                     }
                 });

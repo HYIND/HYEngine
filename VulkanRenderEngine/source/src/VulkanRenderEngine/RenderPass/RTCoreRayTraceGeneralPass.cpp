@@ -52,7 +52,7 @@ BlasHandleManager::BlasHandleManager()
 	_blasBufferManager.SetAlign(256);
 }
 
-void BlasHandleManager::RemoveBlasData(std::shared_ptr<Mesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device)
+void BlasHandleManager::RemoveBlasData(std::shared_ptr<StaticMesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device)
 {
 	auto it = _blasHandles.find(mesh.get());
 	if (it == _blasHandles.end())
@@ -65,7 +65,7 @@ void BlasHandleManager::RemoveBlasData(std::shared_ptr<Mesh>& mesh, std::shared_
 	_blasHandles.erase(it);
 }
 
-bool BlasHandleManager::FindBlasData(std::shared_ptr<Mesh>& mesh, BlasHandleData& data) {
+bool BlasHandleManager::FindBlasData(std::shared_ptr<StaticMesh>& mesh, BlasHandleData& data) {
 	auto it = _blasHandles.find(mesh.get());
 	if (it == _blasHandles.end())
 		return false;
@@ -74,7 +74,7 @@ bool BlasHandleManager::FindBlasData(std::shared_ptr<Mesh>& mesh, BlasHandleData
 }
 
 bool BlasHandleManager::UpdateBlasData(
-	std::vector<std::shared_ptr<Mesh>>& meshs,
+	std::vector<std::shared_ptr<StaticMesh>>& meshs,
 	std::shared_ptr<VertexBufferBlock>& vertexBlock,
 	std::shared_ptr<IndexBufferBlock>& indexBlock,
 	std::shared_ptr<VKCore::VulkanDevice>& device,
@@ -85,7 +85,7 @@ bool BlasHandleManager::UpdateBlasData(
 	vk::DeviceAddress indexBufferAddress = indexBlock->GetDeviceAddress();
 
 	struct BlasContext {
-		std::shared_ptr<Mesh> mesh;
+		std::shared_ptr<StaticMesh> mesh;
 		vk::AccelerationStructureGeometryTrianglesDataKHR trianglesData;
 		vk::AccelerationStructureGeometryDataKHR geometryData;
 		vk::AccelerationStructureGeometryKHR blasGeometry;
@@ -96,18 +96,18 @@ bool BlasHandleManager::UpdateBlasData(
 		uint32_t blasFirst;
 		uint32_t vertexOffset;
 		uint32_t indicesOffset;
-		BlasContext(std::shared_ptr<Mesh>& m) :mesh(m) {
+		BlasContext(std::shared_ptr<StaticMesh>& m) :mesh(m) {
 			blasData.meshWeakPtr = m;
 			blasData.meshVersion = m->GetVerticesIndicesVsrsion();
 			blasData.meshUUID = m->GetUUID();
 		}
 	};
 
-	std::unordered_map<std::shared_ptr<Mesh>, std::shared_ptr<BlasContext>> ctxs;
+	std::unordered_map<std::shared_ptr<StaticMesh>, std::shared_ptr<BlasContext>> ctxs;
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
-	auto addToCreate = [&](std::vector<std::shared_ptr<Mesh>>& toCreateMeshs) -> void
+	auto addToCreate = [&](std::vector<std::shared_ptr<StaticMesh>>& toCreateMeshs) -> void
 		{
 
 			std::vector<IndirectDrawMeta> indirectDrawMetas;
@@ -190,7 +190,7 @@ bool BlasHandleManager::UpdateBlasData(
 		_lastVertexAddress = vertexAddress;
 		_lastIndexAddress = indexAddress;
 
-		std::vector<std::shared_ptr<Mesh>> hasExistedMeshs;
+		std::vector<std::shared_ptr<StaticMesh>> hasExistedMeshs;
 		for (auto& it : _blasHandles)
 		{
 			auto& data = it.second;
@@ -327,7 +327,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	uint32_t infosIndex = 0;
 
-	std::vector<std::shared_ptr<Mesh>> needUpdateBlasMeshs;
+	std::vector<std::shared_ptr<StaticMesh>> needUpdateBlasMeshs;
 	auto getItem = [&](VKRenderObjectData::SceneRenderData::OpaqueMeshItem& item) -> bool {
 		auto& meshInfo = item.meshinfo;
 		if (!meshInfo.mesh || !meshInfo.material)

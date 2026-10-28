@@ -1,5 +1,6 @@
 ﻿#include "Project/AssetObject.h"
 #include "Project/AssetStroage.h"
+#include "Coroutine.h"
 
 AssetType AssetObject::GetType() const {
 	return _type;
@@ -9,13 +10,13 @@ const AssetGUID& AssetObject::GetAssetGUID() const {
 	return _assetGUID;
 }
 
-std::vector<std::shared_ptr<Mesh>> AssetObject::AsStaticMesh() { return {}; }
+std::vector<std::shared_ptr<StaticMesh>> AssetObject::AsStaticMesh() { return {}; }
 
 std::shared_ptr<Texture2D> AssetObject::AsTexture() { return nullptr; }
 
 std::shared_ptr<Material> AssetObject::AsMaterial() { return nullptr; }
 
-std::shared_ptr<Model> AssetObject::AsModel() { return nullptr; }
+std::shared_ptr<StaticModel> AssetObject::AsStaticModel() { return nullptr; }
 
 std::shared_ptr<SceneCodec> AssetObject::AsScene() { return nullptr; }
 
@@ -29,7 +30,7 @@ std::shared_ptr<UI::UiStyle> AssetObject::AsUIStyle() { return nullptr; }
 
 StaticMeshAsset::StaticMeshAsset() { _type = AssetType::StaticMesh; }
 
-std::vector<std::shared_ptr<Mesh>> StaticMeshAsset::AsStaticMesh() { return _meshes; }
+std::vector<std::shared_ptr<StaticMesh>> StaticMeshAsset::AsStaticMesh() { return _meshes; }
 
 TextureAsset::TextureAsset() { _type = AssetType::Texture; }
 
@@ -92,19 +93,19 @@ void MaterialAsset::SetTextureDependency(TextureType type, const AssetGUID& guid
 		_material->SetTexture(type, texture);
 }
 
-ModelAsset::ModelAsset() { _type = AssetType::Model; }
+ModelAsset::ModelAsset() { _type = AssetType::StaticModel; }
 
-std::shared_ptr<Model> ModelAsset::AsModel()
+std::shared_ptr<StaticModel> ModelAsset::AsStaticModel()
 {
-	std::vector<std::shared_ptr<MeshInfo>> mesheInfos;
+	std::vector<std::shared_ptr<StaticMeshInfo>> mesheInfos;
 	if (auto storage = _storage.lock())
 	{
-		std::vector<Task<std::vector<std::shared_ptr<Mesh>>>> staticMeshTask;
+		std::vector<Task<std::vector<std::shared_ptr<StaticMesh>>>> staticMeshTask;
 		std::vector<Task<void>> materialTask;
 
 		for (auto& guid : _dependencyStaticMesh)
 		{
-			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<Mesh>> {
+			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<StaticMesh>> {
 				auto asset = storage->LoadAsset(guid);
 				if (asset)
 					return asset->AsStaticMesh();
@@ -117,7 +118,7 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 		{
 			for (auto& mesh : task.sync_wait())
 			{
-				auto meshInfo = std::make_shared<MeshInfo>();
+				auto meshInfo = std::make_shared<StaticMeshInfo>();
 				meshInfo->mesh = mesh;
 				mesheInfos.push_back(std::move(meshInfo));
 			}
@@ -147,7 +148,7 @@ std::shared_ptr<Model> ModelAsset::AsModel()
 			task.sync_wait();
 	}
 
-	auto model = std::make_shared<Model>();
+	auto model = std::make_shared<StaticModel>();
 	model->SetAssetGUID(_assetGUID);
 	for (auto& info : mesheInfos)
 		model->AddMesh(info->mesh, info->material);
