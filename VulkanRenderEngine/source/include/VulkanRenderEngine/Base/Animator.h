@@ -1,12 +1,13 @@
 #pragma once
 
-#include <glm/glm.hpp>
-#include <map>
+#include <memory>
 #include <vector>
-#include <assimp/scene.h>
-#include <assimp/Importer.hpp>
+
+#include <glm/glm.hpp>
+
 #include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "VulkanRenderEngine/Base/Skeleton.h"
+
 
 class Animator
 {
@@ -20,14 +21,18 @@ public:
 	void SetTime(float second);
 
 	std::vector<glm::mat4>& GetFinalBoneMatrices();
+
 	float GetDurationTime();
+
 private:
-	void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform);
+	void Rebuild();
 
 private:
 	std::shared_ptr<AnimationClip> m_CurrentAnimation;
 	std::shared_ptr<Skeleton> m_Skeleton;
 
 	std::vector<glm::mat4> m_FinalBoneMatrices;
-	float m_CurrentTime;
+	std::vector<glm::mat4> m_GlobalTransforms;	// 复用同一块，避免每帧分配
+
+	float m_CurrentTime = 0.f;	// 单位是 tick
 };

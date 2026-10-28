@@ -12,12 +12,6 @@ struct StaticMeshInfo
 
 class StaticModel :public ModelBase
 {
-private:
-	struct LoadedTexture {
-		std::shared_ptr<Texture2D> tex;
-		std::string path;
-		TextureConfig config;
-	};
 
 public:
 	StaticModel(const std::string& path);

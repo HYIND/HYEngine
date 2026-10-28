@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -145,7 +145,6 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Skeleton.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AtlasMap.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Bone.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\ComputePipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Effect.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\GraphicsPipeline.h" />
@@ -253,7 +252,6 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Animator.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\AssimpGlmHelpers.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\AtlasMap.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Bone.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\ComputePipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\GraphicsPipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Light.cpp" />

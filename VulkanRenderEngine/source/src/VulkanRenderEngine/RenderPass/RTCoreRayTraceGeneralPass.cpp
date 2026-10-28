@@ -328,7 +328,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 	uint32_t infosIndex = 0;
 
 	std::vector<std::shared_ptr<StaticMesh>> needUpdateBlasMeshs;
-	auto getItem = [&](VKRenderObjectData::SceneRenderData::OpaqueMeshItem& item) -> bool {
+	auto getItem = [&](VKRenderObjectData::SceneStaticRenderData::MeshItem& item) -> bool {
 		auto& meshInfo = item.meshinfo;
 		if (!meshInfo.mesh || !meshInfo.material)
 			return false;
@@ -355,7 +355,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		return true;
 		};
 
-	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem*> matches;
+	std::vector<VKRenderObjectData::SceneStaticRenderData::MeshItem*> matches;
 	for (auto& item : opaqueMesh)
 	{
 		if (getItem(item))

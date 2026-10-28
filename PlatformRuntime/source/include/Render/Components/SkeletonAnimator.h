@@ -10,7 +10,6 @@ struct SkeletonAnimatorGroup :public IComponent
 	struct SkeletonAnimatorData
 	{
 		std::shared_ptr<Animator> animator;
-		VKRenderContext::AnimatorView renderView;
 
 		bool enable = false;
 		int maxLoopCount = 0;
@@ -37,6 +36,7 @@ struct SkeletonAnimatorGroup :public IComponent
 			return false;
 		auto animator = std::make_shared<Animator>(ani, skeleton);
 		animatorDatas[name] = std::make_shared<SkeletonAnimatorData>(animator, enable);
+		return true;
 	}
 
 	void ResetAnimatorGroup()

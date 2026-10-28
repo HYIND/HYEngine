@@ -130,8 +130,10 @@ struct RenderState
 
 	// 渲染对象
 	struct RenderObjects {
-		VKRenderObjectData::SceneRenderData sceneRenderData;
-		VKRenderObjectData::FirstPersonRenderData firstPersonRenderData;
+		// 静态网格：这一帧就能画
+		VKRenderObjectData::SceneStaticRenderData sceneRenderData;
+		// 蒙皮模型：要过蒙皮 Pass 才有顶点数据
+		VKRenderObjectData::SceneSkinnedRenderData sceneSkinnedRenderData;
 	} objects;
 
 	struct IndirectCommands {

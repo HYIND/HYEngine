@@ -1,6 +1,8 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/Animator.h"
 
+#include <cmath>
+
 Animator::Animator(std::shared_ptr<AnimationClip> animation, std::shared_ptr<Skeleton> skeleton)
 {
 	SetAnimation(animation);
@@ -12,71 +14,89 @@ void Animator::UpdateTime(float dtSecond)
 	if (!m_Skeleton || !m_CurrentAnimation)
 		return;
 
-	for (auto& mat : m_FinalBoneMatrices)
-		mat = glm::mat4(1.0f);
-
 	m_CurrentTime += m_CurrentAnimation->GetTicksPerSecond() * dtSecond;
-	m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration());
-	CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), glm::mat4(1.0f));
+	m_CurrentTime = std::fmod(m_CurrentTime, m_CurrentAnimation->GetDuration());
 
+	Rebuild();
 }
 
 void Animator::SetTime(float second)
 {
-	if (!m_Skeleton || !m_CurrentAnimation)
+	if (!m_Skeleton)
 		return;
 
-	for (auto& mat : m_FinalBoneMatrices)
-		mat = glm::mat4(1.0f);
+	if (!m_CurrentAnimation)
+	{
+		// 没有 clip 也要出绑定姿态，否则蒙皮矩阵是空的。
+		Rebuild();
+		return;
+	}
 
 	m_CurrentTime = m_CurrentAnimation->GetTicksPerSecond() * second;
-	m_CurrentTime = fmod(m_CurrentTime, m_CurrentAnimation->GetDuration());
-	CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), glm::mat4(1.0f));
-}
+	m_CurrentTime = std::fmod(m_CurrentTime, m_CurrentAnimation->GetDuration());
 
+	Rebuild();
+}
 
 void Animator::SetSkeleton(std::shared_ptr<Skeleton> skeleton)
 {
 	m_Skeleton = skeleton;
 
-	//if (m_Skeleton)
-	//{
-	//	size_t boneSize = m_Skeleton->BoneInfoMap.size();
-	//	m_FinalBoneMatrices.resize(boneSize);
-	//	for (auto& mat : m_FinalBoneMatrices)
-	//		mat = glm::mat4(1.0f);
-	//}
+	if (!m_Skeleton)
+	{
+		m_FinalBoneMatrices.clear();
+		m_GlobalTransforms.clear();
+		return;
+	}
+
+	m_GlobalTransforms.resize(m_Skeleton->nodes.size());
+	m_FinalBoneMatrices.resize(m_Skeleton->nodes.size());
+
+	Rebuild();
 }
 
 void Animator::SetAnimation(std::shared_ptr<AnimationClip> animation)
 {
-	m_CurrentTime = 0.0f;
+	m_CurrentTime = 0.f;
 	m_CurrentAnimation = animation;
+
+	if (m_Skeleton)
+		Rebuild();
 }
 
-void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform)
+void Animator::Rebuild()
 {
-//	std::string nodeName = node->name;
-//	glm::mat4 nodeTransform = node->transformation;
-//
-//	const Bone* Bone = m_CurrentAnimation->GetBone(nodeName);
-//
-//	if (Bone)
-//		nodeTransform = Bone->GetLocalTransform(m_CurrentTime);
-//
-//	glm::mat4 globalTransformation = parentTransform * nodeTransform;
-//
-//	auto& boneInfoMap = m_Skeleton->BoneInfoMap;
-//	if (boneInfoMap.find(nodeName) != boneInfoMap.end())
-//	{
-//		int index = boneInfoMap[nodeName].id;
-//		glm::mat4 offset = boneInfoMap[nodeName].offset;
-//		if (index < m_FinalBoneMatrices.size())
-//			m_FinalBoneMatrices[index] = globalTransformation * offset;
-//	}
-//
-//	for (int i = 0; i < node->childrenCount; i++)
-//		CalculateBoneTransform(&node->children[i], globalTransformation);
+	if (!m_Skeleton || m_Skeleton->nodes.empty())
+	{
+		m_FinalBoneMatrices.clear();
+		m_GlobalTransforms.clear();
+		return;
+	}
+
+	const std::vector<SkeletonNode>& nodes = m_Skeleton->nodes;
+
+	m_GlobalTransforms.resize(nodes.size());
+	m_FinalBoneMatrices.resize(nodes.size());
+
+	// 节点是先父后子编号的，父下标一定小于子下标，所以一趟顺序遍历就够，不需要递归。
+	for (std::size_t i = 0; i < nodes.size(); ++i)
+	{
+		const SkeletonNode& node = nodes[i];
+
+		// 动画给的是父骨骼空间里的 local，没曲线的节点就用绑定姿态顶替。
+		const glm::mat4 local = m_CurrentAnimation
+			? m_CurrentAnimation->SampleLocal(static_cast<SkeletonNodeIndex>(i), m_CurrentTime, node.bindLocalTransform)
+			: node.bindLocalTransform;
+
+		const glm::mat4 global = (node.parentIndex == SkeletonNode::InvalidIndex)
+			? local
+			: m_GlobalTransforms[node.parentIndex] * local;
+
+		m_GlobalTransforms[i] = global;
+
+		// 乘上逆绑定：抵掉骨骼在绑定姿态里的位置，剩下的才是这次动画多出来的变换。
+		m_FinalBoneMatrices[i] = global * node.inverseBindTransform;
+	}
 }
 
 std::vector<glm::mat4>& Animator::GetFinalBoneMatrices()
@@ -88,6 +108,6 @@ float Animator::GetDurationTime()
 {
 	if (!m_CurrentAnimation)
 		return 0.f;
-	return m_CurrentAnimation->GetDuration() / m_CurrentAnimation->GetTicksPerSecond();
-}
 
+	return m_CurrentAnimation->GetDurationSeconds();
+}

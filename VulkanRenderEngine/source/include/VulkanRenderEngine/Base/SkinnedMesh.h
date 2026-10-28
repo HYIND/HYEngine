@@ -11,7 +11,7 @@ struct alignas(16) SkinnedData
 	static constexpr BoneID InvalidBoneID = std::numeric_limits<BoneID>::max();
 
 	alignas(16) BoneID m_BoneIDs[GlobalConfig::Mesh_Max_Bone_Influence] = { InvalidBoneID };
-	alignas(16) float m_Weights[GlobalConfig::Mesh_Max_Bone_Influence] = { 1.0f };
+	alignas(16) float m_Weights[GlobalConfig::Mesh_Max_Bone_Influence] = { 0.0f };
 
 	void SetVertexBoneDataToDefault()
 	{

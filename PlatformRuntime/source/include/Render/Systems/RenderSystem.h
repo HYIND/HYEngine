@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "ECSCore/Entity.h"
 #include "ECSCore/System.h"
@@ -46,24 +46,21 @@ public:
     void pushDebugLine(const Line2& line);
 
 private:
-    void processSprite(std::shared_ptr<Render::Render2DFrameData> framebuffer);
-    void processGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer);
-    void processDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer);
-
-    // 从 UIViewRuntime 收集这一帧要画的 UI 文档，按 layer 排序。
-    void processUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer);
+    void ProcessSprite(std::shared_ptr<Render::Render2DFrameData> framebuffer);
+    void ProcessGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer);
+    void ProcessDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer);
+    void ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer);
 
 private:
-    void processModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
-    void processLight(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
-    void processParticle(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
-    void processLaserBeam(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
-
-    //private:
-    //	void processFirstPersonWeaponVisual(std::shared_ptr<Render::Render3DFrameData>& framebuffer, Entity& entity);
+    void ProcessModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessStaticModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessLight(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessParticle(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessLaserBeam(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
 
 private:
-    void processSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
 
 private:
 	void SyncGLCamera(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);

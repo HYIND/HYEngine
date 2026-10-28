@@ -1,47 +1,76 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
-#include <map>
-#include <glm/glm.hpp>
-#include <assimp/scene.h>
-#include <functional>
-#include "VulkanRenderEngine/Base/Bone.h"
 
-struct AssimpNodeData
+#include <assimp/scene.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+#include "VulkanRenderEngine/Base/Skeleton.h"
+
+struct KeyPosition
 {
-	glm::mat4 transformation;
-	std::string name;
-	int childrenCount;
-	std::vector<AssimpNodeData> children;
+	glm::vec3 position;
+	float timeStamp;
+};
+
+struct KeyRotation
+{
+	glm::quat orientation;
+	float timeStamp;
+};
+
+struct KeyScale
+{
+	glm::vec3 scale;
+	float timeStamp;
 };
 
 class AnimationClip
 {
 public:
+	struct Channel
+	{
+		SkeletonNodeIndex nodeIndex = 0;
+		std::vector<KeyPosition> positions;
+		std::vector<KeyRotation> rotations;
+		std::vector<KeyScale> scales;
+	};
+
 	AnimationClip(const std::string& animationPath);
 	AnimationClip(const aiScene* scene, int index = 0);
 
 	~AnimationClip();
 
-	float GetTicksPerSecond() const;
+	const std::string& GetName() const;
+
+	// 时长单位是 tick，换算成秒要除以 TicksPerSecond。
 	float GetDuration() const;
+	float GetTicksPerSecond() const;
+	float GetDurationSeconds() const;
 
-	const AssimpNodeData& GetRootNode();
-	const Bone* GetBone(const std::string& name);
-	bool TryGetCameraTransform(glm::mat4& mat);		//针对某些场景树自带Camera的情况，如第一人称动画
+	// 曲线可索引的范围，等于骨架节点数。
+	std::size_t GetSkeletonNodeCount() const;
+
+	const std::vector<Channel>& GetChannels() const;
+	bool HasChannel(SkeletonNodeIndex nodeIndex) const;
+
+	glm::mat4 SampleLocal(SkeletonNodeIndex nodeIndex, float tick, const glm::mat4& bindLocalTransform) const;
 
 private:
-	void ReadBones(const aiAnimation* aiAni);
-	void ReadHierarchyData(AssimpNodeData& dest, const aiNode* src);
-
-	bool FindCameraTransForm(AssimpNodeData& data, glm::mat4& mat);
+	void Reset(const aiAnimation* aiAni, const SkeletonIndex& index);
+	void ReadChannels(const aiAnimation* aiAni, const SkeletonIndex& index);
 
 private:
-
-	float m_Duration;
-	int m_TicksPerSecond;
-	std::vector<Bone> m_Bones;
-	AssimpNodeData m_RootNode;
+	std::string m_Name;
+	float m_Duration = 0.f;
+	float m_TicksPerSecond = 25.f;
+	std::size_t m_SkeletonNodeCount = 0;
+	std::vector<Channel> m_Channels;
+	std::vector<int32_t> m_ChannelOfNode;	// 和骨架节点一一对应，-1 表示这个节点没有曲线
 };
 
 class AnimationClipLoader

@@ -75,28 +75,6 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 
 void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	auto& models = state.objects.sceneRenderData.opaqueSkinnedModel;
-	auto& sorts = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;
-	sorts.resize(models.size());
-	for (int i = 0; i < models.size(); i++)
-	{
-		auto& item = models[i];
-		auto& sort = sorts[i];
-
-		sort.resize(item.models.size());
-		std::iota(sort.begin(), sort.end(), 0);
-
-		if (item.models.size() > 1)
-		{
-			std::sort(std::execution::par_unseq, sort.begin(), sort.end(),
-				[&](int index1, int index2)-> bool
-				{
-					if (item.models[index1].material != item.models[index2].material)
-						return item.models[index1].material < item.models[index2].material;
-				}
-			);
-		}
-	}
 }
 
 void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -157,7 +135,7 @@ void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderStat
 bool GeometryPass::SetupStaticBufferData(
 	const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	GraphicsBindingRecord& binding,
-	std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& items,
+	std::vector<VKRenderObjectData::SceneStaticRenderData::MeshItem>& items,
 	VKRenderObjectData::RenderIndex& renderIndex,
 	std::vector<IndirectDrawCommand>& oneSideCommands,
 	std::vector<IndirectDrawCommand>& twoSideCommands

@@ -81,18 +81,3 @@ struct RenderStaticModel : public Renderable
 };
 
 HY_DECLARE_ECS_TYPE(RenderStaticModel, "engine.render_static_model");
-
-struct FirstPersonRenderModel : public Renderable
-{
-	std::shared_ptr<StaticModel> model;
-	glm::mat4 cameraView = glm::mat4(1.0f);
-
-	FirstPersonRenderModel() {}
-	FirstPersonRenderModel(std::shared_ptr<StaticModel> model
-	) : model(model) {}
-	virtual void OnRemove(const Entity& e) {
-		model.reset();
-	}
-};
-
-HY_DECLARE_ECS_TYPE(FirstPersonRenderModel, "hy.engine.component.FirstPersonRenderModel");

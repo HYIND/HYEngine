@@ -9,7 +9,7 @@ struct LevelData {
 	uint32_t outputLevel;
 };
 
-void RadixSortByMaterial(std::vector<uint32_t>& indices, const std::vector<VKRenderObjectData::SceneRenderData::OpaqueMeshItem>& meshes)
+void RadixSortByMaterial(std::vector<uint32_t>& indices, const std::vector<VKRenderObjectData::SceneStaticRenderData::MeshItem>& meshes)
 {
 	size_t n = indices.size();
 	if (n <= 1) return;
@@ -172,7 +172,7 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 		frustumObjectMeshaabbs.resize(opaqueMeshes.size());
 
 		std::for_each(std::execution::par_unseq, opaqueMeshes.begin(), opaqueMeshes.end(),
-			[&](VKRenderObjectData::SceneRenderData::OpaqueMeshItem& item)
+			[&](VKRenderObjectData::SceneStaticRenderData::MeshItem& item)
 			{
 				uint32_t meshIndex = &item - opaqueMeshes.data();
 
