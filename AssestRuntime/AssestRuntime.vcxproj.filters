@@ -69,6 +69,9 @@
     <ClInclude Include="source\include\SceneCodec\BuiltInCodecs.h">
       <Filter>头文件\SceneCodec</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\SceneCodec\ModuleHostServices.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\AssetRuntime.cpp">

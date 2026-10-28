@@ -6,7 +6,9 @@
 #include "GamePlaySystems.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "SceneCodec/ModuleHostServices.h"
-#include "UI/UICommandBus.h"
+#include "UI/MessageBus.h"
+#include "UiRouter.h"
+#include "UserSettings.h"
 
 #include <cmath>
 
@@ -253,37 +255,24 @@ static void RegisterGamePlayModuleSystems(World& world, const NComponentCodec::E
 
 namespace
 {
-    // 模块只加载一次，所以在 initialize 里存一份宿主服务。卸载时引擎先 UnregisterByModule
-    // 再 FreeLibrary，不会留下指向已卸载代码的回调。
-    const NComponentCodec::ModuleHostServices* g_hostServices = nullptr;
-}
-
-// UI 命令的处理者：在场景线程上被调用，所以可以直接读写世界。
-static void OnGamePlayUiCommand(const UI::UiEvent& event, World& world)
-{
-    (void)world;
-
-    // command 用模块自己的命名空间前缀，模块只处理自己这一片。
-    if (event.command != "gameplay.scene.load")
-        return;
-
-    // 切场景只能"请求"：模块不拥有线程，也不拥有 World 的生死，由引擎在宿主帧边界执行。
-    // 载荷放 event.text（textinput 提交的内容也走这里）。
-    if (!g_hostServices || !g_hostServices->requestSceneChange || event.text.empty())
-        return;
-    g_hostServices->requestSceneChange(g_hostServices->sceneServiceOwner, event.text.c_str());
+    const NComponentCodec::ModuleHostServices* g_hostServices = nullptr; 
+    UiRouter g_uiRouter; // UI 命令路由
 }
 
 static void InitializeGamePlayModule(const NComponentCodec::EngineModuleContext& context)
 {
     auto* services = static_cast<NComponentCodec::ModuleHostServices*>(context.hostServices);
-    if (!services || !services->uiCommands || !services->requestSceneChange)
+    if (!services || !services->messageBus || !services->requestSceneChange)
         return;   // 宿主没开 UI 服务：静默降级，模块其它功能照常
 
     g_hostServices = services;
 
-    // 对应 .ui 里的 "onClick": { "command": "gameplay.scene.load" }。
-    services->uiCommands->Register(context.moduleId, "gameplay.scene.load", &OnGamePlayUiCommand);
+    g_uiRouter.SetHostServices(services);
+    g_uiRouter.Register(*services->messageBus, context.moduleId);
+
+    UserSettings& settings = GetUserSettings();
+    settings.Load();
+    settings.Apply(*services);
 }
 
 HY_ENGINE_MODULE_EXPORT const NComponentCodec::EngineModuleAPI* GetEngineModuleAPI(uint32_t requestedApiVersion)

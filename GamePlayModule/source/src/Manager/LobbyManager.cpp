@@ -3,10 +3,8 @@
 #include "Manager/RequestManager.h"
 #include "Manager/MsgManager.h"
 #include "Manager/ConnectManager.h"
-#include "Scene.h"
 #include "command.h"
 #include "ServiceRegistryData.h"
-#include "GeneralManager/WindowHandleManager.h"
 
 using namespace LobbySubServiceCommand;
 
@@ -43,14 +41,14 @@ void LobbyManager::ProcessLobbyUserData(const json& js)
 
 	}
 
-	(int)SendMessage(_Scene::SHall->Hall_user_list, LB_RESETCONTENT, 0, 0);
-	for (auto& user : users)
-	{
-		std::string& name = user.name;
-		if (UserInfoManager::Instance()->isMyToken(user.token))
-			name += "(您)";
-		(int)SendMessage(_Scene::SHall->Hall_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(user.name)[0]));
-	}
+	//(int)SendMessage(_Scene::SHall->Hall_user_list, LB_RESETCONTENT, 0, 0);
+	//for (auto& user : users)
+	//{
+	//	std::string& name = user.name;
+	//	if (UserInfoManager::Instance()->isMyToken(user.token))
+	//		name += "(您)";
+	//	(int)SendMessage(_Scene::SHall->Hall_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(user.name)[0]));
+	//}
 }
 
 void LobbyManager::ProcessLobbyRoomData(const json& js)
@@ -95,28 +93,28 @@ void LobbyManager::ProcessLobbyRoomData(const json& js)
 			});
 	}
 
-	{
-		int currentSel = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_GETCURSEL, 0, 0);
+	//{
+	//	int currentSel = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_GETCURSEL, 0, 0);
 
-		(int)SendMessage(_Scene::SHall->Hall_room_list, LB_RESETCONTENT, 0, 0);
+	//	(int)SendMessage(_Scene::SHall->Hall_room_list, LB_RESETCONTENT, 0, 0);
 
-		for (auto room : _currooms)
-		{
-			string format_roomname = room->status == RoomStatus::IN_GAME ?
-				std::format(" {} [{}/{}] (游戏中)", room->room_name, room->player_count, room->max_players) :
-				std::format(" {} [{}/{}]", room->room_name, room->player_count, room->max_players);
+	//	for (auto room : _currooms)
+	//	{
+	//		string format_roomname = room->status == RoomStatus::IN_GAME ?
+	//			std::format(" {} [{}/{}] (游戏中)", room->room_name, room->player_count, room->max_players) :
+	//			std::format(" {} [{}/{}]", room->room_name, room->player_count, room->max_players);
 
-			int index = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_roomname))[0]);
-			SendMessage(_Scene::SHall->Hall_room_list, LB_SETITEMDATA, index, (LPARAM)room);  // 存储房间指针
-		}
+	//		int index = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_roomname))[0]);
+	//		SendMessage(_Scene::SHall->Hall_room_list, LB_SETITEMDATA, index, (LPARAM)room);  // 存储房间指针
+	//	}
 
-		if (currentSel != LB_ERR) {
-			int itemCount = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_GETCOUNT, 0, 0);
-			if (currentSel < itemCount) {
-				SendMessage(_Scene::SHall->Hall_room_list, LB_SETCURSEL, currentSel, 0);
-			}
-		}
-	}
+	//	if (currentSel != LB_ERR) {
+	//		int itemCount = (int)SendMessage(_Scene::SHall->Hall_room_list, LB_GETCOUNT, 0, 0);
+	//		if (currentSel < itemCount) {
+	//			SendMessage(_Scene::SHall->Hall_room_list, LB_SETCURSEL, currentSel, 0);
+	//		}
+	//	}
+	//}
 }
 
 void LobbyManager::ProcessHallMsg(const json& js)
@@ -137,7 +135,7 @@ void LobbyManager::ProcessHallMsg(const json& js)
 
 	std::string fomat_message = std::format("[{}]  [{}] \r\n{}\r\n", name, timestr, msg);
 
-	SendMessage(_Scene::SHall->edit_hall, EM_REPLACESEL, FALSE, (LPARAM) & (Tool::UTF8ToWString(fomat_message)[0]));
+	//SendMessage(_Scene::SHall->edit_hall, EM_REPLACESEL, FALSE, (LPARAM) & (Tool::UTF8ToWString(fomat_message)[0]));
 }
 
 void LobbyManager::ProcessRoomMsg(const json& js)
@@ -157,7 +155,7 @@ void LobbyManager::ProcessRoomMsg(const json& js)
 
 	std::string fomat_message = std::format("[{}]  {} :\r\n{}\r\n", name, timestr, msg);
 
-	SendMessage(_Scene::SRoom->edit_room, EM_REPLACESEL, FALSE, (LPARAM) & (Tool::UTF8ToWString(fomat_message)[0]));
+	//SendMessage(_Scene::SRoom->edit_room, EM_REPLACESEL, FALSE, (LPARAM) & (Tool::UTF8ToWString(fomat_message)[0]));
 }
 
 void LobbyManager::ProcessPrivateMsg(const json& js)
@@ -237,32 +235,32 @@ void LobbyManager::ProcessRoomInfo(const json& js)
 
 	info->UpdateFromJson(js["roominfo"]);
 
-	(int)SendMessage(_Scene::SRoom->Room_user_list, LB_RESETCONTENT, 0, 0);
+	//(int)SendMessage(_Scene::SRoom->Room_user_list, LB_RESETCONTENT, 0, 0);
 
-	info->members.EnsureCall(
-		[&](std::map<std::string, std::shared_ptr<RoomMemeber>>& members_map) -> void
-		{
-			for (auto& [token, memberinfo] : members_map)
-			{
-				std::string name = memberinfo->name;
-				if (UserInfoManager::Instance()->isMyToken(token))
-				{
-					name += "(您)";
-					LOBBYMANAGER->SetIsHost(UserInfoManager::Instance()->isMyToken(info->room_host_token));
-					_Scene::SRoom->SetScene(LOBBYMANAGER->IsHost(), memberinfo->status == MemberStatus::READY);
-				}
-				if (token == info->room_host_token)
-				{
-					string format_membername = std::format("{} {}", name, "[房主]");
-					int index = (int)SendMessage(_Scene::SRoom->Room_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_membername))[0]);
-				}
-				else
-				{
-					string format_membername = std::format("{} {}", name, memberinfo->status == MemberStatus::READY ? "[已准备]" : "");
-					int index = (int)SendMessage(_Scene::SRoom->Room_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_membername))[0]);
-				}
-			}
-		});
+	//info->members.EnsureCall(
+	//	[&](std::map<std::string, std::shared_ptr<RoomMemeber>>& members_map) -> void
+	//	{
+	//		for (auto& [token, memberinfo] : members_map)
+	//		{
+	//			std::string name = memberinfo->name;
+	//			if (UserInfoManager::Instance()->isMyToken(token))
+	//			{
+	//				name += "(您)";
+	//				LOBBYMANAGER->SetIsHost(UserInfoManager::Instance()->isMyToken(info->room_host_token));
+	//				_Scene::SRoom->SetScene(LOBBYMANAGER->IsHost(), memberinfo->status == MemberStatus::READY);
+	//			}
+	//			if (token == info->room_host_token)
+	//			{
+	//				string format_membername = std::format("{} {}", name, "[房主]");
+	//				int index = (int)SendMessage(_Scene::SRoom->Room_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_membername))[0]);
+	//			}
+	//			else
+	//			{
+	//				string format_membername = std::format("{} {}", name, memberinfo->status == MemberStatus::READY ? "[已准备]" : "");
+	//				int index = (int)SendMessage(_Scene::SRoom->Room_user_list, LB_ADDSTRING, 0, (LPARAM) & (Tool::UTF8ToWString(format_membername))[0]);
+	//			}
+	//		}
+	//	});
 }
 
 Task<void> LobbyManager::ProcessStartGameRes(const json& js)
@@ -324,18 +322,18 @@ Task<void> LobbyManager::ProcessStartGameRes(const json& js)
 	else
 		co_return;
 
-	SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, START, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
+	//SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, START, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
 }
 
 std::shared_ptr<Room> LobbyManager::GetSelectRoom()
 {
 	LockGuard guard(_curroomsmutex);
-	int index = SendMessage(_Scene::SHall->Hall_room_list, LB_GETCURSEL, 0, 0);
-	if (index != LB_ERR && index < _currooms.size())
-	{
-		Room* room = (Room*)SendMessage(_Scene::SHall->Hall_room_list, LB_GETITEMDATA, index, 0);
-		return std::make_shared<Room>(*room);
-	}
+	//int index = SendMessage(_Scene::SHall->Hall_room_list, LB_GETCURSEL, 0, 0);
+	//if (index != LB_ERR && index < _currooms.size())
+	//{
+	//	Room* room = (Room*)SendMessage(_Scene::SHall->Hall_room_list, LB_GETITEMDATA, index, 0);
+	//	return std::make_shared<Room>(*room);
+	//}
 	return nullptr;
 }
 

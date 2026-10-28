@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "GameEngine.h"
 
 #include "EngineRuntime.h"
@@ -34,7 +34,7 @@ bool GameEngine::Initialize(std::string* error)
 	auto runtime = std::make_unique<EngineRuntime>();
 
 	EngineRuntimeConfig config;
-	config.host.host = EngineHostKind::Game;
+	config.hostType = EngineHostType::Game;
 	config.modules = { EngineRuntimeModule::Input, EngineRuntimeModule::Audio ,EngineRuntimeModule::Render };
 
 	if (!runtime->Initialize(config))

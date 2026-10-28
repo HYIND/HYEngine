@@ -1,6 +1,6 @@
 #pragma once
 
-void Render_Thread();
+void RenderLoop(bool* shouldStopRenderThread);
 
 bool IsRenderThread();
 

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -81,7 +81,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -107,7 +107,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -135,7 +135,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(ProjectDir)public\include;$(SolutionDir)Common\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)PlatformRuntime\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -153,19 +153,35 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="public\include\ApplicationLayerCommunication\JsonProtocolClient.h" />
+    <ClInclude Include="public\include\command.h" />
+    <ClInclude Include="public\include\EndPointConfig.h" />
+    <ClInclude Include="public\include\GameDataDef.h" />
+    <ClInclude Include="public\include\LobbyDataDef.h" />
+    <ClInclude Include="public\include\ServiceDiscoveryClient.h" />
+    <ClInclude Include="public\include\ServiceRegistryData.h" />
     <ClInclude Include="source\include\Components\Health.h" />
     <ClInclude Include="source\include\Components\LightFollow.h" />
     <ClInclude Include="source\include\Components\LightShow.h" />
     <ClInclude Include="source\include\Components\WeaponBasic.h" />
     <ClInclude Include="source\include\Components\WeaponOwner.h" />
     <ClInclude Include="source\include\Components\WeaponState.h" />
-    <ClInclude Include="source\include\GamePlay.h" />
+    <ClInclude Include="source\include\Factory\CharacterFactory.h" />
+    <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h" />
+    <ClInclude Include="source\include\stdafx.h" />
     <ClInclude Include="source\include\GamePlayModule.h" />
     <ClInclude Include="source\include\GamePlayComponents.h" />
     <ClInclude Include="source\include\GamePlayEventDef.h" />
     <ClInclude Include="source\include\GamePlaySystems.h" />
     <ClInclude Include="source\include\GamePlayTags.h" />
-    <ClInclude Include="source\include\Helper\AnimatorHelper.h" />
+    <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h" />
+    <ClInclude Include="source\include\Helper\AnimatorEventHelper.h" />
+    <ClInclude Include="source\include\Manager\BGMManager.h" />
+    <ClInclude Include="source\include\Manager\ConnectManager.h" />
+    <ClInclude Include="source\include\Manager\LobbyManager.h" />
+    <ClInclude Include="source\include\Manager\MsgManager.h" />
+    <ClInclude Include="source\include\Manager\RequestManager.h" />
+    <ClInclude Include="source\include\Manager\UserInfoManager.h" />
     <ClInclude Include="source\include\Systems\HealthSystem.h" />
     <ClInclude Include="source\include\Systems\LightFollowSystem.h" />
     <ClInclude Include="source\include\Systems\LightShowSystem.h" />
@@ -173,11 +189,23 @@
     <ClInclude Include="source\include\Systems\MovementSystem.h" />
     <ClInclude Include="source\include\Systems\TetrisSystem.h" />
     <ClInclude Include="source\include\Systems\WeaponSystem.h" />
+    <ClInclude Include="source\include\UiRouter.h" />
+    <ClInclude Include="source\include\UserSettings.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\src\GamePlay.cpp" />
+    <ClCompile Include="public\src\JsonProtocolClient.cpp" />
+    <ClCompile Include="public\src\ServiceDiscoveryClient.cpp" />
+    <ClCompile Include="public\src\ServiceRegistryData.cpp" />
+    <ClCompile Include="source\src\Factory\CharacterFactory.cpp" />
+    <ClCompile Include="source\src\Factory\ParticleEmitterFactory.cpp" />
     <ClCompile Include="source\src\GamePlayModule.cpp" />
-    <ClCompile Include="source\src\Helper\AnimatorHelper.cpp" />
+    <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp" />
+    <ClCompile Include="source\src\Helper\AnimatorEventHelper.cpp" />
+    <ClCompile Include="source\src\Manager\ConnectManager.cpp" />
+    <ClCompile Include="source\src\Manager\LobbyManager.cpp" />
+    <ClCompile Include="source\src\Manager\MsgManager.cpp" />
+    <ClCompile Include="source\src\Manager\RequestManager.cpp" />
+    <ClCompile Include="source\src\Manager\UserInfoManager.cpp" />
     <ClCompile Include="source\src\Systems\HealthSystem.cpp" />
     <ClCompile Include="source\src\Systems\LightFollowSystem.cpp" />
     <ClCompile Include="source\src\Systems\LightShowSystem.cpp" />
@@ -185,6 +213,8 @@
     <ClCompile Include="source\src\Systems\MovementSystem.cpp" />
     <ClCompile Include="source\src\Systems\TetrisSystem.cpp" />
     <ClCompile Include="source\src\Systems\WeaponSystem.cpp" />
+    <ClCompile Include="source\src\UiRouter.cpp" />
+    <ClCompile Include="source\src\UserSettings.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.vcxproj">

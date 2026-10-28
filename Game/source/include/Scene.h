@@ -2,7 +2,6 @@
 
 #include "stdafx.h"
 #include "RenderEngine/D2DWrapper.h"
-#include "GeneralManager/KeyMapManaer.h"
 
 /*
  各场景按钮和控件的编号

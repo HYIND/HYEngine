@@ -1,4 +1,4 @@
-﻿#include "ImguiLayout.h"
+#include "ImguiLayout.h"
 
 #include "Helper/FileIO.h"
 #include "glm/gtc/type_ptr.hpp"
@@ -1456,12 +1456,30 @@ void ImguiLayout::DrawPlayControls(EditorApp* editorApp, ProjectManager* project
 	{
 		if (ImGui::Button("Pause"))
 			editorApp->Scene().PauseWorld();
+
+		std::string sceneAsset;
+
+		bool wantQuit = editorApp->Runtime().TakeQuitRequest();
+		bool wantChangeScene = editorApp->Scene().HasPendingSceneChange();
+		if (wantQuit)
+		{
+			editorApp->Scene().StopPlayback();
+			selectedEntity = Entity();
+		}
+		else
+		{
+			if (wantChangeScene && editorApp->Scene().PumpSceneChanges())
+			{
+				selectedEntity = Entity();
+			}
+		}
 	}
 	else
 	{
 		if (ImGui::Button("Resume"))
 			editorApp->Scene().ContinueWorld();
 	}
+
 	if (editorApp->Scene().GetEditorState() != EditorWorldState::Editing)
 	{
 		ImGui::SameLine();
@@ -3134,13 +3152,27 @@ void ImguiLayout::ApplyUIAsset(Entity target, const AssetMeta& meta, ProjectMana
 		return;
 
 	const AssetGUID guid = meta.guid;
-	auto assign = [target, guid](World& activeWorld) {
+
+	// 新挂上的 UIView 给个默认视图名（main.ui → "main"），模块就能直接 FindDoc；
+	// 已有的视图名不动，想改在属性面板里改。
+	std::string defaultViewName = meta.name;
+	if (defaultViewName.size() > 3)
+	{
+		std::string tail = defaultViewName.substr(defaultViewName.size() - 3);
+		std::transform(tail.begin(), tail.end(), tail.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		if (tail == ".ui")
+			defaultViewName.resize(defaultViewName.size() - 3);
+	}
+
+	auto assign = [target, guid, defaultViewName](World& activeWorld) {
 		if (!activeWorld.IsValidWorldEntity(target))
 			return;
 		auto view = target.tryGetComponent<UIView>();
 		if (!view)
 			view = &target.addComponent<UIView>();
 		view->documentGuid = guid;
+		if (view->viewName.empty())
+			view->viewName = defaultViewName;
 		view->needReload = true;
 		};
 

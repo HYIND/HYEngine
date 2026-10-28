@@ -254,6 +254,7 @@
     <ClCompile Include="source\src\Systems\ScriptSystem.cpp" />
     <ClCompile Include="source\src\Systems\UIViewSystem.cpp" />
     <ClCompile Include="source\src\UI\UiDom.cpp" />
+    <ClCompile Include="source\src\UI\UiInstanceState.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source\include\ECSCore\Entity.inl" />

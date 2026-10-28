@@ -1,7 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 struct CubeParams {
 	uint32_t CubeEnable = 0;

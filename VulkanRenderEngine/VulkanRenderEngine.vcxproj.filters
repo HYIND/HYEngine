@@ -53,9 +53,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="vkstdafx.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -200,7 +197,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelper.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h">
@@ -356,6 +353,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousGaussFilter.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\vkstdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -493,7 +493,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelper.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightingPass.cpp">

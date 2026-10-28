@@ -9,7 +9,7 @@
 #include "VulkanRenderEngine/General/SegmentBufferManager.h"
 #include "VulkanRenderEngine/General/SegmentBufferBase.h"
 
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/BVHBuilder.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 

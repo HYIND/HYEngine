@@ -80,9 +80,9 @@ NComponentCodec::EngineModuleManager::~EngineModuleManager() { UnloadAll(); }
 bool NComponentCodec::EngineModuleManager::LoadModule(const fs::path& path, std::string* error)
 {
 #ifdef _WIN32
-	const auto handle = LoadLibraryW(path.c_str());
+	const auto handle = LoadLibrary(path.c_str());
 	if (!handle) {
-		if (error) *error = "LoadLibraryW failed for " + path.string();
+		if (error) *error = "LoadLibrary failed for " + path.string();
 		return false;
 	}
 
@@ -111,7 +111,7 @@ bool NComponentCodec::EngineModuleManager::LoadModule(const fs::path& path, std:
 			std::string extA = pa.extension().string();
 			std::string extB = pb.extension().string();
 
-			auto toLower = [](std::string& s) {
+			static auto toLower = [](std::string& s) {
 				std::transform(s.begin(), s.end(), s.begin(),
 					[](unsigned char c) {
 						return static_cast<char>(std::tolower(c));
@@ -204,15 +204,18 @@ bool NComponentCodec::EngineModuleManager::LoadModule(const fs::path& path, std:
 #endif
 }
 
-bool NComponentCodec::EngineModuleManager::LoadModulesFromDirectory(const fs::path& directory, std::string* error)
+void NComponentCodec::EngineModuleManager::LoadModulesFromDirectory(const fs::path& directory)
 {
-	if (!fs::exists(directory)) return true;
+	if (!fs::exists(directory)) 
+		return;
+
 	for (const auto& entry : fs::directory_iterator(directory))
 	{
 		if (!entry.is_regular_file() || entry.path().extension() != ".dll") continue;
-		if (!LoadModule(entry.path(), error)) return false;
+		std::string error;
+		if (!LoadModule(entry.path(), &error))
+			std::cout << std::format("error when LoadModule with path = {}, error = {}", entry.path().string(), error);
 	}
-	return true;
 }
 
 void NComponentCodec::EngineModuleManager::RegisterSystems(World& world)

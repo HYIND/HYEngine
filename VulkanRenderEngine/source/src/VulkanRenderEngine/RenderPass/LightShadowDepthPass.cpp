@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/LightShadowDepthPass.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 constexpr uint32_t batch_max = 16;
 

@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/LightingPass.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/Base/AtlasMap.h"
 

@@ -1,6 +1,5 @@
 #include "Manager/MsgManager.h"
 #include "Manager/LobbyManager.h"
-#include "Manager/GameWorldManager.h"
 #include "command.h"
 
 using namespace LobbySubServiceCommand;
@@ -55,21 +54,21 @@ Task<void> MsgManager::ProcessMsg(const json& js)
 		co_await LOBBYMANAGER->ProcessStartGameRes(js);
 		break;
 
-	case GameService_BroadCastGameState:
-		GameWorldManager::Instance()->SyncFromServerState(js);
-		break;
+	//case GameService_BroadCastGameState:
+	//	GameWorldManager::Instance()->SyncFromServerState(js);
+	//	break;
 
-	case GameService_SyncGameEvent:
-		GameWorldManager::Instance()->SyncFromServerEvent(js);
-		break;
+	//case GameService_SyncGameEvent:
+	//	GameWorldManager::Instance()->SyncFromServerEvent(js);
+	//	break;
 
-	case GameService_EliminateInfo:
-		GameWorldManager::Instance()->ProcessEliminateInfo(js);
-		break;
+	//case GameService_EliminateInfo:
+	//	GameWorldManager::Instance()->ProcessEliminateInfo(js);
+	//	break;
 
-	case GameService_GameOverInfo:
-		GameWorldManager::Instance()->ProcessGameOver(js);
-		break;
+	//case GameService_GameOverInfo:
+	//	GameWorldManager::Instance()->ProcessGameOver(js);
+	//	break;
 
 	default:
 		break;

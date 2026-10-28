@@ -69,6 +69,8 @@ public:
 	SceneEditor& Scene() { return m_scene; }
 	World* GetWorld();
 
+	EngineRuntime& Runtime() { return m_runtime; }
+
 private:
 	EngineRuntime m_runtime;
 	SceneEditor m_scene;

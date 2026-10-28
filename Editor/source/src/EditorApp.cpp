@@ -6,7 +6,7 @@
 #include "Project/ProjectManager.h"
 
 #include "CommonData/LightFactory.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
 
@@ -43,7 +43,7 @@ EditorApp::EditorApp()
 	m_scene.SetViewportHeightProvider([this] { return static_cast<float>(GetRenderTargetHeight()); });
 
 	EngineRuntimeConfig config;
-	config.host.host = EngineHostKind::Editor;
+	config.hostType = EngineHostType::Editor;
 	if (!m_runtime.Initialize(config))
 		throw std::runtime_error("Failed to initialize EngineRuntime");
 	std::string moduleError;

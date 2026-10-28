@@ -384,7 +384,8 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 					// selected 决定这个列表能不能点选：
 					//   true  = 可交互列表，点中的行高亮并回传（下标在 value 里，和 combo 同一套规则）
 					//   false = 展示列表，行只是"能看"，不高亮也不发事件
-					const bool selectable = nodeState.selected;
+					// 行能不能点 = 资产说可以（selectable，默认 true）且运行期没被关掉。
+					const bool selectable = node.selectable && nodeState.selected;
 					const bool rowSelected = selectable && i == static_cast<int>(nodeState.value);
 
 					if (ImGui::Selectable(item.text.c_str(), rowSelected,
@@ -477,26 +478,20 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		// 选项表可以被外部整体替换（按语言/等级换一组选项），没替换过就用资产里声明的。
 		const std::vector<UI::UiOption>& comboOptions = comboState.hasOptions ? comboState.options : node.options;
 
+		// 实例里存的是"选项值"，这里反查成下标去画（下标不是状态的一部分，
+		// 否则外部 SetValue 和 onChange 回传的 option.value 就是两套语义了）。
 		int selected = 0;
 		if (!comboOptions.empty())
 		{
-			if (!comboState.initialized)
+			const int optionValue = static_cast<int>(comboState.value);
+			for (int i = 0; i < static_cast<int>(comboOptions.size()); ++i)
 			{
-				comboState.initialized = true;
-				for (int i = 0; i < static_cast<int>(comboOptions.size()); ++i)
+				if (comboOptions[static_cast<size_t>(i)].value == optionValue)
 				{
-					if (comboOptions[static_cast<size_t>(i)].value == static_cast<int>(node.value))
-					{
-						selected = i;
-						break;
-					}
+					selected = i;
+					break;
 				}
-				comboState.value = static_cast<float>(selected);
 			}
-
-			selected = static_cast<int>(comboState.value);
-			const int last = static_cast<int>(comboOptions.size()) - 1;
-			selected = selected < 0 ? 0 : (selected > last ? last : selected);
 		}
 
 		const char* preview = comboOptions.empty() ? "" : comboOptions[static_cast<size_t>(selected)].text.c_str();
@@ -534,7 +529,8 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 
 				if (ImGui::Selectable(option.text.c_str(), isSelected))
 				{
-					comboState.value = static_cast<float>(i);
+					// 存选项值，不存下标：和事件里回传的 option.value 保持同一套语义。
+					comboState.value = static_cast<float>(option.value);
 					if (!node.onChange.command.empty())
 						m_events.push_back(UI::UiEvent{ node.onChange.command, node.onChange.legacyId, node.name, static_cast<float>(option.value), option.text });
 				}
@@ -637,15 +633,7 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		return;
 	}
 
-	// ---- 带数值的控件：progress / slider / toggle ----
-	// 运行时值不能写回节点（UI 文档是资产、多个实例共享），存在实例状态里，按节点 id 索引。
 	UI::UiNodeState& state = nodeState;
-	if (!state.initialized)
-	{
-		state.value = node.value;
-		state.toggled = node.value > 0.0f;
-		state.initialized = true;
-	}
 
 	const float rangeMin = node.minValue;
 	const float rangeMax = (node.maxValue > node.minValue) ? node.maxValue : (node.minValue + 1.0f);
@@ -829,9 +817,6 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 		// 同一份文档可能被多个 UIView 复用，节点 id 只在文档内唯一，必须按视图再隔离一层。
 		ImGui::PushID(viewIndex++);
 		{
-			// 绘制期间独占这个实例：场景线程的 UI::Element 写入要等这一帧画完，
-			// 免得节点表在 DrawNode 持有引用时被插入/重排。
-			// 锁是递归的（CriticalSectionLock），绘制路径里万一再调到 UI::Element 也不会自锁。
 			std::unique_lock<CriticalSectionLock> instanceLock;
 			if (view.instance)
 				instanceLock = std::unique_lock<CriticalSectionLock>(view.instance->mutex);

@@ -1,4 +1,4 @@
-﻿#include "UI/UiDocumentParser.h"
+#include "UI/UiDocumentParser.h"
 
 #include "nlohmann/json.hpp"
 
@@ -341,6 +341,9 @@ namespace UI
 
 	if (node.contains("rowHeight") && node["rowHeight"].is_number())
 		result.rowHeight = node["rowHeight"].get<float>();
+			// 列表行能不能点：不写就是默认 true（可点），纯展示的列表写 false。
+			if (node.contains("selectable") && node["selectable"].is_boolean())
+				result.selectable = node["selectable"].get<bool>();
 
 			result.inlineStyle = ReadNodeInlineStyle(node);
 			result.inlineStates = ReadInlineStates(node);

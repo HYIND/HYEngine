@@ -5,7 +5,7 @@
 #include "PlatformRuntimeComponents.h"
 #include "ECSCore/World.h"
 #include "Systems/ScriptSystem.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 using namespace Render;
 
@@ -15,7 +15,7 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 {
 	sol::table render = lua["Render"].get_or_create<sol::table>();
 
-	static auto DefaultCube = GetCubeModel(glm::vec3(0.5f), 1.0f, "");
+	static auto DefaultCube = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "");
 
 	auto setVisiable = [this](const Entity& entity, const std::string& field, bool value) ->bool {
 		return SetVisiable(entity, field, value);

@@ -1,62 +1,28 @@
 
 #include "stdafx.h"
 #include "RenderProcess.h"
-#include "Scene.h"
-#include "Manager/GameWorldManager.h"
-#include "Manager/ConnectManager.h"
-#include "Manager/RequestManager.h"
-#include "Manager/LobbyManager.h"
 #include "Manager/ResourceManager.h"
-#include "BusyLoaderDialog.h"
-#include <commctrl.h>
 
-#include "GeneralManager/RenderManager.h"
 #include "GameEngine.h"
 #include "Input/EngineKey.h"
+
+#include "GeneralManager/RenderManager.h"
 #include "GeneralManager/FocusManager.h"
 #include "GeneralManager/WindowHandleManager.h"
-#include "Input/Systems/LocalInputSystem.h"
+
+#include "BusyLoaderDialog.h"
 
 #define MAX_LOADSTRING 100
 
 WCHAR szTitle[MAX_LOADSTRING] = L"HyTestGame";  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
-void LoadOption()
-{
-	//FPS
-	{
-		UINT FPS = std::clamp(GetPrivateProfileInt(L"Video", L"FPS", 144, L"./option.ini"), UINT(1), UINT(500));
-		GameEngine::Instance().SetTargetFps(FPS);
-	}
-
-	//音频
-	const auto& audioDevice = GameEngine::Instance().Audio();
-	if (audioDevice)
-	{
-		{
-			UINT masterVol = std::clamp(GetPrivateProfileInt(L"Audio", L"MasterVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			audioDevice->SetMasterVolumn(float(masterVol) / 100.0f);
-		}
-
-		{
-			UINT musicVol = std::clamp(GetPrivateProfileInt(L"Audio", L"MusicVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			audioDevice->SetChannelVolumn((AudioChannelID)AudioChannelDef::BGM_Channel, float(musicVol) / 100.0f);
-		}
-
-		{
-			UINT SFXVol = std::clamp(GetPrivateProfileInt(L"Audio", L"SFXVolume", 80, L"./option.ini"), UINT(0), UINT(100));
-			audioDevice->SetChannelVolumn((AudioChannelID)AudioChannelDef::SoundEffects_Channel, float(SFXVol) / 100.0f);
-		}
-	}
-}
 
 bool Init_all_Resource()
 {
 	LOGINFO("Init", "Init_All");
 	ResFactory->InitD2DResource();
 	ResFactory->InitAudioResource();
-	Init_Scene();
 	return true;
 }
 
@@ -258,28 +224,71 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	return TRUE;
 }
 
-//
-//  函数: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  目标: 处理主窗口的消息。
-//
-//  WM_COMMAND  - 处理应用程序菜单
-//  WM_PAINT    - 绘制主窗口
-//  WM_DESTROY  - 发送退出消息并返回
-//
-//
+enum { sceneTick };	//定时器ID
 
-enum { hall_refreash, room_refreash, sceneTick };	//定时器ID
+namespace
+{
+	// 一个 UTF-16 码元转 UTF-8。WM_CHAR 送来的合成字符都在 BMP 以内；
+	// 代理对（emoji 之类）会被拆成两次 WM_CHAR，这里不拼，先按两段分别推送。
+	std::string Utf8FromCodeUnit(unsigned int code)
+	{
+		std::string out;
+		if (code < 0x80)
+		{
+			out.push_back(static_cast<char>(code));
+		}
+		else if (code < 0x800)
+		{
+			out.push_back(static_cast<char>(0xC0 | (code >> 6)));
+			out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+		}
+		else
+		{
+			out.push_back(static_cast<char>(0xE0 | (code >> 12)));
+			out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+			out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+		}
+		return out;
+	}
+
+	void SyncInputViewport(HWND hWnd)
+	{
+		auto input = GameEngine::Instance().Input();
+		if (!input)
+			return;
+
+		RECT rect{};
+		if (!GetClientRect(hWnd, &rect))
+			return;
+
+		input->SetViewportRect(0.0f, 0.0f,
+			static_cast<float>(rect.right - rect.left),
+			static_cast<float>(rect.bottom - rect.top));
+	}
+}
+
+namespace MousePosRecord
+{
+	int MoveX, MoveY, ClickX, ClickY;
+}
+
+std::shared_ptr<std::thread> renderThread;
+bool shouldStopRenderThread = false;
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
 	{
 	case WM_CREATE:
 	{
+		if (ShowConsole)
+			CreateDebugConsole();
+
 		RECT rect;
 		GetClientRect(hWnd, &rect);
 		WINDOWHANDLEMANAGER->SetHwnd(hWnd);
 		WINDOWHANDLEMANAGER->SetRect(rect);
+
 
 		std::string engineError;
 		if (!GameEngine::Instance().Initialize(&engineError))
@@ -289,8 +298,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		}
 
-		if (ShowConsole)
-			CreateDebugConsole();
+		std::string openProjectError;
+		if (!GameEngine::Instance().Runtime().OpenProject("D:/Desktop/code/HYEngine/bin/temp/project2/333333.project", &openProjectError))
+		{
+			MessageBoxA(hWnd, openProjectError.c_str(), "项目初始化失败", MB_OK);
+			DestroyWindow(hWnd);
+			break;
+		}
 
 		std::string renderError;
 		if (!GameEngine::Instance().CreateRenderer(static_cast<uint32_t>(rect.right - rect.left), static_cast<uint32_t>(rect.bottom - rect.top), &renderError))
@@ -300,20 +314,46 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		}
 
+		SyncInputViewport(hWnd);
+
 		bool result = Init_all_Resource();
 		if (!result)
 		{
 			MessageBox(hWnd, _T("位图加载失败"), L"Error", MB_OK);
 			DestroyWindow(hWnd);
 		}
-		Set_CurScene(STATUS::Main);
-		LoadOption();
-		{
-			thread T(&Render_Thread);
-			T.detach();
-		}
+
+		renderThread = std::make_shared<std::thread>(&RenderLoop, &shouldStopRenderThread);
+
 		SetTimer(hWnd, sceneTick, 6, NULL);
-		//PostMessage(hWnd, WM_COMMAND, IDB_LOCALGAME, (LPARAM)hWnd);
+
+		BusyLoaderDialog dialog;
+		if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
+		{
+			auto task = CoroTask::Run([]()->bool {
+				WaitForInitScene3D();
+				auto projectManager = GameEngine::Instance().Runtime().GetProjectManager();
+				auto guid = projectManager->GetDefaultSceneGUID();
+				if (guid.empty() || !GameEngine::Instance().Runtime().OpenScene(guid))
+					GameEngine::Instance().Runtime().OpenEmptyScene(nullptr);
+				return true;
+				});
+
+			dialog.Show(std::move(task), nullptr, "初始化游戏......");
+
+			auto result = dialog.WaitResultAndClose();
+			if (result == DialogResult::SUCCESSED)
+			{
+				//ShowCursor(FALSE);
+				GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
+				InvalidateRect(hWnd, NULL, TRUE);
+			}
+			else if (result == DialogResult::FAILED)
+			{
+				MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"游戏初始化失败！", TEXT("开始游戏"), MB_OK);
+			}
+		}
+
 		break;
 	}
 
@@ -321,17 +361,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		switch (wParam)
 		{
-		case hall_refreash:
-			REQUESTMANAGER->RequestLobbyUserData();
-			REQUESTMANAGER->RequestLobbyRoomData();
-			break;
-		case room_refreash:
-			REQUESTMANAGER->RequestRoomInfo();
-			break;
 		case sceneTick:
 			if (auto input = GameEngine::Instance().Input())
 				input->NewFrame();
-			_Scene::CurScene->Tick();
+
+			auto& engineRuntime = GameEngine::Instance().Runtime();
+
+			if (engineRuntime.TakeQuitRequest())
+			{
+				DestroyWindow(hWnd);
+				return 0;
+			}
+
+			if (engineRuntime.HasPendingSceneChange())
+			{
+				std::string error;
+				if (!GameEngine::Instance().Runtime().PumpSceneChanges(&error) && error.empty())
+				{
+				}
+			}
+
 			break;
 		}
 		InvalidateRect(hWnd, NULL, TRUE);
@@ -347,17 +396,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_KEYDOWN:
 	case WM_KEYUP:
 	{
-		// 只把按键的按下/抬起交给引擎，语义（哪个键等于前进）由 Controller 自己决定。
 		if (auto input = GameEngine::Instance().Input())
 			input->SetKeyDown(EngineKeyFromVirtualKey(int(wParam)), message == WM_KEYDOWN);
+		break;
+	}
+
+	case WM_CHAR:
+	{
+		if (auto input = GameEngine::Instance().Input())
+		{
+			const unsigned int code = static_cast<unsigned int>(wParam);
+			if (code >= 0x20 && code != 0x7F)
+				input->PushTextInput(Utf8FromCodeUnit(code));
+		}
+		break;
+	}
+
+	case WM_SIZE:
+	{
+		SyncInputViewport(hWnd);
+		break;
+	}
+
+	case WM_MOUSEWHEEL:
+	{
+		if (auto input = GameEngine::Instance().Input())
+			input->PushMouseWheel(static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / static_cast<float>(WHEEL_DELTA));
 		break;
 	}
 
 	case WM_KILLFOCUS:
 	{
 		FocusManager::Instance()->SetFocus(false);
-		MousePos::MoveX = -1;
-		MousePos::MoveY = -1;
 		if (auto input = GameEngine::Instance().Input())
 		{
 			input->SetActive(false);
@@ -398,574 +468,43 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		int wmId = LOWORD(wParam);
 		int wmEvent = HIWORD(wParam);
-		switch (Get_CurScene())
-		{
-		case STATUS::Main:
-		{
-			switch (wmId)
-			{
-				// 开始游戏
-			case IDB_LOCALGAME: {
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = CoroTask::Run([]()->bool {
-						WaitForInitScene3D();
-						GameWorldManager::Instance()->InitGameWorld();
-						return true;
-						});
-
-					dialog.Show(std::move(task), nullptr, "初始化游戏......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						ShowCursor(FALSE);
-						if (auto input = GameWorldManager::Instance()->GetGameWorld()->getSystem<LocalInputSystem>())
-							input->setEnabled(false);
-						GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
-						CoroTask::Run([]()->Task<void> {
-							co_await CoSleep(200ms);
-							if (auto input = GameWorldManager::Instance()->GetGameWorld()->getSystem<LocalInputSystem>())
-								input->setEnabled(true);
-							});
-						Set_CurScene(STATUS::LocalGame_Status);
-						InvalidateRect(hWnd, NULL, TRUE);
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"游戏初始化失败！", TEXT("开始游戏"), MB_OK);
-					}
-				}
-				break;
-			}
-							  // 联机大厅
-			case IDB_ENTERHALL: {
-				if (!DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_Userid), hWnd, (DLGPROC)GetID_Proc))
-					break;
-
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = ConnectManager::Instance()->Login();
-
-					dialog.Show(std::move(task), nullptr, "登录中......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						Set_CurScene(STATUS::Hall_Status);
-						SetTimer(hWnd, hall_refreash, 3000, NULL);
-						UpdateWindow(hWnd);
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"登录失败，无法连接到服务器或者非合规用户名！", TEXT("联机大厅"), MB_OK);
-					}
-				}
-				break;
-			}
-							  // 设置
-			case IDB_OPTION: {
-				Set_CurScene(STATUS::Option);
-				break;
-			}
-						   //地图编辑
-			case IDB_MAPEDIT: {
-				//Set_CurScene(STATUS::MapEdit);
-				break;
-			}
-							// 退出游戏
-			case IDB_QUITGAME:
-			{
-				DestroyWindow(hWnd);
-				break;
-			}
-			}
-			break;
-		}
-		case STATUS::Option:
-		{
-			switch (wmId)
-			{
-			case IDB_EXITOPTION:
-			{
-				Set_CurScene(STATUS::Main);
-				break;
-			}
-			case IDB_SETFPS_60:
-			{
-				int frame = 60;
-				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
-				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
-				break;
-			}
-			case IDB_SETFPS_144:
-			{
-				int frame = 144;
-				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
-				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
-				break;
-			}
-			case IDB_SETFPS_240:
-			{
-				int frame = 240;
-				GameEngine::Instance().SetTargetFps(static_cast<uint32_t>(frame));
-				WritePrivateProfileString(L"Video", L"FPS", std::to_wstring(frame).c_str(), L"./option.ini");
-				break;
-			}
-			default:
-				break;
-			}
-
-		}
-		case STATUS::Hall_Status:
-		{
-			switch (wmId)
-			{
-			case Enterroom:
-			{
-				KillTimer(hWnd, hall_refreash);
-				SetTimer(hWnd, room_refreash, 1000, NULL);
-				Set_CurScene(STATUS::Room_Status);
-				UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
-				break;
-			}
-			// 刷新
-			case IDB_REFRESH:
-			{
-				REQUESTMANAGER->RequestLobbyUserData();
-				REQUESTMANAGER->RequestLobbyRoomData();
-				break;
-			}
-			// 加入房间
-			case IDB_ENTERROOM:
-			{
-				if (auto selectRoom = LOBBYMANAGER->GetSelectRoom())
-				{
-					BusyLoaderDialog dialog;
-					if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-					{
-						auto task = LOBBYMANAGER->TryJoinRoom(selectRoom);
-
-						dialog.Show(std::move(task), nullptr, "加入房间中......");
-
-						auto result = dialog.WaitResultAndClose();
-						if (result == DialogResult::SUCCESSED)
-						{
-							SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
-						}
-						else if (result == DialogResult::FAILED)
-						{
-							MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-						}
-					}
-				}
-				break;
-			}
-			// 离开大厅
-			case IDB_EXITHALL:
-			{
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = []()->Task<bool> {
-						co_await ConnectManager::Instance()->Logout();
-						co_return true;
-						}();
-
-					dialog.Show(std::move(task), nullptr, "离开大厅......");
-
-					auto result = dialog.WaitResultAndClose();
-					KillTimer(hWnd, hall_refreash);
-					Set_CurScene(STATUS::Main);
-					UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
-				}
-				break;
-			}
-			case IDB_HALL_SEND:
-			{
-				wchar_t temp[1024] = { '\0' };
-				GetWindowTextW(_Scene::SHall->Hall_edit_in, temp, 1024);
-				wstring str = temp;
-				if (!str.empty())
-				{
-					REQUESTMANAGER->SendHallMsg(Tool::WStringToUTF8(str));
-					SendMessage(_Scene::SHall->Hall_edit_in, WM_SETTEXT, 0, (LPARAM)L"");
-				}
-				break;
-			}
-			// 创建房间
-			case IDB_CREATEROOM:
-			{
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = LOBBYMANAGER->TryCreateRoom();
-
-					dialog.Show(std::move(task), nullptr, "创建房间......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						REQUESTMANAGER->RequestRoomInfo();
-						Set_CurScene(STATUS::Room_Status);
-						KillTimer(hWnd, hall_refreash);
-						SetTimer(hWnd, room_refreash, 1000, NULL);
-						UpdateWindow(WINDOWHANDLEMANAGER->GetHwnd());
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-					}
-				}
-				break;
-			}
-			case HALL_ROOM_LIST:
-			{
-				if (wmEvent == LBN_DBLCLK)
-				{
-					if (auto selectRoom = LOBBYMANAGER->GetSelectRoom())
-					{
-						BusyLoaderDialog dialog;
-						if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-						{
-							auto task = LOBBYMANAGER->TryJoinRoom(selectRoom);
-
-							dialog.Show(std::move(task), nullptr, "加入房间中......");
-
-							auto result = dialog.WaitResultAndClose();
-							if (result == DialogResult::SUCCESSED)
-							{
-								SendMessage(WINDOWHANDLEMANAGER->GetHwnd(), WM_COMMAND, Enterroom, (LPARAM)WINDOWHANDLEMANAGER->GetHwnd());
-							}
-							else if (result == DialogResult::FAILED)
-							{
-								MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-							}
-						}
-					}
-				}
-				break;
-			}
-			}
-			break;
-		}
-		case STATUS::Room_Status:
-		{
-			switch (wmId)
-			{
-			case IDB_STARTGAME:
-			{
-				if (!LOBBYMANAGER->IsHost())
-					break;
-
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = LOBBYMANAGER->TryStartGame();
-
-					dialog.Show(std::move(task), nullptr, "开始游戏......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"存在未准备的玩家！", NULL, MB_OK);
-					}
-				}
-				break;
-			}
-			case IDB_READY:
-			{
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = LOBBYMANAGER->TryChangeReadyStatus(true);
-
-					dialog.Show(std::move(task), nullptr, "取消准备......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						REQUESTMANAGER->RequestRoomInfo();
-						_Scene::SRoom->ModifyButton_ID(IDB_READY, IDB_CANCELREADY);
-						_Scene::SRoom->ModifyButton_Text(IDB_CANCELREADY, L"取消准备");
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-					}
-				}
-				break;
-			}
-			case IDB_CANCELREADY:
-			{
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = LOBBYMANAGER->TryChangeReadyStatus(false);
-
-					dialog.Show(std::move(task), nullptr, "取消准备......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						REQUESTMANAGER->RequestRoomInfo();
-						_Scene::SRoom->ModifyButton_ID(IDB_CANCELREADY, IDB_READY);
-						_Scene::SRoom->ModifyButton_Text(IDB_READY, L"准备");
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-					}
-				}
-				break;
-			}
-			case DISBANDINROOM:
-			{
-				KillTimer(hWnd, room_refreash);
-				MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"房主已将房间解散！", NULL, MB_OK);
-				Set_CurScene(STATUS::Hall_Status);
-				SetTimer(hWnd, hall_refreash, 4000, NULL);
-				UpdateWindow(hWnd);
-				break;
-			}
-			case IDB_EXITROOM:
-			{
-				BusyLoaderDialog dialog;
-				if (dialog.Create(WINDOWHANDLEMANAGER->GetHwnd(), WINDOWHANDLEMANAGER->GetHinstance()))
-				{
-					auto task = LOBBYMANAGER->TryLeaveRoom();
-
-					dialog.Show(std::move(task), nullptr, "取消准备......");
-
-					auto result = dialog.WaitResultAndClose();
-					if (result == DialogResult::SUCCESSED)
-					{
-						KillTimer(hWnd, room_refreash);
-						Set_CurScene(STATUS::Hall_Status);
-						SetTimer(hWnd, hall_refreash, 4000, NULL);
-						UpdateWindow(hWnd);
-					}
-					else if (result == DialogResult::FAILED)
-					{
-						MessageBox(WINDOWHANDLEMANAGER->GetHwnd(), L"状态异常！", NULL, MB_OK);
-					}
-				}
-				break;
-			}
-			case START:
-			{
-				KillTimer(hWnd, room_refreash);
-
-				GameWorldManager::Instance()->InitOnlineGameWorld();
-				GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
-				Set_CurScene(STATUS::OnlineGame_Status);
-
-				break;
-			}
-			case IDB_ROOM_SEND:
-			{
-				wchar_t temp[1024] = { '\0' };
-				GetWindowTextW(_Scene::SRoom->Room_edit_in, temp, 1024);
-				wstring str = temp;
-				if (!str.empty())
-				{
-					REQUESTMANAGER->SendRoomMsg(Tool::WStringToUTF8(str));
-					SendMessage(_Scene::SRoom->Room_edit_in, WM_SETTEXT, 0, (LPARAM)L"");
-				}
-				break;
-			}
-			}
-			break;
-		}
-		case STATUS::LocalGame_Status:
-		{
-			switch (wmId)
-			{
-				// 暂停
-			case IDB_PAUSE:
-			{
-				GameEngine::Instance().StopSceneThread();
-				int i = DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_PAUSE), hWnd, Pause);
-				switch (i) {
-				case 10:	//回到游戏
-					GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
-					break;
-				case 20:	//重新开始
-					GameEngine::Instance().StopSceneThread();
-					GameEngine::Instance().CloseScene();
-					GameWorldManager::Instance()->InitGameWorld();
-					GameEngine::Instance().StartSceneThread(1000.f / 165.f, 1000.f / 60.f);
-					break;
-				case 30:	//回到主菜单
-					GameEngine::Instance().StopSceneThread();
-					GameEngine::Instance().CloseScene();
-					Set_CurScene(STATUS::Main);
-					break;
-				}
-				break;
-			}
-			case ReLoadMap:
-			{
-				//Game::Instance()->LoadLocalMap();
-				break;
-			}
-			}
-			break;
-		}
-		case STATUS::OnlineGame_Status:
-		{
-			switch (wmId)
-			{
-			case IDB_RETURN:
-			{
-				int i = DialogBox(WINDOWHANDLEMANAGER->GetHinstance(), MAKEINTRESOURCE(IDD_DIALOG_RETURN), hWnd, Return);
-				switch (i) {
-				case 10:	//回到游戏
-					break;
-				case 20:	//退出游戏
-					if (REQUESTMANAGER->RequestLeaveGame().sync_wait())
-					{
-						GameEngine::Instance().StopSceneThread();
-						GameEngine::Instance().CloseScene();
-						Set_CurScene(STATUS::Hall_Status);
-						SetTimer(hWnd, hall_refreash, 4000, NULL);
-					}
-					break;
-					//case 30:	//回到主菜单
-					//	GameEngine::Instance().StopSceneThread();
-					//	GameEngine::Instance().CloseScene();
-					//	Set_CurScene(STATUS::Main);
-					//	break;
-				}
-				break;
-			}
-			case WIN:
-			{
-				CONNECTMANAGER->LogoutGameSeervice();
-				_Scene::CurScene = _Scene::SWinGame;
-				break;
-			}
-			case FAIL:
-			{
-				CONNECTMANAGER->LogoutGameSeervice();
-				_Scene::CurScene = _Scene::SFailGame;
-				break;
-			}
-			case ReturnInEndGame:
-			{
-				SetTimer(hWnd, room_refreash, 1000, NULL);
-				Set_CurScene(STATUS::Room_Status);
-				_Scene::SRoom->Show(true);
-				break;
-			}
-			}
-		}
-		default:
-		{
-			switch (wmId)
-			{
-			default:
-				return DefWindowProc(hWnd, message, wParam, lParam);
-			}
-			break;
-		}
-		}
-	}
-
-	case WM_HSCROLL:
-	{
-		HWND hScrollBar = (HWND)lParam;
-		int ctrlId = GetDlgCtrlID(hScrollBar);
-
-		switch (ctrlId) {
-		case Scene_Option::ID_SLIDER_MASTERVOL:
-		{
-			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
-			pos = std::clamp(pos, (UINT)0, (UINT)100);
-			float volume = float(pos) / 100.0f;
-			if (auto device = GameEngine::Instance().Audio())
-				device->SetMasterVolumn(volume);
-
-			if (_Scene::SOption)
-				_Scene::SOption->UpdateVolumeText(Scene_Option::ID_TEXT_MASTERVOL, pos);
-
-			WritePrivateProfileString(L"Audio", L"MasterVolume", std::to_wstring(pos).c_str(), L"./option.ini");
-			break;
-		}
-
-		case Scene_Option::ID_SLIDER_MUSIC:
-		{
-			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
-			pos = std::clamp(pos, (UINT)0, (UINT)100);
-			float volume = float(pos) / 100.0f;
-			if (auto device = GameEngine::Instance().Audio())
-				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::BGM_Channel, volume);
-
-			if (_Scene::SOption)
-				_Scene::SOption->UpdateVolumeText(Scene_Option::ID_TEXT_MUSIC, pos);
-
-			WritePrivateProfileString(L"Audio", L"MusicVolume", std::to_wstring(pos).c_str(), L"./option.ini");
-			break;
-		}
-
-		case Scene_Option::ID_SLIDER_SFX:    // 2002
-		{
-			UINT pos = (int)SendMessage(hScrollBar, TBM_GETPOS, 0, 0);
-			pos = std::clamp(pos, (UINT)0, (UINT)100);
-			float volume = float(pos) / 100.0f;
-			if (auto device = GameEngine::Instance().Audio())
-				device->SetChannelVolumn((AudioChannelID)AudioChannelDef::SoundEffects_Channel, volume);
-
-			if (_Scene::SOption)
-				_Scene::SOption->UpdateVolumeText(Scene_Option::ID_TEXT_SFX, pos);
-
-			WritePrivateProfileString(L"Audio", L"SFXVolume", std::to_wstring(pos).c_str(), L"./option.ini");
-			break;
-		}
-		}
-		break;
+		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 
 	case WM_MOUSEMOVE:
 	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetMousePosition(static_cast<float>(LOWORD(lParam)), static_cast<float>(HIWORD(lParam)));
+
 		if (FocusManager::Instance()->ShouldProcessInput())
 		{
 			int mouseX = LOWORD(lParam), mouseY = HIWORD(lParam);
-			const int lastMouseX = MousePos::MoveX, lastMouseY = MousePos::MoveY;
-
-			auto status = Get_CurScene();
-			const bool inGame = status == STATUS::LocalGame_Status || status == STATUS::OnlineGame_Status;
-
-			// 鼠标位移直接交给引擎的输入上下文，玩法从 PlayerInput 的 mouseDelta 读。
+			const int lastMouseX = MousePosRecord::MoveX, lastMouseY = MousePosRecord::MoveY;
 			if (lastMouseX >= 0 && lastMouseY >= 0)
 			{
 				if (auto input = GameEngine::Instance().Input())
+				{
 					input->AddMouseDelta(float(mouseX - lastMouseX), float(mouseY - lastMouseY));
+					input->SetMousePosition(float(mouseX), float(mouseY));
+				}
 			}
 
-			MousePos::MoveX = mouseX;
-			MousePos::MoveY = mouseY;
-			if (_Scene::CurScene)
-				_Scene::CurScene->Move();
+			MousePosRecord::MoveX = mouseX;
+			MousePosRecord::MoveY = mouseY;
 
-			if (inGame)
-			{
-				RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
-				const int centerClientX = main_rect.right / 2;
-				const int centerClientY = main_rect.bottom / 2;
-				POINT center = { centerClientX, centerClientY };
-				ClientToScreen(WINDOWHANDLEMANAGER->GetHwnd(), &center);
-				SetCursorPos(center.x, center.y);
+			//if (inGame)
+			//{
+			//	RECT main_rect = WINDOWHANDLEMANAGER->GetRect();
+			//	const int centerClientX = main_rect.right / 2;
+			//	const int centerClientY = main_rect.bottom / 2;
+			//	POINT center = { centerClientX, centerClientY };
+			//	ClientToScreen(WINDOWHANDLEMANAGER->GetHwnd(), &center);
+			//	SetCursorPos(center.x, center.y);
 
-				// 光标被拉回中心，下一次位移从中心开始算。
-				MousePos::MoveX = centerClientX;
-				MousePos::MoveY = centerClientY;
-			}
+			//	// 光标被拉回中心，下一次位移从中心开始算。
+			//	MousePos::MoveX = centerClientX;
+			//	MousePos::MoveY = centerClientY;
+			//}
 
 			InvalidateRect(hWnd, NULL, TRUE);
 		}
@@ -974,32 +513,66 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	case WM_LBUTTONDOWN:
 	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseLeft, true);
+
 		if (!FocusManager::Instance()->ShouldProcessInput())
 			break;
 
-		MousePos::ClickX = LOWORD(lParam);
-		MousePos::ClickY = HIWORD(lParam);
-		if (_Scene::CurScene)
-			_Scene::CurScene->Click(true, GetAsyncKeyState(VK_SHIFT) & 0x8000);
+		MousePosRecord::ClickX = LOWORD(lParam);
+		MousePosRecord::ClickY = HIWORD(lParam);
+
 		InvalidateRect(hWnd, NULL, TRUE);
+		break;
+	}
+
+	case WM_LBUTTONUP:
+	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseLeft, false);
 		break;
 	}
 
 	case WM_RBUTTONDOWN:
 	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseRight, true);
+
 		if (!FocusManager::Instance()->ShouldProcessInput())
 			break;
 
-		MousePos::ClickX = LOWORD(lParam);
-		MousePos::ClickY = HIWORD(lParam);
-		if (_Scene::CurScene)
-			_Scene::CurScene->Click(false, GetAsyncKeyState(VK_SHIFT) & 0x8000);
+		MousePosRecord::ClickX = LOWORD(lParam);
+		MousePosRecord::ClickY = HIWORD(lParam);
+
 		InvalidateRect(hWnd, NULL, TRUE);
+		break;
+	}
+
+	case WM_RBUTTONUP:
+	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseRight, false);
+		break;
+	}
+
+	case WM_MBUTTONDOWN:
+	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseMiddle, true);
+		break;
+	}
+
+	case WM_MBUTTONUP:
+	{
+		if (auto input = GameEngine::Instance().Input())
+			input->SetKeyDown(EngineKey::MouseMiddle, false);
 		break;
 	}
 
 	case WM_DESTROY:
 	{
+		shouldStopRenderThread = true;
+		renderThread->join();
 		GameEngine::Instance().StopSceneThread();
 		GameEngine::Instance().CloseScene();
 		GameEngine::Instance().Shutdown();

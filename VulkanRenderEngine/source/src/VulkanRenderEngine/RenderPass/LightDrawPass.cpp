@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/LightDrawPass.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 struct alignas(16) TransformAndColor
 {
@@ -38,8 +38,8 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 	if (config.Validate())
 		_shader.Create(config);
 
-	auto cubemodel = GetCubeModel(glm::vec3(1.0f), 1.0f);
-	auto spheremodel = GetSphereModel(0.5f, 72, 36);
+	auto cubemodel = RenderHelper::GetCubeModel(glm::vec3(1.0f), 1.0f);
+	auto spheremodel = RenderHelper::GetSphereModel(0.5f, 72, 36);
 
 	auto& cubeMesh = cubemodel->getMeshInfos()[0].mesh;
 	auto& sphereMesh = spheremodel->getMeshInfos()[0].mesh;

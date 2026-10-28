@@ -16,28 +16,30 @@
 #include "VulkanRenderEngine/VKContext.h"
 #include "VulkanRenderEngine/VKCore/VulkanInstance.h"
 #include "VulkanRenderEngine/VKCore/VulkanDevice.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "Project/ProjectManager.h"
 #include "Project/AssetDatabase.h"
 #include "Project/AssetObject.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Systems/UIViewSystem.h"
+#include "UI/EngineCommands.h"
 #include "UI/UiTypes.h"
 
 #include <algorithm>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
 
 namespace
 {
-	NComponentCodec::ModuleHost ToModuleHost(EngineHostKind kind)
+	NComponentCodec::ModuleHost ToModuleHost(EngineHostType kind)
 	{
 		switch (kind)
 		{
-		case EngineHostKind::Editor: return NComponentCodec::ModuleHost::Editor;
-		case EngineHostKind::Game:   return NComponentCodec::ModuleHost::Game;
-		case EngineHostKind::Server: return NComponentCodec::ModuleHost::Server;
+		case EngineHostType::Editor: return NComponentCodec::ModuleHost::Editor;
+		case EngineHostType::Game:   return NComponentCodec::ModuleHost::Game;
+		case EngineHostType::Server: return NComponentCodec::ModuleHost::Server;
 		}
 		return NComponentCodec::ModuleHost::Editor;
 	}
@@ -74,8 +76,9 @@ bool EngineRuntime::Initialize(const EngineRuntimeConfig& config)
 			});
 	}
 
-	// 工程对象由运行时持有：场景加载、资产解析都走它
 	m_project = std::make_unique<ProjectManager>();
+
+	RegisterEngineCommands();
 
 	m_initialized = true;
 	return true;
@@ -296,9 +299,9 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 			};
 		auto resolveModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<Model> {
 			if (guid == "DefaultCube")
-				return GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
+				return RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
 			if (guid == "DefaultSphere")
-				return GetSphereModel(0.5f, 72, 36, guid);
+				return RenderHelper::GetSphereModel(0.5f, 72, 36, guid);
 
 			auto database = project ? project->GetDatabase() : nullptr;
 			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
@@ -366,23 +369,15 @@ bool EngineRuntime::LoadModules(const std::string& directory, std::string* error
 		return false;
 	}
 
-	// 模块拿到的宿主服务：指向引擎自己的成员，活得比模块久。追加字段时只改这里和
-	// ModuleHostServices，不用升 EngineModuleApiVersion（模块按 size 判断能不能读）。
-	m_hostServices.uiCommands = &m_uiCommands;
-	m_hostServices.sceneServiceOwner = this;
+	m_hostServices.messageBus = &m_messages;
+	m_hostServices.serviceOwner = this;
 	m_hostServices.requestSceneChange = &EngineRuntime::OnModuleRequestSceneChange;
+	m_hostServices.requestQuit = &EngineRuntime::OnModuleRequestQuit;
 
-	auto manager = std::make_unique<NComponentCodec::EngineModuleManager>(
-		ToModuleHost(m_config.host.host), &m_hostServices);
-	std::string moduleError;
-	if (!manager->LoadModulesFromDirectory(directory, &moduleError))
-	{
-		if (error)
-			*error = moduleError;
-		return false;
-	}
+	if (!m_moduleManager)
+		m_moduleManager = std::make_unique<NComponentCodec::EngineModuleManager>(ToModuleHost(m_config.hostType), &m_hostServices);
 
-	m_moduleManager = std::move(manager);
+	m_moduleManager->LoadModulesFromDirectory(directory);
 	return true;
 }
 
@@ -391,9 +386,8 @@ void EngineRuntime::UnloadModules()
 	if (!m_moduleManager)
 		return;
 
-	// 先撤订阅再卸 DLL：总线表里留着指向已卸载代码段的 std::function 就是野指针。
 	for (const auto& moduleId : m_moduleManager->GetLoadedModuleIds())
-		m_uiCommands.UnregisterByModule(moduleId);
+		m_messages.UnregisterByModule(moduleId);
 
 	m_moduleManager->UnloadAll();
 	m_moduleManager.reset();
@@ -404,9 +398,7 @@ void EngineRuntime::StepEditorFrame(float deltaMilliseconds)
 	if (!m_world || m_world->isRunning())
 		return;
 
-	// 编辑态没有 world->update，也就没有系统 update 帮忙派发 UI 事件，所以在这里补一次。
-	// 放在最前面：handler 写下的界面状态能在这一帧的 RenderSystem::postUpdate 里被看到。
-	PumpUiEvents();
+	m_messages.Discard();
 
 	m_world->ProcessCommands();
 
@@ -466,19 +458,7 @@ void EngineRuntime::SceneThreadLoop()
 	fpsController.reset();
 	while (!m_sceneStop)
 	{
-		// 派发放在 update 之前：UI 每帧的快照是在 update 内部的 RenderSystem::postUpdate
-		// 里生成的，handler 写下的界面状态要赶上这一帧。
 		PumpUiEvents();
-
-		// 有切场景请求就只退出循环，绝不在这里执行切换：切换要 join 这条线程，
-		// 自己 join 自己是死锁。真正执行的是宿主的 PumpSceneChanges。
-		if (m_hasPendingScene)
-		{
-			world->stop();
-			m_sceneStop = true;
-			break;
-		}
-
 		world->update(fpsController.getTimeDiffMS());
 		fpsController.run();
 	}
@@ -599,14 +579,14 @@ void EngineRuntime::RegisterBaseSystems(World& world)
 
 bool EngineRuntime::OpenEmptyScene(const std::function<bool(World&)>& initializeScene)
 {
-	if (!m_initialized || !initializeScene)
+	if (!m_initialized)
 		return false;
 
 	auto candidate = std::make_shared<World>();
 	RegisterBaseSystems(*candidate);
 	if (m_moduleManager)
 		m_moduleManager->RegisterSystems(*candidate);
-	if (!initializeScene(*candidate))
+	if (initializeScene && !initializeScene(*candidate))
 		return false;
 
 	CloseScene();
@@ -626,8 +606,7 @@ void EngineRuntime::CloseScene()
 
 void EngineRuntime::OnUiEvents(const std::vector<UI::UiEvent>& events)
 {
-	// 渲染线程的落点：只入队。这里绝对不能派发——派发要 World，而 World 归场景线程。
-	m_uiCommands.Post(std::move(events));
+	m_messages.Post(std::move(events));
 }
 
 void EngineRuntime::PumpUiEvents()
@@ -635,11 +614,10 @@ void EngineRuntime::PumpUiEvents()
 	if (!m_world)
 		return;
 
-	// 队列空了就是一次加锁 + 一次空 swap，可以每帧调。
-	m_lastPumpReport = m_uiCommands.Pump(*m_world);
+	m_lastPumpReport = m_messages.Pump(*m_world);
 }
 
-void EngineRuntime::RequestSceneChange(const std::string& sceneAsset, SceneOpenHooks hooks)
+void EngineRuntime::RequestSceneChange(const std::string& sceneAsset)
 {
 	if (sceneAsset.empty())
 		return;
@@ -647,38 +625,36 @@ void EngineRuntime::RequestSceneChange(const std::string& sceneAsset, SceneOpenH
 	{
 		std::lock_guard<std::mutex> lock(m_pendingSceneMutex);
 		m_pendingSceneAsset = sceneAsset;
-		m_pendingSceneHooks = std::move(hooks);
 	}
 	m_hasPendingScene = true;
 }
 
-bool EngineRuntime::PumpSceneChanges(std::string* error)
+bool EngineRuntime::TakeSceneChangeRequest(std::string& sceneAsset)
 {
 	if (!m_hasPendingScene)
 		return false;
 
-	std::string sceneAsset;
-	SceneOpenHooks hooks;
 	{
 		std::lock_guard<std::mutex> lock(m_pendingSceneMutex);
 		sceneAsset = std::move(m_pendingSceneAsset);
-		hooks = std::move(m_pendingSceneHooks);
 		m_pendingSceneAsset.clear();
-		m_pendingSceneHooks = {};
 	}
-	// 先清标志再执行：切失败了也不该每帧重试同一个坏场景。
+
 	m_hasPendingScene = false;
 
-	if (sceneAsset.empty())
+	return !sceneAsset.empty();
+}
+
+bool EngineRuntime::PumpSceneChanges(std::string* error)
+{
+	std::string sceneAsset;
+	if (!TakeSceneChangeRequest(sceneAsset))
 		return false;
 
-	// 请求方（模块 handler）跑在场景线程上，它已经自己退出了循环；这里 join 是真的等它
-	// 收尾，不会自己等自己。用 m_sceneThread 判"原来是不是线程化的"—— World 在循环
-	// 退出前就被 stop 了，isRunning() 这时候一定是 false。
 	const bool wasThreaded = static_cast<bool>(m_sceneThread);
 	StopSceneThread();
 
-	const bool opened = OpenScene(sceneAsset, hooks, error);
+	const bool opened = OpenScene(sceneAsset, {}, error);
 	if (wasThreaded && opened)
 		StartSceneThread(m_logicDeltaMilliseconds, m_fixedDeltaMilliseconds);
 	return opened;
@@ -690,4 +666,58 @@ void EngineRuntime::OnModuleRequestSceneChange(void* owner, const char* sceneAss
 	if (!runtime || !sceneAsset)
 		return;
 	runtime->RequestSceneChange(sceneAsset);
+}
+
+void EngineRuntime::RequestQuit()
+{
+	m_hasQuitRequest = true;
+}
+
+bool EngineRuntime::TakeQuitRequest()
+{
+	return m_hasQuitRequest.exchange(false);
+}
+
+void EngineRuntime::OnModuleRequestQuit(void* owner)
+{
+	auto* runtime = static_cast<EngineRuntime*>(owner);
+	if (!runtime)
+		return;
+	runtime->RequestQuit();
+}
+
+void EngineRuntime::RegisterEngineCommands()
+{
+	UI::MessageHandler handler = [this](const UI::Message& message, World& world)
+		{
+			ApplyEngineCommand(message, world);
+		};
+
+	for (const auto& desc : UI::EngineCommands::Table)
+		m_messages.Register(UI::EngineModuleId, desc.name, handler);
+}
+
+void EngineRuntime::ApplyEngineCommand(const UI::Message& message, World& world)
+{
+	if (message.topic == UI::EngineCommands::TargetFps)
+	{
+		if (!message.Find("value"))
+			return;
+
+		const int fps = std::clamp(static_cast<int>(message.GetInteger("value")), 0, 500);
+		SetTargetFps(static_cast<uint32_t>(fps));
+	}
+	else if (message.topic == UI::EngineCommands::MasterVolume)
+	{
+		if (m_audioDevice && message.Find("value"))
+			m_audioDevice->SetMasterVolumn(std::clamp(static_cast<float>(message.GetInteger("value")), 0.0f, 100.0f) / 100.0f);
+	}
+	else if (message.topic == UI::EngineCommands::ChannelVolume)
+	{
+		if (m_audioDevice && message.Find("channel") && message.Find("value"))
+		{
+			const AudioChannelID channel = message.GetUint32("channel");
+			m_audioDevice->SetChannelVolumn(channel, std::clamp(static_cast<float>(message.GetInteger("value")), 0.0f, 100.0f) / 100.0f);
+		}
+	}
 }

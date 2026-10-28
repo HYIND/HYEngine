@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/SSAOPass.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 
 struct alignas(16) KernelParams {
