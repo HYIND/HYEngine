@@ -1,7 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceReflectPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 
 struct CubeParams {

@@ -1,4 +1,4 @@
-﻿#include "Systems/UIViewSystem.h"
+#include "Systems/UIViewSystem.h"
 
 #include "Components/UIView.h"
 #include "ECSCore/World.h"
@@ -58,6 +58,7 @@ void UIViewSystem::update(float deltaTime)
 			{
 				runtime.document = std::move(document);
 				runtime.instance = std::make_shared<UI::UiInstanceState>();
+				UI::SeedInstanceState(runtime.document->document, *runtime.instance);
 			}
 			else
 			{

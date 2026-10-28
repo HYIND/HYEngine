@@ -1,14 +1,10 @@
-﻿#include "Manager/ResourceManager.h"
+#include "Manager/ResourceManager.h"
 #include "GeneralManager/WindowHandleManager.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "resource.h"
 #include "glm/gtc/matrix_transform.hpp"
 #include "ThreadPool.h"
 #include "GameEngine.h"
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
-#include <stb/stb_image.h>
 
 using namespace D2D1;
 
@@ -380,10 +376,10 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 	pool.submit([&]()->void {
 
-		ModelRes[ResName::Quad] = GetFloorModel();
-		ModelRes[ResName::Cube] = GetCubeModel(glm::vec3(1.0f), 1.0f);
-		ModelRes[ResName::Sphere] = GetSphereModel(0.5f, 72, 36);
-		ModelRes[ResName::Cylinder] = GetCylinderModel(0.5f, 1.0f, 36);
+		ModelRes[ResName::Quad] = RenderHelper::GetFloorModel();
+		ModelRes[ResName::Cube] = RenderHelper::GetCubeModel(glm::vec3(1.0f), 1.0f);
+		ModelRes[ResName::Sphere] = RenderHelper::GetSphereModel(0.5f, 72, 36);
+		ModelRes[ResName::Cylinder] = RenderHelper::GetCylinderModel(0.5f, 1.0f, 36);
 		Texture2DRes[ResName::EmptyTexture] = std::make_shared<Texture2D>(1, 1);
 		});
 

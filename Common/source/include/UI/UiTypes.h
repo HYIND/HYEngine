@@ -88,7 +88,7 @@ namespace UI
 		float h = 0.0f;
 	};
 
-	// UI 上发生的一次交互。渲染层产出、经 UICommandBus 送到模块。
+	// UI 上发生的一次交互。渲染层产出，进总线时转成 UI::Message 再送到订阅者。
 	// command 是路由键（.ui 里 onClick/onChange 的 command 字段），其余都是这次交互的载荷。
 	struct UiEvent
 	{
@@ -144,6 +144,10 @@ namespace UI
 		// scrolllist 的行高（虚拟坐标；<=0 用默认值）
 		float rowHeight = 0.0f;
 
+		// scrolllist 的行能不能点：资产里不写就默认可点（单击选中/双击进入），
+		// 纯展示的列表写 "selectable": false，行就只画不高亮、不发事件。
+		bool selectable = true;
+
 		// combo 的选项（选中值存 UiNodeState::value，即选项下标）
 		std::vector<UiOption> options;
 
@@ -172,9 +176,6 @@ namespace UI
 		std::string sourcePath;
 	};
 
-	// 单个节点的运行时值。文档是资产、被多个实例共享，
-	// 所以开关/滑块/输入框的当前值必须放在"实例"这一层，不能写回 UiNode。
-	// 列表的一行：文本 + 业务侧的自定义标识（房间 id 之类）。
 	struct UiListItem
 	{
 		std::string text;
@@ -186,7 +187,6 @@ namespace UI
 	{
 		float value = 0.0f;
 		bool toggled = false;
-		bool initialized = false;
 
 		// textinput 的编辑缓冲（UTF-8），每个实例各一份。
 		std::array<char, 256> text{};
@@ -203,18 +203,9 @@ namespace UI
 		bool hasOptions = false;
 		std::vector<UiOption> options; // 覆盖 combo 的选项表
 
-		// scrolllist：是否启用选中态。false = 纯展示列表（能滚能看，不可点选）。
-		// 选中了哪一行不用另存，沿用 value（行下标），和 combo 的"选中值 = 下标"同一套规则。
-		bool selected = false;
+		bool selected = true;
 	};
 
-	// 一个 UIView 实例的运行时状态（按 UiNode::id 索引）。
-	//
-	// 跨线程约定：渲染线程在画这一层 UI 的整段时间里持有 mutex；
-	// 场景线程（模块通过 UI::Element 读写）每次操作短暂持有。
-	// 用的是工程自己的 CriticalSectionLock（Windows 上是 CRITICAL_SECTION），
-	// 它是递归锁：同一线程重复进入不会自锁，所以拿锁的地方可以放心互相调用。
-	// 副作用是这个结构体不能拷贝（CriticalSectionLock 不可拷贝），只放在 shared_ptr 里。
 	struct UiInstanceState
 	{
 		std::unordered_map<int, UiNodeState> nodes;
@@ -227,6 +218,8 @@ namespace UI
 
 		UiNodeState& Get(int nodeId) { return nodes[nodeId]; }
 	};
+
+	void SeedInstanceState(const UiDocument& document, UiInstanceState& instance);
 
 	// 解析一个节点后算出来的最终外观：基础字段 + 各状态覆盖。
 	struct ResolvedNodeStyle

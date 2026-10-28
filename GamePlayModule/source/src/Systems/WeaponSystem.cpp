@@ -3,7 +3,7 @@
 #include "ECSCore/World.h"
 #include "CommonComponent.h"
 #include "GamePlayComponents.h"
-#include "Helper/AnimatorHelper.h"
+#include "Helper/AnimatorEventHelper.h"
 #include "Helper/Tools.h"
 #include "GamePlayEventDef.h"
 
@@ -42,10 +42,10 @@ void WeaponSystem::update(float deltaTime)
 		processWeaponInput(entity, weapon, weaponOwner, *weaponBasic, *weaponState);
 		processWeaponReload(entity, weapon, *weaponBasic, *weaponState);
 
-		if (AnimatorHelper::HasAnimatorGroup(weapon))
+		if (AnimatorEventHelper::HasAnimatorGroup(weapon))
 		{
-			if (!AnimatorHelper::HasPlayingAnimator(weapon))
-				AnimatorHelper::PlayAnimator(weapon, "Idle", 0);
+			if (!AnimatorEventHelper::HasPlayingAnimator(weapon))
+				AnimatorEventHelper::PlayAnimator(weapon, "Idle", 0);
 		}
 	}
 }
@@ -67,10 +67,10 @@ void WeaponSystem::processSwitchWeapon(Entity& player, WeaponOwner& owner)
 			std::cout << std::format("[WeaponSystem] switchTo {}\n", owner.getCurrentWeapon().getComponent<WeaponBasic>().weaponName);
 			if (auto weapon = owner.getCurrentWeapon())
 			{
-				if (AnimatorHelper::HasAnimatorGroup(weapon))
+				if (AnimatorEventHelper::HasAnimatorGroup(weapon))
 				{
-					AnimatorHelper::ResetAnimatorGroup(weapon);
-					AnimatorHelper::PlayAnimator(weapon, "Draw");
+					AnimatorEventHelper::ResetAnimatorGroup(weapon);
+					AnimatorEventHelper::PlayAnimator(weapon, "Draw");
 				}
 			}
 		}
@@ -90,10 +90,10 @@ void WeaponSystem::processWeaponInput(Entity& player, Entity& weapon, WeaponOwne
 			std::cout << std::format("[WeaponSystem] reloading\n");
 			state.isReloading = true;
 			state.reloadTimer = Tool::GetTimestampMilliseconds();
-			if (AnimatorHelper::HasAnimatorGroup(weapon))
+			if (AnimatorEventHelper::HasAnimatorGroup(weapon))
 			{
-				AnimatorHelper::ResetAnimatorGroup(weapon);
-				AnimatorHelper::PlayAnimator(weapon, "Reload");
+				AnimatorEventHelper::ResetAnimatorGroup(weapon);
+				AnimatorEventHelper::PlayAnimator(weapon, "Reload");
 			}
 			return;
 		}
@@ -111,10 +111,10 @@ void WeaponSystem::processWeaponInput(Entity& player, Entity& weapon, WeaponOwne
 	if (controller->getWantToFire() && CanFire(basic, state))
 	{
 		fireBullet(player, basic, state);
-		if (AnimatorHelper::HasAnimatorGroup(weapon))
+		if (AnimatorEventHelper::HasAnimatorGroup(weapon))
 		{
-			AnimatorHelper::ResetAnimatorGroup(weapon);
-			AnimatorHelper::PlayAnimator(weapon, "Shot");
+			AnimatorEventHelper::ResetAnimatorGroup(weapon);
+			AnimatorEventHelper::PlayAnimator(weapon, "Shot");
 		}
 	}
 }
@@ -140,10 +140,10 @@ void WeaponSystem::processWeaponReload(Entity& player, Entity& weapon, WeaponBas
 			state.isReloading = true;
 			state.reloadTimer = Tool::GetTimestampMilliseconds();
 			std::cout << std::format("[WeaponSystem] auto reload start ammo={}/{}\n", state.currentAmmo, state.reserveAmmo);
-			if (AnimatorHelper::HasAnimatorGroup(weapon))
+			if (AnimatorEventHelper::HasAnimatorGroup(weapon))
 			{
-				AnimatorHelper::ResetAnimatorGroup(weapon);
-				AnimatorHelper::PlayAnimator(weapon, "Reload");
+				AnimatorEventHelper::ResetAnimatorGroup(weapon);
+				AnimatorEventHelper::PlayAnimator(weapon, "Reload");
 			}
 		}
 	}

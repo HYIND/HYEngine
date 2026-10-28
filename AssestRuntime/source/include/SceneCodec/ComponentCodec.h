@@ -209,7 +209,7 @@ namespace NComponentCodec
         EngineModuleManager& operator=(const EngineModuleManager&) = delete;
 
         bool LoadModule(const std::filesystem::path& path, std::string* error = nullptr);
-        bool LoadModulesFromDirectory(const std::filesystem::path& directory, std::string* error = nullptr);
+        void LoadModulesFromDirectory(const std::filesystem::path& directory);
         void RegisterSystems(World& world);
         void UnloadAll();
         std::vector<std::string> GetLoadedModuleIds() const;

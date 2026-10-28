@@ -53,6 +53,27 @@ namespace UI
 		return (runtime && runtime->document) ? runtime->document->document.name : std::string();
 	}
 
+	bool Doc::Enabled() const
+	{
+		if (!m_world)
+			return false;
+
+		// 没有 UIView 组件的实体不算"启用的视图"，免得调用方以为它在画。
+		const UIView* view = m_world->tryGetComponent<UIView>(m_entity);
+		return view && view->enabled;
+	}
+
+	void Doc::SetEnabled(bool enabled)
+	{
+		if (!m_world)
+			return;
+
+		// 只改 enabled，不动 needReload：切屏不该让文档重新解析、更不该丢实例状态。
+		UIView* view = m_world->tryGetComponent<UIView>(m_entity);
+		if (view)
+			view->enabled = enabled;
+	}
+
 	Element Doc::Get(const std::string& name)
 	{
 		if (!m_world)

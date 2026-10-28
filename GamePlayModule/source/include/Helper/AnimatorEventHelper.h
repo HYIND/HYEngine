@@ -3,7 +3,7 @@
 #include "ECSCore/World.h"
 #include "CommonEventDef.h"
 
-namespace AnimatorHelper
+namespace AnimatorEventHelper
 {
 	bool HasAnimatorGroup(const Entity& entity);
 	bool HasPlayingAnimator(const Entity& entity);

@@ -137,6 +137,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="source\include\vkstdafx.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AnimationClip.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Skeleton.h" />
@@ -173,7 +174,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\TAAFilter.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelp.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelper.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderState.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferBase.h" />
@@ -237,7 +238,6 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\WrapperGeneral.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VulkanRenderer.h" />
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="vkstdafx.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -272,7 +272,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\IBLImageBuilder.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelp.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelper.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TAAFilter.cpp" />

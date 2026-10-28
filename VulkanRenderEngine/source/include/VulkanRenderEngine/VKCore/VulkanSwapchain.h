@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "stdafx.h"
 #include "VulkanSurface.h"
 #include "VulkanOutput.h"
 #include "VulkanDevice.h"

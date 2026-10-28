@@ -39,7 +39,7 @@ namespace Render
 		void SetInputContext(std::shared_ptr<EngineInputContext> context) { m_input = std::move(context); }
 
 		// 这一帧 UI 上发生的交互事件（取走即清空）。事件结构体由 Common 的 UI::UiEvent 定义，
-		// 渲染层只负责产出，派发是 UICommandBus 的事。
+		// 渲染层只负责产出，派发是 UI::MessageBus 的事。
 		std::vector<UI::UiEvent> PollEvents();
 
 	private:

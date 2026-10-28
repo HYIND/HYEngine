@@ -576,21 +576,11 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
             view.needReload = true;
             return true;
         },
+        // 属性面板里 UIView 有自己的绘制器（Editor/source/include/PropertiesHelper.inl 的
+        // DrawComponent<UIView>），viewName 就在那里编辑，所以这里不再列 editorProperties ——
+        // 列了也不会被调用（自定义绘制器优先），只会变成两份真话。
         {}, {}, {}, 1,
-        std::vector<ComponentProperty>{
-            ComponentProperty{
-                .fieldId = "viewName",
-                .displayName = "View Name",
-                .kind = EditorPropertyKind::String,
-                .read = [](Entity entity) -> Json { return entity.getComponent<UIView>().viewName; },
-                .write = [](Entity entity, const Json& value) -> bool {
-                    if (!value.is_string())
-                        return false;
-                    entity.getComponent<UIView>().viewName = value.get<std::string>();
-                    return true;
-                }
-            }
-        },
+        std::vector<ComponentProperty>{},
         ComponentEditorBehavior{
             .add =
             [](Entity entity)

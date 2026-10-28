@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/GeometryPass.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
 struct alignas(16) RenderData {

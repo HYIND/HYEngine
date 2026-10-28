@@ -9,10 +9,6 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="头文件\Components">
       <UniqueIdentifier>{c71ed479-5ba8-45e2-9f58-0720d87b5e4f}</UniqueIdentifier>
     </Filter>
@@ -28,9 +24,39 @@
     <Filter Include="源文件\Helper">
       <UniqueIdentifier>{76a6f42a-f460-449f-beb3-56cdd56aa794}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Factory">
+      <UniqueIdentifier>{9ac5e9d1-c713-4eae-84b4-c950759f9729}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\GeneralManager">
+      <UniqueIdentifier>{6edffb6b-e8d9-49f2-8742-26d308d2cf08}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Manager">
+      <UniqueIdentifier>{ad62e27a-71be-4248-b37b-28706dc83d80}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Factory">
+      <UniqueIdentifier>{73d0d76e-18e3-4cc7-ab94-dfb4026afe80}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\GeneralManager">
+      <UniqueIdentifier>{acd9ea26-f444-4503-80cc-f384ec6bc75f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Manager">
+      <UniqueIdentifier>{e23dd3a8-2d2a-4872-a46d-3c6429a4ab37}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="public">
+      <UniqueIdentifier>{f52e9dc1-bf74-438c-abb6-54b72b9c1e05}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="public\include">
+      <UniqueIdentifier>{49085230-9cd4-46d4-b3f3-efbe183a0355}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="public\include\ApplicationLayerCommunication">
+      <UniqueIdentifier>{c698028c-328a-4e31-8f05-fca6f718a2d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="public\src">
+      <UniqueIdentifier>{b998d652-f1bf-42e0-b37e-b7cdd2d9264b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="source\include\GamePlay.h">
+    <ClInclude Include="source\include\stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="source\include\GamePlayTags.h">
@@ -81,7 +107,7 @@
     <ClInclude Include="source\include\GamePlayEventDef.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Helper\AnimatorHelper.h">
+    <ClInclude Include="source\include\Helper\AnimatorEventHelper.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Systems\TetrisSystem.h">
@@ -90,11 +116,62 @@
     <ClInclude Include="source\include\GamePlayModule.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Factory\CharacterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Factory\ParticleEmitterFactory.h">
+      <Filter>头文件\Factory</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\EndPointConfig.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\GameDataDef.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\LobbyDataDef.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ServiceDiscoveryClient.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ServiceRegistryData.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\command.h">
+      <Filter>public\include</Filter>
+    </ClInclude>
+    <ClInclude Include="public\include\ApplicationLayerCommunication\JsonProtocolClient.h">
+      <Filter>public\include\ApplicationLayerCommunication</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\UserInfoManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\BGMManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\ConnectManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\LobbyManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\MsgManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Manager\RequestManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\GeneralManager\KeyMapManaer.h">
+      <Filter>头文件\GeneralManager</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\UiRouter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\UserSettings.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\src\GamePlay.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\Systems\HealthSystem.cpp">
       <Filter>源文件\Systems</Filter>
     </ClCompile>
@@ -113,13 +190,52 @@
     <ClCompile Include="source\src\Systems\WeaponSystem.cpp">
       <Filter>源文件\Systems</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\Helper\AnimatorHelper.cpp">
+    <ClCompile Include="source\src\Helper\AnimatorEventHelper.cpp">
       <Filter>源文件\Helper</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Systems\TetrisSystem.cpp">
       <Filter>源文件\Systems</Filter>
     </ClCompile>
     <ClCompile Include="source\src\GamePlayModule.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Factory\CharacterFactory.cpp">
+      <Filter>源文件\Factory</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Factory\ParticleEmitterFactory.cpp">
+      <Filter>源文件\Factory</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GeneralManager\KeyMapManaer.cpp">
+      <Filter>源文件\GeneralManager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Manager\ConnectManager.cpp">
+      <Filter>源文件\Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Manager\LobbyManager.cpp">
+      <Filter>源文件\Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Manager\MsgManager.cpp">
+      <Filter>源文件\Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Manager\RequestManager.cpp">
+      <Filter>源文件\Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Manager\UserInfoManager.cpp">
+      <Filter>源文件\Manager</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\JsonProtocolClient.cpp">
+      <Filter>public\src</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\ServiceDiscoveryClient.cpp">
+      <Filter>public\src</Filter>
+    </ClCompile>
+    <ClCompile Include="public\src\ServiceRegistryData.cpp">
+      <Filter>public\src</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UiRouter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UserSettings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

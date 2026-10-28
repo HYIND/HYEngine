@@ -10,9 +10,6 @@ struct UIView : public IComponent
 {
 	AssetGUID documentGuid;
 
-	// 视图实例名：同一个 .ui 可能被多个实体引用（分屏、两个玩家的 HUD），
-	// 所以模块认领界面的键是这个名字，不是文档名。空串 = 无名视图，模块找不到它。
-	// 由场景作者在 .scene 里填，或代码创建 UIView 时给；引擎不会自动生成。
 	std::string viewName;
 
 	int layer = 0;

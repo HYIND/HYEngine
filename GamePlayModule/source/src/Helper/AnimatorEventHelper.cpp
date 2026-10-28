@@ -1,8 +1,8 @@
-#include "Helper/AnimatorHelper.h"
+#include "Helper/AnimatorEventHelper.h"
 
-using namespace AnimatorHelper;
+using namespace AnimatorEventHelper;
 
-bool AnimatorHelper::HasAnimatorGroup(const Entity& entity)
+bool AnimatorEventHelper::HasAnimatorGroup(const Entity& entity)
 {
 	if (!entity)
 		return false;
@@ -14,7 +14,7 @@ bool AnimatorHelper::HasAnimatorGroup(const Entity& entity)
 	return event.isExist;
 }
 
-bool AnimatorHelper::HasPlayingAnimator(const Entity& entity)
+bool AnimatorEventHelper::HasPlayingAnimator(const Entity& entity)
 {
 	if (!entity)
 		return false;
@@ -26,7 +26,7 @@ bool AnimatorHelper::HasPlayingAnimator(const Entity& entity)
 	return event.isExist;
 }
 
-void AnimatorHelper::ResetAnimatorGroup(const Entity& entity)
+void AnimatorEventHelper::ResetAnimatorGroup(const Entity& entity)
 {
 	if (!entity)
 		return;
@@ -36,7 +36,7 @@ void AnimatorHelper::ResetAnimatorGroup(const Entity& entity)
 	entity.getWorld()->Emit(event);
 }
 
-void AnimatorHelper::PlayAnimator(const Entity& entity, const std::string& animatorName, int loopCount)
+void AnimatorEventHelper::PlayAnimator(const Entity& entity, const std::string& animatorName, int loopCount)
 {
 	if (!entity)
 		return;

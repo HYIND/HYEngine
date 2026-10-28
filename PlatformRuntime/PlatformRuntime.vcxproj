@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -76,7 +76,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -97,7 +97,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
@@ -121,7 +121,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;$(SolutionDir)VulkanRenderEngine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)source\include;$(SolutionDir)Common\source\include;$(SolutionDir)VulkanRenderEngine\source\include;$(SolutionDir)AssestRuntime\source\include;$(SolutionDir)ThirdParty;$(SolutionDir)ThirdParty\publicShare;$(SolutionDir)PlatformRuntime\imgui\include;$(SolutionDir)PlatformRuntime\imgui\include\backend;$(SolutionDir)ThirdParty\Net;$(SolutionDir)ThirdParty\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
@@ -155,7 +155,9 @@
     <ClInclude Include="source\include\RenderEngine\Renderer.h" />
     <ClInclude Include="source\include\RenderEngine\Renderer3D.h" />
     <ClInclude Include="source\include\RenderEngine\RendererUI.h" />
-    <ClInclude Include="source\include\UI\UICommandBus.h" />
+    <ClInclude Include="source\include\UI\Message.h" />
+    <ClInclude Include="source\include\UI\MessageBus.h" />
+    <ClInclude Include="source\include\UI\EngineCommands.h" />
     <ClInclude Include="imgui\include\imgui.h" />
     <ClInclude Include="imgui\include\imgui_internal.h" />
     <ClInclude Include="imgui\include\imconfig.h" />
@@ -192,7 +194,8 @@
     <ClCompile Include="source\src\RenderEngine\Renderer.cpp" />
     <ClCompile Include="source\src\RenderEngine\Renderer3D.cpp" />
     <ClCompile Include="source\src\RenderEngine\RendererUI.cpp" />
-    <ClCompile Include="source\src\UI\UICommandBus.cpp" />
+    <ClCompile Include="source\src\UI\Message.cpp" />
+    <ClCompile Include="source\src\UI\MessageBus.cpp" />
     <ClCompile Include="imgui\src\imgui.cpp" />
     <ClCompile Include="imgui\src\imgui_demo.cpp" />
     <ClCompile Include="imgui\src\imgui_draw.cpp" />

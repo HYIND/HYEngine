@@ -55,6 +55,12 @@ namespace UI
 		// 这个实例的运行期状态；文档没加载成功时是 nullptr。
 		UiInstanceState* State() const;
 
+		// 整份界面开/关：直接写 UIView::enabled。
+		// 关掉的视图在渲染收集阶段就被跳过（RenderSystem::processUI），连节点树都不遍历，
+		// 所以切屏用它最省；只做局部显隐才用 Element::SetVisible。
+		bool Enabled() const;
+		void SetEnabled(bool enabled);
+
 		World* WorldPtr() const { return m_world; }
 		const Entity& EntityRef() const { return m_entity; }
 

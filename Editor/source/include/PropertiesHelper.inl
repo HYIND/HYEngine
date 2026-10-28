@@ -15,6 +15,7 @@ struct EditorSnapshot<UIView>
 	static void Make(const UIView& src, UIView& snapshot)
 	{
 		snapshot.documentGuid = src.documentGuid;
+		snapshot.viewName = src.viewName;
 		snapshot.layer = src.layer;
 		snapshot.capturesInput = src.capturesInput;
 		snapshot.enabled = src.enabled;
@@ -24,6 +25,7 @@ struct EditorSnapshot<UIView>
 	static void Apply(UIView&& snapshot, UIView& dst)
 	{
 		dst.documentGuid = snapshot.documentGuid;
+		dst.viewName = snapshot.viewName;
 		dst.layer = snapshot.layer;
 		dst.capturesInput = snapshot.capturesInput;
 		dst.enabled = snapshot.enabled;
@@ -726,6 +728,22 @@ inline bool PropertiesHelper::DrawComponent<UIView>(UIView& comp, ProjectManager
 	{
 		ImGui::TextUnformatted(meta->name.c_str());
 		ImGui::TextDisabled("%s", meta->path.c_str());
+	}
+
+	{
+		char buffer[256]{};
+		strncpy_s(buffer, comp.viewName.c_str(), _TRUNCATE);
+		SetNextPropertyFieldWidth(130.0f, 0.55f);
+		if (ImGui::InputText("View Name", buffer, sizeof(buffer), ImGuiInputTextFlags_AutoSelectAll))
+		{
+			comp.viewName = buffer;
+			changed = true;
+		}
+		if (comp.viewName.empty())
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Unset View Name can't be find by module");
+		}
 	}
 
 	changed |= ImGui::Checkbox("Enabled", &comp.enabled);

@@ -1,5 +1,5 @@
 #include "vkstdafx.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/Base/Particle.h"
 #include "ThreadPool.h"
 
@@ -11,7 +11,7 @@
 #undef near
 #endif
 
-std::shared_ptr<Model> GetFloorModel(const glm::vec2& scale, float textureScale, const AssetGUID& guid)
+std::shared_ptr<Model> RenderHelper::GetFloorModel(const glm::vec2& scale, float textureScale, const AssetGUID& guid)
 {
 	float planeVertices[] = {
 		// positions        
@@ -67,7 +67,7 @@ std::shared_ptr<Model> GetFloorModel(const glm::vec2& scale, float textureScale,
 	return floor_Model;
 }
 
-std::shared_ptr<Model> GetCubeModel(const glm::vec3& scale, float textureScale, const AssetGUID& guid)
+std::shared_ptr<Model> RenderHelper::GetCubeModel(const glm::vec3& scale, float textureScale, const AssetGUID& guid)
 {
 	static std::vector<glm::vec3> cube_vertices = {
 				glm::vec3(-1,-1,-1),
@@ -156,7 +156,7 @@ std::shared_ptr<Model> GetCubeModel(const glm::vec3& scale, float textureScale, 
 	return cube_Model;
 }
 
-std::shared_ptr<Model> GetSphereModel(float radius, int sectors, int stacks, const AssetGUID& guid)
+std::shared_ptr<Model> RenderHelper::GetSphereModel(float radius, int sectors, int stacks, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -268,7 +268,7 @@ std::shared_ptr<Model> GetSphereModel(float radius, int sectors, int stacks, con
 	return sphere_Model;
 }
 
-std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments, const AssetGUID& guid)
+std::shared_ptr<Model> RenderHelper::RenderHelper::GetCylinderModel(float radius, float height, int segments, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -426,27 +426,27 @@ std::shared_ptr<Model> GetCylinderModel(float radius, float height, int segments
 	return model;
 }
 
-void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
-{
-	static std::shared_ptr<VertexBufferBlock> quadVertex;
-	if (!quadVertex)
-	{
-		float quadVertices[] = {
-			// positions        // texture Coords
-			-1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-			-1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-			 1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-			 1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-		};
-
-		quadVertex = std::make_shared<VertexBufferBlock>(sizeof(quadVertices));
-		quadVertex->WriteData(quadVertices, sizeof(quadVertices));
-	}
-
-	std::vector<vk::Buffer> vertexbuffers = { quadVertex->GetBuffer()->GetHandle() };
-	VkDeviceSize offset = 0;
-	cmd->bindVertexBuffers(0, vertexbuffers, offset);
-}
+//void RenderHelper::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
+//{
+//	static std::shared_ptr<VertexBufferBlock> quadVertex;
+//	if (!quadVertex)
+//	{
+//		float quadVertices[] = {
+//			// positions        // texture Coords
+//			-1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+//			-1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+//			 1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+//			 1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+//		};
+//
+//		quadVertex = std::make_shared<VertexBufferBlock>(sizeof(quadVertices));
+//		quadVertex->WriteData(quadVertices, sizeof(quadVertices));
+//	}
+//
+//	std::vector<vk::Buffer> vertexbuffers = { quadVertex->GetBuffer()->GetHandle() };
+//	VkDeviceSize offset = 0;
+//	cmd->bindVertexBuffers(0, vertexbuffers, offset);
+//}
 
 //void RenderHelp::renderBillboardQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
 //{
@@ -454,7 +454,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 //
 //	if (!s_model)
 //	{
-//		static auto model = GetFloorModel();
+//		static auto model = RenderHelper::GetFloorModel();
 //		if (!model)
 //			return;
 //		s_model = model->Clone();
@@ -467,7 +467,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 
 //void RenderHelp::renderCube(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
 //{
-//	static auto model = GetCubeModel(glm::vec3(1.0f), 1.0f);
+//	static auto model = RenderHelper::GetCubeModel(glm::vec3(1.0f), 1.0f);
 //	if (!model)
 //		return;
 //
@@ -476,7 +476,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 //
 //void RenderHelp::renderSphere(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
 //{
-//	static auto model = GetSphereModel(0.5f, 72, 36);
+//	static auto model = RenderHelper::GetSphereModel(0.5f, 72, 36);
 //	if (!model)
 //		return;
 //
@@ -485,7 +485,7 @@ void RenderHelp::renderScreenQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cm
 //
 //void RenderHelp::renderCylinder(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
 //{
-//	static auto model = GetCylinderModel(0.5f, 1.0f, 36);
+//	static auto model = RenderHelper::GetCylinderModel(0.5f, 1.0f, 36);
 //	if (!model)
 //		return;
 //

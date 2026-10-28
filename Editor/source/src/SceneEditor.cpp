@@ -7,7 +7,7 @@
 #include "Project/ProjectManager.h"
 
 #include "CommonData/LightFactory.h"
-#include "VulkanRenderEngine/General/RenderHelp.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
 
@@ -117,7 +117,7 @@ static void GeneralDefaultWorld(World& world)
         physics.collisionShape.AddBoxShape();
 
         auto& rendermodel = cube.addComponent<RenderModel>();
-        rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
+        rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
         AddPickProxy(cube);
         SetNameTag(cube, "cube_1");
@@ -138,7 +138,7 @@ static void GeneralDefaultWorld(World& world)
         physics.collisionShape.AddBoxShape();
 
         auto& rendermodel = entity.addComponent<RenderModel>();
-        rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
+        rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
         AddPickProxy(entity);
         SetNameTag(entity, "cube_script_test");
@@ -189,7 +189,7 @@ static void GeneralDefaultWorld(World& world)
         physics.mass = 5.f;
         physics.collisionShape.AddSphereShape(0.5f);
 
-        auto model = GetSphereModel(0.5, 72, 36, "DefaultSphere");
+        auto model = RenderHelper::GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
         auto& rendermodel = sphere.addComponent<RenderModel>();
         rendermodel.model = model;
@@ -209,7 +209,7 @@ static void GeneralDefaultWorld(World& world)
 
     {
         float floorSize = 50.f;
-        auto model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
+        auto model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
         auto& meshInfo = model->getMeshInfos();
         if (!meshInfo.empty())
@@ -617,8 +617,8 @@ void SceneEditor::StopPlayback()
 
 void SceneEditor::UpdateEditorFrame(ProjectManager* projectManager)
 {
-    if (!_world || (_editorState != EditorWorldState::Editing && _editorState != EditorWorldState::Paused))
-        return;
+	if (!_world || (_editorState != EditorWorldState::Editing && _editorState != EditorWorldState::Paused))
+		return;
 
     if (_editorState == EditorWorldState::Editing && projectManager)
     {
@@ -810,7 +810,7 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             physics.collisionShape.AddBoxShape();
 
             auto& rendermodel = entity.addComponent<RenderModel>();
-            rendermodel.model = GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
+            rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
             AddPickProxy(entity);
             if (!name.empty())
@@ -835,7 +835,7 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             physics.collisionShape.AddSphereShape(0.5f);
 
             auto& rendermodel = entity.addComponent<RenderModel>();
-            rendermodel.model = GetSphereModel(0.5, 72, 36, "DefaultSphere");
+            rendermodel.model = RenderHelper::GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
             AddPickProxy(entity);
             if (!name.empty())

@@ -228,7 +228,13 @@
     <ClCompile Include="source\src\Render\RenderSystem.cpp">
       <Filter>源文件\Render</Filter>
     </ClCompile>
-    <ClInclude Include="source\include\UI\UICommandBus.h">
+    <ClInclude Include="source\include\UI\EngineCommands.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\UI\MessageBus.h">
+      <Filter>头文件\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\UI\Message.h">
       <Filter>头文件\UI</Filter>
     </ClInclude>
   </ItemGroup>
@@ -274,7 +280,10 @@
     <ClCompile Include="imgui\src\imgui_widgets.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\UI\UICommandBus.cpp">
+    <ClCompile Include="source\src\UI\MessageBus.cpp">
+      <Filter>源文件\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\UI\Message.cpp">
       <Filter>源文件\UI</Filter>
     </ClCompile>
   </ItemGroup>
