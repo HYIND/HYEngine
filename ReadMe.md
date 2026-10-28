@@ -51,6 +51,12 @@
 
 ## 目录结构
 
+### 整个项目分为Engine,Applications,Modules三部分
+#### Engine提供引擎框架核心能力
+#### Applications为适配框架的应用程序（Editor、Game）
+#### Module为用户端模块
+
+
 - `bin/` – 可执行文件及运行时资源（着色器、测试场景等）
 - `Common/` – 公共基础库（ECS核心、基础物理系统、工具类、辅助函数）
 - `AssetRuntime/` – 项目资产管理运行时（动态资产注册、解析、持久化）
