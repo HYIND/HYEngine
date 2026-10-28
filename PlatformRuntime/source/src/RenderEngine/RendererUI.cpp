@@ -1,4 +1,4 @@
-#include "vkstdafx.h"
+﻿#include "vkstdafx.h"
 #include "RenderEngine/RendererUI.h"
 
 #include "VulkanRenderEngine/VKContext.h"
@@ -184,12 +184,14 @@ void RendererUI::FeedInput(float targetWidth, float targetHeight)
 	io.AddMouseButtonEvent(1, frame.active && frame.IsKeyDown(EngineKey::MouseRight));
 	io.AddMouseButtonEvent(2, frame.active && frame.IsKeyDown(EngineKey::MouseMiddle));
 
-	if (!frame.textInput.empty())
-		io.AddInputCharactersUTF8(frame.textInput.c_str());
+	// 文字与滚轮是事件，取走即清空：渲染帧比场景帧密，读快照会把同一份输入重复喂进去。
+	const EngineUiInput uiInput = m_input->TakeUiInput();
+	if (!uiInput.text.empty())
+		io.AddInputCharactersUTF8(uiInput.text.c_str());
 
 	// 滚轮：UI 列表/文本滚动靠它。
-	if (frame.mouseWheel != 0.0f)
-		io.AddMouseWheelEvent(0.0f, frame.mouseWheel);
+	if (uiInput.wheel != 0.0f)
+		io.AddMouseWheelEvent(0.0f, uiInput.wheel);
 
 	// 键盘：每帧同步一次电平，边沿和重复都由 ImGui 自己处理。
 	const auto down = [&frame](EngineKey key) { return frame.active && frame.IsKeyDown(key); };
@@ -381,10 +383,6 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 
 					ImGui::PushID(i);
 
-					// selected 决定这个列表能不能点选：
-					//   true  = 可交互列表，点中的行高亮并回传（下标在 value 里，和 combo 同一套规则）
-					//   false = 展示列表，行只是"能看"，不高亮也不发事件
-					// 行能不能点 = 资产说可以（selectable，默认 true）且运行期没被关掉。
 					const bool selectable = node.selectable && nodeState.selected;
 					const bool rowSelected = selectable && i == static_cast<int>(nodeState.value);
 

@@ -1,5 +1,24 @@
 ﻿#include "Input/EngineInputContext.h"
 
+#include <utility>
+
+void EngineInputContext::SetActive(bool active)
+{
+	LockGuard lock(m_mutex);
+	if (m_frame.active == active)
+		return;
+
+	m_frame.active = active;
+	m_keysDown.reset();
+	m_pressedLatch.reset();
+	m_releasedLatch.reset();
+	m_frame.keysDown.reset();
+	m_frame.keysPressed.reset();
+	m_frame.keysReleased.reset();
+	m_frame.mouseDeltaX = 0.0f;
+	m_frame.mouseDeltaY = 0.0f;
+}
+
 void EngineInputContext::SetKeyDown(EngineKey key, bool down)
 {
 	if (!IsEngineKeyValid(key))
@@ -42,12 +61,34 @@ void EngineInputContext::NewFrame()
 	m_frame.viewportY = m_viewportY;
 	m_frame.viewportWidth = m_viewportWidth;
 	m_frame.viewportHeight = m_viewportHeight;
-	m_frame.textInput = m_textInput;
-	m_textInput.clear();
-	m_frame.mouseWheel = m_mouseWheel;
-	m_mouseWheel = 0.0f;
 	m_pressedLatch.reset();
 	m_releasedLatch.reset();
+}
+
+void EngineInputContext::SetMousePosition(float x, float y)
+{
+	LockGuard lock(m_mutex);
+	m_mouseX = x;
+	m_mouseY = y;
+}
+
+void EngineInputContext::SetMouseDelta(float deltaX, float deltaY)
+{
+    LockGuard lock(m_mutex);
+    if (m_frame.active)
+	{
+		m_frame.mouseDeltaX += deltaX;
+		m_frame.mouseDeltaY += deltaY;
+	}
+}
+
+void EngineInputContext::SetViewportRect(float x, float y, float width, float height)
+{
+	LockGuard lock(m_mutex);
+	m_viewportX = x;
+	m_viewportY = y;
+	m_viewportWidth = width;
+	m_viewportHeight = height;
 }
 
 bool EngineInputContext::IsKeyDown(EngineKey key) const
@@ -57,6 +98,24 @@ bool EngineInputContext::IsKeyDown(EngineKey key) const
 
 	std::lock_guard lock(m_mutex);
 	return m_keysDown.test(EngineKeyIndex(key));
+}
+
+void EngineInputContext::PushMouseWheel(float delta)
+{
+    if (!m_frame.active || delta == 0.0f)
+        return;
+
+    LockGuard lock(m_mutex);
+    m_mouseWheel += delta;
+}
+
+void EngineInputContext::PushTextInput(const std::string& utf8)
+{
+	if (utf8.empty())
+		return;
+
+	LockGuard lock(m_mutex);
+	m_textInput += utf8;
 }
 
 EngineInputFrame EngineInputContext::ReadFrame() const
@@ -74,63 +133,13 @@ EngineInputFrame EngineInputContext::ConsumeFrame()
 	return frame;
 }
 
-void EngineInputContext::SetActive(bool active)
+EngineUiInput EngineInputContext::TakeUiInput()
 {
-    LockGuard lock(m_mutex);
-	if (m_frame.active == active)
-		return;
-
-	m_frame.active = active;
-	m_keysDown.reset();
-	m_pressedLatch.reset();
-	m_releasedLatch.reset();
-	m_frame.keysDown.reset();
-	m_frame.keysPressed.reset();
-	m_frame.keysReleased.reset();
-	m_frame.mouseDeltaX = 0.0f;
-	m_frame.mouseDeltaY = 0.0f;
-}
-
-void EngineInputContext::PushMouseWheel(float delta)
-{
-    if (!m_frame.active || delta == 0.0f)
-        return;
-
-    LockGuard lock(m_mutex);
-    m_mouseWheel += delta;
-}
-
-void EngineInputContext::AddMouseDelta(float deltaX, float deltaY)
-{
-    LockGuard lock(m_mutex);
-    if (m_frame.active)
-	{
-		m_frame.mouseDeltaX += deltaX;
-		m_frame.mouseDeltaY += deltaY;
-	}
-}
-
-void EngineInputContext::SetMousePosition(float x, float y)
-{
-	LockGuard lock(m_mutex);
-	m_mouseX = x;
-	m_mouseY = y;
-}
-
-void EngineInputContext::SetViewportRect(float x, float y, float width, float height)
-{
-	LockGuard lock(m_mutex);
-	m_viewportX = x;
-	m_viewportY = y;
-	m_viewportWidth = width;
-	m_viewportHeight = height;
-}
-
-void EngineInputContext::PushTextInput(const std::string& utf8)
-{
-	if (utf8.empty())
-		return;
-
-	LockGuard lock(m_mutex);
-	m_textInput += utf8;
+	std::lock_guard lock(m_mutex);
+	EngineUiInput input;
+	input.text = std::move(m_textInput);
+	input.wheel = m_mouseWheel;
+	m_textInput.clear();
+	m_mouseWheel = 0.0f;
+	return input;
 }

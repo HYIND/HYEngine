@@ -23,12 +23,6 @@ struct EngineInputFrame
     float viewportWidth = 0.0f;
     float viewportHeight = 0.0f;
 
-    // 本帧收到的文字（字符输入/IME 提交结果）。
-    std::string textInput;
-
-    // 本帧累计的滚轮增量（向上为正），UI 列表/文本滚动用。
-    float mouseWheel = 0.0f;
-
     bool active = false;
 
     bool IsKeyDown(EngineKey key) const
@@ -45,30 +39,37 @@ struct EngineInputFrame
     }
 };
 
+// UI 专用的瞬态输入：文字与滚轮。
+// 两样和按键/鼠标位置不一样——它们是"事件"，只能被消费一次
+struct EngineUiInput
+{
+    std::string text;
+    float wheel = 0.0f;
+};
+
 class EngineInputContext
 {
 public:
+    void SetActive(bool active);
+
     void SetKeyDown(EngineKey key, bool down);
     void ReleaseAllKeys();
 
-    void NewFrame();    // 每帧由宿主调用一次（帧边界）：把持续状态快照成帧，并清掉已消费的边沿。
+    void NewFrame();
 
-    void SetActive(bool active);
-    void AddMouseDelta(float deltaX, float deltaY);
-
-    // 滚轮：按帧累计，NewFrame 时清空。
-    void PushMouseWheel(float delta);
-
-    // 宿主每帧喂：窗口坐标下的鼠标位置、渲染目标在窗口里的矩形。
     void SetMousePosition(float x, float y);
+    void SetMouseDelta(float deltaX, float deltaY);
     void SetViewportRect(float x, float y, float width, float height);
-    // 宿主的字符输入（已经过 IME 组合的结果）；按帧清空。
-    void PushTextInput(const std::string& utf8);
 
     bool IsKeyDown(EngineKey key) const;
 
+    void PushMouseWheel(float delta);
+    void PushTextInput(const std::string& utf8);
+
     EngineInputFrame ReadFrame() const;
     EngineInputFrame ConsumeFrame();
+
+    EngineUiInput TakeUiInput();
 
 private:
     mutable CriticalSectionLock m_mutex;
