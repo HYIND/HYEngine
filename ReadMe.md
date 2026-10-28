@@ -8,6 +8,7 @@
 ![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot2.png?raw=true)
 ![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot3.png?raw=true)
 ![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot4.png?raw=true)
+![](https://github.com/HYIND/HYEngine/blob/master/Screenshots/Screenshot5.png?raw=true)
 
 ## ✨ 核心功能
 
