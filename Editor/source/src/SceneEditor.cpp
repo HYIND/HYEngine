@@ -194,9 +194,9 @@ static void GeneralDefaultWorld(World& world)
         auto& rendermodel = sphere.addComponent<RenderModel>();
         rendermodel.model = model;
 
-        if (!model->getMeshInfos().empty() && model->getMeshInfos()[0].material)
+        if (!model->GetMeshInfos().empty() && model->GetMeshInfos()[0].material)
         {
-            auto& material = model->getMeshInfos()[0].material;
+            auto& material = model->GetMeshInfos()[0].material;
             material->SetMetallic(0.5);
             material->SetRoughness(0.3f);
             material->SetAlbedo(glm::vec3(1.0f));
@@ -211,7 +211,7 @@ static void GeneralDefaultWorld(World& world)
         float floorSize = 50.f;
         auto model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-        auto& meshInfo = model->getMeshInfos();
+        auto& meshInfo = model->GetMeshInfos();
         if (!meshInfo.empty())
             meshInfo[0].material->SetAlbedo(glm::vec3(1, 1, 1));
 
@@ -704,7 +704,7 @@ void SceneEditor::SetInputActive(bool enable)
         inputContext->SetActive(enable);
 }
 
-Entity SceneEditor::CreateModelEntity(std::shared_ptr<Model> model)
+Entity SceneEditor::CreateModelEntity(std::shared_ptr<StaticModel> model)
 {
     if (!model)
         return Entity();
@@ -747,7 +747,7 @@ bool SceneEditor::DuplicateEntity(Entity oriEntity, Entity& newEntity)
             tag.name += "_copy";
         }
         if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
-            renderModel->model = renderModel->model->Clone(true, true, true);
+            renderModel->model = renderModel->model->Clone(true, true);
 
         isSuccess = true;
         }

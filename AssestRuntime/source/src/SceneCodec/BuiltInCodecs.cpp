@@ -697,7 +697,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
 
     result.push_back(GenerateComponentCodec<RenderModel>(
         "engine.render_model",
-        "Render Model",
+        "Render StaticModel",
         [](const RenderModel& renderModel) {
             Json modelGuid = nullptr;
             if (renderModel.model)
@@ -709,7 +709,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
             Json materials = Json::array();
             if (renderModel.model)
             {
-                const auto& meshInfos = renderModel.model->getMeshInfos();
+                const auto& meshInfos = renderModel.model->GetMeshInfos();
                 for (uint32_t index = 0; index < meshInfos.size(); ++index)
                 {
                     const auto& material = meshInfos[index].material;
@@ -812,7 +812,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 const auto guid = modelGuid.get<std::string>();
                 if (guid.empty())
                     return false;
-                renderModel.model = std::make_shared<Model>();
+                renderModel.model = std::make_shared<StaticModel>();
                 renderModel.model->SetAssetGUID(guid);
             }
             return true;

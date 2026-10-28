@@ -1,6 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/Light.h"
-#include "VulkanRenderEngine/Base/Mesh.h"
+#include "VulkanRenderEngine/Base/StaticMesh.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
 
 constexpr float PI = 3.14159265359;

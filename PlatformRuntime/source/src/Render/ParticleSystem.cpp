@@ -142,7 +142,7 @@ void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, 
 					auto properties = std::make_shared<TextureParticleProperties>(params.texture, params.colorGenerator->generate(), params.opacityGenerator->generate(), params.shape);
 					particle->properties = properties;
 				}
-				else if (params.type == ParticleType::Model)
+				else if (params.type == ParticleType::StaticModel)
 				{
 					auto properties = std::make_shared<ModelParticleProperties>(params.model, params.colorGenerator->generate(), params.opacityGenerator->generate());
 					particle->properties = properties;

@@ -66,8 +66,8 @@ HZBPass::HZBPass(
 		config.vertexPath = depthVertexShaderPath;
 		config.fragmentPath = depthfragmentShaderPath;
 
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
 
 		config.SetDepthAttachmentFormat(vk::Format::eD32Sfloat);
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);

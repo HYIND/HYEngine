@@ -222,7 +222,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 			pool.submit([&]()->void {
 				{
 
-					auto model = std::make_shared<Model>("Test/sponza/scene.gltf");
+					auto model = std::make_shared<StaticModel>("Test/sponza/scene.gltf");
 					model->MakeScale(glm::vec3(0.03f));
 					ModelRes[ResName::Sponza] = model;
 				}
@@ -235,7 +235,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 			{
 				pool.submit([&]()->void {
 					{
-						ModelRes[ResName::AK47] = std::make_shared<Model>("Test/Weapon/AK47/test.fbx");
+						ModelRes[ResName::AK47] = std::make_shared<StaticModel>("Test/Weapon/AK47/test.fbx");
 						auto animations = AnimationClipLoader::LoadAnimationFile("Test/Weapon/AK47/test.fbx");
 						AnimationRes[ResName::AK47_Anim_Static] = animations[0];
 						AnimationRes[ResName::AK47_Anim_Draw] = animations[1];
@@ -250,7 +250,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 				//pool.submit([&]()->void {
 				//	{
-				//		ModelRes[ResName::Pistol] = std::make_shared<Model>("Test/Weapon/pistol/Armpist.fbx");
+				//		ModelRes[ResName::Pistol] = std::make_shared<StaticModel>("Test/Weapon/pistol/Armpist.fbx");
 				//		auto animations = AnimationLoader::LoadAnimationFile("Test/Weapon/pistol/Armpist.fbx");
 				//		AnimationRes[ResName::Pistol_Anim_Static] = animations[6];
 				//		AnimationRes[ResName::Pistol_Anim_Draw] = animations[6];
@@ -265,7 +265,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 				//pool.submit([&]()->void {
 				//	{
-				//		ModelRes[ResName::Sniper] = std::make_shared<Model>("Test/Weapon/sniper/BoltActionRifle.fbx");
+				//		ModelRes[ResName::Sniper] = std::make_shared<StaticModel>("Test/Weapon/sniper/BoltActionRifle.fbx");
 				//		auto animations = AnimationLoader::LoadAnimationFile("Test/Weapon/sniper/BoltActionRifle.fbx");
 				//		AnimationRes[ResName::Sniper_Anim_Static] = animations[2];
 				//		AnimationRes[ResName::Sniper_Anim_Draw] = animations[2];
@@ -280,9 +280,9 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 				//pool.submit([&]()->void {
 				//	{
-				//		ModelRes[ResName::SMG] = std::make_shared<Model>("Test/Weapon/smg/test.fbx");
+				//		ModelRes[ResName::SMG] = std::make_shared<StaticModel>("Test/Weapon/smg/test.fbx");
 				//		auto animations = AnimationLoader::LoadAnimationFile("Test/Weapon/smg/test.fbx");
-				//		//ModelRes[ResName::SMG] = std::make_shared<Model>("Test/Weapon/smg/PistolArm.fbx");
+				//		//ModelRes[ResName::SMG] = std::make_shared<StaticModel>("Test/Weapon/smg/PistolArm.fbx");
 				//		//auto animations = AnimationLoader::LoadAnimationFile("Test/Weapon/smg/PistolArm.fbx");
 				//		AnimationRes[ResName::SMG_Anim_Static] = animations[5];
 				//		AnimationRes[ResName::SMG_Anim_Draw] = animations[7];
@@ -302,7 +302,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 				pool.submit([&]()->void {
 					{
-						auto model = std::make_shared<Model>("Test/keqing/keqing.pmx");
+						auto model = std::make_shared<StaticModel>("Test/keqing/keqing.pmx");
 						model->MakeScale(glm::vec3(0.25f));
 						ModelRes[ResName::Keqing1] = model;
 					}
@@ -310,7 +310,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 				pool.submit([&]()->void {
 					{
-						auto model = std::make_shared<Model>("Test/keqing2/keqing.pmx");
+						auto model = std::make_shared<StaticModel>("Test/keqing2/keqing.pmx");
 						model->MakeScale(glm::vec3(0.25f));
 						ModelRes[ResName::Keqing2] = model;
 					}
@@ -321,7 +321,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 			{
 				pool.submit([&]()->void {
 					{
-						auto model = std::make_shared<Model>("Test/newdust2/Generic_Item.obj");
+						auto model = std::make_shared<StaticModel>("Test/newdust2/Generic_Item.obj");
 						glm::mat4 mat = glm::mat4(1.0f);
 						mat = glm::scale(mat, glm::vec3(10.f));
 						model->MakeTransform(mat);
@@ -366,7 +366,7 @@ bool ResourceManager::InitScene3DResourceInternal(uint32_t mapFlag)
 
 		pool.submit([&]()->void {
 			{
-				auto model = std::make_shared<Model>("Test/keqing2/keqing.pmx");
+				auto model = std::make_shared<StaticModel>("Test/keqing2/keqing.pmx");
 				model->MakeScale(glm::vec3(0.25f));
 				ModelRes[ResName::Keqing2] = model;
 			}
@@ -418,7 +418,7 @@ std::shared_ptr<AudioInfo> ResourceManager::GetAudioRes(const std::string& name)
 	return it->second;
 }
 
-std::shared_ptr<Model> ResourceManager::GetModelRes(const std::string& name)
+std::shared_ptr<StaticModel> ResourceManager::GetModelRes(const std::string& name)
 {
 	auto it = ModelRes.find(name);
 	if (it == ModelRes.end())

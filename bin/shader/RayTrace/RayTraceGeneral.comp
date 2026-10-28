@@ -12,9 +12,6 @@ struct Vertex_Extension
     vec2 texCoords;
     vec3 Tangent;
     vec3 Bitangent;
-    int padding;
-    int m_BoneIDs[8];
-    float m_Weights[8];
 };
 
 struct Triangle {
@@ -369,7 +366,7 @@ bool findHitPointOnMeshData(int index, inout Ray worldRay, inout HitInfo hit)
 
                         vec2 texCoords = (1.0 - u - v) * tri_ext.v0.texCoords + u * tri_ext.v1.texCoords + v * tri_ext.v2.texCoords;
                         if (calculateOpacity(materialdata, texCoords) < 0.02)
-                            discard;
+                            continue;
 
                         vec3 localNormal = normalize((1.0 - u - v) * tri_ext.v0.normal + u * tri_ext.v1.normal + v * tri_ext.v2.normal);
                         vec3 localTangent = normalize((1.0 - u - v) * tri_ext.v0.Tangent + u * tri_ext.v1.Tangent + v * tri_ext.v2.Tangent);

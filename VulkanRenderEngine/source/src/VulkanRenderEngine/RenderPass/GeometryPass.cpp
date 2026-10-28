@@ -11,9 +11,7 @@ struct alignas(16) RenderData {
 
 GeometryPass::GeometryPass(
 	const std::string& staticMeshVertexShaderPath,
-	const std::string& staticMeshFragmentShaderPath,
-	const std::string& skinnedMeshvertexShaderPath,
-	const std::string& skinnedFragmentShaderPath
+	const std::string& staticMeshFragmentShaderPath
 )
 {
 	{
@@ -23,8 +21,8 @@ GeometryPass::GeometryPass(
 		config.vertexPath = staticMeshVertexShaderPath;
 		config.fragmentPath = staticMeshFragmentShaderPath;
 
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
 
 		config.AddColorAttachment(vk::Format::eR32G32B32A32Sfloat);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
@@ -46,36 +44,6 @@ GeometryPass::GeometryPass(
 			_staticShader->Create(config);
 	}
 
-	{
-		_skinnedShader = std::make_shared<GraphicsPipeline>();
-
-		GraphicsPipelineConfig config;
-		config.vertexPath = skinnedMeshvertexShaderPath;
-		config.fragmentPath = skinnedFragmentShaderPath;
-
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
-
-		config.AddColorAttachment(vk::Format::eR32G32B32A32Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
-
-		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
-
-		config
-			.AddBindlessMaterialTextureBinding()
-			.AddAnimationDataBinding()
-			.AddCameraUnifromDataBinding()
-			.AddPushConstant(sizeof(RenderData));
-
-		config.AddDynamicState(vk::DynamicState::eCullMode);
-
-		if (config.Validate())
-			_skinnedShader->Create(config);
-	}
 }
 
 GeometryPass::~GeometryPass()
@@ -170,7 +138,6 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	DynamicViewport viewPort(state.framebuffer.width, state.framebuffer.height);
 
 	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
-	RenderSceneGeometryPassSkinned(registry, cmd, state, renderInfo, viewPort);
 
 	Texture2D::CopyTextureAsync(cmd, gPositionHistory, gPrevPosition);
 	Texture2D::CopyTextureAsync(cmd, gNormalHistory, gPrevNormal);
@@ -327,56 +294,4 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 	}
 
 	cmd->endRendering();
-}
-
-void GeometryPass::RenderSceneGeometryPassSkinned(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
-{
-	//auto& opaqueSinnedModels = state.objects.sceneRenderData.opaqueSkinnedModel;
-	//auto& renderIndexArrays = state.objects.sceneRenderData.opaqueSkinnedModel_SortIndex;
-
-	//if (opaqueSinnedModels.empty())
-	//	return;
-
-	//auto& shader = _skinnedShader;
-
-	//shader->Bind();
-
-	//std::shared_ptr<Material> cur_Material;
-	//glm::mat4 cur_Model = glm::mat4(1.0f);
-	//glm::mat4 cur_PreModel = glm::mat4(1.0f);
-
-	//RenderHelp::SetupAnimatorGroupData(shader, {});
-	//shader.setMat4("model", cur_Model);
-	//shader.setMat4("prevModel", cur_PreModel);
-
-	//for (size_t i = 0; i < opaqueSinnedModels.size(); i++)
-	//{
-	//	auto& item = opaqueSinnedModels[i];
-
-	//	if (cur_Model != item.transform)
-	//	{
-	//		shader.setMat4("model", item.transform);
-	//		cur_Model = item.transform;
-	//	}
-	//	if (cur_PreModel != item.prevTransform)
-	//	{
-	//		shader.setMat4("prevModel", item.prevTransform);
-	//		cur_PreModel = item.prevTransform;
-	//	}
-	//	RenderHelp::SetupAnimatorGroupData(shader, *item.animators);
-
-	//	auto& sort = renderIndexArrays[i];
-	//	for (int i = 0; i < sort.size(); i++)
-	//	{
-	//		auto meshIndex = sort[i];
-	//		auto& meshinfo = item.models[meshIndex];
-	//		if (cur_Material != meshinfo.material)
-	//		{
-	//			meshinfo.ApplyMaterialWithSideOption();
-	//			cur_Material = meshinfo.material;
-	//		}
-	//		//meshinfo.mesh->SetDirty();
-	//		meshinfo.DrawGeometry(shader);
-	//	}
-	//}
 }

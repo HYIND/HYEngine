@@ -1,7 +1,7 @@
 #pragma once
 
 #include "glm/glm.hpp"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 #include "VulkanRenderEngine/General/VKRenderContext.h"
 
 namespace VKRenderObjectData
@@ -17,17 +17,15 @@ namespace VKRenderObjectData
 		{
 			glm::mat4 transform;
 			glm::mat4 prevTransform;
-			// 所属物体的变换历史（shared_ptr 保证生命周期）。
-			// 分析阶段只填默认值，真正的 prev 由渲染线程在帧提交时解析
 			std::shared_ptr<VKRenderContext::TransformHistory> transformHistory;
 		};
 		struct MeshItem :public Item
 		{
-			MeshInfo meshinfo;
+			StaticMeshInfo meshinfo;
 		};
 		struct ModelItem :public Item
 		{
-			std::vector<MeshInfo> models;
+			std::vector<StaticMeshInfo> models;
 		};
 
 		struct OpaqueMeshItem :public MeshItem {};
@@ -62,11 +60,11 @@ namespace VKRenderObjectData
 		};
 		struct MeshItem :public Item
 		{
-			MeshInfo meshinfo;
+			StaticMeshInfo meshinfo;
 		};
 		struct ModelItem :public Item
 		{
-			std::vector<MeshInfo> models;
+			std::vector<StaticMeshInfo> models;
 		};
 
 		struct OpaqueMeshItem :public MeshItem {};

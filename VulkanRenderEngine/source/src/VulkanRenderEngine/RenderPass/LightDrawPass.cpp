@@ -41,8 +41,8 @@ LightDrawPass::LightDrawPass(const std::string& vertexShaderPath, const std::str
 	auto cubemodel = RenderHelper::GetCubeModel(glm::vec3(1.0f), 1.0f);
 	auto spheremodel = RenderHelper::GetSphereModel(0.5f, 72, 36);
 
-	auto& cubeMesh = cubemodel->getMeshInfos()[0].mesh;
-	auto& sphereMesh = spheremodel->getMeshInfos()[0].mesh;
+	auto& cubeMesh = cubemodel->GetMeshInfos()[0].mesh;
+	auto& sphereMesh = spheremodel->GetMeshInfos()[0].mesh;
 
 	std::vector<glm::vec3> vertex;
 	std::vector<unsigned int> indices;

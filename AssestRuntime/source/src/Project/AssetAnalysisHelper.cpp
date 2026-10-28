@@ -165,34 +165,32 @@ bool isSameAnalysisMaterialAssetMeta(AnalysisMaterialAssetMeta& a, AnalysisMater
 }
 
 
-struct AnalysisParams
+struct StaticModelAnalysisParams
 {
 	bool meshNeed = false;
 	bool materialNeed = false;
 
-	std::vector<std::shared_ptr<Mesh>> meshes;
-	std::shared_ptr<Skeleton> skeleton;
+	std::vector<std::shared_ptr<StaticMesh>> meshes;
 
 	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> textureMetas;
 	std::vector<std::shared_ptr<AnalysisMaterialAssetMeta>> materialMetas;
 };
 
-class ModelFileAnalysis
+class StaticModelFileAnalysis
 {
 public:
-	ModelFileAnalysis(const aiScene* scene, const std::string& filepath)
+	StaticModelFileAnalysis(const aiScene* scene, const std::string& filepath)
 		:_scene(scene), _filepath(filepath) {
 		_directory = fs::path(filepath).parent_path().string();
 	};
 
-	bool Excute(AnalysisParams& params);
+	bool Excute(StaticModelAnalysisParams& params);
 
 private:
-	void processNode(aiNode* node, const aiScene* scene, AnalysisParams& params);
+	void ProcessNode(aiNode* node, const aiScene* scene, StaticModelAnalysisParams& params);
 	void BuildSkeletonHierarchy(aiNode* node, uint32_t parentIndex, const std::string& path, Skeleton& skeleton);
-	void processMesh(aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
-	void ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene, AnalysisParams& params);
-	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config);
+	void ProcessMesh(aiMesh* mesh, const aiScene* scene, StaticModelAnalysisParams& params);
+	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> FindMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config);
 
 public:
 	const aiScene* _scene = nullptr;
@@ -200,13 +198,13 @@ public:
 	std::string _directory;
 };
 
-std::vector<std::shared_ptr<Mesh>> AssetAnalysisHelper::LoadStaticMesh(const std::string& filePath)
+std::vector<std::shared_ptr<StaticMesh>> AssetAnalysisHelper::LoadStaticMesh(const std::string& filePath)
 {
 	Assimp::Importer importer;
 	const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
-	ModelFileAnalysis analysis(scene, filePath);
-	AnalysisParams params;
+	StaticModelFileAnalysis analysis(scene, filePath);
+	StaticModelAnalysisParams params;
 	params.meshNeed = true;
 	analysis.Excute(params);
 	return params.meshes;
@@ -217,72 +215,51 @@ std::shared_ptr<AnalysisResult> AssetAnalysisHelper::AnalysisModelImportData(con
 	Assimp::Importer importer;
 	const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
-	ModelFileAnalysis analysis(scene, filePath);
-	AnalysisParams params;
+	StaticModelFileAnalysis analysis(scene, filePath);
+	StaticModelAnalysisParams params;
 	params.meshNeed = true;
 	params.materialNeed = true;
 	analysis.Excute(params);
 
 	auto res = std::make_shared<AnalysisResult>();
 	res->meshes = std::move(params.meshes);
-	res->skeleton = std::move(params.skeleton);
 	res->textureMetas = std::move(params.textureMetas);
 	res->materialMetas = std::move(params.materialMetas);
 
 	return res;
 }
 
-bool ModelFileAnalysis::Excute(AnalysisParams& params)
+bool StaticModelFileAnalysis::Excute(StaticModelAnalysisParams& params)
 {
 	auto scene = _scene;
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
 		return false;
 
-	bool hasSkinning = false;
-	for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
-	{
-		if (scene->mMeshes[meshIndex] && scene->mMeshes[meshIndex]->mNumBones > 0)
-		{
-			hasSkinning = true;
-			break;
-		}
-	}
-	if (hasSkinning)
-	{
-		params.skeleton = std::make_shared<Skeleton>();
-		BuildSkeletonHierarchy(scene->mRootNode, SkeletonNode::InvalidIndex, "/" + std::string(scene->mRootNode->mName.C_Str()), *params.skeleton);
-	}
+	//bool hasSkinning = false;
+	//for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
+	//{
+	//	if (scene->mMeshes[meshIndex] && scene->mMeshes[meshIndex]->mNumBones > 0)
+	//	{
+	//		hasSkinning = true;
+	//		break;
+	//	}
+	//}
 
-	processNode(scene->mRootNode, scene, params);
+	ProcessNode(scene->mRootNode, scene, params);
 	return true;
 }
 
-void ModelFileAnalysis::BuildSkeletonHierarchy(aiNode* node, uint32_t parentIndex, const std::string& path, Skeleton& skeleton)
-{
-	if (!node)
-		return;
-
-	const std::string nodeName = node->mName.C_Str();
-	const uint32_t nodeIndex = skeleton.AddNode(nodeName, path, parentIndex, AssimpGLMHelpers::ConvertMatrixToGLMFormat(node->mTransformation));
-	for (unsigned int childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
-	{
-		aiNode* child = node->mChildren[childIndex];
-		const std::string childName = child ? child->mName.C_Str() : std::string();
-		BuildSkeletonHierarchy(child, nodeIndex, path + "/" + childName + "[" + std::to_string(childIndex) + "]", skeleton);
-	}
-}
-
-void ModelFileAnalysis::processNode(aiNode* node, const aiScene* scene, AnalysisParams& params)
+void StaticModelFileAnalysis::ProcessNode(aiNode* node, const aiScene* scene, StaticModelAnalysisParams& params)
 {
 	for (unsigned int i = 0; i < node->mNumMeshes; i++)
 	{
 		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-		processMesh(mesh, scene, params);
+		ProcessMesh(mesh, scene, params);
 	}
 
 	for (unsigned int i = 0; i < node->mNumChildren; i++)
 	{
-		processNode(node->mChildren[i], scene, params);
+		ProcessNode(node->mChildren[i], scene, params);
 	}
 }
 
@@ -347,7 +324,7 @@ void EnumerateMaterialTextures(aiMaterial* material) {
 	std::cout << "====================================\n";
 }
 
-void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, AnalysisParams& params)
+void StaticModelFileAnalysis::ProcessMesh(aiMesh* mesh, const aiScene* scene, StaticModelAnalysisParams& params)
 {
 	if (params.meshNeed)
 	{
@@ -357,8 +334,6 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		for (unsigned int i = 0; i < mesh->mNumVertices; i++)
 		{
 			Vertex vertex;
-			vertex.SetVertexBoneDataToDefault();
-
 			vertex.Position = AssimpGLMHelpers::GetGLMVec(mesh->mVertices[i]);
 
 			if (mesh->HasNormals())
@@ -394,9 +369,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 				indices.push_back(face.mIndices[j]);
 		}
 
-		ExtractSkeletonWeightForVertices(vertices, mesh, scene, params);
-
-		auto meshptr = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
+		auto meshptr = std::make_shared<StaticMesh>(std::move(vertices), std::move(indices));
 		params.meshes.push_back(meshptr);
 	}
 
@@ -406,7 +379,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 		aiMaterial* ai_material = scene->mMaterials[mesh->mMaterialIndex];
 
 		auto loadTexture = [&](aiTextureType ai_type, TextureType type) -> bool {
-			auto metas = findMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
+			auto metas = FindMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
 			if (metas.empty())
 				return false;
 
@@ -533,7 +506,7 @@ void ModelFileAnalysis::processMesh(aiMesh* mesh, const aiScene* scene, Analysis
 	}
 }
 
-std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
+std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> StaticModelFileAnalysis::FindMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
 {
 	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> metas;
 	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)
@@ -562,36 +535,4 @@ std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> ModelFileAnalysis::findMa
 		}
 	}
 	return metas;
-}
-
-void ModelFileAnalysis::ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene, AnalysisParams& params)
-{
-	if (!params.skeleton)
-		params.skeleton = std::make_shared<Skeleton>();
-
-	for (int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
-	{
-		auto weights = mesh->mBones[boneIndex]->mWeights;
-		int numWeights = mesh->mBones[boneIndex]->mNumWeights;
-
-		if (!mesh->mBones[boneIndex]->mWeights || mesh->mBones[boneIndex]->mNumWeights <= 0)
-			continue;
-
-		std::string boneName = mesh->mBones[boneIndex]->mName.C_Str();
-		const SkeletonNodeIndex nodeIndex = params.skeleton->FindUniqueNodeByName(boneName);
-		if (nodeIndex == SkeletonNode::InvalidIndex)
-		{
-			std::cerr << "Assimp bone has no unique node in imported hierarchy: " << boneName << std::endl;
-			continue;
-		}
-		const BoneID boneID = static_cast<BoneID>(nodeIndex);
-
-		for (int weightIndex = 0; weightIndex < numWeights; ++weightIndex)
-		{
-			int vertexId = weights[weightIndex].mVertexId;
-			float weight = weights[weightIndex].mWeight;
-			assert(vertexId <= vertices.size());
-			vertices[vertexId].SetVertexBoneData(boneID, weight);
-		}
-	}
 }

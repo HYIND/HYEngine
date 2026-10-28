@@ -11,7 +11,7 @@
 #undef near
 #endif
 
-std::shared_ptr<Model> RenderHelper::GetFloorModel(const glm::vec2& scale, float textureScale, const AssetGUID& guid)
+std::shared_ptr<StaticModel> RenderHelper::GetFloorModel(const glm::vec2& scale, float textureScale, const AssetGUID& guid)
 {
 	float planeVertices[] = {
 		// positions        
@@ -54,12 +54,12 @@ std::shared_ptr<Model> RenderHelper::GetFloorModel(const glm::vec2& scale, float
 	std::vector<unsigned int> indices = { 0,1,2,3,4,5 };
 
 	std::shared_ptr<Material> material = std::make_shared<Material>();
-	auto floor_mesh = std::make_shared<Mesh>(v, indices);
+	auto floor_mesh = std::make_shared<StaticMesh>(v, indices);
 	floor_mesh->CalculateTangentData();
 	glm::vec3 floor_scale = glm::vec3(scale.x, 1, scale.y);
 	floor_mesh->MakeScale(glm::vec3(floor_scale));
 
-	auto floor_Model = std::make_shared<Model>();
+	auto floor_Model = std::make_shared<StaticModel>();
 	floor_Model->AddMesh(floor_mesh, material);
 
 	floor_Model->SetAssetGUID(guid);
@@ -67,7 +67,7 @@ std::shared_ptr<Model> RenderHelper::GetFloorModel(const glm::vec2& scale, float
 	return floor_Model;
 }
 
-std::shared_ptr<Model> RenderHelper::GetCubeModel(const glm::vec3& scale, float textureScale, const AssetGUID& guid)
+std::shared_ptr<StaticModel> RenderHelper::GetCubeModel(const glm::vec3& scale, float textureScale, const AssetGUID& guid)
 {
 	static std::vector<glm::vec3> cube_vertices = {
 				glm::vec3(-1,-1,-1),
@@ -144,11 +144,11 @@ std::shared_ptr<Model> RenderHelper::GetCubeModel(const glm::vec3& scale, float 
 
 
 	std::shared_ptr<Material> material = std::make_shared<Material>();
-	auto cube_mesh = std::make_shared<Mesh>(vertex, indices);
+	auto cube_mesh = std::make_shared<StaticMesh>(vertex, indices);
 	cube_mesh->CalculateTangentData();
 	cube_mesh->MakeScale(scale);
 
-	auto cube_Model = std::make_shared<Model>();
+	auto cube_Model = std::make_shared<StaticModel>();
 	cube_Model->AddMesh(cube_mesh, material);
 
 	cube_Model->SetAssetGUID(guid);
@@ -156,7 +156,7 @@ std::shared_ptr<Model> RenderHelper::GetCubeModel(const glm::vec3& scale, float 
 	return cube_Model;
 }
 
-std::shared_ptr<Model> RenderHelper::GetSphereModel(float radius, int sectors, int stacks, const AssetGUID& guid)
+std::shared_ptr<StaticModel> RenderHelper::GetSphereModel(float radius, int sectors, int stacks, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -257,10 +257,10 @@ std::shared_ptr<Model> RenderHelper::GetSphereModel(float radius, int sectors, i
 	}
 
 	std::shared_ptr<Material> material = std::make_shared<Material>();
-	auto sphere_mesh = std::make_shared<Mesh>(vertices, indices);
+	auto sphere_mesh = std::make_shared<StaticMesh>(vertices, indices);
 	sphere_mesh->CalculateTangentData();
 
-	auto sphere_Model = std::make_shared<Model>();
+	auto sphere_Model = std::make_shared<StaticModel>();
 	sphere_Model->AddMesh(sphere_mesh, material);
 
 	sphere_Model->SetAssetGUID(guid);
@@ -268,7 +268,7 @@ std::shared_ptr<Model> RenderHelper::GetSphereModel(float radius, int sectors, i
 	return sphere_Model;
 }
 
-std::shared_ptr<Model> RenderHelper::RenderHelper::GetCylinderModel(float radius, float height, int segments, const AssetGUID& guid)
+std::shared_ptr<StaticModel> RenderHelper::RenderHelper::GetCylinderModel(float radius, float height, int segments, const AssetGUID& guid)
 {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -415,10 +415,10 @@ std::shared_ptr<Model> RenderHelper::RenderHelper::GetCylinderModel(float radius
 		indices.push_back(i);
 
 	std::shared_ptr<Material> material = std::make_shared<Material>();
-	auto mesh = std::make_shared<Mesh>(vertices, indices);
+	auto mesh = std::make_shared<StaticMesh>(vertices, indices);
 	mesh->CalculateTangentData();
 
-	auto model = std::make_shared<Model>();
+	auto model = std::make_shared<StaticModel>();
 	model->AddMesh(mesh, material);
 
 	model->SetAssetGUID(guid);
@@ -450,7 +450,7 @@ std::shared_ptr<Model> RenderHelper::RenderHelper::GetCylinderModel(float radius
 
 //void RenderHelp::renderBillboardQuad(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
 //{
-//	static std::shared_ptr<Model> s_model;
+//	static std::shared_ptr<StaticModel> s_model;
 //
 //	if (!s_model)
 //	{
@@ -458,8 +458,8 @@ std::shared_ptr<Model> RenderHelper::RenderHelper::GetCylinderModel(float radius
 //		if (!model)
 //			return;
 //		s_model = model->Clone();
-//		if (!s_model->getMeshInfos().empty() && s_model->getMeshInfos()[0].material)
-//			s_model->getMeshInfos()[0].material->SetTwoSided(true);
+//		if (!s_model->GetMeshInfos().empty() && s_model->GetMeshInfos()[0].material)
+//			s_model->GetMeshInfos()[0].material->SetTwoSided(true);
 //	}
 //
 //	s_model->Draw(cmd);

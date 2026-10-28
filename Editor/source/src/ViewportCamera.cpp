@@ -21,8 +21,7 @@ void ViewportCamera::RotateCamera(EngineRuntime& runtime, World& world, float de
 
     if (auto follow = entity.tryGetComponent<CameraFollow>(); follow && follow->target && follow->target.hasComponent<TagEditorCamera>())
     {
-        // 旋转不做数学：把鼠标增量交给输入系统，由 CameraFollowSystem 统一消费，
-        // 保证和 WASD 移动用的是同一份 yaw/pitch。
+
         if (auto inputContext = runtime.GetInputContext())
             inputContext->SetMouseDelta(deltaX, deltaY);
     }

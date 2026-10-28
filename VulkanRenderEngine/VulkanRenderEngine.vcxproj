@@ -140,6 +140,8 @@
     <ClInclude Include="source\include\vkstdafx.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AnimationClip.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Animator.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\ModelBase.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Skeleton.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AssimpGlmHelpers.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\AtlasMap.h" />
@@ -150,8 +152,10 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\LaserBeam.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Light.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Material.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Model.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\SkinnedMesh.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\SkinnedModel.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\StaticMesh.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\StaticModel.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Particle.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Pipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\RayTracingPipeline.h" />
@@ -255,7 +259,11 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Light.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Material.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Mesh.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Model.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\ModelBase.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\SkinnedMesh.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\SkinnedModel.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\StaticMesh.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\StaticModel.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Pipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\RayTracingPipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp" />

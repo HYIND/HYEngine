@@ -3,7 +3,7 @@
 #include "ComponentCodec.h"
 #include "Script/ScriptSourceData.h"
 
-class Model;
+class StaticModel;
 class Material;
 
 class SceneCodec
@@ -20,7 +20,7 @@ public:
 	bool Deserialize(
 		World& world,
 		const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset = {},
-		const std::function<std::shared_ptr<Model>(const AssetGUID&)>& resolveModelAsset = {},
+		const std::function<std::shared_ptr<StaticModel>(const AssetGUID&)>& resolveModelAsset = {},
 		const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset = {}) const;
 
 	const std::string& GetName() const { return _name; }

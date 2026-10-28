@@ -137,10 +137,10 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Material.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\StaticMesh.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\Base\Model.h">
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\StaticModel.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Particle.h">
@@ -356,6 +356,18 @@
     <ClInclude Include="source\include\vkstdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\SkinnedModel.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Mesh.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\ModelBase.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\SkinnedMesh.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -406,10 +418,10 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Material.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Mesh.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\StaticMesh.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\Base\Model.cpp">
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\StaticModel.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\ComputePipeline.cpp">
@@ -602,6 +614,18 @@
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Mesh.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\SkinnedMesh.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\SkinnedModel.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\ModelBase.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
   </ItemGroup>

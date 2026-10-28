@@ -526,7 +526,7 @@ struct EmitterParams
 	ParticleType type = ParticleType::Color;
 
 	std::shared_ptr<Texture2D> texture;
-	std::shared_ptr<Model> model;
+	std::shared_ptr<StaticModel> model;
 
 	bool IsVaild() { return scaleGenerator && colorGenerator && lifeTimeGenerator && opacityGenerator && posGenerator && dirGenerator && speedGenerator && rotGenerator; }
 };

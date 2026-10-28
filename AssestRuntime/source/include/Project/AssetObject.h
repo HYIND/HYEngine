@@ -2,7 +2,7 @@
 
 #include "AssetMeta.h"
 #include "AssetDescription.h"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Script/ScriptSourceData.h"
 #include "UI/UiDocumentParser.h"
@@ -22,10 +22,10 @@ public:
 public:
 	virtual ~AssetObject() = default;
 
-	virtual std::vector<std::shared_ptr<Mesh>> AsStaticMesh();
+	virtual std::vector<std::shared_ptr<StaticMesh>> AsStaticMesh();
 	virtual std::shared_ptr<Texture2D> AsTexture();
 	virtual std::shared_ptr<Material> AsMaterial();
-	virtual std::shared_ptr<Model> AsModel();
+	virtual std::shared_ptr<StaticModel> AsStaticModel();
 	virtual std::shared_ptr<SceneCodec> AsScene();
 	virtual std::shared_ptr<AudioInfo> AsAudio();
 	virtual std::shared_ptr<ScriptSourceData> AsScript();
@@ -50,10 +50,10 @@ public:
 	virtual ~StaticMeshAsset() {
 		_meshes.clear();
 	}
-	virtual std::vector<std::shared_ptr<Mesh>> AsStaticMesh() override;
+	virtual std::vector<std::shared_ptr<StaticMesh>> AsStaticMesh() override;
 
 private:
-	std::vector<std::shared_ptr<Mesh>> _meshes;
+	std::vector<std::shared_ptr<StaticMesh>> _meshes;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };
@@ -108,7 +108,7 @@ class ModelAsset : public AssetObject
 public:
 	ModelAsset();
 	virtual ~ModelAsset() = default;
-	virtual std::shared_ptr<Model> AsModel() override;
+	virtual std::shared_ptr<StaticModel> AsStaticModel() override;
 
 private:
 	std::vector<AssetGUID> _dependencyStaticMesh;

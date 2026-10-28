@@ -17,7 +17,7 @@ void RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<Render
 
 		switch (context->type)
 		{
-		case VKRenderContext::RenderContextType::Model:
+		case VKRenderContext::RenderContextType::StaticModel:
 		{
 			processSceneModel(
 				state,
@@ -106,7 +106,7 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 
 	if (data->animatorViews.empty())
 	{
-		for (auto& info : data->model->getMeshInfos())
+		for (auto& info : data->model->GetMeshInfos())
 		{
 			if (!info.mesh || !info.material)
 				continue;
@@ -145,10 +145,10 @@ void RenderFrameDataAnalysisHelp::processSceneModel(
 	}
 	else
 	{
-		std::vector<MeshInfo> meshInfos;
+		std::vector<StaticMeshInfo> meshInfos;
 		auto shadredAnimatorViews = std::make_shared<std::vector<VKRenderContext::AnimatorView>>(data->animatorViews);
 
-		for (auto& info : data->model->getMeshInfos())
+		for (auto& info : data->model->GetMeshInfos())
 		{
 			if (!info.mesh || !info.material)
 				continue;
@@ -204,7 +204,7 @@ void RenderFrameDataAnalysisHelp::processFirstPersonModel(
 
 	if (data->animatorViews.empty())
 	{
-		for (auto& info : data->model->getMeshInfos())
+		for (auto& info : data->model->GetMeshInfos())
 		{
 			if (!info.mesh || !info.material)
 				continue;
@@ -233,10 +233,10 @@ void RenderFrameDataAnalysisHelp::processFirstPersonModel(
 	}
 	else
 	{
-		std::vector<MeshInfo> meshInfos;
+		std::vector<StaticMeshInfo> meshInfos;
 		auto shadredAnimatorViews = std::make_shared<std::vector<VKRenderContext::AnimatorView>>(std::move(data->animatorViews));
 
-		for (auto& info : data->model->getMeshInfos())
+		for (auto& info : data->model->GetMeshInfos())
 		{
 			if (!info.mesh || !info.material)
 				continue;

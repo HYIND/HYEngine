@@ -4,104 +4,15 @@
 #include "VulkanRenderEngine/VKContext.h"
 
 
-std::vector<vk::VertexInputAttributeDescription> Vertex::GetVertexInputAttributeDescription(uint32_t binding, uint32_t locaitonOffset)
-{
-	std::vector<vk::VertexInputAttributeDescription> attributes;
-	attributes.resize(9, {});
-
-	// 位置 - location 0
-	attributes[0].setLocation(locaitonOffset + 0)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32Sfloat)
-		.setOffset(offsetof(Vertex, Position));
-
-	// 法线 - location 1
-	attributes[1].setLocation(locaitonOffset + 1)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32Sfloat)
-		.setOffset(offsetof(Vertex, Normal));
-
-	// 纹理坐标 - location 2
-	attributes[2].setLocation(locaitonOffset + 2)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32Sfloat)
-		.setOffset(offsetof(Vertex, TexCoords));
-
-	// 切线 - location 3
-	attributes[3].setLocation(locaitonOffset + 3)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32Sfloat)
-		.setOffset(offsetof(Vertex, Tangent));
-
-	// 副切线 - location 4
-	attributes[4].setLocation(locaitonOffset + 4)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32Sfloat)
-		.setOffset(offsetof(Vertex, Bitangent));
-
-	// 骨骼ID 前4个 - location 5
-	attributes[5].setLocation(locaitonOffset + 5)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32A32Sint)
-		.setOffset(offsetof(Vertex, m_BoneIDs));
-
-	// 骨骼ID 后4个 - location 6
-	attributes[6].setLocation(locaitonOffset + 6)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32A32Sint)
-		.setOffset(offsetof(Vertex, m_BoneIDs) + 4 * sizeof(int));
-
-	// 骨骼权重 前4个 - location 7
-	attributes[7].setLocation(locaitonOffset + 7)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32A32Sfloat)
-		.setOffset(offsetof(Vertex, m_Weights));
-
-	// 骨骼权重 后4个 - location 8
-	attributes[8].setLocation(locaitonOffset + 8)
-		.setBinding(0)
-		.setFormat(vk::Format::eR32G32B32A32Sfloat)
-		.setOffset(offsetof(Vertex, m_Weights) + 4 * sizeof(float));
-
-	return attributes;
-}
-
-vk::VertexInputBindingDescription Vertex::GetVertexInputBindingDescription(uint32_t binding) {
-	vk::VertexInputBindingDescription bindingDescription;
-	bindingDescription.setBinding(binding)
-		.setStride(sizeof(Vertex))
-		.setInputRate(vk::VertexInputRate::eVertex);
-	return bindingDescription;
-}
-
-
 Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
-	:
-	needUpdateIndirectDraw(false), needUpdateBVH(true), needUpdateAABB(true),
-	_viVersion{ 0 }, _bvhversion{ 0 }, _aabbversion{ 0 }
+	: _vertices(vertices), _indices(indices)
 {
-	_uuid = Tool::GenerateSimpleUuid();
-
-	this->_vertices = vertices;
-	this->_indices = indices;
-
-	SetDirty();
+	_vertices = vertices;
+	_indices = indices;
 }
 
 Mesh::~Mesh()
-{
-	IndirectDrawManager::Instance()->RetireMesh(*this);
-}
-
-void Mesh::SetDirty()
-{
-	needUpdateIndirectDraw = true;
-	needUpdateAABB = true;
-	needUpdateBVH = true;
-	_viVersion++;
-	_bvhversion++;
-	_aabbversion++;
-}
+{}
 
 void Mesh::CalculateTangentData()
 {
@@ -175,8 +86,7 @@ void Mesh::CalculateTangentData()
 		_vertices[i].Tangent = T;
 		_vertices[i].Bitangent = B;
 	}
-
-	SetDirty();
+	OnCalculateTangentData();
 }
 
 void Mesh::MakeScale(const glm::vec3& scale)
@@ -187,13 +97,13 @@ void Mesh::MakeScale(const glm::vec3& scale)
 	{
 		for (auto& vertex : _vertices)
 			vertex.Position *= scale;
-
-		SetDirty();
-		return;
 	}
-
-	glm::mat4 mat = glm::scale(glm::mat4(1.0f), scale);
-	MakeTransform(mat);
+	else
+	{
+		glm::mat4 mat = glm::scale(glm::mat4(1.0f), scale);
+		PrivateTransform(mat);
+	}
+	OnMakeTransform();
 }
 
 void Mesh::MakeTranslate(const glm::vec3& trans)
@@ -202,8 +112,7 @@ void Mesh::MakeTranslate(const glm::vec3& trans)
 		return;
 	for (auto& vertex : _vertices)
 		vertex.Position += trans;
-
-	SetDirty();
+	OnMakeTransform();
 }
 
 void Mesh::MakeRotate(float angle, const glm::vec3& axis)
@@ -211,66 +120,16 @@ void Mesh::MakeRotate(float angle, const glm::vec3& axis)
 	if (angle == 0.0f)
 		return;
 	glm::mat4 mat = glm::rotate(glm::mat4(1.0f), glm::radians(angle), axis);
-	MakeTransform(mat);
+	PrivateTransform(mat);
+	OnMakeTransform();
 }
 
 void Mesh::MakeTransform(const glm::mat4& mat)
 {
 	if (mat == glm::mat4(1.0f))
 		return;
-	glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(mat)));
-	for (auto& vertex : _vertices) {
-		vertex.Position = glm::vec3(mat * glm::vec4(vertex.Position, 1.0f));
-		vertex.Normal = glm::normalize(normalMat * vertex.Normal);
-		vertex.Tangent = glm::normalize(normalMat * vertex.Tangent);
-		vertex.Bitangent = glm::normalize(glm::cross(vertex.Normal, vertex.Tangent));
-	}
-
-	SetDirty();
-}
-
-std::shared_ptr<Mesh> Mesh::Clone()
-{
-	auto other = std::make_shared<Mesh>(_vertices, _indices);
-	if (_bvhdata) other->_bvhdata = std::make_shared<BVHData>(*_bvhdata);
-	return other;
-}
-
-std::shared_ptr<const BVHData> Mesh::GetBVHData()
-{
-	if (needUpdateBVH || !_bvhdata)
-	{
-		std::vector<AABB> triangleAABBData;
-
-		for (int i = 0; i < _indices.size(); i += 3)
-		{
-			AABB aabb;
-			aabb.extend(_vertices[_indices[i + 0]].Position);
-			aabb.extend(_vertices[_indices[i + 1]].Position);
-			aabb.extend(_vertices[_indices[i + 2]].Position);
-
-			triangleAABBData.push_back(aabb);
-		}
-
-		_bvhdata = BVHBuilder::Build(triangleAABBData, GlobalConfig::Mesh_BVH_Leaf_TriCount, GlobalConfig::RayTrace_Max_Recursive_Depth);
-		needUpdateBVH = false;
-	}
-	return _bvhdata;
-}
-
-
-AABB Mesh::GetAABB()
-{
-	if (needUpdateAABB)
-	{
-		AABB aabb;
-		for (auto& v : _vertices)
-			aabb.extend(v.Position);
-
-		_aabbdata = aabb;
-		needUpdateAABB = false;
-	}
-	return _aabbdata;
+	PrivateTransform(mat);
+	OnMakeTransform();
 }
 
 const std::vector<Vertex>& Mesh::GetVertices() const
@@ -283,32 +142,14 @@ const std::vector<unsigned int>& Mesh::GetIndices() const
 	return _indices;
 }
 
-std::string Mesh::GetUUID()
+void Mesh::PrivateTransform(const glm::mat4& mat)
 {
-	return _uuid;
+	glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(mat)));
+	for (auto& vertex : _vertices) {
+		vertex.Position = glm::vec3(mat * glm::vec4(vertex.Position, 1.0f));
+		vertex.Normal = glm::normalize(normalMat * vertex.Normal);
+		vertex.Tangent = glm::normalize(normalMat * vertex.Tangent);
+		vertex.Bitangent = glm::normalize(glm::cross(vertex.Normal, vertex.Tangent));
+	}
 }
 
-uint32_t Mesh::GetVerticesIndicesVsrsion()
-{
-	return _viVersion.load();
-}
-
-uint32_t Mesh::GetBVHDataVsrsion()
-{
-	return _bvhversion.load();
-}
-
-uint32_t Mesh::GetAABBDataVsrsion()
-{
-	return _aabbversion.load();
-}
-
-void Mesh::SetNeedUpdateIndirectDraw(bool value)
-{
-	needUpdateIndirectDraw = value;
-}
-
-bool Mesh::GetNeedUpdateIndirectDraw() const
-{
-	return needUpdateIndirectDraw;
-}

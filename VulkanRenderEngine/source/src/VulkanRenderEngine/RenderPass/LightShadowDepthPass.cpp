@@ -313,10 +313,8 @@ struct alignas(16) LightProp
 
 LightShadowDepthPass::LightShadowDepthPass(
 	const std::string& dirLightShadowStaticMeshVertexShaderPath,
-	const std::string& dirLightShadowSkinnedMeshVertexShaderPath,
 	const std::string& dirLightShadowFragmentShaderPath,
 	const std::string& pointLightShadowStaticMeshVertexShaderPath,
-	const std::string& pointLightShadowSkinnedMeshVertexShaderPath,
 	const std::string& pointLightShadowFragmentShaderPath
 )
 {
@@ -328,8 +326,8 @@ LightShadowDepthPass::LightShadowDepthPass(
 		config.vertexPath = dirLightShadowStaticMeshVertexShaderPath;
 		config.fragmentPath = dirLightShadowFragmentShaderPath;
 
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
 
 		config.SetDepthAttachmentFormat(vk::Format::eD32Sfloat);
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
@@ -347,40 +345,14 @@ LightShadowDepthPass::LightShadowDepthPass(
 	}
 
 	{
-		_dirLightShadowDepthSkinnedShader = std::make_shared<GraphicsPipeline>();
-
-		GraphicsPipelineConfig config;
-		config.vertexPath = dirLightShadowSkinnedMeshVertexShaderPath;
-		config.fragmentPath = dirLightShadowFragmentShaderPath;
-
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
-
-		config.SetDepthAttachmentFormat(vk::Format::eD32Sfloat);
-		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
-
-		config
-			.AddShadowBindlessMaterialTextureBinding()
-			.AddAnimationDataBinding()
-			.AddUnifromBuffer(3)
-			.AddStorageBuffer(4)
-			.AddStorageBuffer(5);
-
-		config.AddDynamicState(vk::DynamicState::eCullMode);
-
-		if (config.Validate())
-			_dirLightShadowDepthSkinnedShader->Create(config);
-	}
-
-	{
 		_pointLightShadowDepthStaticMeshShader = std::make_shared<GraphicsPipeline>();
 
 		GraphicsPipelineConfig config;
 		config.vertexPath = pointLightShadowStaticMeshVertexShaderPath;
 		config.fragmentPath = pointLightShadowFragmentShaderPath;
 
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
 
 		config.SetDepthAttachmentFormat(vk::Format::eD32Sfloat);
 		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
@@ -396,33 +368,6 @@ LightShadowDepthPass::LightShadowDepthPass(
 
 		if (config.Validate())
 			_pointLightShadowDepthStaticMeshShader->Create(config);
-	}
-
-	{
-		_pointLightShadowDepthSkinnedShader = std::make_shared<GraphicsPipeline>();
-
-		GraphicsPipelineConfig config;
-		config.vertexPath = pointLightShadowSkinnedMeshVertexShaderPath;
-		config.fragmentPath = pointLightShadowFragmentShaderPath;
-
-		config.AddVertexInputAttributeDescription(Vertex::GetVertexInputAttributeDescription());
-		config.AddVertexInputBindingDescription(Vertex::GetVertexInputBindingDescription());
-
-		config.SetDepthAttachmentFormat(vk::Format::eD32Sfloat);
-		config.SetStencilAttachmentFormat(vk::Format::eUndefined);
-
-		config
-			.AddShadowBindlessMaterialTextureBinding()
-			.AddAnimationDataBinding()
-			.AddUnifromBuffer(3)
-			.AddStorageBuffer(4)
-			.AddStorageBuffer(5)
-			.AddStorageBuffer(6);
-
-		config.AddDynamicState(vk::DynamicState::eCullMode);
-
-		if (config.Validate())
-			_pointLightShadowDepthSkinnedShader->Create(config);
 	}
 
 	{
@@ -538,8 +483,8 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 			dirLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
 
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
-				_dirLightShadowDepthStaticMeshShader, _dirLightShadowDepthSkinnedShader,
-				dirLightShadowDepthStaticMeshBinding, dirLightShadowDepthSkinnedBinding
+				_dirLightShadowDepthStaticMeshShader,
+				dirLightShadowDepthStaticMeshBinding
 			);
 			if (cmd->IsRecording())
 				cmd->SubmitNow();
@@ -552,8 +497,8 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 			pointLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_LightProps, 6);
 
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
-				_pointLightShadowDepthStaticMeshShader, _pointLightShadowDepthSkinnedShader,
-				pointLightShadowDepthStaticMeshBinding, pointLightShadowDepthSkinnedBinding
+				_pointLightShadowDepthStaticMeshShader,
+				pointLightShadowDepthStaticMeshBinding
 			);
 			if (cmd->IsRecording())
 				cmd->SubmitNow();
@@ -957,9 +902,7 @@ void LightShadowDepthPass::PreRecordRenderScene(
 	PreRecordData& data,
 	DynamicRenderInfo& renderInfo,
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
-	std::shared_ptr<GraphicsPipeline>& shader_Skinned,
-	GraphicsBindingRecord& shader_StaticMesh_Binding,
-	GraphicsBindingRecord& shader_Skinned_Binding
+	GraphicsBindingRecord& shader_StaticMesh_Binding
 )
 {
 	std::shared_ptr<UniformBlock> sideParamsUBO = std::make_shared<UniformBlock>(sizeof(DrawParams));

@@ -6,7 +6,7 @@
  2、分析器，导入资产时可提供分析结果，产生分析元数据，用以资产数据库构建
  */
 
-#include "VulkanRenderEngine/Base/Mesh.h"
+#include "VulkanRenderEngine/Base/StaticMesh.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/Material.h"
 #include "VulkanRenderEngine/Base/Skeleton.h"
@@ -25,7 +25,7 @@ struct AnalysisMaterialAssetMeta
 
 struct AnalysisResult
 {
-	std::vector<std::shared_ptr<Mesh>> meshes;
+	std::vector<std::shared_ptr<StaticMesh>> meshes;
 	std::shared_ptr<Skeleton> skeleton;
 	std::vector<std::shared_ptr<AnalysisTextureAssetMeta>> textureMetas;
 	std::vector<std::shared_ptr<AnalysisMaterialAssetMeta>> materialMetas;
@@ -35,7 +35,7 @@ class AssetAnalysisHelper
 {
 	//Load
 public:
-	static std::vector<std::shared_ptr<Mesh>> LoadStaticMesh(const std::string& filePath);
+	static std::vector<std::shared_ptr<StaticMesh>> LoadStaticMesh(const std::string& filePath);
 
 	//Analysis
 public:

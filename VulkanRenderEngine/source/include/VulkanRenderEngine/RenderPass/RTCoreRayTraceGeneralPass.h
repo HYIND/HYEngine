@@ -8,7 +8,7 @@ class RTCoreRayTraceGeneralPass;
 class BlasHandleManager
 {
 	struct BlasHandleData {
-		std::weak_ptr<Mesh> meshWeakPtr;
+		std::weak_ptr<StaticMesh> meshWeakPtr;
 		uint32_t meshVersion = 0;
 		std::string meshUUID;
 		vk::AccelerationStructureKHR handle;
@@ -18,12 +18,12 @@ class BlasHandleManager
 public:
 	BlasHandleManager();
 
-	void RemoveBlasData(std::shared_ptr<Mesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device);
+	void RemoveBlasData(std::shared_ptr<StaticMesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device);
 
-	bool FindBlasData(std::shared_ptr<Mesh>& mesh, BlasHandleData& data);
+	bool FindBlasData(std::shared_ptr<StaticMesh>& mesh, BlasHandleData& data);
 
 	bool UpdateBlasData(
-		std::vector<std::shared_ptr<Mesh>>& meshs,
+		std::vector<std::shared_ptr<StaticMesh>>& meshs,
 		std::shared_ptr<VertexBufferBlock>& vertexBlock,
 		std::shared_ptr<IndexBufferBlock>& indexBlock,
 		std::shared_ptr<VKCore::VulkanDevice>& device,
@@ -32,7 +32,7 @@ public:
 
 private:
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _blasBufferManager;	//blas数据缓冲区
-	std::unordered_map<Mesh*, BlasHandleData> _blasHandles;
+	std::unordered_map<StaticMesh*, BlasHandleData> _blasHandles;
 	vk::DeviceAddress _lastVertexAddress = 0;
 	vk::DeviceAddress _lastIndexAddress = 0;
 

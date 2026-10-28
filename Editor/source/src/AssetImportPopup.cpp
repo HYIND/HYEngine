@@ -21,7 +21,7 @@ static bool DetectType(const std::string& path, AssetType& type)
 
 	if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".stl" || ext == ".pmx")
 	{
-		type = AssetType::Model;
+		type = AssetType::StaticModel;
 		return true;
 	}
 	if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga")
@@ -152,7 +152,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 			break;
 		case AssetType::Material:
 			break;
-		case AssetType::Model:
+		case AssetType::StaticModel:
 			break;
 		case AssetType::Scene:
 			break;
@@ -188,7 +188,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 						break;
 					case AssetType::Material:
 						break;
-					case AssetType::Model:
+					case AssetType::StaticModel:
 						projectManager->ImportModelAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer);
 						break;
 					case AssetType::Scene:

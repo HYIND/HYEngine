@@ -8,9 +8,6 @@ struct Vertex
     vec2 texCoords;
     vec3 tangent;
     vec3 bitangent;
-    int padding;
-    int m_BoneIDs[8];
-    float m_Weights[8];
 };
 
 struct InstanceInfo {

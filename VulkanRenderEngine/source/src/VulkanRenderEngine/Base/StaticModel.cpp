@@ -1,14 +1,9 @@
 #include "vkstdafx.h"
-#include "VulkanRenderEngine/Base/Model.h"
-#include "VulkanRenderEngine/GlobalConfig.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
 #include <assimp/GltfMaterial.h>
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
-#include <stb\stb_image.h>
 
 #include "ThreadPool.h"
 #include "VulkanRenderEngine/VKContext.h"
@@ -129,28 +124,28 @@ inline std::string GetExt(const std::string& path)
 }
 
 
-Model::Model(const std::string& path)
+StaticModel::StaticModel(const std::string& path)
 {
-	loadModel(path);
+	LoadModel(path);
 }
 
-Model::Model()
+StaticModel::StaticModel()
 {}
 
-void Model::AddMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material> material)
+void StaticModel::AddMesh(std::shared_ptr<StaticMesh>& mesh, std::shared_ptr<Material> material)
 {
-	MeshInfo info;
+	StaticMeshInfo info;
 	info.mesh = mesh;
 	info.material = material;
 	_meshes.push_back(std::move(info));
 }
 
-std::vector<MeshInfo>& Model::getMeshInfos()
+std::vector<StaticMeshInfo>& StaticModel::GetMeshInfos()
 {
 	return _meshes;
 }
 
-AABB Model::GetAABB()
+AABB StaticModel::GetAABB()
 {
 	AABB aabb;
 	for (auto& info : _meshes)
@@ -166,7 +161,7 @@ AABB Model::GetAABB()
 	return aabb;
 }
 
-void Model::MakeScale(const glm::vec3& scale)
+void StaticModel::MakeScale(const glm::vec3& scale)
 {
 	if (scale.x == 1.0f && scale.y == 1.0f && scale.z == 1.0f)
 		return;
@@ -193,7 +188,7 @@ void Model::MakeScale(const glm::vec3& scale)
 	}
 }
 
-void Model::MakeTranslate(const glm::vec3& trans)
+void StaticModel::MakeTranslate(const glm::vec3& trans)
 {
 	if (trans.x == 0.0f && trans.y == 0.0f && trans.z == 0.0f)
 		return;
@@ -222,7 +217,7 @@ void Model::MakeTranslate(const glm::vec3& trans)
 	}
 }
 
-void Model::MakeRotate(float angle, const glm::vec3& axis)
+void StaticModel::MakeRotate(float angle, const glm::vec3& axis)
 {
 	if (angle == 0.0f)
 		return;
@@ -251,7 +246,7 @@ void Model::MakeRotate(float angle, const glm::vec3& axis)
 	}
 }
 
-void Model::MakeTransform(const glm::mat4& mat)
+void StaticModel::MakeTransform(const glm::mat4& mat)
 {
 	if (mat == glm::mat4(1.0f))
 		return;
@@ -279,29 +274,14 @@ void Model::MakeTransform(const glm::mat4& mat)
 	}
 }
 
-std::shared_ptr<Skeleton>& Model::GetSkeleton()
+std::shared_ptr<StaticModel> StaticModel::Clone(bool clonemesh, bool clonematerial)
 {
-	return _skeleton;
+	return Clone(StaticModel::CloneConfig(clonemesh, clonematerial));
 }
 
-void Model::SetAssetGUID(const AssetGUID& guid)
+std::shared_ptr<StaticModel> StaticModel::Clone(const StaticModel::CloneConfig& config)
 {
-	_assetGUID = guid;
-}
-
-const AssetGUID& Model::GetAssetGUID() const
-{
-	return _assetGUID;
-}
-
-std::shared_ptr<Model> Model::Clone(bool clonemesh, bool clonematerial, bool cloneskeleton)
-{
-	return Clone(Model::CloneConfig(clonemesh, clonematerial, cloneskeleton));
-}
-
-std::shared_ptr<Model> Model::Clone(const Model::CloneConfig& config)
-{
-	auto other = std::make_shared<Model>();
+	auto other = std::make_shared<StaticModel>();
 	other->_assetGUID = _assetGUID;
 
 	if (config.cloneMaterial)
@@ -310,12 +290,9 @@ std::shared_ptr<Model> Model::Clone(const Model::CloneConfig& config)
 		other->_directory = _directory;
 	}
 
-	if (_skeleton)
-		other->_skeleton = config.cloneSkeleton ? _skeleton->Clone() : _skeleton;
-
 	for (auto& info : _meshes)
 	{
-		std::shared_ptr<Mesh> mesh;
+		std::shared_ptr<StaticMesh> mesh;
 		std::shared_ptr<Material> material;
 
 		if (info.mesh)
@@ -323,13 +300,13 @@ std::shared_ptr<Model> Model::Clone(const Model::CloneConfig& config)
 		if (info.material)
 			material = config.cloneMaterial ? info.material->Clone() : info.material;
 
-		other->_meshes.push_back(MeshInfo{ mesh,material });
+		other->_meshes.push_back(StaticMeshInfo{ mesh,material });
 	}
 
 	return other;
 }
 
-void Model::loadModel(std::string const& path)
+void StaticModel::LoadModel(std::string const& path)
 {
 	std::string replace_path = path;
 	std::replace(replace_path.begin(), replace_path.end(), '\\', '/');
@@ -355,44 +332,24 @@ void Model::loadModel(std::string const& path)
 			break;
 		}
 	}
-	if (hasSkinning)
-	{
-		_skeleton = std::make_shared<Skeleton>();
-		BuildSkeletonHierarchy(scene->mRootNode, SkeletonNode::InvalidIndex, "/" + std::string(scene->mRootNode->mName.C_Str()));
-	}
 
-	processNode(scene->mRootNode, scene);
+	ProcessNode(scene->mRootNode, scene);
 }
 
-void Model::BuildSkeletonHierarchy(aiNode* node, uint32_t parentIndex, const std::string& path)
-{
-	if (!node || !_skeleton)
-		return;
-
-	const std::string nodeName = node->mName.C_Str();
-	const uint32_t nodeIndex = _skeleton->AddNode(nodeName, path, parentIndex, AssimpGLMHelpers::ConvertMatrixToGLMFormat(node->mTransformation));
-	for (unsigned int childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
-	{
-		aiNode* child = node->mChildren[childIndex];
-		const std::string childName = child ? child->mName.C_Str() : std::string();
-		BuildSkeletonHierarchy(child, nodeIndex, path + "/" + childName + "[" + std::to_string(childIndex) + "]");
-	}
-}
-
-void Model::processNode(aiNode* node, const aiScene* scene)
+void StaticModel::ProcessNode(aiNode* node, const aiScene* scene)
 {
 	for (unsigned int i = 0; i < node->mNumMeshes; i++)
 	{
 		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-		_meshes.push_back(std::move(processMesh(mesh, scene)));
+		_meshes.push_back(std::move(ProcessMesh(mesh, scene)));
 	}
 	for (unsigned int i = 0; i < node->mNumChildren; i++)
 	{
-		processNode(node->mChildren[i], scene);
+		ProcessNode(node->mChildren[i], scene);
 	}
 }
 
-MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
+StaticMeshInfo StaticModel::ProcessMesh(aiMesh* mesh, const aiScene* scene)
 {
 	// data to fill
 	std::vector<Vertex> vertices;
@@ -402,8 +359,6 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	for (unsigned int i = 0; i < mesh->mNumVertices; i++)
 	{
 		Vertex vertex;
-		vertex.SetVertexBoneDataToDefault();
-
 		vertex.Position = AssimpGLMHelpers::GetGLMVec(mesh->mVertices[i]);
 
 		if (mesh->HasNormals())
@@ -443,10 +398,10 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 	aiMaterial* ai_material = scene->mMaterials[mesh->mMaterialIndex];
 
 	auto loadTexture = [&](aiTextureType ai_type, TextureType type) -> bool {
-		std::vector<LoadedTexture> loadTextures = loadMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
+		auto loadTextures = LoadMaterialTextures(ai_material, ai_type, TextureConfigMap[type]);
 		if (!loadTextures.empty())
 		{
-			material->SetTexture(type, loadTextures[0].tex);
+			material->SetTexture(type, loadTextures[0]);
 			return true;
 		}
 		return false;
@@ -493,8 +448,6 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 		}
 	}
 
-	ExtractSkeletonWeightForVertices(vertices, mesh, scene);
-
 	aiColor4D ai_baseColor = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
 	if (AI_SUCCESS == ai_material->Get(AI_MATKEY_BASE_COLOR, ai_baseColor) || AI_SUCCESS == ai_material->Get(AI_MATKEY_COLOR_DIFFUSE, ai_baseColor))
 	{
@@ -537,94 +490,7 @@ MeshInfo Model::processMesh(aiMesh* mesh, const aiScene* scene)
 		material->SetTwoSided(twoSided != 0);
 	}
 
-	auto meshptr = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
+	auto meshptr = std::make_shared<StaticMesh>(std::move(vertices), std::move(indices));
 
-	return MeshInfo{ meshptr,material };
-}
-
-std::vector<Model::LoadedTexture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const TextureConfig& config)
-{
-	std::vector<LoadedTexture> textures;
-	for (unsigned int i = 0; i < mat->GetTextureCount(type); i++)
-	{
-
-		aiString ai_str;
-		mat->GetTexture(type, i, &ai_str);
-		fs::path fs_all_path(std::string(ai_str.C_Str()));
-
-		std::vector<fs::path> paths;
-		paths.push_back(fs::path(_directory) / fs_all_path);
-		if (fs_all_path.filename() != fs_all_path)
-			paths.push_back(fs::path(_directory) / fs_all_path.filename());
-
-		bool skip = false;
-		for (auto& filepath : paths)
-		{
-			for (unsigned int j = 0; j < _textures_loaded.size(); j++)
-			{
-				if (_textures_loaded[j].path == filepath && _textures_loaded[j].config == config)
-				{
-					textures.push_back(_textures_loaded[j]);
-					skip = true;
-					break;
-				}
-			}
-		}
-
-		if (skip)
-			continue;
-
-		bool isLoadSuccess = false;
-		for (auto& filepath : paths)
-		{
-			std::shared_ptr<Texture2D> tex = std::make_shared<Texture2D>(filepath.string(), config, true);
-			if (tex->IsEmpty())
-				continue;
-
-			LoadedTexture texture;
-			texture.tex = tex;
-			texture.path = filepath.string();
-			texture.config = config;
-			textures.push_back(texture);
-			_textures_loaded.push_back(texture);
-			isLoadSuccess = true;
-			break;
-		}
-		if (!isLoadSuccess)
-			std::cout << "Texture failed to load at path: " << fs_all_path.string() << std::endl;
-	}
-	return textures;
-}
-
-void Model::ExtractSkeletonWeightForVertices(std::vector<Vertex>& vertices, aiMesh* mesh, const aiScene* scene)
-{
-	if (!_skeleton)
-		_skeleton = std::make_shared<Skeleton>();
-
-	for (int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
-	{
-		auto weights = mesh->mBones[boneIndex]->mWeights;
-		int numWeights = mesh->mBones[boneIndex]->mNumWeights;
-
-		if (!mesh->mBones[boneIndex]->mWeights || mesh->mBones[boneIndex]->mNumWeights <= 0)
-			continue;
-
-		std::string boneName = mesh->mBones[boneIndex]->mName.C_Str();
-		const SkeletonNodeIndex nodeIndex = _skeleton->FindUniqueNodeByName(boneName);
-		if (nodeIndex == SkeletonNode::InvalidIndex)
-		{
-			std::cerr << "Assimp bone has no unique node in imported hierarchy: " << boneName << std::endl;
-			continue;
-		}
-
-		const BoneID boneID = static_cast<BoneID>(nodeIndex);
-
-		for (int weightIndex = 0; weightIndex < numWeights; ++weightIndex)
-		{
-			int vertexId = weights[weightIndex].mVertexId;
-			float weight = weights[weightIndex].mWeight;
-			assert(vertexId <= vertices.size());
-			vertices[vertexId].SetVertexBoneData(boneID, weight);
-		}
-	}
+	return StaticMeshInfo{ meshptr,material };
 }

@@ -1,14 +1,14 @@
 #pragma once
 
 #include "VulkanRenderEngine/Base/Texture2D.h"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "Effect.h"
 
 enum class ParticleShape { BillboardDisc = 0, BillboardSoftDisc = 1, BillboardQuad = 2, Sphere = 3 };	//Billboard模式：始终朝向玩家；WorldTrans模式，正常应用旋转
-enum class ParticleType { Color = 0, Color_Texture = 1, Model = 2 };
+enum class ParticleType { Color = 0, Color_Texture = 1, StaticModel = 2 };
 
 struct BaseParticleProperties :public BaseEffectProperties
 {
@@ -75,12 +75,12 @@ struct TextureParticleProperties :public BaseParticleProperties
 };
 struct ModelParticleProperties :public BaseParticleProperties
 {
-	std::shared_ptr<Model> model;
+	std::shared_ptr<StaticModel> model;
 
-	ModelParticleProperties(std::shared_ptr<Model> model, const glm::vec3& color = glm::vec3(1.0f), float opacity = 1.0f)
+	ModelParticleProperties(std::shared_ptr<StaticModel> model, const glm::vec3& color = glm::vec3(1.0f), float opacity = 1.0f)
 		:BaseParticleProperties(color, opacity), model(model)
 	{
-		particleType = ParticleType::Model;
+		particleType = ParticleType::StaticModel;
 	}
 	ModelParticleProperties(const ModelParticleProperties& other)
 		: BaseParticleProperties(other), model(other.model) {

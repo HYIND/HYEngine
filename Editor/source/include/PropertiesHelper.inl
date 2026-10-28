@@ -384,7 +384,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 {
 	if (!comp.model)
 	{
-		ImGui::TextDisabled("No Model assigned");
+		ImGui::TextDisabled("No StaticModel assigned");
 		return false;
 	}
 
@@ -410,7 +410,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 			ImGui::TextDisabled("%s", meta->path.c_str());
 		};
 
-	drawAssetPath("Model", comp.model->GetAssetGUID());
+	drawAssetPath("StaticModel", comp.model->GetAssetGUID());
 
 	bool anyChanged = false;
 	anyChanged |= DrawPropertyField<RenderModel>("Visible", &comp.visible);
@@ -429,7 +429,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 	};
 	std::vector<MaterialEdit> edits;
 	std::vector<MaterialDrop> drops;
-	auto& meshInfos = comp.model->getMeshInfos();
+	auto& meshInfos = comp.model->GetMeshInfos();
 	for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 	{
 		ImGui::PushID(static_cast<int>(slot));
@@ -532,7 +532,7 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		ImGui::PopID();
 	}
 
-	std::shared_ptr<Model> instanceModel;
+	std::shared_ptr<StaticModel> instanceModel;
 	for (const auto& edit : edits)
 	{
 		if (!edit.guid.empty())
@@ -554,8 +554,8 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 		else
 		{
 			if (!instanceModel)
-				instanceModel = comp.model->Clone(false, false, false);
-			auto& editedMeshInfos = instanceModel->getMeshInfos();
+				instanceModel = comp.model->Clone(false, false);
+			auto& editedMeshInfos = instanceModel->GetMeshInfos();
 			if (edit.slot >= editedMeshInfos.size())
 				continue;
 			auto materialInstance = editedMeshInfos[edit.slot].material
@@ -572,8 +572,8 @@ inline bool PropertiesHelper::DrawComponent<RenderModel>(RenderModel& comp, Proj
 	if (!drops.empty())
 	{
 		if (!instanceModel)
-			instanceModel = comp.model->Clone(false, false, false);
-		auto& editedMeshInfos = instanceModel->getMeshInfos();
+			instanceModel = comp.model->Clone(false, false);
+		auto& editedMeshInfos = instanceModel->GetMeshInfos();
 		for (const auto& drop : drops)
 		{
 			if (drop.slot >= editedMeshInfos.size())

@@ -4,7 +4,7 @@
 
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/Base/Animator.h"
-#include "VulkanRenderEngine/Base/Model.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
 #include "VulkanRenderEngine/Base/Effect.h"
 #include "Helper/TripleBuffer.h"
 
@@ -36,7 +36,7 @@ namespace VKRenderContext
 	struct BaseModelRenderData :public BaseRenderData
 	{
 		glm::mat4 transform;
-		std::shared_ptr<Model> model;
+		std::shared_ptr<StaticModel> model;
 		std::vector<AnimatorView> animatorViews;
 	};
 
@@ -77,7 +77,7 @@ namespace VKRenderContext
 
 	enum class RenderContextType
 	{
-		Model,
+		StaticModel,
 		DirLight,
 		PointLight,
 		SpotLight,
