@@ -695,15 +695,15 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
         }
     ));
 
-    result.push_back(GenerateComponentCodec<RenderModel>(
-        "engine.render_model",
+    result.push_back(GenerateComponentCodec<RenderStaticModel>(
+        "engine.render_static_model",
         "Render StaticModel",
-        [](const RenderModel& renderModel) {
+        [](const RenderStaticModel& renderModel) {
             Json modelGuid = nullptr;
             if (renderModel.model)
             {
                 if (renderModel.model->GetAssetGUID().empty())
-                    throw std::runtime_error("RenderModel has no asset GUID");
+                    throw std::runtime_error("RenderStaticModel has no asset GUID");
                 modelGuid = renderModel.model->GetAssetGUID();
             }
             Json materials = Json::array();
@@ -746,7 +746,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 { "materials", std::move(materials) }
             };
         },
-        [](RenderModel& renderModel, const Json& data) {
+        [](RenderStaticModel& renderModel, const Json& data) {
             if (!data.is_object()
                 || !data.contains("enabled") || !data["enabled"].is_boolean()
                 || !data.contains("trans")

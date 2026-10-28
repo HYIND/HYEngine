@@ -17,7 +17,7 @@ Entity CharacterFactory::CreatePlayerCharacter(World& world, const glm::vec3& po
 	character.addComponent<Movement>();
 	character.addComponent<Health>();
 
-	auto& rendermodel = character.addComponent<RenderModel>();
+	auto& rendermodel = character.addComponent<RenderStaticModel>();
 	rendermodel.model = model;
 
 	AABB aabb = rendermodel.model->GetAABB();

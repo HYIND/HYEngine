@@ -12,7 +12,7 @@
 
 extern class StaticModel;
 
-struct RenderModel : public Renderable
+struct RenderStaticModel : public Renderable
 {
 	std::shared_ptr<StaticModel> model;
 	std::unordered_map<uint32_t, AssetGUID> materialOverrideGUIDs;
@@ -21,11 +21,11 @@ struct RenderModel : public Renderable
 
 	std::shared_ptr<VKRenderContext::TransformHistory> transformHistory = std::make_shared<VKRenderContext::TransformHistory>();
 
-	RenderModel() {}
-	RenderModel(std::shared_ptr<StaticModel> model
+	RenderStaticModel() {}
+	RenderStaticModel(std::shared_ptr<StaticModel> model
 	) : model(model) {}
 
-	RenderModel(const RenderModel& other)
+	RenderStaticModel(const RenderStaticModel& other)
 		:Renderable(other),
 		model(other.model),
 		materialOverrideGUIDs(other.materialOverrideGUIDs),
@@ -33,7 +33,7 @@ struct RenderModel : public Renderable
 		trans(other.trans),
 		transformHistory(std::make_shared<VKRenderContext::TransformHistory>())
 	{}
-	RenderModel& operator=(const RenderModel& other)
+	RenderStaticModel& operator=(const RenderStaticModel& other)
 	{
 		if (this == &other)
 			return *this;
@@ -48,7 +48,7 @@ struct RenderModel : public Renderable
 		return *this;
 	}
 
-	RenderModel(RenderModel&& other) noexcept
+	RenderStaticModel(RenderStaticModel&& other) noexcept
 		: Renderable(std::move(other)),
 		model(std::move(other.model)),
 		materialOverrideGUIDs(std::move(other.materialOverrideGUIDs)),
@@ -57,7 +57,7 @@ struct RenderModel : public Renderable
 		transformHistory(std::make_shared<VKRenderContext::TransformHistory>())
 	{}
 
-	RenderModel& operator=(RenderModel&& other) noexcept
+	RenderStaticModel& operator=(RenderStaticModel&& other) noexcept
 	{
 		if (this == &other)
 			return *this;
@@ -80,7 +80,7 @@ struct RenderModel : public Renderable
 	}
 };
 
-HY_DECLARE_ECS_TYPE(RenderModel, "engine.render_model");
+HY_DECLARE_ECS_TYPE(RenderStaticModel, "engine.render_static_model");
 
 struct FirstPersonRenderModel : public Renderable
 {

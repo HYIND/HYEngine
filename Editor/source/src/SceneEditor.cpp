@@ -44,7 +44,7 @@ void AddPickProxy(Entity& entity)
         physics.allowSleep = false;
         physics.collisionShape.AddBoxShape(glm::vec3(0.5));
 
-        if (auto renderModel = entity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
+        if (auto renderModel = entity.tryGetComponent<RenderStaticModel>(); renderModel && renderModel->model)
         {
             auto aabb = renderModel->model->GetAABB();
             auto halfExtend = (aabb.max - aabb.min) / 2.f;
@@ -116,7 +116,7 @@ static void GeneralDefaultWorld(World& world)
         physics.mass = 5.f;
         physics.collisionShape.AddBoxShape();
 
-        auto& rendermodel = cube.addComponent<RenderModel>();
+        auto& rendermodel = cube.addComponent<RenderStaticModel>();
         rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
         AddPickProxy(cube);
@@ -137,7 +137,7 @@ static void GeneralDefaultWorld(World& world)
         physics.mass = 5.f;
         physics.collisionShape.AddBoxShape();
 
-        auto& rendermodel = entity.addComponent<RenderModel>();
+        auto& rendermodel = entity.addComponent<RenderStaticModel>();
         rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
         AddPickProxy(entity);
@@ -191,7 +191,7 @@ static void GeneralDefaultWorld(World& world)
 
         auto model = RenderHelper::GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
-        auto& rendermodel = sphere.addComponent<RenderModel>();
+        auto& rendermodel = sphere.addComponent<RenderStaticModel>();
         rendermodel.model = model;
 
         if (!model->GetMeshInfos().empty() && model->GetMeshInfos()[0].material)
@@ -226,7 +226,7 @@ static void GeneralDefaultWorld(World& world)
         physics.isBullet = true;
         physics.collisionShape.AddBoxShape();
 
-        auto& rendermodel = floor.addComponent<RenderModel>();
+        auto& rendermodel = floor.addComponent<RenderStaticModel>();
         rendermodel.model = model;
 
         AddPickProxy(floor);
@@ -716,7 +716,7 @@ Entity SceneEditor::CreateModelEntity(std::shared_ptr<StaticModel> model)
         trans.position = glm::vec3(0, 0, 0);
         trans.rotation = glm::identity<glm::quat>();
 
-        auto& rendermodel = entity.addComponent<RenderModel>();
+        auto& rendermodel = entity.addComponent<RenderStaticModel>();
         rendermodel.model = model;
 
         AddPickProxy(entity);
@@ -746,7 +746,7 @@ bool SceneEditor::DuplicateEntity(Entity oriEntity, Entity& newEntity)
             auto& tag = newEntity.getComponent<TagEditorName>();
             tag.name += "_copy";
         }
-        if (auto renderModel = newEntity.tryGetComponent<RenderModel>(); renderModel && renderModel->model)
+        if (auto renderModel = newEntity.tryGetComponent<RenderStaticModel>(); renderModel && renderModel->model)
             renderModel->model = renderModel->model->Clone(true, true);
 
         isSuccess = true;
@@ -809,7 +809,7 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             physics.mass = 5.f;
             physics.collisionShape.AddBoxShape();
 
-            auto& rendermodel = entity.addComponent<RenderModel>();
+            auto& rendermodel = entity.addComponent<RenderStaticModel>();
             rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
             AddPickProxy(entity);
@@ -834,7 +834,7 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             physics.mass = 5.f;
             physics.collisionShape.AddSphereShape(0.5f);
 
-            auto& rendermodel = entity.addComponent<RenderModel>();
+            auto& rendermodel = entity.addComponent<RenderStaticModel>();
             rendermodel.model = RenderHelper::GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
             AddPickProxy(entity);
