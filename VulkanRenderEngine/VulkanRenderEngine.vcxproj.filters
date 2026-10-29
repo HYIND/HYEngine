@@ -365,6 +365,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\SkinnedMesh.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkinnedPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -621,6 +624,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\ModelBase.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkinnedPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

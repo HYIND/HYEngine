@@ -16,14 +16,20 @@ private:
 	struct SelfContext {
 		std::shared_ptr<AtlasMap> atlas = std::make_shared<AtlasMap>();
 
-		uint32_t oneSideCommandSize = 0;
-		uint32_t twoSideCommandSize = 0;
+		uint32_t staticOneSideCommandSize = 0;
+		uint32_t staticTwoSideCommandSize = 0;
+		uint32_t skinnedOneSideCommandSize = 0;
+		uint32_t skinnedTwoSideCommandSize = 0;
 
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_TransformAndMaterialIndices;
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_WorldAABB;
+		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_TransformAndMaterialIndices;
+		std::shared_ptr<VertexBufferBlock> skinnedMesh_VertexBuffer;
 
 		std::shared_ptr<IndirectBufferBlock> oneSideIndirectCommandBuffer = std::make_shared<IndirectBufferBlock>();
 		std::shared_ptr<IndirectBufferBlock> twoSideIndirectCommandBuffer = std::make_shared<IndirectBufferBlock>();
+		std::shared_ptr<IndirectBufferBlock> skinnedOneSideIndirectCommandBuffer = std::make_shared<IndirectBufferBlock>();
+		std::shared_ptr<IndirectBufferBlock> skinnedTwoSideIndirectCommandBuffer = std::make_shared<IndirectBufferBlock>();
 
 		std::shared_ptr<StorageBlock> ssbo_dirLightMeta = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_dirLightCascade = std::make_shared<StorageBlock>();
@@ -58,8 +64,10 @@ private:
 		std::shared_ptr<StorageBlock> ssbo_ShadowMatrices = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_LightProps = std::make_shared<StorageBlock>();
 
-		std::shared_ptr<IndirectBufferBlock> oneSideInidrectCommands;
-		std::shared_ptr<IndirectBufferBlock> twoSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock> staticOneSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock> staticTwoSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock> skinnedOneSideIndirectCommands;
+		std::shared_ptr<IndirectBufferBlock> skinnedTwoSideIndirectCommands;
 
 		PreRecordData(PreRecordLightType t) :type(t) {}
 		PreRecordData(PreRecordData&& other) {
@@ -72,8 +80,10 @@ private:
 			other.ssbo_ShadowMatrices = std::make_shared<StorageBlock>();
 			other.ssbo_LightProps = std::make_shared<StorageBlock>();
 
-			oneSideInidrectCommands = std::move(other.oneSideInidrectCommands);
-			twoSideInidrectCommands = std::move(other.twoSideInidrectCommands);
+			staticOneSideInidrectCommands = std::move(other.staticOneSideInidrectCommands);
+			staticTwoSideInidrectCommands = std::move(other.staticTwoSideInidrectCommands);
+			skinnedOneSideIndirectCommands = std::move(other.skinnedOneSideIndirectCommands);
+			skinnedTwoSideIndirectCommands = std::move(other.skinnedTwoSideIndirectCommands);
 		}
 	};
 
@@ -91,8 +101,11 @@ private:
 		PreRecordData& data,
 		DynamicRenderInfo& renderInfo,
 		std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
-		GraphicsBindingRecord& shader_StaticMesh_Binding
+		GraphicsBindingRecord& shader_StaticMesh_Binding,
+		GraphicsBindingRecord& shader_SkinnedMesh_Binding
 	);
+
+	void NewFunction(LightShadowDepthPass::SelfContext& ctx, std::shared_ptr<UniformBlock>& sideParamsUBO, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, DynamicRenderInfo& renderInfo, std::vector<DynamicViewport>& viewPorts, bool& hasClear, vk::ClearAttachment& clearAttachment, std::vector<vk::ClearRect>& clearRects, std::shared_ptr<IndirectDrawManager>& manager, LightShadowDepthPass::PreRecordData& data);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthStaticMeshShader;

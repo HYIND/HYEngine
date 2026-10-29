@@ -18,33 +18,22 @@ public:
 	std::shared_ptr<StaticMesh> Clone();
 
 	std::shared_ptr<const BVHData> GetBVHData();
-	std::string GetUUID();
 	AABB GetAABB();
 
-	uint32_t GetVerticesIndicesVsrsion();
 	uint32_t GetBVHDataVsrsion();
 	uint32_t GetAABBDataVsrsion();
 
 	void SetDirty();
 
-public:
-	void SetNeedUpdateIndirectDraw(bool value);
-	bool GetNeedUpdateIndirectDraw() const;
-
 protected:
-	virtual void OnCalculateTangentData() override;;
-	virtual void OnMakeTransform() override;;
+	virtual void OnChange() override;;
 
 private:
 	std::shared_ptr<BVHData> _bvhdata;
 	AABB _aabbdata;
 
-	bool needUpdateIndirectDraw;
 	bool needUpdateBVH;
 	bool needUpdateAABB;
-	std::atomic<uint32_t> _viVersion;
 	std::atomic<uint32_t> _bvhversion;
 	std::atomic<uint32_t> _aabbversion;
-
-	std::string _uuid;
 };

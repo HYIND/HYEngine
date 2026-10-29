@@ -2,6 +2,9 @@
 
 namespace Render
 {
+	using namespace VKRenderContext;
+	using namespace VKRenderObjectData;
+
 	void RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(std::shared_ptr<Render3DFrameData>& framedata, RenderState& state)
 	{
 		auto& contexts = framedata->Scene3D_Contexts;
@@ -17,27 +20,25 @@ namespace Render
 
 			switch (context->type)
 			{
-			case VKRenderContext::RenderContextType::StaticModel:
+			case RenderContextType::StaticModel:
 			{
 				ProcessStaticModel(
-					state,
-					state.objects.sceneRenderData,
-					std::static_pointer_cast<VKRenderContext::StaticModelRenderData>(context->data)
+					state.objects.sceneStaticRenderData,
+					std::static_pointer_cast<StaticModelRenderData>(context->data)
 				);
 				break;
 			}
-			case VKRenderContext::RenderContextType::SkinnedModel:
+			case RenderContextType::SkinnedModel:
 			{
 				ProcessSkinnedModel(
-					state,
 					state.objects.sceneSkinnedRenderData,
-					std::static_pointer_cast<VKRenderContext::SkinnedModelRenderData>(context->data)
+					std::static_pointer_cast<SkinnedModelRenderData>(context->data)
 				);
 				break;
 			}
-			case VKRenderContext::RenderContextType::DirLight:
+			case RenderContextType::DirLight:
 			{
-				auto ptr = std::static_pointer_cast<VKRenderContext::DirLightRenderData>(context->data);
+				auto ptr = std::static_pointer_cast<DirLightRenderData>(context->data);
 				if (ptr && ptr->light)
 				{
 					auto info = std::make_shared<DirLightInfo>();
@@ -47,9 +48,9 @@ namespace Render
 				}
 				break;
 			}
-			case VKRenderContext::RenderContextType::PointLight:
+			case RenderContextType::PointLight:
 			{
-				auto ptr = std::static_pointer_cast<VKRenderContext::PointLightRenderData>(context->data);
+				auto ptr = std::static_pointer_cast<PointLightRenderData>(context->data);
 				if (ptr && ptr->light)
 				{
 					auto info = std::make_shared<PointLightInfo>();
@@ -59,9 +60,9 @@ namespace Render
 				}
 				break;
 			}
-			case VKRenderContext::RenderContextType::SpotLight:
+			case RenderContextType::SpotLight:
 			{
-				auto ptr = std::static_pointer_cast<VKRenderContext::SpotLightRenderData>(context->data);
+				auto ptr = std::static_pointer_cast<SpotLightRenderData>(context->data);
 				if (ptr && ptr->light)
 				{
 					auto info = std::make_shared<SpotLightInfo>();
@@ -71,11 +72,11 @@ namespace Render
 				}
 				break;
 			}
-			case VKRenderContext::RenderContextType::Effect:
+			case RenderContextType::Effect:
 			{
-				auto ptr = std::static_pointer_cast<VKRenderContext::EffectRenderData>(context->data);
+				auto ptr = std::static_pointer_cast<EffectRenderData>(context->data);
 				if (ptr && ptr->properties)
-					state.objects.sceneRenderData.effectItems.push_back(ptr->properties);
+					state.objects.sceneStaticRenderData.effectItems.push_back(ptr->properties);
 				break;
 			}
 			default:
@@ -88,12 +89,11 @@ namespace Render
 	}
 
 	void RenderFrameDataAnalysisHelp::ProcessStaticModel(
-		RenderState& state,
-		VKRenderObjectData::SceneStaticRenderData& renderData,
-		const std::shared_ptr<VKRenderContext::StaticModelRenderData>& data
+		SceneStaticRenderData& renderData,
+		const std::shared_ptr<StaticModelRenderData>& data
 	)
 	{
-		using MeshItem = VKRenderObjectData::SceneStaticRenderData::MeshItem;
+		using MeshItem = SceneStaticRenderData::MeshItem;
 
 		if (!data || !data->model)
 			return;
@@ -111,42 +111,35 @@ namespace Render
 			if (opacity <= 0.f || (mode == AlphaMode::Mask && opacity < info.material->GetMaskThreshold()))
 				continue;
 
+			MeshItem item;
+			item.transform = transform;
+			item.prevTransform = transform;
+			item.transformHistory = transformHistory;
+			item.meshinfo = info;
+
 			bool isTransprant = (mode == AlphaMode::Blend);
-			if (isTransprant)
-			{
-				MeshItem item;
-				item.transform = transform;
-				item.prevTransform = transform;
-				item.transformHistory = transformHistory;
-				item.meshinfo = info;
-				renderData.transparentMesh.push_back(item);
+			if (isTransprant) {
+				renderData.transparentItems.push_back(item);
 			}
 			else
 			{
-				MeshItem item;
-				item.transform = transform;
-				item.prevTransform = transform;
-				item.transformHistory = transformHistory;
-				item.meshinfo = info;
-				renderData.opaqueMesh.push_back(item);
-
+				renderData.opaqueItems.push_back(item);
 				auto& material = item.meshinfo.material;
 				if (material->GetTwoSided())
-					state.objects.sceneRenderData.opaqueMesh_renderIndex.twoSideIndex.push_back(renderData.opaqueMesh.size() - 1);
+					renderData.opaqueItems_renderIndex.twoSideIndex.push_back(renderData.opaqueItems.size() - 1);
 				else
-					state.objects.sceneRenderData.opaqueMesh_renderIndex.oneSideIndex.push_back(renderData.opaqueMesh.size() - 1);
+					renderData.opaqueItems_renderIndex.oneSideIndex.push_back(renderData.opaqueItems.size() - 1);
 			}
 		}
 
 	}
 
 	void RenderFrameDataAnalysisHelp::ProcessSkinnedModel(
-		RenderState& state,
-		VKRenderObjectData::SceneSkinnedRenderData& renderData,
-		const std::shared_ptr<VKRenderContext::SkinnedModelRenderData>& data
+		SceneSkinnedRenderData& renderData,
+		const std::shared_ptr<SkinnedModelRenderData>& data
 	)
 	{
-		using SkinnedMeshItem = VKRenderObjectData::SceneSkinnedRenderData::SkinnedMeshItem;
+		using SkinnedMeshItem = SceneSkinnedRenderData::SkinnedMeshItem;
 
 		if (!data || !data->model)
 			return;
@@ -171,10 +164,19 @@ namespace Render
 			item.meshinfo = info;
 			item.palette = data->palette;
 
-			if (mode == AlphaMode::Blend)
-				renderData.transparentSkinnedMesh.push_back(item);
+			bool isTransprant = (mode == AlphaMode::Blend);
+			if (isTransprant) {
+				renderData.transparentItems.push_back(item);
+			}
 			else
-				renderData.opaqueSkinnedMesh.push_back(item);
+			{
+				auto& material = item.meshinfo.material;
+				if (material->GetTwoSided())
+					renderData.opaqueTwoSideItems.push_back(item);
+				else
+					renderData.opaqueOneSideItems.push_back(item);
+			}
+
 		}
 	}
 }

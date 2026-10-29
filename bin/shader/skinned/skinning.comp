@@ -1,0 +1,105 @@
+#version 460
+
+layout(local_size_x = SKINNING_WORKGROUP_SIZE) in;
+
+struct Vertex
+{
+	vec4 position;
+	vec4 normal;
+	vec4 texCoords;
+	vec4 tangent;
+	vec4 bitangent;
+};
+
+struct SkinnedData
+{
+	uvec4 boneIDs[MAX_BONE_INFLUENCE / 4];
+	vec4 weights[MAX_BONE_INFLUENCE / 4];
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer SourceVertices
+{
+	Vertex vertices[];
+} sourceVertices;
+
+layout(std430, set = 0, binding = 1) readonly buffer SkinnedDataBuffer
+{
+	SkinnedData data[];
+} skinnedData;
+
+layout(std430, set = 0, binding = 2) readonly buffer PaletteMatrices
+{
+	mat4 matrices[];
+} palette;
+
+layout(std430, set = 0, binding = 3) writeonly buffer OutputVertices
+{
+	Vertex vertices[];
+} outputVertices;
+
+layout(push_constant) uniform SkinningParams
+{
+	uint vertexCount;
+	uint sourceVertexOffset;
+	uint skinnedDataOffset;
+	uint paletteOffset;
+	uint paletteCount;
+	uint outputVertexOffset;
+} params;
+
+void main()
+{
+	uint vertexIndex = gl_GlobalInvocationID.x;
+	if (vertexIndex >= params.vertexCount)
+		return;
+
+	Vertex source = sourceVertices.vertices[params.sourceVertexOffset + vertexIndex];
+	SkinnedData skin = skinnedData.data[params.skinnedDataOffset + vertexIndex];
+
+	vec3 position = vec3(0.0);
+	vec3 normal = vec3(0.0);
+	vec3 tangent = vec3(0.0);
+	vec3 bitangent = vec3(0.0);
+	float totalWeight = 0.0;
+
+	for (uint influence = 0; influence < MAX_BONE_INFLUENCE; ++influence)
+	{
+		uint boneID = skin.boneIDs[influence / 4][influence % 4];
+		float weight = skin.weights[influence / 4][influence % 4];
+		if (weight <= 0.0 || boneID == 0xffffffffu)
+			continue;
+
+		if (boneID < params.paletteCount)
+		{
+			mat4 boneMatrix = palette.matrices[params.paletteOffset + boneID];
+			mat3 normalMatrix = transpose(inverse(mat3(boneMatrix)));
+			position += (boneMatrix * source.position).xyz * weight;
+			normal += normalMatrix * source.normal.xyz * weight;
+			tangent += normalMatrix * source.tangent.xyz * weight;
+			bitangent += normalMatrix * source.bitangent.xyz * weight;
+		}
+		else
+		{
+			position += source.position.xyz * weight;
+			normal += source.normal.xyz * weight;
+			tangent += source.tangent.xyz * weight;
+			bitangent += source.bitangent.xyz * weight;
+		}
+
+		totalWeight += weight;
+	}
+
+	Vertex result = source;
+	if (totalWeight > 1e-8)
+	{
+		result.position = vec4(position / totalWeight, 1.0);
+		if (dot(normal, normal) > 1e-12)
+			result.normal = vec4(normalize(normal), source.normal.w);
+		if (dot(tangent, tangent) > 1e-12)
+			result.tangent = vec4(normalize(tangent), source.tangent.w);
+		if (dot(bitangent, bitangent) > 1e-12)
+			result.bitangent = vec4(normalize(bitangent), source.bitangent.w);
+	}
+
+	outputVertices.vertices[params.outputVertexOffset + vertexIndex] = result;
+}

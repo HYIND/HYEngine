@@ -28,14 +28,25 @@ public:
 	const std::vector<Vertex>& GetVertices() const;
 	const std::vector<unsigned int>& GetIndices() const;
 
+	std::string GetUUID();
+	uint32_t GetVerticesIndicesVsrsion();
+
+public:
+	void SetNeedUpdateIndirectDraw(bool value);
+	bool GetNeedUpdateIndirectDraw() const;
+
 protected:
-	virtual void OnCalculateTangentData() {};
-	virtual void OnMakeTransform() {};	//MakeScale、MakeTranslate、MakeRotate、MakeTransform都会触发
+	virtual void OnChange() {};
 
 private:
 	void PrivateTransform(const glm::mat4& mat);
+	void Change();
 
 protected:
 	std::vector<Vertex> _vertices;
 	std::vector<unsigned int> _indices;
+
+	bool needUpdateIndirectDraw;
+	std::atomic<uint32_t> _viVersion;
+	std::string _uuid;
 };

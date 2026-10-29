@@ -100,7 +100,7 @@ void AnimationSystem::postUpdate(float deltaTime)
 				auto ani_data = aniGroup.GetAnimatorData(aniGroup.defaultAnimator);
 				if (!ani_data || !ani_data->animator)
 					return false;
-
+				 
 				ani_data->curPlayTimeMs = 0;
 				ani_data->animator->SetTime(0.f);
 				palette = &ani_data->animator->GetFinalBoneMatrices();

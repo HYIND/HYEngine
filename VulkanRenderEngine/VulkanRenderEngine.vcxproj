@@ -211,6 +211,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceGIPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkinnedPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkyBoxPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSAOPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSGIPass.h" />
@@ -306,6 +307,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceGIPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceReflectPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkinnedPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyBoxPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp" />

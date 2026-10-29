@@ -62,8 +62,8 @@ vk::VertexInputBindingDescription StaticMesh::GetVertexInputBindingDescription(u
 
 StaticMesh::StaticMesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
 	:Mesh(vertices, indices),
-	needUpdateIndirectDraw(false), needUpdateBVH(true), needUpdateAABB(true),
-	_viVersion{ 0 }, _bvhversion{ 0 }, _aabbversion{ 0 }
+	needUpdateBVH(true), needUpdateAABB(true),
+	_bvhversion{ 0 }, _aabbversion{ 0 }
 {
 	_uuid = Tool::GenerateSimpleUuid();
 	SetDirty();
@@ -71,7 +71,7 @@ StaticMesh::StaticMesh(const std::vector<Vertex>& vertices, const std::vector<un
 
 StaticMesh::~StaticMesh()
 {
-	IndirectDrawManager::Instance()->RetireStaticMesh(*this);
+	IndirectDrawManager::Instance()->RetireMesh(*this);
 }
 
 void StaticMesh::SetDirty()
@@ -128,16 +128,6 @@ AABB StaticMesh::GetAABB()
 	return _aabbdata;
 }
 
-std::string StaticMesh::GetUUID()
-{
-	return _uuid;
-}
-
-uint32_t StaticMesh::GetVerticesIndicesVsrsion()
-{
-	return _viVersion.load();
-}
-
 uint32_t StaticMesh::GetBVHDataVsrsion()
 {
 	return _bvhversion.load();
@@ -148,16 +138,5 @@ uint32_t StaticMesh::GetAABBDataVsrsion()
 	return _aabbversion.load();
 }
 
-void StaticMesh::SetNeedUpdateIndirectDraw(bool value)
-{
-	needUpdateIndirectDraw = value;
-}
+void StaticMesh::OnChange() { SetDirty(); }
 
-bool StaticMesh::GetNeedUpdateIndirectDraw() const
-{
-	return needUpdateIndirectDraw;
-}
-
-void StaticMesh::OnCalculateTangentData() { SetDirty(); }
-
-void StaticMesh::OnMakeTransform() { SetDirty(); }

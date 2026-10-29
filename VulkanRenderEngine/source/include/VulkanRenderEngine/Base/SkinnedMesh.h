@@ -47,21 +47,8 @@ public:
 	~SkinnedMesh();
 
 	std::shared_ptr<SkinnedMesh> Clone();
-
-	std::string GetUUID();
-
-	uint32_t GetVerticesIndicesVsrsion();
-
-	void SetDirty();
-
-protected:
-	virtual void OnCalculateTangentData() override;;
-	virtual void OnMakeTransform() override;;
+	const std::vector<SkinnedData>& GetSkinnedData() const;
 
 private:
 	std::vector<SkinnedData> _skinned;
-
-	std::atomic<uint32_t> _viVersion;
-
-	std::string _uuid;
 };
