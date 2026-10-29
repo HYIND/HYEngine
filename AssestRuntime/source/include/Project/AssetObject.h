@@ -3,6 +3,8 @@
 #include "AssetMeta.h"
 #include "AssetDescription.h"
 #include "VulkanRenderEngine/Base/StaticModel.h"
+#include "VulkanRenderEngine/Base/SkinnedModel.h"
+#include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Script/ScriptSourceData.h"
 #include "UI/UiDocumentParser.h"
@@ -31,6 +33,10 @@ public:
 	virtual std::shared_ptr<ScriptSourceData> AsScript();
 	virtual std::shared_ptr<UI::ParseResult> AsUIDocument();
 	virtual std::shared_ptr<UI::UiStyle> AsUIStyle();
+	virtual std::vector<std::shared_ptr<SkinnedMesh>> AsSkinnedMesh();
+	virtual std::shared_ptr<SkinnedModel> AsSkinnedModel();
+	virtual std::shared_ptr<Skeleton> AsSkeleton();
+	virtual std::shared_ptr<AnimationClip> AsAnimationClip();
 
 public:
 	virtual bool NeedUpdate() { return false; }
@@ -103,11 +109,11 @@ private:
 	friend AssetStroageHelper;
 };
 
-class ModelAsset : public AssetObject
+class StaticModelAsset : public AssetObject
 {
 public:
-	ModelAsset();
-	virtual ~ModelAsset() = default;
+	StaticModelAsset();
+	virtual ~StaticModelAsset() = default;
 	virtual std::shared_ptr<StaticModel> AsStaticModel() override;
 
 private:
@@ -148,8 +154,6 @@ private:
 	friend AssetStroageHelper;
 };
 
-
-// UI 文档（.ui）：保存解析结果，节点树、样式引用、每节点有效样式都在里面。
 class UIDocumentAsset : public AssetObject
 {
 public:
@@ -161,13 +165,11 @@ public:
 
 private:
 	std::shared_ptr<UI::ParseResult> _document;
-	// 记录上次解析时文件的修改时间，用于热重载检测。
 	std::filesystem::file_time_type _lastWriteTime{};
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };
 
-// UI 样式（.uistyle）：单份样式资产，样式引用在文档解析时内联展开。
 class UIStyleAsset : public AssetObject
 {
 public:
@@ -180,6 +182,61 @@ public:
 private:
 	std::shared_ptr<UI::UiStyle> _style;
 	std::filesystem::file_time_type _lastWriteTime{};
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class SkinnedMeshAsset : public AssetObject
+{
+public:
+	SkinnedMeshAsset();
+	virtual ~SkinnedMeshAsset() {
+		_meshes.clear();
+	}
+	virtual std::vector<std::shared_ptr<SkinnedMesh>> AsSkinnedMesh() override;
+
+private:
+	std::vector<std::shared_ptr<SkinnedMesh>> _meshes;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class SkinnedModelAsset : public AssetObject
+{
+public:
+	SkinnedModelAsset();
+	virtual ~SkinnedModelAsset() = default;
+	virtual std::shared_ptr<SkinnedModel> AsSkinnedModel() override;
+
+private:
+	std::vector<AssetGUID> _dependencySkinnedMesh;
+	std::unordered_map<uint32_t, AssetGUID> _dependencyMaterial;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class SkeletonAsset : public AssetObject
+{
+public:
+	SkeletonAsset();
+	virtual ~SkeletonAsset();
+	virtual std::shared_ptr<Skeleton> AsSkeleton() override;
+
+private:
+	std::shared_ptr<Skeleton> _skeleton;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class AnimationClipAsset : public AssetObject
+{
+public:
+	AnimationClipAsset();
+	virtual ~AnimationClipAsset();
+	virtual std::shared_ptr<AnimationClip> AsAnimationClip() override;
+
+private:
+	std::shared_ptr<AnimationClip> _animationClip;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };

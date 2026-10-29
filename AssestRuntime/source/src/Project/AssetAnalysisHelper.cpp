@@ -1,6 +1,7 @@
-﻿#include "Project/AssetAnalysisHelper.h"
+#include "Project/AssetAnalysisHelper.h"
 
 #include "VulkanRenderEngine/Base/ModelBase.h"
+#include "VulkanRenderEngine/Base/SkinnedModel.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
@@ -119,7 +120,53 @@ std::shared_ptr<AnalysisResult> AssetAnalysisHelper::AnalysisModelImportData(con
 	res->textureMetas = std::move(params.textureMetas);
 	res->materialMetas = std::move(params.materialMetas);
 
+	// 有没有骨骼决定导入时产不产蒙皮资产：带骨骼的 mesh 存在，整个模型就按蒙皮处理。
+	for (unsigned int meshIndex = 0; scene && meshIndex < scene->mNumMeshes; ++meshIndex)
+	{
+		const aiMesh* mesh = scene->mMeshes[meshIndex];
+		if (mesh && mesh->mNumBones > 0)
+		{
+			res->hasSkeleton = true;
+			break;
+		}
+	}
+	res->animationCount = scene ? scene->mNumAnimations : 0;
+
 	return res;
+}
+
+std::vector<std::shared_ptr<SkinnedMesh>> AssetAnalysisHelper::LoadSkinnedMesh(const std::string& filePath)
+{
+	// 蒙皮网格的顶点骨骼权重只有走一遍模型加载才拆得出来，这里复用 SkinnedModel 的解析。
+	SkinnedModel model(filePath);
+
+	std::vector<std::shared_ptr<SkinnedMesh>> meshes;
+	for (auto& meshInfo : model.GetMeshInfos())
+	{
+		if (meshInfo.mesh)
+			meshes.push_back(meshInfo.mesh);
+	}
+	return meshes;
+}
+
+std::shared_ptr<Skeleton> AssetAnalysisHelper::LoadSkeleton(const std::string& filePath)
+{
+	return ::LoadSkeleton(filePath);
+}
+
+std::shared_ptr<AnimationClip> AssetAnalysisHelper::LoadAnimationClip(const std::string& filePath, int index)
+{
+	if (index < 0)
+		return nullptr;
+
+	Assimp::Importer importer;
+	const aiScene* scene = importer.ReadFile(filePath, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+		return nullptr;
+	if (static_cast<unsigned int>(index) >= scene->mNumAnimations)
+		return nullptr;
+
+	return std::make_shared<AnimationClip>(scene, index);
 }
 
 bool StaticModelFileAnalysis::Excute(StaticModelAnalysisParams& params)
@@ -127,16 +174,6 @@ bool StaticModelFileAnalysis::Excute(StaticModelAnalysisParams& params)
 	auto scene = _scene;
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
 		return false;
-
-	//bool hasSkinning = false;
-	//for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
-	//{
-	//	if (scene->mMeshes[meshIndex] && scene->mMeshes[meshIndex]->mNumBones > 0)
-	//	{
-	//		hasSkinning = true;
-	//		break;
-	//	}
-	//}
 
 	ProcessNode(scene->mRootNode, scene, params);
 	return true;

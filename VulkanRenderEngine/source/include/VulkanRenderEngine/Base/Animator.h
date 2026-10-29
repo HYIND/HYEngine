@@ -24,6 +24,9 @@ public:
 
 	float GetDurationTime();
 
+	// 当前播放到第几秒；编辑器的进度条要用，不暴露 tick。
+	float GetCurrentTime() const;
+
 private:
 	void Rebuild();
 

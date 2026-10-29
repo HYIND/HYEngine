@@ -28,6 +28,15 @@ std::shared_ptr<UI::ParseResult> AssetObject::AsUIDocument() { return nullptr; }
 
 std::shared_ptr<UI::UiStyle> AssetObject::AsUIStyle() { return nullptr; }
 
+std::vector<std::shared_ptr<SkinnedMesh>> AssetObject::AsSkinnedMesh() { return {}; }
+
+std::shared_ptr<SkinnedModel> AssetObject::AsSkinnedModel() { return nullptr; }
+
+std::shared_ptr<Skeleton> AssetObject::AsSkeleton() { return nullptr; }
+
+std::shared_ptr<AnimationClip> AssetObject::AsAnimationClip() { return nullptr; }
+
+
 StaticMeshAsset::StaticMeshAsset() { _type = AssetType::StaticMesh; }
 
 std::vector<std::shared_ptr<StaticMesh>> StaticMeshAsset::AsStaticMesh() { return _meshes; }
@@ -93,9 +102,9 @@ void MaterialAsset::SetTextureDependency(TextureType type, const AssetGUID& guid
 		_material->SetTexture(type, texture);
 }
 
-ModelAsset::ModelAsset() { _type = AssetType::StaticModel; }
+StaticModelAsset::StaticModelAsset() { _type = AssetType::StaticModel; }
 
-std::shared_ptr<StaticModel> ModelAsset::AsStaticModel()
+std::shared_ptr<StaticModel> StaticModelAsset::AsStaticModel()
 {
 	std::vector<std::shared_ptr<StaticMeshInfo>> mesheInfos;
 	if (auto storage = _storage.lock())
@@ -187,3 +196,82 @@ std::shared_ptr<UI::ParseResult> UIDocumentAsset::AsUIDocument() { return _docum
 UIStyleAsset::UIStyleAsset() { _type = AssetType::UiStyle; }
 
 std::shared_ptr<UI::UiStyle> UIStyleAsset::AsUIStyle() { return _style; }
+
+SkinnedMeshAsset::SkinnedMeshAsset() { _type = AssetType::SkinnedMesh; }
+
+std::vector<std::shared_ptr<SkinnedMesh>> SkinnedMeshAsset::AsSkinnedMesh() { return _meshes; }
+
+SkinnedModelAsset::SkinnedModelAsset() { _type = AssetType::SkinnedModel; }
+
+std::shared_ptr<SkinnedModel> SkinnedModelAsset::AsSkinnedModel()
+{
+	std::vector<std::shared_ptr<SkinnedMeshInfo>> mesheInfos;
+	if (auto storage = _storage.lock())
+	{
+		std::vector<Task<std::vector<std::shared_ptr<SkinnedMesh>>>> skinnedMeshTask;
+		std::vector<Task<void>> materialTask;
+
+		for (auto& guid : _dependencySkinnedMesh)
+		{
+			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<SkinnedMesh>> {
+				auto asset = storage->LoadAsset(guid);
+				if (asset)
+					return asset->AsSkinnedMesh();
+				return {};
+				});
+			skinnedMeshTask.push_back(std::move(task));
+		}
+
+		for (auto& task : skinnedMeshTask)
+		{
+			for (auto& mesh : task.sync_wait())
+			{
+				auto meshInfo = std::make_shared<SkinnedMeshInfo>();
+				meshInfo->mesh = mesh;
+				mesheInfos.push_back(std::move(meshInfo));
+			}
+		}
+
+		for (uint32_t i = 0; i < mesheInfos.size(); i++)
+		{
+			auto task = CoroTask::Run([i, &storage, &mesheInfos, this]() ->auto {
+				std::shared_ptr<Material> material;
+				if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
+				{
+					auto& guid = _dependencyMaterial[i];
+					auto asset = storage->LoadAsset(guid);
+					if (asset)
+						material = asset->AsMaterial();
+				}
+
+				if (!material)
+					material = std::make_shared<Material>();
+
+				mesheInfos[i]->material = material;
+				});
+			materialTask.push_back(std::move(task));
+		}
+
+		for (auto& task : materialTask)
+			task.sync_wait();
+	}
+
+	auto model = std::make_shared<SkinnedModel>();
+	model->SetAssetGUID(_assetGUID);
+	for (auto& info : mesheInfos)
+		model->AddMesh(info->mesh, info->material);
+
+	return model;
+}
+
+SkeletonAsset::SkeletonAsset() { _type = AssetType::Skeleton; }
+
+SkeletonAsset::~SkeletonAsset() { _skeleton.reset(); }
+
+std::shared_ptr<Skeleton> SkeletonAsset::AsSkeleton() { return _skeleton; }
+
+AnimationClipAsset::AnimationClipAsset() { _type = AssetType::AnimationClip; }
+
+AnimationClipAsset::~AnimationClipAsset() { _animationClip.reset(); }
+
+std::shared_ptr<AnimationClip> AnimationClipAsset::AsAnimationClip() { return _animationClip; }

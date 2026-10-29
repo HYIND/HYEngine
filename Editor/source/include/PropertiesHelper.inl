@@ -1,6 +1,8 @@
 #include "PropertiesHelper.h"
 #include "ImguiLayout.h"
 #include "SceneCodec/ComponentCodec.h"
+#include <algorithm>
+#include <cstdio>
 
 template <typename T>
 struct EditorSnapshot
@@ -379,12 +381,12 @@ inline bool PropertiesHelper::DrawComponent<RenderLight>(RenderLight& light)
 	return anyChanged;
 }
 
-template<>
-inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel& comp, ProjectManager* assetManager)
+template<typename ModelComponent>
+bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* assetManager, const char* modelLabel)
 {
 	if (!comp.model)
 	{
-		ImGui::TextDisabled("No StaticModel assigned");
+		ImGui::TextDisabled("No Model assigned");
 		return false;
 	}
 
@@ -410,7 +412,7 @@ inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel
 			ImGui::TextDisabled("%s", meta->path.c_str());
 		};
 
-	drawAssetPath("StaticModel", comp.model->GetAssetGUID());
+	drawAssetPath(modelLabel, comp.model->GetAssetGUID());
 
 	bool anyChanged = false;
 	anyChanged |= DrawPropertyField<RenderStaticModel>("Visible", &comp.visible);
@@ -532,7 +534,7 @@ inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel
 		ImGui::PopID();
 	}
 
-	std::shared_ptr<StaticModel> instanceModel;
+	decltype(comp.model) instanceModel;
 	for (const auto& edit : edits)
 	{
 		if (!edit.guid.empty())
@@ -597,6 +599,245 @@ inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel
 		comp.model = std::move(instanceModel);
 
 	return anyChanged || !edits.empty() || !drops.empty();
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<RenderStaticModel>(RenderStaticModel& comp, ProjectManager* assetManager)
+{
+	return DrawModelComponent(comp, assetManager, "StaticModel");
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<RenderSkinnedModel>(RenderSkinnedModel& comp, ProjectManager* assetManager)
+{
+	return DrawModelComponent(comp, assetManager, "SkinnedModel");
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<SkeletonAnimatorGroup>(SkeletonAnimatorGroup& comp, ProjectManager* assetManager)
+{
+	bool anyChanged = false;
+	auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+
+	const auto assetLabel = [database](const AssetGUID& guid, const char* emptyLabel)
+		{
+			if (guid.empty())
+				return std::string(emptyLabel);
+			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+			return meta ? meta->name : guid;
+		};
+	const auto acceptDrop = [database](AssetType type, AssetGUID& target)
+		{
+			if (!ImGui::BeginDragDropTarget())
+				return false;
+			bool accepted = false;
+			if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			{
+				const auto* guidData = static_cast<const char*>(payload->Data);
+				auto dropped = (guidData && guidData[0] != 0 && database) ? database->GetAssetMetaByGuid(AssetGUID(guidData)) : nullptr;
+				if (dropped && dropped->type == type)
+				{
+					target = dropped->guid;
+					accepted = true;
+				}
+			}
+			ImGui::EndDragDropTarget();
+			return accepted;
+		};
+
+	// 骨架是独立资产，这里只存 GUID；拖一个 Skeleton 进来。
+	ImGui::TextUnformatted("Skeleton");
+	ImGui::SameLine();
+	ImGui::Button(assetLabel(comp.skeletonGuid, "No skeleton assigned").c_str(), ImVec2(220.f, 0.f));
+	if (acceptDrop(AssetType::Skeleton, comp.skeletonGuid))
+	{
+		// 换了骨架，所有 animator 都得按新骨架重建，palette 长度才对得上。
+		auto asset = assetManager ? assetManager->LoadAsset(comp.skeletonGuid) : nullptr;
+		comp.SetSkeleton(asset ? asset->AsSkeleton() : nullptr, comp.skeletonGuid);
+		anyChanged = true;
+	}
+
+	// 名字是 map 的键，编辑期间只改缓冲区，回车或失焦后才落到容器里，避免遍历时改 map。
+	static std::unordered_map<std::string, std::string> nameEdits;
+	std::string removeName;
+	std::string renameFrom;
+	std::string renameTo;
+	std::string clipDropName;
+
+	for (auto& [name, data] : comp.animatorDatas)
+	{
+		if (!data)
+			continue;
+
+		ImGui::PushID(name.c_str());
+
+		ImGui::BeginChild("##animator_block", ImVec2(0.f, 104.f), ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
+
+		bool enabled = data->enable;
+		if (ImGui::Checkbox("##enable", &enabled))
+		{
+			data->enable = enabled;
+			anyChanged = true;
+		}
+
+		ImGui::SameLine();
+		auto editIt = nameEdits.find(name);
+		if (editIt == nameEdits.end())
+			editIt = nameEdits.emplace(name, name).first;
+
+		char nameBuffer[64] = {};
+		std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", editIt->second.c_str());
+
+		// 空名字或重名先标红，回车或失焦时才真正改。
+		const bool nameInvalid = editIt->second.empty() ||
+			(editIt->second != name && comp.ExistAnimator(editIt->second));
+		if (nameInvalid)
+			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.45f, 0.15f, 0.15f, 1.f));
+
+		ImGui::SetNextItemWidth(160.f);
+		const bool nameSubmitted =
+			ImGui::InputText("##name", nameBuffer, sizeof(nameBuffer),
+				ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) ||
+			ImGui::IsItemDeactivatedAfterEdit();
+
+		if (nameInvalid)
+			ImGui::PopStyleColor();
+
+		editIt->second = nameBuffer;
+		if (nameSubmitted)
+		{
+			renameFrom = name;
+			renameTo = editIt->second;
+		}
+
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Remove"))
+			removeName = name;
+
+		// Clip：拖动画资产进来，GUID 先记下，资产在遍历之后统一加载。
+		ImGui::TextUnformatted("Clip");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-1.f);
+		ImGui::Button(assetLabel(data->clipGuid, "No clip assigned").c_str(), ImVec2(-1.f, 0.f));
+		if (acceptDrop(AssetType::AnimationClip, data->clipGuid))
+			clipDropName = name;
+
+		// Loop + 播放进度：进度直接问 animator，不要另存一份时间。
+		ImGui::TextUnformatted("Loop");
+		ImGui::SameLine();
+		int loopCount = data->maxLoopCount;
+		ImGui::SetNextItemWidth(90.f);
+		if (ImGui::DragInt("##loop", &loopCount, 0.1f, 0, 99))
+		{
+			data->maxLoopCount = loopCount;
+			anyChanged = true;
+		}
+
+		ImGui::SameLine();
+		if (data->animator)
+		{
+			const float duration = data->animator->GetDurationTime();
+			const float current = data->animator->GetCurrentTime();
+			const float progress = duration > 0.f ? std::clamp(current / duration, 0.f, 1.f) : 0.f;
+			char overlay[64] = {};
+			std::snprintf(overlay, sizeof(overlay), "%.2f / %.2fs", current, duration);
+			ImGui::ProgressBar(progress, ImVec2(-1.f, 0.f), overlay);
+		}
+		else
+			ImGui::TextDisabled("no animator yet (need skeleton + clip)");
+
+		ImGui::EndChild();
+		ImGui::PopID();
+	}
+
+	// 拖进来的 clip：按 GUID 去工程里取资产，取不到就当没拖。
+	if (!clipDropName.empty())
+	{
+		auto it = comp.animatorDatas.find(clipDropName);
+		if (it != comp.animatorDatas.end() && it->second)
+		{
+			auto asset = assetManager ? assetManager->LoadAsset(it->second->clipGuid) : nullptr;
+			comp.SetClip(clipDropName, asset ? asset->AsAnimationClip() : nullptr, it->second->clipGuid);
+			anyChanged = true;
+		}
+	}
+
+	if (!renameFrom.empty() && renameTo != renameFrom)
+	{
+		if (comp.RenameAnimator(renameFrom, renameTo))
+		{
+			nameEdits.erase(renameFrom);
+			anyChanged = true;
+		}
+		else
+		{
+			nameEdits[renameFrom] = renameFrom;
+			ImGui::TextColored(ImVec4(1.f, 0.45f, 0.45f, 1.f), "Name must be non-empty and unique.");
+		}
+	}
+
+	if (ImGui::Button("Add Animation"))
+	{
+		for (int index = 1; ; ++index)
+		{
+			std::string candidate = std::format("animator_{}", index);
+			if (comp.ExistAnimator(candidate))
+				continue;
+			comp.AddAnimatorSlot(candidate, AssetGUID());
+			anyChanged = true;
+			break;
+		}
+	}
+
+	if (!removeName.empty())
+	{
+		comp.RemoveAnimator(removeName);
+		anyChanged = true;
+	}
+
+	ImGui::TextUnformatted("Default");
+	ImGui::SameLine();
+	const char* preview = comp.defaultAnimator.empty() ? "(none)" : comp.defaultAnimator.c_str();
+	if (ImGui::BeginCombo("##default_animator", preview))
+	{
+		if (ImGui::Selectable("(none)", comp.defaultAnimator.empty()))
+		{
+			comp.defaultAnimator.clear();
+			anyChanged = true;
+		}
+		for (auto& [name, data] : comp.animatorDatas)
+		{
+			if (ImGui::Selectable(name.c_str(), comp.defaultAnimator == name))
+			{
+				comp.defaultAnimator = name;
+				anyChanged = true;
+			}
+		}
+		ImGui::EndCombo();
+	}
+
+	ImGui::TextUnformatted("Idle");
+	ImGui::SameLine();
+	const char* idlePreview = comp.idleAnimator.empty() ? "(none)" : comp.idleAnimator.c_str();
+	if (ImGui::BeginCombo("##idle_animator", idlePreview))
+	{
+		if (ImGui::Selectable("(none)", comp.idleAnimator.empty()))
+		{
+			comp.idleAnimator.clear();
+			anyChanged = true;
+		}
+		for (auto& [name, data] : comp.animatorDatas)
+		{
+			if (ImGui::Selectable(name.c_str(), comp.idleAnimator == name))
+			{
+				comp.idleAnimator = name;
+				anyChanged = true;
+			}
+		}
+		ImGui::EndCombo();
+	}
+
+	return anyChanged;
 }
 
 template<>

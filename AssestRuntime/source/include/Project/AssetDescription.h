@@ -82,7 +82,7 @@ private:
 	std::map<TextureType, AssetGUID> _dependencyTexture;
 };
 
-class ModelAssetDescription : public AssetDescription
+class StaticModelAssetDescription : public AssetDescription
 {
 public:
 	virtual bool LoadFromFile(const std::string& filePath) override;
@@ -124,4 +124,67 @@ public:
 
 private:
 	std::string _source;
+};
+
+class SkinnedMeshAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	std::vector<AssetPath>& GetPath();
+
+	void SetPath(const std::vector<AssetPath>& paths);
+
+private:
+	std::vector<AssetPath> _paths;
+};
+
+class SkinnedModelAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	std::vector<AssetGUID> GetStaticMesh() const;;
+	std::unordered_map<uint32_t, AssetGUID> GetMaterial() const;
+
+	void AddStaticMesh(const AssetGUID& guid);
+	void SetMaterial(uint32_t index, const AssetGUID& guid);
+	void SetMaterial(const std::unordered_map<uint32_t, AssetGUID>& materials);
+
+private:
+	std::vector<AssetGUID> _dependencyStaticMesh;
+	std::unordered_map<uint32_t, AssetGUID> _dependencyMaterial;
+};
+
+class SkeletonAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	AssetPath GetPath() const;
+
+	void SetPath(const AssetPath& assetPath);
+
+private:
+	AssetPath _path;
+};
+
+class AnimationClipAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	AssetPath GetPath() const;
+	int GetIndex() const;
+
+	void SetPath(const AssetPath& assetPath);
+	void SetIndex(int index);
+
+private:
+	AssetPath _path;
+	int _index = -1;
 };

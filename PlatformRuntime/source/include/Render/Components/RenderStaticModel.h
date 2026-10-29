@@ -77,6 +77,9 @@ struct RenderStaticModel : public Renderable
 	virtual void OnAdd(const Entity& e) {}
 	virtual void OnRemove(const Entity& e) {
 		model.reset();
+		materialOverrideGUIDs.clear();
+		materialOverrideProperties.clear();
+		trans = glm::mat4(1.0f);
 	}
 };
 

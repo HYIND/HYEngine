@@ -21,7 +21,8 @@
 
 enum class AssetType {
 	Unknown = 0, Texture, Audio, Material, StaticMesh, StaticModel, Scene, Script,
-	UiDocument, UiStyle   // .ui / .uistyle：UI 文档与样式
+	UiDocument, UiStyle,   // .ui / .uistyle：UI 文档与样式
+	SkinnedMesh, SkinnedModel, Skeleton, AnimationClip
 };
 
 using AssetPath = std::string;

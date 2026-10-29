@@ -20,6 +20,8 @@
 #include "Project/ProjectManager.h"
 #include "Project/AssetDatabase.h"
 #include "Project/AssetObject.h"
+#include "VulkanRenderEngine/Base/Skeleton.h"
+#include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Systems/UIViewSystem.h"
 #include "UI/EngineCommands.h"
@@ -297,33 +299,78 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 			auto asset = project->LoadAsset(guid);
 			return asset ? asset->AsScript() : nullptr;
 			};
-		auto resolveModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<StaticModel> {
-			if (guid == "DefaultCube")
-				return RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
-			if (guid == "DefaultSphere")
-				return RenderHelper::GetSphereModel(0.5f, 72, 36, guid);
+		auto resolveModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<StaticModel>
+			{
+				if (guid == "DefaultCube")
+					return RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, guid);
+				if (guid == "DefaultSphere")
+					return RenderHelper::GetSphereModel(0.5f, 72, 36, guid);
 
+				auto database = project ? project->GetDatabase() : nullptr;
+				auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+				if (!meta || !(meta->type == AssetType::StaticModel || meta->type == AssetType::StaticMesh))
+					return nullptr;
+
+				auto asset = project->LoadAsset(guid);
+				if (!asset)
+					return nullptr;
+
+				if (meta->type == AssetType::StaticModel)
+					return asset->AsStaticModel();
+				if (meta->type == AssetType::StaticMesh)
+				{
+					auto meshes = asset->AsStaticMesh();
+					if (meshes.empty())
+						return nullptr;
+					auto model = std::make_shared<StaticModel>();
+					for (auto& mesh : meshes)
+						model->AddMesh(mesh, std::make_shared<Material>());
+					model->SetAssetGUID(guid);
+					return model;
+				}
+				return nullptr;
+			};
+		auto resolveSkinnedModelAsset = [project](const AssetGUID& guid) -> std::shared_ptr<SkinnedModel>
+			{
+				auto database = project ? project->GetDatabase() : nullptr;
+				auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+				if (!meta || !(meta->type == AssetType::SkinnedModel || meta->type == AssetType::SkinnedMesh))
+					return nullptr;
+
+				auto asset = project->LoadAsset(guid);
+				if (!asset)
+					return nullptr;
+
+				if (meta->type == AssetType::SkinnedModel)
+					return asset->AsSkinnedModel();
+				if (meta->type == AssetType::SkinnedMesh)
+				{
+					auto meshes = asset->AsSkinnedMesh();
+					if (meshes.empty())
+						return nullptr;
+					auto model = std::make_shared<SkinnedModel>();
+					for (auto& mesh : meshes)
+						model->AddMesh(mesh, std::make_shared<Material>());
+					model->SetAssetGUID(guid);
+					return model;
+				}
+				return nullptr;
+			};
+		auto resolveSkeletonAsset = [project](const AssetGUID& guid) -> std::shared_ptr<Skeleton> {
 			auto database = project ? project->GetDatabase() : nullptr;
 			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
-			if (!meta)
+			if (!meta || meta->type != AssetType::Skeleton)
 				return nullptr;
-
 			auto asset = project->LoadAsset(guid);
-			if (!asset)
+			return asset ? asset->AsSkeleton() : nullptr;
+			};
+		auto resolveAnimationClipAsset = [project](const AssetGUID& guid) -> std::shared_ptr<AnimationClip> {
+			auto database = project ? project->GetDatabase() : nullptr;
+			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+			if (!meta || meta->type != AssetType::AnimationClip)
 				return nullptr;
-			if (meta->type == AssetType::StaticModel)
-				return asset->AsStaticModel();
-			if (meta->type != AssetType::StaticMesh)
-				return nullptr;
-
-			auto meshes = asset->AsStaticMesh();
-			if (meshes.empty())
-				return nullptr;
-			auto model = std::make_shared<StaticModel>();
-			for (auto& mesh : meshes)
-				model->AddMesh(mesh, std::make_shared<Material>());
-			model->SetAssetGUID(guid);
-			return model;
+			auto asset = project->LoadAsset(guid);
+			return asset ? asset->AsAnimationClip() : nullptr;
 			};
 		auto resolveMaterialAsset = [project](const AssetGUID& guid) -> std::shared_ptr<Material> {
 			auto database = project ? project->GetDatabase() : nullptr;
@@ -334,7 +381,7 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 			return asset ? asset->AsMaterial() : nullptr;
 			};
 
-		if (!scene->Deserialize(world, resolveScriptAsset, resolveModelAsset, resolveMaterialAsset))
+		if (!scene->Deserialize(world, resolveScriptAsset, resolveModelAsset, resolveSkinnedModelAsset, resolveSkeletonAsset, resolveAnimationClipAsset, resolveMaterialAsset))
 			return false;
 
 		if (hooks.finish)

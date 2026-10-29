@@ -12,12 +12,16 @@ private:
 	static std::shared_ptr<TextureAsset> LoadTexture(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<StaticMeshAsset> LoadStaticMesh(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<AudioAsset> LoadAudio(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
-	static std::shared_ptr<ModelAsset> LoadModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<StaticModelAsset> LoadStaticModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<MaterialAsset> LoadMaterial(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<SceneAsset> LoadScene(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<ScriptAsset> LoadScript(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<UIDocumentAsset> LoadUIDocument(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<UIStyleAsset> LoadUIStyle(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<SkinnedMeshAsset> LoadSkinnedMesh(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<SkinnedModelAsset> LoadSkinnedModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<SkeletonAsset> LoadSkeletonAsset(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<AnimationClipAsset> LoadAnimationClip(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
 public:
 	static bool SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
@@ -25,7 +29,6 @@ public:
 public:
 	static bool RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset, std::shared_ptr<ScriptSourceData>* outData = nullptr);
 	static bool RefreshUIStyleIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, UIStyleAsset& asset);
-	// force 为真时忽略时间戳（例如引用的样式文件变了，文档的有效结果也变了）。
 	static bool RefreshUIDocumentIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, UIDocumentAsset& asset, bool force, std::shared_ptr<UI::ParseResult>* outData = nullptr);
 
 private:
@@ -297,7 +300,7 @@ std::shared_ptr<AssetObject> AssetStroageHelper::LoadAsset(AssetMeta& meta, std:
 	case AssetType::Material:
 		return LoadMaterial(meta, pathProvider);
 	case AssetType::StaticModel:
-		return LoadModel(meta, pathProvider);
+		return LoadStaticModel(meta, pathProvider);
 	case AssetType::Scene:
 		return LoadScene(meta, pathProvider);
 	case AssetType::Audio:
@@ -308,6 +311,14 @@ std::shared_ptr<AssetObject> AssetStroageHelper::LoadAsset(AssetMeta& meta, std:
 		return LoadUIDocument(meta, pathProvider);
 	case AssetType::UiStyle:
 		return LoadUIStyle(meta, pathProvider);
+	case AssetType::SkinnedMesh:
+		return LoadSkinnedMesh(meta, pathProvider);
+	case AssetType::SkinnedModel:
+		return LoadSkinnedModel(meta, pathProvider);
+	case AssetType::Skeleton:
+		return LoadSkeletonAsset(meta, pathProvider);
+	case AssetType::AnimationClip:
+		return LoadAnimationClip(meta, pathProvider);
 	default:
 		return nullptr;
 	}
@@ -350,17 +361,75 @@ std::shared_ptr<AudioAsset> AssetStroageHelper::LoadAudio(AssetMeta& meta, std::
 	return std::shared_ptr<AudioAsset>();
 }
 
-std::shared_ptr<ModelAsset> AssetStroageHelper::LoadModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+std::shared_ptr<StaticModelAsset> AssetStroageHelper::LoadStaticModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
 {
-	auto asset = std::make_shared<ModelAsset>();
+	auto asset = std::make_shared<StaticModelAsset>();
 
 	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
-	ModelAssetDescription desc;
+	StaticModelAssetDescription desc;
 	if (!desc.LoadFromFile(fullMetaPath))
 		return asset;
 
 	asset->_dependencyStaticMesh = desc.GetStaticMesh();
 	asset->_dependencyMaterial = desc.GetMaterial();
+
+	return asset;
+}
+
+std::shared_ptr<SkinnedMeshAsset> AssetStroageHelper::LoadSkinnedMesh(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<SkinnedMeshAsset>();
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	SkinnedMeshAssetDescription desc;
+	if (!desc.LoadFromFile(fullMetaPath))
+		return asset;
+
+	for (auto& path : desc.GetPath())
+		asset->_meshes.append_range(AssetAnalysisHelper::LoadSkinnedMesh(pathProvider->GetFullPath(path)));
+
+	return asset;
+}
+
+std::shared_ptr<SkinnedModelAsset> AssetStroageHelper::LoadSkinnedModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<SkinnedModelAsset>();
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	SkinnedModelAssetDescription desc;
+	if (!desc.LoadFromFile(fullMetaPath))
+		return asset;
+
+	asset->_dependencySkinnedMesh = desc.GetStaticMesh();
+	asset->_dependencyMaterial = desc.GetMaterial();
+
+	return asset;
+}
+
+std::shared_ptr<SkeletonAsset> AssetStroageHelper::LoadSkeletonAsset(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<SkeletonAsset>();
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	SkeletonAssetDescription desc;
+	if (!desc.LoadFromFile(fullMetaPath))
+		return asset;
+
+	asset->_skeleton = AssetAnalysisHelper::LoadSkeleton(pathProvider->GetFullPath(desc.GetPath()));
+
+	return asset;
+}
+
+std::shared_ptr<AnimationClipAsset> AssetStroageHelper::LoadAnimationClip(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<AnimationClipAsset>();
+
+	std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	AnimationClipAssetDescription desc;
+	if (!desc.LoadFromFile(fullMetaPath) || desc.GetIndex() < 0)
+		return asset;
+
+	asset->_animationClip = AssetAnalysisHelper::LoadAnimationClip(pathProvider->GetFullPath(desc.GetPath()), desc.GetIndex());
 
 	return asset;
 }

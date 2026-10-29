@@ -104,6 +104,18 @@ std::vector<glm::mat4>& Animator::GetFinalBoneMatrices()
 	return m_FinalBoneMatrices;
 }
 
+float Animator::GetCurrentTime() const
+{
+	if (!m_CurrentAnimation)
+		return 0.f;
+
+	const float ticksPerSecond = m_CurrentAnimation->GetTicksPerSecond();
+	if (ticksPerSecond <= 0.f)
+		return 0.f;
+
+	return m_CurrentTime / ticksPerSecond;
+}
+
 float Animator::GetDurationTime()
 {
 	if (!m_CurrentAnimation)

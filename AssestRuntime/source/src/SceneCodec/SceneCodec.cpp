@@ -1,7 +1,12 @@
 #include "SceneCodec/SceneCodec.h"
 #include "Components/Script.h"
 #include "Render/Components/RenderStaticModel.h"
+#include "Render/Components/RenderSkinnedModel.h"
+#include "Render/Components/SkeletonAnimatorGroup.h"
+#include "VulkanRenderEngine/Base/Skeleton.h"
+#include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "VulkanRenderEngine/Base/StaticModel.h"
+#include "VulkanRenderEngine/Base/SkinnedModel.h"
 
 using namespace NComponentCodec;
 
@@ -139,6 +144,9 @@ bool SceneCodec::Deserialize(
 	World& world,
 	const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset,
 	const std::function<std::shared_ptr<StaticModel>(const AssetGUID&)>& resolveModelAsset,
+	const std::function<std::shared_ptr<SkinnedModel>(const AssetGUID&)>& resolveSkinnedModelAsset,
+	const std::function<std::shared_ptr<Skeleton>(const AssetGUID&)>& resolveSkeletonAsset,
+	const std::function<std::shared_ptr<AnimationClip>(const AssetGUID&)>& resolveAnimationClipAsset,
 	const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset) const
 {
 	const auto& codecs = GetComponentCodecs();
@@ -250,6 +258,77 @@ bool SceneCodec::Deserialize(
 				currentMaterial = std::make_shared<Material>(properties);
 			}
 			renderModel->model = std::move(instanceModel);
+		}
+
+		for (Entity entity : entityHandles)
+		{
+			auto renderModel = entity.tryGetComponent<RenderSkinnedModel>();
+			if (!renderModel || !renderModel->model)
+				continue;
+
+			const auto& guid = renderModel->model->GetAssetGUID();
+			if (guid.empty() || !resolveSkinnedModelAsset)
+				continue;
+			auto model = resolveSkinnedModelAsset(guid);
+			if (!model || model->GetAssetGUID() != guid)
+				continue;
+
+			const bool hasOverrides = !renderModel->materialOverrideGUIDs.empty() || !renderModel->materialOverrideProperties.empty();
+			auto instanceModel = hasOverrides ? model->Clone(false, false) : std::move(model);
+			auto& meshInfos = instanceModel->GetMeshInfos();
+			for (const auto& [index, overrideGuid] : renderModel->materialOverrideGUIDs)
+			{
+				if (index >= meshInfos.size())
+					continue;
+				auto& currentMaterial = meshInfos[index].material;
+				if (currentMaterial && currentMaterial->GetAssetGUID() == overrideGuid)
+					continue;
+				if (!resolveMaterialAsset)
+					continue;
+				auto overrideMaterial = resolveMaterialAsset(overrideGuid);
+				if (overrideMaterial && overrideMaterial->GetAssetGUID() == overrideGuid)
+					currentMaterial = std::move(overrideMaterial);
+			}
+			for (const auto& [index, properties] : renderModel->materialOverrideProperties)
+			{
+				if (index >= meshInfos.size())
+					continue;
+				auto& currentMaterial = meshInfos[index].material;
+				if (currentMaterial && !currentMaterial->GetAssetGUID().empty())
+					continue;
+				currentMaterial = std::make_shared<Material>(properties);
+			}
+			renderModel->model = std::move(instanceModel);
+		}
+
+		// 动画组：骨架和 clip 都是独立资产，按 GUID 取回来才建 Animator。
+		for (Entity entity : entityHandles)
+		{
+			auto group = entity.tryGetComponent<SkeletonAnimatorGroup>();
+			if (!group)
+				continue;
+
+			if (!group->skeletonGuid.empty() && resolveSkeletonAsset)
+			{
+				auto skeleton = resolveSkeletonAsset(group->skeletonGuid);
+				if (skeleton && !skeleton->nodes.empty())
+					group->skeleton = std::move(skeleton);
+			}
+			if (!group->skeleton)
+				continue;
+
+			for (auto& [name, data] : group->animatorDatas)
+			{
+				if (!data || data->clipGuid.empty() || !resolveAnimationClipAsset)
+					continue;
+
+				auto clip = resolveAnimationClipAsset(data->clipGuid);
+				if (!clip)
+					continue;
+
+				data->clip = std::move(clip);
+				data->animator = std::make_shared<Animator>(data->clip, group->skeleton);
+			}
 		}
 	}
 	catch (const std::exception&)

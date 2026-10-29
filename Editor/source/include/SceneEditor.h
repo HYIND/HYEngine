@@ -56,7 +56,8 @@ public:
 	// 平移按像素换算世界单位需要视口高度，由应用层注入（渲染 target 高度）。
 	void SetViewportHeightProvider(std::function<float()> provider) { m_viewportHeight = std::move(provider); }
 
-	Entity CreateModelEntity(std::shared_ptr<StaticModel> model);
+	Entity CreateStaticModelEntity(std::shared_ptr<StaticModel> model);
+	Entity CreateSkinnedModelEntity(std::shared_ptr<SkinnedModel> model);
 	bool DuplicateEntity(Entity oriEntity, Entity& newEntity);
 
 	void AddLight(LightType type, const glm::vec3& position, const std::string& name = "");

@@ -84,7 +84,7 @@ void AssetImportPopup::SetImportPath(const std::string& filePath)
 	strcpy(m_wantImportAssetPathBuffer, filePath.c_str());
 }
 
-void AssetImportPopup::SetImportCallback(std::function<void(const AssetMeta&)> callback)
+void AssetImportPopup::SetImportCallback(std::function<void(const std::vector<AssetMeta>&)> callback)
 {
 	m_importCallback = std::move(callback);
 }
@@ -137,7 +137,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		ImGui::PopID();
 
 		int currentItem = static_cast<int>(m_importAssetType);
-		const char* items[] = { "未知", "贴图", "音频", "材质", "静态网格体","模型", "场景", "脚本", "UI 文档", "UI 样式" };
+		const char* items[] = { "未知", "贴图", "音频", "材质", "网格体","模型", "场景", "脚本", "UI 文档", "UI 样式" };
 		if (ImGui::Combo("资产类型", &currentItem, items, IM_ARRAYSIZE(items)))
 			m_importAssetType = static_cast<AssetType>(currentItem);
 
@@ -174,41 +174,41 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 			{
 				if (projectManager)
 				{
-					AssetMeta importedMeta;
+					std::vector<AssetMeta> importedMetas;
 					bool imported = false;
 					switch (m_importAssetType)
 					{
 					case AssetType::Unknown:
 						break;
 					case AssetType::StaticMesh:
-						projectManager->ImportStaticMeshAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer);
+						imported = projectManager->ImportMeshAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
 					case AssetType::Texture:
-						projectManager->ImportTextureAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, m_config);
+						imported = projectManager->ImportTextureAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, m_config, &importedMetas);
 						break;
 					case AssetType::Material:
 						break;
 					case AssetType::StaticModel:
-						projectManager->ImportModelAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer);
+						imported = projectManager->ImportModelAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
 					case AssetType::Scene:
 						break;
 					case AssetType::Audio:
 						break;
 					case AssetType::Script:
-						imported = projectManager->ImportScriptAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						imported = projectManager->ImportScriptAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
 					case AssetType::UiDocument:
-						imported = projectManager->ImportUIDocumentAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						imported = projectManager->ImportUIDocumentAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
 					case AssetType::UiStyle:
-						imported = projectManager->ImportUIStyleAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMeta);
+						imported = projectManager->ImportUIStyleAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
 					default:
 						break;
 					}
 					if (imported && m_importCallback)
-						m_importCallback(importedMeta);
+						m_importCallback(importedMetas);
 
 				}
 

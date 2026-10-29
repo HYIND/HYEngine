@@ -830,10 +830,44 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 modelGuid = renderModel.model->GetAssetGUID();
             }
 
+            Json materials = Json::array();
+            if (renderModel.model)
+            {
+                const auto& meshInfos = renderModel.model->GetMeshInfos();
+                for (uint32_t index = 0; index < meshInfos.size(); ++index)
+                {
+                    const auto& material = meshInfos[index].material;
+                    if (!material)
+                        continue;
+
+                    const auto& guid = material->GetAssetGUID();
+                    Json record = { { "index", index },{ "guid", guid } };
+                    if (guid.empty())
+                    {
+                        const auto properties = material->GetProperties();
+                        record["properties"] = {
+                            { "albedo", EncodeVec3(properties.albedo) },
+                            { "metallic", properties.metallic },
+                            { "roughness", properties.roughness },
+                            { "ambientOcclusion", properties.ambientOcclusion },
+                            { "opacity", properties.opacity },
+                            { "ior", properties.IOR },
+                            { "emissionColor", EncodeVec3(properties.emissionColor) },
+                            { "emissionStrength", properties.emissionStrength },
+                            { "alphaMode", static_cast<uint32_t>(properties.alphamode) },
+                            { "maskThreshold", properties.maskthreshold },
+                            { "twoSided", properties.twosided }
+                        };
+                    }
+                    materials.push_back(std::move(record));
+                }
+            }
+
             return Json{
                 { "enabled", renderModel.visible },
                 { "trans", EncodeMat4(renderModel.trans) },
-                { "modelGuid", std::move(modelGuid) }
+                { "modelGuid", std::move(modelGuid) },
+                { "materials", std::move(materials) }
             };
         },
         [](RenderSkinnedModel& renderModel, const Json& data) {
@@ -851,6 +885,52 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
 
             renderModel.visible = data["enabled"].get<bool>();
 
+            renderModel.materialOverrideGUIDs.clear();
+            renderModel.materialOverrideProperties.clear();
+            if (data.contains("materials"))
+            {
+                if (!data["materials"].is_array())
+                    return false;
+                for (const auto& record : data["materials"])
+                {
+                    if (!record.is_object()
+                        || !record.contains("index") || !record["index"].is_number_unsigned()
+                        || !record.contains("guid") || !record["guid"].is_string())
+                        return false;
+                    const uint32_t index = record["index"].get<uint32_t>();
+                    const auto guid = record["guid"].get<std::string>();
+                    if (!guid.empty())
+                    {
+                        renderModel.materialOverrideGUIDs[index] = guid;
+                        continue;
+                    }
+                    if (!record.contains("properties") || !record["properties"].is_object())
+                        return false;
+
+                    const auto& p = record["properties"];
+                    MaterialProperties properties;
+                    uint32_t alphaMode = 0;
+                    if (!p.contains("albedo") || !DecodeVec3(p["albedo"], properties.albedo)
+                        || !p.contains("emissionColor") || !DecodeVec3(p["emissionColor"], properties.emissionColor)
+                        || !p.contains("metallic") || !DecodeFiniteFloat(p["metallic"], properties.metallic)
+                        || !p.contains("roughness") || !DecodeFiniteFloat(p["roughness"], properties.roughness)
+                        || !p.contains("ambientOcclusion") || !DecodeFiniteFloat(p["ambientOcclusion"], properties.ambientOcclusion)
+                        || !p.contains("opacity") || !DecodeFiniteFloat(p["opacity"], properties.opacity)
+                        || !p.contains("ior") || !DecodeFiniteFloat(p["ior"], properties.IOR)
+                        || !p.contains("emissionStrength") || !DecodeFiniteFloat(p["emissionStrength"], properties.emissionStrength)
+                        || !p.contains("alphaMode") || !p["alphaMode"].is_number_unsigned()
+                        || !p.contains("maskThreshold") || !DecodeFiniteFloat(p["maskThreshold"], properties.maskthreshold)
+                        || !p.contains("twoSided") || !p["twoSided"].is_boolean())
+                        return false;
+                    alphaMode = p["alphaMode"].get<uint32_t>();
+                    if (alphaMode > static_cast<uint32_t>(AlphaMode::Blend))
+                        return false;
+                    properties.alphamode = static_cast<AlphaMode>(alphaMode);
+                    properties.twosided = p["twoSided"].get<bool>();
+                    renderModel.materialOverrideProperties[index] = properties;
+                }
+            }
+
             if (modelGuid.is_null())
                 renderModel.model.reset();
             else
@@ -861,6 +941,67 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 renderModel.model = std::make_shared<SkinnedModel>();
                 renderModel.model->SetAssetGUID(guid);
             }
+            return true;
+        }));
+
+    result.push_back(GenerateComponentCodec<SkeletonAnimatorGroup>(
+        "engine.skeleton_animator_group",
+        "Skeleton Animator Group",
+        [](const SkeletonAnimatorGroup& group) {
+            Json animators = Json::array();
+            for (const auto& [name, data] : group.animatorDatas)
+            {
+                if (!data)
+                    continue;
+                animators.push_back(Json{
+                    { "name", name },
+                    { "clip", data->clipGuid },
+                    { "loop", data->maxLoopCount }
+                });
+            }
+
+            // default 存名字不存下标：animator 是按名字寻址的，改名后这里能看出是悬空引用。
+            return Json{
+                { "skeleton", group.skeletonGuid },
+                { "default", group.defaultAnimator },
+                { "idle", group.idleAnimator },
+                { "animators", std::move(animators) }
+            };
+        },
+        [](SkeletonAnimatorGroup& group, const Json& data) {
+            if (!data.is_object()
+                || !data.contains("skeleton") || !data["skeleton"].is_string()
+                || !data.contains("default") || !data["default"].is_string()
+                || !data.contains("animators") || !data["animators"].is_array())
+                return false;
+
+            group.animatorDatas.clear();
+            group.skeleton.reset();
+            group.skeletonGuid = data["skeleton"].get<std::string>();
+            group.defaultAnimator = data["default"].get<std::string>();
+            group.idleAnimator = data.value("idle", std::string());
+
+            for (const auto& record : data["animators"])
+            {
+                if (!record.is_object()
+                    || !record.contains("name") || !record["name"].is_string()
+                    || !record.contains("clip") || !record["clip"].is_string()
+                    || !record.contains("loop") || !record["loop"].is_number_integer())
+                    return false;
+
+                const std::string name = record["name"].get<std::string>();
+                if (name.empty() || group.animatorDatas.find(name) != group.animatorDatas.end())
+                    return false;
+
+                auto slot = std::make_shared<SkeletonAnimatorGroup::SkeletonAnimatorData>(record["clip"].get<std::string>());
+                slot->maxLoopCount = record["loop"].get<int>();
+                group.animatorDatas[name] = std::move(slot);
+            }
+
+            if (!group.defaultAnimator.empty() && group.animatorDatas.find(group.defaultAnimator) == group.animatorDatas.end())
+                group.defaultAnimator.clear();
+            if (!group.idleAnimator.empty() && group.animatorDatas.find(group.idleAnimator) == group.animatorDatas.end())
+                group.idleAnimator.clear();
             return true;
         }));
 
