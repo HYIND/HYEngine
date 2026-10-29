@@ -88,6 +88,14 @@ struct alignas(16) TransAndMaterialIndex
 	uint32_t materialIndex = 0;
 };
 
+struct alignas(16) GeometryRenderData
+{
+	alignas(16) glm::mat4 curTransform = glm::mat4(1.0f);
+	alignas(16) glm::mat4 prevTransform = glm::mat4(1.0f);
+	uint32_t materialIndex = 0;
+	uint32_t motionVectorEnabled = 1;
+};
+
 struct RenderState
 {
 	// 相机参数
@@ -130,9 +138,7 @@ struct RenderState
 
 	// 渲染对象
 	struct RenderObjects {
-		// 静态网格：这一帧就能画
-		VKRenderObjectData::SceneStaticRenderData sceneRenderData;
-		// 蒙皮模型：要过蒙皮 Pass 才有顶点数据
+		VKRenderObjectData::SceneStaticRenderData sceneStaticRenderData;
 		VKRenderObjectData::SceneSkinnedRenderData sceneSkinnedRenderData;
 	} objects;
 
@@ -141,7 +147,15 @@ struct RenderState
 		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommand;
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_TransformAndMaterialIndices;
 		std::shared_ptr<StorageBlock> ssbo_StaticMesh_WorldAABB;
-	} indirectCommands;
+
+		std::vector<IndirectDrawCommand> skinnedMesh_OneSideCommand;
+		std::vector<IndirectDrawCommand> skinnedMesh_TwoSideCommand;
+		std::vector<IndirectDrawCommand> transparentMesh_Command;
+		std::shared_ptr<VertexBufferBlock> skinnedMesh_VertexBuffer;
+		std::shared_ptr<StorageBlock> skinnedMesh_PaletteBuffer;
+		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_TransformAndMaterialIndices;
+		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_GeometryRenderData;
+	} indirectCommands;   
 
 	struct SkyBoxParams {
 		std::shared_ptr<TextureCube> skyCube;

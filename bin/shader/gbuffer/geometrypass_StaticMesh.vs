@@ -19,6 +19,7 @@ struct RenderData
 	mat4 model;
 	mat4 prevModel;
 	uint materialIndex;
+	uint motionVectorEnabled;
 };
 
 layout(set = 0, binding = 2) buffer RenderDatas
@@ -43,17 +44,21 @@ void main()
 
 	vec4 clipPos = camera.projView * worldPos;
 
-	vec4 prevWorldPos = prevModel * vec4(aPos, 1.0f);
-	vec4 prevClipPos = prevcamera.projView * prevWorldPos;
+	MotionVector = vec2(0.0);
+	if (renderdata[gl_BaseInstance].motionVectorEnabled != 0)
+	{
+		vec4 prevWorldPos = prevModel * vec4(aPos, 1.0f);
+		vec4 prevClipPos = prevcamera.projView * prevWorldPos;
 
-	// 转 NDC 算 UV 差值
-    vec2 uv_curr = clipPos.xy / clipPos.w * 0.5 + 0.5;
-    vec2 uv_prev = prevClipPos.xy / prevClipPos.w * 0.5 + 0.5;
+		// 转 NDC 算 UV 差值
+		vec2 uv_curr = clipPos.xy / clipPos.w * 0.5 + 0.5;
+		vec2 uv_prev = prevClipPos.xy / prevClipPos.w * 0.5 + 0.5;
+		MotionVector = uv_curr - uv_prev;
+	}
 
 
 	TBN = mat3(T, B, N);
 	FragNormal = N;
 	gl_Position = clipPos;
 	FragTextureCoords = aTexCoords;
-    MotionVector = uv_curr - uv_prev;
 }

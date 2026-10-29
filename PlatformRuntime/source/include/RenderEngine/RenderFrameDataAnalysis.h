@@ -15,12 +15,10 @@ namespace Render
 
 	private:
 		static void ProcessStaticModel(
-			RenderState& state,
 			VKRenderObjectData::SceneStaticRenderData& renderData,
 			const std::shared_ptr<VKRenderContext::StaticModelRenderData>& data
 		);
 		static void ProcessSkinnedModel(
-			RenderState& state,
 			VKRenderObjectData::SceneSkinnedRenderData& renderData,
 			const std::shared_ptr<VKRenderContext::SkinnedModelRenderData>& data
 		);

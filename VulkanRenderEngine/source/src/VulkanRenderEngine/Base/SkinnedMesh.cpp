@@ -97,8 +97,7 @@ vk::VertexInputBindingDescription SkinnedMesh::GetVertexInputBindingDescription(
 
 
 SkinnedMesh::SkinnedMesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const std::vector<SkinnedData>& skinned)
-	:Mesh(vertices, indices),
-	_viVersion{ 0 }
+	:Mesh(vertices, indices)
 {
 	if (vertices.size() == skinned.size())
 		_skinned = skinned;
@@ -108,16 +107,11 @@ SkinnedMesh::SkinnedMesh(const std::vector<Vertex>& vertices, const std::vector<
 		std::cerr << "error skinneddata cause size not equal verticedata\n";
 	}
 
-	_uuid = Tool::GenerateSimpleUuid();
-	SetDirty();
 }
 
 SkinnedMesh::~SkinnedMesh()
-{}
-
-void SkinnedMesh::SetDirty()
 {
-	_viVersion++;
+	IndirectDrawManager::Instance()->RetireSkinned(*this);
 }
 
 std::shared_ptr<SkinnedMesh> SkinnedMesh::Clone()
@@ -126,16 +120,7 @@ std::shared_ptr<SkinnedMesh> SkinnedMesh::Clone()
 	return other;
 }
 
-std::string SkinnedMesh::GetUUID()
+const std::vector<SkinnedData>& SkinnedMesh::GetSkinnedData() const
 {
-	return _uuid;
+	return _skinned;
 }
-
-uint32_t SkinnedMesh::GetVerticesIndicesVsrsion()
-{
-	return _viVersion.load();
-}
-
-void SkinnedMesh::OnCalculateTangentData() { SetDirty(); }
-
-void SkinnedMesh::OnMakeTransform() { SetDirty(); }

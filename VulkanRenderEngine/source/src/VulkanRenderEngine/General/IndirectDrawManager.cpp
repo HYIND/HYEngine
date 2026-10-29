@@ -3,14 +3,28 @@
 
 namespace ReitreRes
 {
-	class RetireStaticMesh :public VKWrapper::IVKResource
+	class RetireMesh :public VKWrapper::IVKResource
 	{
 	public:
-		RetireStaticMesh(const std::string& uuid)
+		RetireMesh(const std::string& uuid)
 			:uuid(uuid)
 		{}
 		virtual void Destroy() {
 			IndirectDrawManager::Instance()->DeleteMesh(uuid);
+		}
+
+	public:
+		std::string uuid;
+	};
+
+	class RetireSkinned :public VKWrapper::IVKResource
+	{
+	public:
+		RetireSkinned(const std::string& uuid)
+			:uuid(uuid)
+		{}
+		virtual void Destroy() {
+			IndirectDrawManager::Instance()->DeleteSkinned(uuid);
 		}
 
 	public:
@@ -177,12 +191,12 @@ std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 	return instance;
 }
 
-void IndirectDrawManager::SetupStaticMesh(StaticMesh& mesh)
+void IndirectDrawManager::SetupMesh(Mesh& mesh)
 {
 	auto uuid = mesh.GetUUID();
 	auto version = mesh.GetVerticesIndicesVsrsion();
 
-	auto guard = LockGuard(_statiMeshMutex);
+	auto guard = LockGuard(_meshMutex);
 	{
 		SegmentData segmentData;
 		if (!_VertexManager.FindSegment(uuid, segmentData) || (uint32_t)segmentData.userData != version)
@@ -202,18 +216,18 @@ void IndirectDrawManager::SetupStaticMesh(StaticMesh& mesh)
 	}
 }
 
-void IndirectDrawManager::RetireStaticMesh(StaticMesh& mesh)
+void IndirectDrawManager::RetireMesh(Mesh& mesh)
 {
-	VKCONTEXT->Retire(new ReitreRes::RetireStaticMesh(mesh.GetUUID()));
+	VKCONTEXT->Retire(new ReitreRes::RetireMesh(mesh.GetUUID()));
 }
 
-bool IndirectDrawManager::GetIndirectDrawMeta(StaticMesh& mesh, IndirectDrawMeta& meta)
+bool IndirectDrawManager::GetIndirectDrawMeta(Mesh& mesh, IndirectDrawMeta& meta)
 {
 	auto uuid = mesh.GetUUID();
 	SegmentData vbodata, ebodata;
 
 	{
-		auto guard = SharedLockGuard(_statiMeshMutex);
+		auto guard = SharedLockGuard(_meshMutex);
 		if (!_VertexManager.FindSegment(uuid, vbodata) || !_IndexManager.FindSegment(uuid, ebodata))
 			return false;
 	}
@@ -257,6 +271,28 @@ void IndirectDrawManager::RetireMaterial(Material& material)
 	VKCONTEXT->Retire(new ReitreRes::RetireMaterial(material.GetUUID()));
 }
 
+void IndirectDrawManager::SetupSkinned(SkinnedMesh& mesh)
+{
+	auto guard = LockGuard(_skinnedMutex);
+	SetupSkinned_LockFree(mesh);
+}
+
+void IndirectDrawManager::RetireSkinned(SkinnedMesh& mesh)
+{
+	VKCONTEXT->Retire(new ReitreRes::RetireSkinned(mesh.GetUUID()));
+}
+
+bool IndirectDrawManager::GetSkinnedIndex(SkinnedMesh& mesh, uint32_t& index)
+{
+	auto guard = SharedLockGuard(_skinnedMutex);
+	return GetSkinnedIndex_LockFree(mesh, index);
+}
+
+std::shared_ptr<VertexBufferBlock> IndirectDrawManager::GetSkinnedVertexBlock() const
+{
+	return _SkinnedManager.GetBuffer()->GetBlock();
+}
+
 bool IndirectDrawManager::GetMaterialIndex(Material& material, uint64_t& index) const
 {
 	auto guard = SharedLockGuard(_materialMutex);
@@ -277,30 +313,7 @@ std::shared_ptr<StorageBlock> IndirectDrawManager::GetShadowMaterialSSBO() const
 	return _ShadowMaterialManager.GetBuffer()->GetBlock();
 }
 
-void IndirectDrawManager::WithMeshWriteLock(const std::function<void()>& call)
-{
-	LockGuard guard(_statiMeshMutex);
-	if (call)
-		call();
-}
-
-
-void IndirectDrawManager::WithMaterialWriteLock(const std::function<void()>& call)
-{
-	LockGuard guard(_materialMutex);
-	if (call)
-		call();
-}
-
-void IndirectDrawManager::WithMeshMaterialWriteLock(const std::function<void()>& call)
-{
-	LockGuard guard1(_statiMeshMutex);
-	LockGuard guard2(_materialMutex);
-	if (call)
-		call();
-}
-
-void IndirectDrawManager::SetupStaticMesh_LockFree(StaticMesh& mesh)
+void IndirectDrawManager::SetupMesh_LockFree(Mesh& mesh)
 {
 	auto uuid = mesh.GetUUID();
 	auto version = mesh.GetVerticesIndicesVsrsion();
@@ -322,6 +335,7 @@ void IndirectDrawManager::SetupStaticMesh_LockFree(StaticMesh& mesh)
 			_IndexManager.SetSegment(uuid, (void*)version, indices.data(), indices.size() * sizeof(unsigned int));
 		}
 	}
+
 }
 
 void IndirectDrawManager::SetupMaterial_LockFree(Material& material)
@@ -342,26 +356,18 @@ void IndirectDrawManager::SetupMaterial_LockFree(Material& material)
 	}
 }
 
-void IndirectDrawManager::WithMeshSharedLock(const std::function<void()>& call)
+void IndirectDrawManager::SetupSkinned_LockFree(SkinnedMesh& mesh)
 {
-	SharedLockGuard guard(_statiMeshMutex);
-	if (call)
-		call();
-}
+	const auto& skinned = mesh.GetSkinnedData();
+	const auto uuid = mesh.GetUUID();
+	if (skinned.empty())
+	{
+		_SkinnedManager.RemoveSegment(uuid);
+		return;
+	}
 
-void IndirectDrawManager::WithMaterialSharedLock(const std::function<void()>& call)
-{
-	SharedLockGuard guard(_materialMutex);
-	if (call)
-		call();
-}
-
-void IndirectDrawManager::WithMeshMaterialSharedLock(const std::function<void()>& call)
-{
-	SharedLockGuard guard1(_statiMeshMutex);
-	SharedLockGuard guard2(_materialMutex);
-	if (call)
-		call();
+	const auto version = mesh.GetVerticesIndicesVsrsion();
+	_SkinnedManager.SetSegment(uuid, reinterpret_cast<void*>(static_cast<uintptr_t>(version)), skinned.data(), skinned.size() * sizeof(SkinnedData));
 }
 
 bool IndirectDrawManager::GetMaterialIndex_LockFree(Material& material, uint64_t& index) const
@@ -370,6 +376,16 @@ bool IndirectDrawManager::GetMaterialIndex_LockFree(Material& material, uint64_t
 	if (!_MaterialManager.FindSegment(material.GetUUID(), materialdata))
 		return false;
 	index = materialdata.first / sizeof(MaterialData);
+	return true;
+}
+
+bool IndirectDrawManager::GetSkinnedIndex_LockFree(SkinnedMesh& mesh, uint32_t& index)
+{
+	SegmentData skinnedData;
+	if (!_SkinnedManager.FindSegment(mesh.GetUUID(), skinnedData))
+		return false;
+
+	index = static_cast<uint32_t>(skinnedData.first / sizeof(SkinnedData));
 	return true;
 }
 
@@ -382,7 +398,7 @@ bool IndirectDrawManager::GetMaterialIndex_LockFree(Material& material, uint32_t
 	return result;
 }
 
-bool IndirectDrawManager::GetIndirectDrawMeta_LockFree(StaticMesh& mesh, IndirectDrawMeta& meta)
+bool IndirectDrawManager::GetIndirectDrawMeta_LockFree(Mesh& mesh, IndirectDrawMeta& meta)
 {
 	auto uuid = mesh.GetUUID();
 	SegmentData vbodata, ebodata;
@@ -399,7 +415,7 @@ bool IndirectDrawManager::GetIndirectDrawMeta_LockFree(StaticMesh& mesh, Indirec
 
 void IndirectDrawManager::DeleteMesh(const std::string& uuid)
 {
-	auto guard = LockGuard(_statiMeshMutex);
+	auto guard = LockGuard(_meshMutex);
 	_VertexManager.RemoveSegment(uuid);
 	_IndexManager.RemoveSegment(uuid);
 }
@@ -409,4 +425,10 @@ void IndirectDrawManager::DeleteMaterial(const std::string& uuid)
 	auto guard = LockGuard(_materialMutex);
 	_MaterialManager.RemoveSegment(uuid);
 	_ShadowMaterialManager.RemoveSegment(uuid);
+}
+
+void IndirectDrawManager::DeleteSkinned(const std::string& uuid)
+{
+	auto guard = LockGuard(_skinnedMutex);
+	_SkinnedManager.RemoveSegment(uuid);
 }

@@ -408,13 +408,19 @@ void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 	SetupLightingData(selfctx, cmd, state);
 
-	selfctx.oneSideCommandSize = state.indirectCommands.staticMesh_OneSideCommand.size();
-	selfctx.twoSideCommandSize = state.indirectCommands.staticMesh_TwoSideCommand.size();
+	selfctx.staticOneSideCommandSize = state.indirectCommands.staticMesh_OneSideCommand.size();
+	selfctx.staticTwoSideCommandSize = state.indirectCommands.staticMesh_TwoSideCommand.size();
+	selfctx.skinnedOneSideCommandSize = state.indirectCommands.skinnedMesh_OneSideCommand.size();
+	selfctx.skinnedTwoSideCommandSize = state.indirectCommands.skinnedMesh_TwoSideCommand.size();
 	selfctx.ssbo_StaticMesh_TransformAndMaterialIndices = state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices;
 	selfctx.ssbo_StaticMesh_WorldAABB = state.indirectCommands.ssbo_StaticMesh_WorldAABB;
+	selfctx.ssbo_SkinnedMesh_TransformAndMaterialIndices = state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices;
+	selfctx.skinnedMesh_VertexBuffer = state.indirectCommands.skinnedMesh_VertexBuffer;
 
 	selfctx.oneSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_OneSideCommand.data(), state.indirectCommands.staticMesh_OneSideCommand.size() * sizeof(IndirectDrawCommand));
 	selfctx.twoSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_TwoSideCommand.data(), state.indirectCommands.staticMesh_TwoSideCommand.size() * sizeof(IndirectDrawCommand));
+	selfctx.skinnedOneSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.skinnedMesh_OneSideCommand.data(), state.indirectCommands.skinnedMesh_OneSideCommand.size() * sizeof(IndirectDrawCommand));
+	selfctx.skinnedTwoSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.skinnedMesh_TwoSideCommand.data(), state.indirectCommands.skinnedMesh_TwoSideCommand.size() * sizeof(IndirectDrawCommand));
 
 	if (cmd->IsRecording())
 		cmd->SubmitNowAndWait();
@@ -470,9 +476,13 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 
 	dirLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
 	dirLightShadowDepthStaticMeshBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
+	dirLightShadowDepthSkinnedBinding.SetStorageBlock(state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices, 5);
+	dirLightShadowDepthSkinnedBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
 	pointLightShadowDepthStaticMeshBinding.SetStorageBlock(state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices, 5);
 	pointLightShadowDepthStaticMeshBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
+	pointLightShadowDepthSkinnedBinding.SetStorageBlock(state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices, 5);
+	pointLightShadowDepthSkinnedBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
 	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
 	for (auto& data : datas)
@@ -484,7 +494,8 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
 				_dirLightShadowDepthStaticMeshShader,
-				dirLightShadowDepthStaticMeshBinding
+				dirLightShadowDepthStaticMeshBinding,
+				dirLightShadowDepthSkinnedBinding
 			);
 			if (cmd->IsRecording())
 				cmd->SubmitNow();
@@ -498,7 +509,8 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
 				_pointLightShadowDepthStaticMeshShader,
-				pointLightShadowDepthStaticMeshBinding
+				pointLightShadowDepthStaticMeshBinding,
+				pointLightShadowDepthSkinnedBinding
 			);
 			if (cmd->IsRecording())
 				cmd->SubmitNow();
@@ -794,7 +806,7 @@ void LightShadowDepthPass::PreRecordCulling(
 	if (shadowMatrices.empty())
 		return;
 
-	bool renderStaticMesh = ctx.oneSideCommandSize > 0 || ctx.twoSideCommandSize > 0;
+	bool renderStaticMesh = ctx.staticOneSideCommandSize > 0 || ctx.staticTwoSideCommandSize > 0;
 
 	const uint32_t fustumWorksize = GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y;
 
@@ -813,8 +825,8 @@ void LightShadowDepthPass::PreRecordCulling(
 
 	if (renderStaticMesh)
 	{
-		std::shared_ptr<IndirectBufferBlock>& oneSideInidrectCommands = data.oneSideInidrectCommands;
-		std::shared_ptr<IndirectBufferBlock>& twoSideInidrectCommands = data.twoSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock>& staticOneSideInidrectCommands = data.staticOneSideInidrectCommands;
+		std::shared_ptr<IndirectBufferBlock>& staticTwoSideInidrectCommands = data.staticTwoSideInidrectCommands;
 
 		auto ssbo_Frustums = std::make_shared<StorageBlock>(shadowMatrices.size() * sizeof(Frustum));
 		std::vector<Frustum> frustums;
@@ -824,11 +836,11 @@ void LightShadowDepthPass::PreRecordCulling(
 		ssbo_Frustums->WriteDataAsync(cmd, frustums.data(), frustums.size() * sizeof(Frustum));
 		ssbo_Frustums->Barrier(cmd, BufferUsage::TransferWrite);
 
-		if (ctx.oneSideCommandSize > 0)
+		if (ctx.staticOneSideCommandSize > 0)
 		{
-			oneSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.oneSideCommandSize * sizeof(IndirectDrawCommand));
+			staticOneSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.staticOneSideCommandSize * sizeof(IndirectDrawCommand));
 
-			FrustumCullingParams params(shadowMatrices.size() * ctx.oneSideCommandSize, ctx.oneSideCommandSize, 0);
+			FrustumCullingParams params(shadowMatrices.size() * ctx.staticOneSideCommandSize, ctx.staticOneSideCommandSize, 0);
 			auto paramsUBO = std::make_shared<UniformBlock>(sizeof(FrustumCullingParams));
 			paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
 			paramsUBO->Barrier(cmd, BufferUsage::TransferWrite);
@@ -837,20 +849,20 @@ void LightShadowDepthPass::PreRecordCulling(
 			{
 				DynamicBlock::MemCopyAsync(cmd,
 					ctx.oneSideIndirectCommandBuffer,
-					oneSideInidrectCommands,
-					ctx.oneSideCommandSize * sizeof(IndirectDrawCommand),
+					staticOneSideInidrectCommands,
+					ctx.staticOneSideCommandSize * sizeof(IndirectDrawCommand),
 					0,
-					i * ctx.oneSideCommandSize * sizeof(IndirectDrawCommand)
+					i * ctx.staticOneSideCommandSize * sizeof(IndirectDrawCommand)
 				);
 			}
 
 			if (!skipCulling)
 			{
-				oneSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
+				staticOneSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
 
 				ComputeBindingRecord fustumCullingBinding;
 				fustumCullingBinding.SetUniformBlock(paramsUBO, 0);
-				fustumCullingBinding.SetStorageBlock(oneSideInidrectCommands, 1);
+				fustumCullingBinding.SetStorageBlock(staticOneSideInidrectCommands, 1);
 				fustumCullingBinding.SetStorageBlock(ctx.ssbo_StaticMesh_WorldAABB, 2);
 				fustumCullingBinding.SetStorageBlock(ssbo_Frustums, 3);
 
@@ -859,11 +871,11 @@ void LightShadowDepthPass::PreRecordCulling(
 			}
 
 		}
-		if (ctx.twoSideCommandSize > 0)
+		if (ctx.staticTwoSideCommandSize > 0)
 		{
-			twoSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.twoSideCommandSize * sizeof(IndirectDrawCommand));
+			staticTwoSideInidrectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * ctx.staticTwoSideCommandSize * sizeof(IndirectDrawCommand));
 
-			FrustumCullingParams params(shadowMatrices.size() * ctx.twoSideCommandSize, ctx.twoSideCommandSize, ctx.oneSideCommandSize);
+			FrustumCullingParams params(shadowMatrices.size() * ctx.staticTwoSideCommandSize, ctx.staticTwoSideCommandSize, ctx.staticOneSideCommandSize);
 			auto paramsUBO = std::make_shared<UniformBlock>(sizeof(FrustumCullingParams));
 			paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
 			paramsUBO->Barrier(cmd, BufferUsage::TransferWrite);
@@ -872,20 +884,20 @@ void LightShadowDepthPass::PreRecordCulling(
 			{
 				DynamicBlock::MemCopyAsync(cmd,
 					ctx.twoSideIndirectCommandBuffer,
-					twoSideInidrectCommands,
-					ctx.twoSideCommandSize * sizeof(IndirectDrawCommand),
+					staticTwoSideInidrectCommands,
+					ctx.staticTwoSideCommandSize * sizeof(IndirectDrawCommand),
 					0,
-					i * ctx.twoSideCommandSize * sizeof(IndirectDrawCommand)
+					i * ctx.staticTwoSideCommandSize * sizeof(IndirectDrawCommand)
 				);
 			}
 
 			if (!skipCulling)
 			{
-				twoSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
+				staticTwoSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageWrite);
 
 				ComputeBindingRecord fustumCullingBinding;
 				fustumCullingBinding.SetUniformBlock(paramsUBO, 0);
-				fustumCullingBinding.SetStorageBlock(twoSideInidrectCommands, 1);
+				fustumCullingBinding.SetStorageBlock(staticTwoSideInidrectCommands, 1);
 				fustumCullingBinding.SetStorageBlock(ctx.ssbo_StaticMesh_WorldAABB, 2);
 				fustumCullingBinding.SetStorageBlock(ssbo_Frustums, 3);
 
@@ -893,6 +905,38 @@ void LightShadowDepthPass::PreRecordCulling(
 				cmd->dispatch((params.commandCount + fustumWorksize - 1) / fustumWorksize, 1, 1);
 			}
 		}
+	}
+
+	if (ctx.skinnedOneSideCommandSize > 0)
+	{
+		const uint32_t commandBytes = ctx.skinnedOneSideCommandSize * sizeof(IndirectDrawCommand);
+		data.skinnedOneSideIndirectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * commandBytes);
+		for (uint32_t viewIndex = 0; viewIndex < shadowMatrices.size(); ++viewIndex)
+		{
+			DynamicBlock::MemCopyAsync(cmd,
+				ctx.skinnedOneSideIndirectCommandBuffer,
+				data.skinnedOneSideIndirectCommands,
+				commandBytes,
+				0,
+				viewIndex * commandBytes);
+		}
+		data.skinnedOneSideIndirectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
+	}
+
+	if (ctx.skinnedTwoSideCommandSize > 0)
+	{
+		const uint32_t commandBytes = ctx.skinnedTwoSideCommandSize * sizeof(IndirectDrawCommand);
+		data.skinnedTwoSideIndirectCommands = std::make_shared<IndirectBufferBlock>(shadowMatrices.size() * commandBytes);
+		for (uint32_t viewIndex = 0; viewIndex < shadowMatrices.size(); ++viewIndex)
+		{
+			DynamicBlock::MemCopyAsync(cmd,
+				ctx.skinnedTwoSideIndirectCommandBuffer,
+				data.skinnedTwoSideIndirectCommands,
+				commandBytes,
+				0,
+				viewIndex * commandBytes);
+		}
+		data.skinnedTwoSideIndirectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
 	}
 }
 
@@ -902,10 +946,12 @@ void LightShadowDepthPass::PreRecordRenderScene(
 	PreRecordData& data,
 	DynamicRenderInfo& renderInfo,
 	std::shared_ptr<GraphicsPipeline>& shader_StaticMesh,
-	GraphicsBindingRecord& shader_StaticMesh_Binding
+	GraphicsBindingRecord& shader_StaticMesh_Binding,
+	GraphicsBindingRecord& shader_SkinnedMesh_Binding
 )
 {
 	std::shared_ptr<UniformBlock> sideParamsUBO = std::make_shared<UniformBlock>(sizeof(DrawParams));
+	std::shared_ptr<UniformBlock> skinnedSideParamsUBO = std::make_shared<UniformBlock>(sizeof(DrawParams));
 
 	auto& viewPorts = data.viewPorts;
 
@@ -941,56 +987,82 @@ void LightShadowDepthPass::PreRecordRenderScene(
 
 	bool hasClear = false;
 
-	shader_StaticMesh_Binding.SetUniformBlock(sideParamsUBO, 3);
-	shader_StaticMesh->Bind(cmd, shader_StaticMesh_Binding);
 
 	auto manager = IndirectDrawManager::Instance();
 
-	if (ctx.oneSideCommandSize > 0)
-	{
-		DrawParams sideParams{ .commandsPerView = ctx.oneSideCommandSize };
-		sideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
-		sideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite);
-
-		cmd->beginRendering(renderInfo);
-		cmd->setDynamicViewports(viewPorts);
-		cmd->setCullMode(vk::CullModeFlagBits::eNone);
-
-		if (!hasClear)
+	auto renderStaticCommands = [&](uint32_t commandSize, const std::shared_ptr<IndirectBufferBlock>& indirectCommands, vk::CullModeFlags cullMode)
 		{
-			cmd->clearAttachments(clearAttachment, clearRects);
-			hasClear = true;
-		}
+			if (commandSize == 0 || !indirectCommands)
+				return;
 
-		cmd->bindVertexBuffers(manager->GetVertexBlock());
-		cmd->bindIndexBuffer(manager->GetIndexBlock());
-		cmd->drawIndexedIndirect(data.oneSideInidrectCommands, data.shadowMatrices.size() * ctx.oneSideCommandSize);
-		cmd->endRendering();
+			DrawParams sideParams{ .commandsPerView = commandSize };
+			sideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
+			sideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite);
+			shader_StaticMesh_Binding.SetUniformBlock(sideParamsUBO, 3);
+			shader_StaticMesh->Bind(cmd, shader_StaticMesh_Binding);
 
-		if (ctx.twoSideCommandSize > 0)
+			cmd->beginRendering(renderInfo);
+			cmd->setDynamicViewports(viewPorts);
+			cmd->setCullMode(cullMode);
+
+			if (!hasClear)
+			{
+				cmd->clearAttachments(clearAttachment, clearRects);
+				hasClear = true;
+			}
+
+			cmd->bindVertexBuffers(manager->GetVertexBlock());
+			cmd->bindIndexBuffer(manager->GetIndexBlock());
+			cmd->drawIndexedIndirect(indirectCommands, data.shadowMatrices.size() * commandSize);
+			cmd->endRendering();
+		};
+
+	if (ctx.staticOneSideCommandSize > 0)
+	{
+		renderStaticCommands(ctx.staticOneSideCommandSize, data.staticOneSideInidrectCommands, vk::CullModeFlagBits::eNone);
+		if (ctx.staticTwoSideCommandSize > 0)
 			sideParamsUBO->Barrier(cmd, BufferUsage::UniformRead);
 	}
 
-	if (ctx.twoSideCommandSize > 0)
+	if (ctx.staticTwoSideCommandSize > 0)
 	{
-		DrawParams sideParams{ .commandsPerView = ctx.twoSideCommandSize };
-		sideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
-		sideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite);
-
-		cmd->beginRendering(renderInfo);
-		cmd->setDynamicViewports(viewPorts);
-		cmd->setCullMode(vk::CullModeFlagBits::eNone);
-
-		if (!hasClear)
-		{
-			cmd->clearAttachments(clearAttachment, clearRects);
-			hasClear = true;
-		}
-
-		cmd->bindVertexBuffers(manager->GetVertexBlock());
-		cmd->bindIndexBuffer(manager->GetIndexBlock());
-		cmd->drawIndexedIndirect(data.twoSideInidrectCommands, data.shadowMatrices.size() * ctx.twoSideCommandSize);
-		cmd->endRendering();
+		renderStaticCommands(ctx.staticTwoSideCommandSize, data.staticTwoSideInidrectCommands, vk::CullModeFlagBits::eNone);
 	}
 
+	auto renderSkinnedCommands = [&](uint32_t commandSize, const std::shared_ptr<IndirectBufferBlock>& indirectCommands, vk::CullModeFlags cullMode)
+		{
+			if (commandSize == 0 || !indirectCommands || !ctx.skinnedMesh_VertexBuffer)
+				return;
+
+			DrawParams sideParams{ .commandsPerView = commandSize };
+			skinnedSideParamsUBO->WriteDataAsync(cmd, &sideParams, sizeof(sideParams));
+			skinnedSideParamsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
+			shader_SkinnedMesh_Binding.SetUniformBlock(skinnedSideParamsUBO, 3);
+			shader_StaticMesh->Bind(cmd, shader_SkinnedMesh_Binding);
+
+			cmd->beginRendering(renderInfo);
+			cmd->setDynamicViewports(viewPorts);
+			cmd->setCullMode(cullMode);
+			if (!hasClear)
+			{
+				cmd->clearAttachments(clearAttachment, clearRects);
+				hasClear = true;
+			}
+
+			cmd->bindVertexBuffers(ctx.skinnedMesh_VertexBuffer);
+			cmd->bindIndexBuffer(manager->GetIndexBlock());
+			cmd->drawIndexedIndirect(indirectCommands, data.shadowMatrices.size() * commandSize);
+			cmd->endRendering();
+		};
+
+	if (ctx.skinnedOneSideCommandSize > 0)
+	{
+		renderSkinnedCommands(ctx.skinnedOneSideCommandSize, data.skinnedOneSideIndirectCommands, vk::CullModeFlagBits::eNone);
+		if (ctx.skinnedTwoSideCommandSize > 0)
+			skinnedSideParamsUBO->Barrier(cmd, BufferUsage::UniformRead, BufferUsage::TransferWrite);
+	}
+	if (ctx.skinnedTwoSideCommandSize > 0)
+		renderSkinnedCommands(ctx.skinnedTwoSideCommandSize, data.skinnedTwoSideIndirectCommands, vk::CullModeFlagBits::eNone);
+
 }
+

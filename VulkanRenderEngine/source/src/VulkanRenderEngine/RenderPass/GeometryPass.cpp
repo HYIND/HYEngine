@@ -3,12 +3,6 @@
 #include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
-struct alignas(16) RenderData {
-	alignas(16) glm::mat4 curTransform = glm::mat4(1.0f);
-	alignas(16) glm::mat4 prevTransform;
-	uint32_t materialIndex = 0;
-};
-
 GeometryPass::GeometryPass(
 	const std::string& staticMeshVertexShaderPath,
 	const std::string& staticMeshFragmentShaderPath
@@ -74,8 +68,7 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 }
 
 void GeometryPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{
-}
+{}
 
 void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
@@ -157,7 +150,7 @@ bool GeometryPass::SetupStaticBufferData(
 	if (!renderdata_ssbo)
 		return false;
 
-	std::vector<RenderData> renderData;
+	std::vector<GeometryRenderData> renderData;
 	renderData.resize(renderIndex.oneSideIndex.size() + renderIndex.twoSideIndex.size());
 
 	size_t startInedx = 0;
@@ -174,44 +167,50 @@ bool GeometryPass::SetupStaticBufferData(
 
 		commands.resize(indices.size());
 
-		indirectManager->WithMeshMaterialSharedLock([&]() {
-			std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
-				[&](const size_t& meshIndex)-> void
-				{
-					size_t inedx = &meshIndex - indices.data();
+		using SharedLockType = IndirectDrawManager::SharedLockType;
 
-					auto& item = items[meshIndex];
-					auto& material = item.meshinfo.material;
-					auto& mesh = item.meshinfo.mesh;
-
-					IndirectDrawCommand& command = commands[inedx];
-					RenderData& data = renderData[startInedx + inedx];
-
-					data.curTransform = item.transform;
-					data.prevTransform = item.prevTransform;
-
-					uint64_t materialIndex;
-					if (indirectManager->GetMaterialIndex_LockFree(*material, materialIndex))
-						data.materialIndex = materialIndex;
-
-					IndirectDrawMeta meta;
-					if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta))
-						command.instanceCount = 0;
-					else
+		indirectManager->WithSharedLock(
+			{ SharedLockType::Mesh, SharedLockType::Material },
+			[&]()
+			{
+				std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
+					[&](const size_t& meshIndex)-> void
 					{
-						command.indexCount = meta.indexCount;
-						command.firstIndex = meta.firstIndex;
-						command.vertexOffset = meta.vertexOffset;
-						command.instanceCount = 1;
-						command.firstInstance = startInedx + inedx;
-					}
-				});
+						size_t inedx = &meshIndex - indices.data();
+
+						auto& item = items[meshIndex];
+						auto& material = item.meshinfo.material;
+						auto& mesh = item.meshinfo.mesh;
+
+						IndirectDrawCommand& command = commands[inedx];
+						GeometryRenderData& data = renderData[startInedx + inedx];
+
+						data.curTransform = item.transform;
+						data.prevTransform = item.prevTransform;
+						data.motionVectorEnabled = 1;
+
+						uint64_t materialIndex;
+						if (indirectManager->GetMaterialIndex_LockFree(*material, materialIndex))
+							data.materialIndex = materialIndex;
+
+						IndirectDrawMeta meta;
+						if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta))
+							command.instanceCount = 0;
+						else
+						{
+							command.indexCount = meta.indexCount;
+							command.firstIndex = meta.firstIndex;
+							command.vertexOffset = meta.vertexOffset;
+							command.instanceCount = 1;
+							command.firstInstance = startInedx + inedx;
+						}
+					});
 			});
 
 		startInedx += indices.size();
 	}
 
-	renderdata_ssbo->WriteDataAsync(cmd, renderData.data(), renderData.size() * sizeof(RenderData));
+	renderdata_ssbo->WriteDataAsync(cmd, renderData.data(), renderData.size() * sizeof(GeometryRenderData));
 	renderdata_ssbo->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 
 	return true;
@@ -220,21 +219,25 @@ bool GeometryPass::SetupStaticBufferData(
 void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort)
 {
 
-	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
-	auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
-	if (opaqueMeshes.empty() && renderIndex.oneSideIndex.empty() && renderIndex.twoSideIndex.empty())
+	auto& opaqueMeshes = state.objects.sceneStaticRenderData.opaqueItems;
+	auto& renderIndex = state.objects.sceneStaticRenderData.opaqueItems_cullRenderIndex;
+	auto& indirectCommands = state.indirectCommands;
+	bool hasStaticMeshes = !opaqueMeshes.empty() || !renderIndex.oneSideIndex.empty() || !renderIndex.twoSideIndex.empty();
+	bool hasSkinnedMeshes = !indirectCommands.skinnedMesh_OneSideCommand.empty() || !indirectCommands.skinnedMesh_TwoSideCommand.empty();
+	if (!hasStaticMeshes && (!hasSkinnedMeshes || !indirectCommands.skinnedMesh_VertexBuffer))
 		return;
 
 	auto& shader = _staticShader;
 	GraphicsBindingRecord binding;
-
-	auto renderdata_ssbo = registry.GetStorageBlock("renderdata_ssbo");
-	binding.SetStorageBlock(renderdata_ssbo, 2);
-
 	std::vector<IndirectDrawCommand> oneSideCommands;
 	std::vector<IndirectDrawCommand> twoSideCommands;
-	if (!SetupStaticBufferData(cmd, binding, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
-		return;
+	if (hasStaticMeshes)
+	{
+		auto renderdata_ssbo = registry.GetStorageBlock("renderdata_ssbo");
+		binding.SetStorageBlock(renderdata_ssbo, 2);
+		if (!SetupStaticBufferData(cmd, binding, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
+			return;
+	}
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 
@@ -246,7 +249,15 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 	if (!twoSideCommands.empty())
 		twoSideCommandBuffer->WriteDataAsync(cmd, twoSideCommands.data(), twoSideCommands.size() * sizeof(IndirectDrawCommand));
 
-	shader->Bind(cmd, binding);
+	auto skinnedOneSideCommandBuffer = registry.GetIndirectBlock("skinnedOneSideGeometryCommandBuffer");
+	auto skinnedTwoSideCommandBuffer = registry.GetIndirectBlock("skinnedTwoSideGeometryCommandBuffer");
+	if (hasSkinnedMeshes)
+	{
+		if (!indirectCommands.skinnedMesh_OneSideCommand.empty())
+			skinnedOneSideCommandBuffer->WriteDataAsync(cmd, indirectCommands.skinnedMesh_OneSideCommand.data(), indirectCommands.skinnedMesh_OneSideCommand.size() * sizeof(IndirectDrawCommand));
+		if (!indirectCommands.skinnedMesh_TwoSideCommand.empty())
+			skinnedTwoSideCommandBuffer->WriteDataAsync(cmd, indirectCommands.skinnedMesh_TwoSideCommand.data(), indirectCommands.skinnedMesh_TwoSideCommand.size() * sizeof(IndirectDrawCommand));
+	}
 
 	cmd->setDynamicViewport(viewPort);
 	cmd->beginRendering(renderInfo);
@@ -255,6 +266,7 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 
 	if (!oneSideCommands.empty())
 	{
+		shader->Bind(cmd, binding);
 		oneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eBack);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
@@ -264,11 +276,41 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 
 	if (!twoSideCommands.empty())
 	{
+		if (oneSideCommands.empty())
+			shader->Bind(cmd, binding);
 		twoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite);
 		cmd->setCullMode(vk::CullModeFlagBits::eNone);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
 		cmd->drawIndexedIndirect(twoSideCommandBuffer, twoSideCommands.size());
+	}
+
+	if (hasSkinnedMeshes)
+	{
+		GraphicsBindingRecord skinnedBinding;
+		skinnedBinding.SetStorageBlock(indirectCommands.ssbo_SkinnedMesh_GeometryRenderData, 2);
+		auto indirectManager = IndirectDrawManager::Instance();
+		skinnedBinding.SetBindlessMaterialTexture(indirectManager->GetMaterialSSBO(), BindlessTextureManager::Instance());
+		skinnedBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+		shader->Bind(cmd, skinnedBinding);
+
+		if (!indirectCommands.skinnedMesh_OneSideCommand.empty())
+		{
+			skinnedOneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
+			cmd->setCullMode(vk::CullModeFlagBits::eBack);
+			cmd->bindVertexBuffers(indirectCommands.skinnedMesh_VertexBuffer);
+			cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
+			cmd->drawIndexedIndirect(skinnedOneSideCommandBuffer, indirectCommands.skinnedMesh_OneSideCommand.size());
+		}
+
+		if (!indirectCommands.skinnedMesh_TwoSideCommand.empty())
+		{
+			skinnedTwoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
+			cmd->setCullMode(vk::CullModeFlagBits::eNone);
+			cmd->bindVertexBuffers(indirectCommands.skinnedMesh_VertexBuffer);
+			cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
+			cmd->drawIndexedIndirect(skinnedTwoSideCommandBuffer, indirectCommands.skinnedMesh_TwoSideCommand.size());
+		}
 	}
 
 	cmd->endRendering();

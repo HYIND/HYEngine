@@ -5,8 +5,8 @@
 #include "VulkanRenderEngine/General/RenderState.h"
 #include "VulkanRenderEngine/RenderGraph/RenderGraph.h"
 
-//#include "VulkanRenderEngine/RenderPass/FirstPersonPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/SkinnedPass.h"
 #include "VulkanRenderEngine/RenderPass/BloomPass.h"
 #include "VulkanRenderEngine/RenderPass/CombinPass.h"
 #include "VulkanRenderEngine/RenderPass/GlobalPostProcessPass.h"
@@ -157,6 +157,7 @@ private:
     //std::unique_ptr<FirstPersonPass> _firstPersonPass;
 
     std::unique_ptr<PreCalculatePass> _preCalculatePass;
+    std::unique_ptr<SkinnedPass> _skinnedPass;
     std::unique_ptr<CombinPass> _combinPass;
     std::unique_ptr<BloomPass> _globalBloomPass;
     std::unique_ptr<GlobalPostProcessPass> _globalPostProcessPass;

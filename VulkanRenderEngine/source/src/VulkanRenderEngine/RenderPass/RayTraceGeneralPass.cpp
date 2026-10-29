@@ -145,7 +145,7 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 	auto& worldBVHNodeBuffer = _buffers->_SSBO_WorldBVHNode;
 
 
-	auto& opaqueMesh = state.objects.sceneRenderData.opaqueMesh;
+	auto& opaqueItems = state.objects.sceneStaticRenderData.opaqueItems;
 
 	int triangleCount = 0;
 	int meshBVHNodeCount = 0;
@@ -153,11 +153,11 @@ bool RayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	std::vector<comp_MeshMatData> meshmatDatas;
 	std::vector<AABB> meshAABBData;
-	meshmatDatas.reserve(opaqueMesh.size());
-	meshAABBData.reserve(opaqueMesh.size());
+	meshmatDatas.reserve(opaqueItems.size());
+	meshAABBData.reserve(opaqueItems.size());
 
 
-	for (auto& item : opaqueMesh)
+	for (auto& item : opaqueItems)
 	{
 		auto& meshInfo = item.meshinfo;
 		if (!meshInfo.mesh) continue;

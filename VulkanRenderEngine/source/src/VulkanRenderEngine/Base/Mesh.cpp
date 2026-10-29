@@ -5,10 +5,11 @@
 
 
 Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
-	: _vertices(vertices), _indices(indices)
+	: _vertices(vertices), _indices(indices), needUpdateIndirectDraw(true), _viVersion{ 0 }
 {
 	_vertices = vertices;
 	_indices = indices;
+	_uuid = Tool::GenerateSimpleUuid();
 }
 
 Mesh::~Mesh()
@@ -86,7 +87,7 @@ void Mesh::CalculateTangentData()
 		_vertices[i].Tangent = T;
 		_vertices[i].Bitangent = B;
 	}
-	OnCalculateTangentData();
+	Change();
 }
 
 void Mesh::MakeScale(const glm::vec3& scale)
@@ -103,7 +104,7 @@ void Mesh::MakeScale(const glm::vec3& scale)
 		glm::mat4 mat = glm::scale(glm::mat4(1.0f), scale);
 		PrivateTransform(mat);
 	}
-	OnMakeTransform();
+	Change();
 }
 
 void Mesh::MakeTranslate(const glm::vec3& trans)
@@ -112,7 +113,7 @@ void Mesh::MakeTranslate(const glm::vec3& trans)
 		return;
 	for (auto& vertex : _vertices)
 		vertex.Position += trans;
-	OnMakeTransform();
+	Change();
 }
 
 void Mesh::MakeRotate(float angle, const glm::vec3& axis)
@@ -121,7 +122,7 @@ void Mesh::MakeRotate(float angle, const glm::vec3& axis)
 		return;
 	glm::mat4 mat = glm::rotate(glm::mat4(1.0f), glm::radians(angle), axis);
 	PrivateTransform(mat);
-	OnMakeTransform();
+	Change();
 }
 
 void Mesh::MakeTransform(const glm::mat4& mat)
@@ -129,7 +130,7 @@ void Mesh::MakeTransform(const glm::mat4& mat)
 	if (mat == glm::mat4(1.0f))
 		return;
 	PrivateTransform(mat);
-	OnMakeTransform();
+	Change();
 }
 
 const std::vector<Vertex>& Mesh::GetVertices() const
@@ -140,6 +141,26 @@ const std::vector<Vertex>& Mesh::GetVertices() const
 const std::vector<unsigned int>& Mesh::GetIndices() const
 {
 	return _indices;
+}
+
+std::string Mesh::GetUUID()
+{
+	return _uuid;
+}
+
+uint32_t Mesh::GetVerticesIndicesVsrsion()
+{
+	return _viVersion.load();
+}
+
+void Mesh::SetNeedUpdateIndirectDraw(bool value)
+{
+	needUpdateIndirectDraw = value;
+}
+
+bool Mesh::GetNeedUpdateIndirectDraw() const
+{
+	return needUpdateIndirectDraw;
 }
 
 void Mesh::PrivateTransform(const glm::mat4& mat)
@@ -153,3 +174,9 @@ void Mesh::PrivateTransform(const glm::mat4& mat)
 	}
 }
 
+void Mesh::Change()
+{
+	_viVersion++;
+	needUpdateIndirectDraw = true;
+	OnChange();
+}

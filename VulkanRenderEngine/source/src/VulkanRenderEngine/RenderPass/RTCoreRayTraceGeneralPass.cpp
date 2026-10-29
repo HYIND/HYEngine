@@ -112,7 +112,9 @@ bool BlasHandleManager::UpdateBlasData(
 
 			std::vector<IndirectDrawMeta> indirectDrawMetas;
 			indirectDrawMetas.resize(toCreateMeshs.size());
-			indirectManager->WithMeshSharedLock([&]() {
+			indirectManager->WithSharedLock(
+				{ IndirectDrawManager::SharedLockType::Mesh},
+				[&]() {
 				for (size_t i = 0; i < toCreateMeshs.size(); i++)
 				{
 					auto& mesh = toCreateMeshs[i];
@@ -279,8 +281,7 @@ bool RTCoreRayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& re
 }
 
 void RTCoreRayTraceGeneralPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
-{
-}
+{}
 
 void RTCoreRayTraceGeneralPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
@@ -318,12 +319,12 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	auto device = VKCONTEXT->GetDevice();
 
-	auto& opaqueMesh = state.objects.sceneRenderData.opaqueMesh;
+	auto& opaqueItems = state.objects.sceneStaticRenderData.opaqueItems;
 
 	std::vector<vk::AccelerationStructureInstanceKHR> tlasInstances;
 	std::vector<InstanceInfo> tlasInstanceInfos;
-	tlasInstances.reserve(opaqueMesh.size());
-	tlasInstanceInfos.reserve(opaqueMesh.size());
+	tlasInstances.reserve(opaqueItems.size());
+	tlasInstanceInfos.reserve(opaqueItems.size());
 
 	uint32_t infosIndex = 0;
 
@@ -356,7 +357,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		};
 
 	std::vector<VKRenderObjectData::SceneStaticRenderData::MeshItem*> matches;
-	for (auto& item : opaqueMesh)
+	for (auto& item : opaqueItems)
 	{
 		if (getItem(item))
 			matches.push_back(&item);
@@ -372,23 +373,28 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 	indirectDrawMetas.resize(matches.size());
 	materialIndexs.resize(matches.size(), std::numeric_limits<uint32_t>::max());
 
-	indirectManager->WithMeshMaterialSharedLock([&]() {
-		std::for_each(std::execution::par_unseq, matches.begin(), matches.end(),
-			[&](auto& itemptr) {
-				size_t index = &itemptr - matches.data();
+	using SharedLockType = IndirectDrawManager::SharedLockType;
 
-				auto& item = *itemptr;
-				auto& meshInfo = item.meshinfo;
-				auto& mesh = meshInfo.mesh;
-				auto& material = meshInfo.material;
+	indirectManager->WithSharedLock(
+		{ SharedLockType::Mesh, SharedLockType::Material },
+		[&]()
+		{
+			std::for_each(std::execution::par_unseq, matches.begin(), matches.end(),
+				[&](auto& itemptr) {
+					size_t index = &itemptr - matches.data();
 
-				auto& meta = indirectDrawMetas[index];
-				uint32_t& materialIndex = materialIndexs[index];
+					auto& item = *itemptr;
+					auto& meshInfo = item.meshinfo;
+					auto& mesh = meshInfo.mesh;
+					auto& material = meshInfo.material;
 
-				indirectDrawMetas[index].vertexOffset = -1;
-				indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
-				indirectManager->GetMaterialIndex_LockFree(*material, materialIndex);
-			});
+					auto& meta = indirectDrawMetas[index];
+					uint32_t& materialIndex = materialIndexs[index];
+
+					indirectDrawMetas[index].vertexOffset = -1;
+					indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
+					indirectManager->GetMaterialIndex_LockFree(*material, materialIndex);
+				});
 		});
 
 	for (auto& itemptr : matches)

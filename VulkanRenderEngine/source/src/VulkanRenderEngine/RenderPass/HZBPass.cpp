@@ -138,8 +138,8 @@ void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	}
 	else
 	{
-		auto& items = state.objects.sceneRenderData.opaqueMesh;
-		auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
+		auto& items = state.objects.sceneStaticRenderData.opaqueItems;
+		auto& renderIndex = state.objects.sceneStaticRenderData.opaqueItems_cullRenderIndex;
 		auto& oneSideIndex = renderIndex.oneSideIndex;
 		auto& twoSideIndex = renderIndex.twoSideIndex;
 
@@ -157,7 +157,7 @@ void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	Frustum& frustum = state.camera.frustum;
-	auto& opaqueMeshes = state.objects.sceneRenderData.opaqueMesh;
+	auto& opaqueMeshes = state.objects.sceneStaticRenderData.opaqueItems;
 
 	std::vector<bool> frustumCullResult;
 	std::vector<uint32_t> frustumObjectIndex;
@@ -208,28 +208,31 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 	auto indirectManager = IndirectDrawManager::Instance();
 	commands.resize(frustumObjectIndex.size());
 
-	indirectManager->WithMeshSharedLock([&]() {
-		std::for_each(std::execution::par_unseq, frustumObjectIndex.begin(), frustumObjectIndex.end(),
-			[&](uint32_t& meshIndex)-> void
-			{
-				size_t inedx = &meshIndex - frustumObjectIndex.data();
-				IndirectDrawCommand& command = commands[inedx];
-
-				auto& item = opaqueMeshes[meshIndex];
-
-				IndirectDrawMeta meta;
-				if (!indirectManager->GetIndirectDrawMeta_LockFree(*(item.meshinfo.mesh), meta))
+	indirectManager->WithSharedLock(
+		{ IndirectDrawManager::SharedLockType::Mesh },
+		[&]()
+		{
+			std::for_each(std::execution::par_unseq, frustumObjectIndex.begin(), frustumObjectIndex.end(),
+				[&](uint32_t& meshIndex)-> void
 				{
-					command.instanceCount = 0;
-					return;
-				}
+					size_t inedx = &meshIndex - frustumObjectIndex.data();
+					IndirectDrawCommand& command = commands[inedx];
 
-				command.indexCount = meta.indexCount;
-				command.firstIndex = meta.firstIndex;
-				command.vertexOffset = meta.vertexOffset;
-				command.instanceCount = 1;
-				command.firstInstance = inedx;
-			});
+					auto& item = opaqueMeshes[meshIndex];
+
+					IndirectDrawMeta meta;
+					if (!indirectManager->GetIndirectDrawMeta_LockFree(*(item.meshinfo.mesh), meta))
+					{
+						command.instanceCount = 0;
+						return;
+					}
+
+					command.indexCount = meta.indexCount;
+					command.firstIndex = meta.firstIndex;
+					command.vertexOffset = meta.vertexOffset;
+					command.instanceCount = 1;
+					command.firstInstance = inedx;
+				});
 		});
 
 	registry.Store("frustumCullResult", std::move(frustumCullResult));
@@ -404,8 +407,8 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	// 内含隐式Submit
 	result_ssbo->GetBuffer()->Readback(cmd, frustumOcclusionCullResult.data(), frustumOcclusionCullResult.size() * sizeof(int));
 
-	auto& items = state.objects.sceneRenderData.opaqueMesh;
-	auto& renderIndex = state.objects.sceneRenderData.opaqueMesh_cullRenderIndex;
+	auto& items = state.objects.sceneStaticRenderData.opaqueItems;
+	auto& renderIndex = state.objects.sceneStaticRenderData.opaqueItems_cullRenderIndex;
 	auto& oneSideIndex = renderIndex.oneSideIndex;
 	auto& twoSideIndex = renderIndex.twoSideIndex;
 

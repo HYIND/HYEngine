@@ -26,12 +26,11 @@ namespace VKRenderObjectData
 			StaticMeshInfo meshinfo;
 		};
 
-		std::vector<MeshItem> opaqueMesh;
-		std::vector<MeshItem> transparentMesh;
+		std::vector<MeshItem> opaqueItems;
+		std::vector<MeshItem> transparentItems;
 
-		RenderIndex opaqueMesh_renderIndex;
-		RenderIndex opaqueMesh_cullRenderIndex;
-		std::vector<size_t> transparentMesh_SortIndex;
+		RenderIndex opaqueItems_renderIndex;
+		RenderIndex opaqueItems_cullRenderIndex;
 
 		std::vector<std::shared_ptr<BaseEffectProperties>> effectItems;
 	};
@@ -44,7 +43,8 @@ namespace VKRenderObjectData
 			std::shared_ptr<VKRenderContext::BonePalette> palette;
 		};
 
-		std::vector<SkinnedMeshItem> opaqueSkinnedMesh;
-		std::vector<SkinnedMeshItem> transparentSkinnedMesh;
+		std::vector<SkinnedMeshItem> opaqueOneSideItems;
+		std::vector<SkinnedMeshItem> opaqueTwoSideItems;
+		std::vector<SkinnedMeshItem> transparentItems;
 	};
 }
