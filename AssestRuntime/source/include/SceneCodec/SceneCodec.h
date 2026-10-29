@@ -4,7 +4,10 @@
 #include "Script/ScriptSourceData.h"
 
 class StaticModel;
+class SkinnedModel;
 class Material;
+struct Skeleton;
+class AnimationClip;
 
 class SceneCodec
 {
@@ -21,6 +24,9 @@ public:
 		World& world,
 		const std::function<std::shared_ptr<ScriptSourceData>(const AssetGUID&)>& resolveScriptAsset = {},
 		const std::function<std::shared_ptr<StaticModel>(const AssetGUID&)>& resolveModelAsset = {},
+		const std::function<std::shared_ptr<SkinnedModel>(const AssetGUID&)>& resolveSkinnedModelAsset = {},
+		const std::function<std::shared_ptr<Skeleton>(const AssetGUID&)>& resolveSkeletonAsset = {},
+		const std::function<std::shared_ptr<AnimationClip>(const AssetGUID&)>& resolveAnimationClipAsset = {},
 		const std::function<std::shared_ptr<Material>(const AssetGUID&)>& resolveMaterialAsset = {}) const;
 
 	const std::string& GetName() const { return _name; }

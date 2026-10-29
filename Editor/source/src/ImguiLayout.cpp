@@ -1010,12 +1010,12 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 		if (ImGui::Button("创建", ImVec2(120, 0)) && canCreate)
 		{
 			bool created = false;
-			AssetMeta createdMeta;
+			std::vector<AssetMeta> createdMetas;
 			try
 			{
 				if (s_createAssetKind == CreateAssetKind::Material)
 				{
-					created = projectManager->ImportMaterialAsset(targetPath.string(), MaterialProperties{}, {}, &createdMeta, true);
+					created = projectManager->ImportMaterialAsset(targetPath.string(), MaterialProperties{}, {}, &createdMetas, true);
 				}
 				else if (s_createAssetKind == CreateAssetKind::Scene)
 				{
@@ -1025,7 +1025,10 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 					else
 					{
 						scene->SetName(name);
-						created = projectManager->CreateSceneAsset(targetPath.string(), *scene, &createdMeta);
+						AssetMeta sceneMeta;
+						created = projectManager->CreateSceneAsset(targetPath.string(), *scene, &sceneMeta);
+						if (created)
+							createdMetas.push_back(sceneMeta);
 					}
 				}
 				else if (s_createAssetKind == CreateAssetKind::Script)
@@ -1034,7 +1037,7 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 					if (scriptFile)
 					{
 						scriptFile.close();
-						created = projectManager->ImportScriptAsset(targetPath.string(), targetPath.string(), &createdMeta, true);
+						created = projectManager->ImportScriptAsset(targetPath.string(), targetPath.string(), &createdMetas, true);
 						if (!created)
 							fs::remove(targetPath);
 					}
@@ -2986,7 +2989,37 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 				model->AddMesh(mesh, std::make_shared<Material>());
 			model->SetAssetGUID(meta.guid);
 
-			auto entity = editorApp->Scene().CreateModelEntity(model);
+			auto entity = editorApp->Scene().CreateStaticModelEntity(model);
+			if (!entity)
+				return;
+
+			if (auto trans = entity.tryGetComponent<Transform>())
+			{
+				editorApp->GetWorld()->SubmitCommand([&](World& world)
+					{
+						glm::vec3 rayOrigin, rayDirection;
+						GetMouseRay(rayOrigin, rayDirection);
+
+						Entity entity;
+						glm::vec3 hitPos;
+						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+
+					}).get();
+			}
+
+		}
+		break;
+	}
+	case AssetType::SkinnedMesh:
+	{
+		if (auto meshes = assetObject->AsSkinnedMesh(); !meshes.empty())
+		{
+			auto model = std::make_shared<SkinnedModel>();
+			for (auto mesh : meshes)
+				model->AddMesh(mesh, std::make_shared<Material>());
+			model->SetAssetGUID(meta.guid);
+
+			auto entity = editorApp->Scene().CreateSkinnedModelEntity(model);
 			if (!entity)
 				return;
 
@@ -3060,7 +3093,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 	{
 		if (auto model = assetObject->AsStaticModel())
 		{
-			auto entity = editorApp->Scene().CreateModelEntity(model);
+			auto entity = editorApp->Scene().CreateStaticModelEntity(model);
 			if (!entity)
 				return;
 
@@ -3077,6 +3110,30 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 
 					}).get();
 
+			}
+		}
+		break;
+	}
+	case AssetType::SkinnedModel:
+	{
+		if (auto model = assetObject->AsSkinnedModel())
+		{
+			auto entity = editorApp->Scene().CreateSkinnedModelEntity(model);
+			if (!entity)
+				return;
+
+			if (auto trans = entity.tryGetComponent<Transform>())
+			{
+				editorApp->GetWorld()->SubmitCommand([&](World& world)
+					{
+						glm::vec3 rayOrigin, rayDirection;
+						GetMouseRay(rayOrigin, rayDirection);
+
+						Entity entity;
+						glm::vec3 hitPos;
+						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+
+					}).get();
 			}
 		}
 		break;
@@ -3200,8 +3257,9 @@ void ImguiLayout::HandleUIAssetFileDrop(const std::string& filePath, Entity targ
 
 	s_assetImportPopup.SetFilePath(fullPath.string());
 	s_assetImportPopup.SetImportPath(destination.string());
-	s_assetImportPopup.SetImportCallback([target, projectManager](const AssetMeta& importedMeta) {
-		ApplyUIAsset(target, importedMeta, projectManager);
+	s_assetImportPopup.SetImportCallback([target, projectManager](const std::vector<AssetMeta>& importedMetas) {
+		for (const auto& importedMeta : importedMetas)
+			ApplyUIAsset(target, importedMeta, projectManager);
 		});
 	s_assetImportPopup.SetVisiable(true);
 }
@@ -3224,8 +3282,9 @@ void ImguiLayout::HandleScriptFileDrop(const std::string& filePath, Entity targe
 
 	s_assetImportPopup.SetFilePath(fullPath.string());
 	s_assetImportPopup.SetImportPath(destination.string());
-	s_assetImportPopup.SetImportCallback([target, projectManager](const AssetMeta& importedMeta) {
-		ApplyScriptAsset(target, importedMeta, projectManager);
+	s_assetImportPopup.SetImportCallback([target, projectManager](const std::vector<AssetMeta>& importedMetas) {
+		for (const auto& importedMeta : importedMetas)
+			ApplyScriptAsset(target, importedMeta, projectManager);
 		});
 	s_assetImportPopup.SetVisiable(true);
 }

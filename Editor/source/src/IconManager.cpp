@@ -65,7 +65,8 @@ ImTextureID IconManager::GetIconByAssetType(AssetType type) const
 {
 	Need();
 
-	if (type == AssetType::StaticMesh || type == AssetType::StaticModel) {
+	if (type == AssetType::StaticMesh || type == AssetType::StaticModel ||
+		type == AssetType::SkinnedMesh || type == AssetType::SkinnedModel) {
 		return GetIcon("model");
 	}
 	else if (type == AssetType::Texture) {

@@ -177,7 +177,7 @@
     <ClInclude Include="source\include\Render\Components\RenderSkinnedModel.h" />
 
     <ClInclude Include="source\include\Render\Components\SkeletonPose.h" />
-    <ClInclude Include="source\include\Render\Components\SkeletonAnimator.h" />
+    <ClInclude Include="source\include\Render\Components\SkeletonAnimatorGroup.h" />
     <ClInclude Include="source\include\Render\Components\SkyBox.h" />
     <ClInclude Include="source\include\Render\Components\Sprite.h" />
     <ClInclude Include="source\include\Render\Systems\AnimationSystem.h" />

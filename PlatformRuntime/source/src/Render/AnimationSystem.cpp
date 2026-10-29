@@ -4,6 +4,7 @@
 #include "ECSCore/World.h"
 #include "CommonEventDef.h"
 #include "Render/Components/SkeletonPose.h"
+#include "VulkanRenderEngine/Base/Skeleton.h"
 
 void AnimationSystem::onAttach(World& world)
 {
@@ -69,19 +70,58 @@ void AnimationSystem::postUpdate(float deltaTime)
 			isAnyAniPlaying = true;
 		}
 
-		if (!isAnyAniPlaying && aniGroup.ExistAnimator("Static"))
-		{
-			auto ani_data = aniGroup.GetAnimatorData("Static");
-			if (!ani_data || !ani_data->animator)
-				continue;
+		static auto PlayIdle = [](SkeletonAnimatorGroup& aniGroup, float deltaTime, const std::vector<glm::mat4>*& palette) -> bool
+			{
+				if (aniGroup.idleAnimator.empty())
+					return false;
 
-			ani_data->animator->SetTime(0.f);
-			palette = &ani_data->animator->GetFinalBoneMatrices();
+				auto idleData = aniGroup.GetAnimatorData(aniGroup.idleAnimator);
+				if (!idleData || !idleData->animator)
+					return false;
+
+				const float duration = idleData->animator->GetDurationTime();
+				idleData->curPlayTimeMs += deltaTime;
+
+				// Idle 永远循环，不计 maxLoopCount；时间自己绕回。
+				const int64_t loopMs = static_cast<int64_t>(duration * 1000.f);
+				if (loopMs > 0)
+					idleData->curPlayTimeMs %= loopMs;
+
+				idleData->animator->SetTime(static_cast<float>(idleData->curPlayTimeMs) / 1000.f);
+				palette = &idleData->animator->GetFinalBoneMatrices();
+				return true;
+			};
+
+		static auto PlayDefault = [](SkeletonAnimatorGroup& aniGroup, float deltaTime, const std::vector<glm::mat4>*& palette) -> bool
+			{
+				if (aniGroup.defaultAnimator.empty())
+					return false;
+
+				auto ani_data = aniGroup.GetAnimatorData(aniGroup.defaultAnimator);
+				if (!ani_data || !ani_data->animator)
+					return false;
+
+				ani_data->curPlayTimeMs = 0;
+				ani_data->animator->SetTime(0.f);
+				palette = &ani_data->animator->GetFinalBoneMatrices();
+				return true;
+			};
+
+		// 没人在播：有 Idle 就循环播 Idle；没有 Idle 就停在 Default 的起点。
+		if (!isAnyAniPlaying)
+		{
+			if (!PlayIdle(aniGroup, deltaTime, palette))
+			{
+				// 没有 Idle：停在 Default 的第 0 帧，不推时间。
+				PlayDefault(aniGroup, deltaTime, palette);
+			}
 		}
 
 		auto& pose = entity.hasComponent<SkeletonPose>() ? entity.getComponent<SkeletonPose>() : entity.addComponent<SkeletonPose>();
 		if (palette)
 			pose.palette.matrices = *palette;
+		else if (aniGroup.skeleton && !aniGroup.skeleton->nodes.empty())
+			pose.palette.matrices.assign(aniGroup.skeleton->nodes.size(), glm::mat4(1.0f));
 		else
 			pose.palette.matrices.clear();
 

@@ -21,7 +21,6 @@ public:
 	bool SaveAsset(const AssetGUID& guid, std::shared_ptr<AssetObject> newAsset = nullptr);
 
 	std::vector<std::shared_ptr<ScriptSourceData>> CheckScriptChanges();
-	// UI 文档/样式文件变更后重新解析，返回需要通知宿主的文档。
 	std::vector<std::shared_ptr<UI::ParseResult>> CheckUIDocumentChanges();
 
 	void ClearLoadedAsset();

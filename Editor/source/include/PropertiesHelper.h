@@ -62,6 +62,10 @@ private:
 	static bool DrawField(const std::string& name, FieldType* value, PropertyWidget widget);
 
 	static void SetNextPropertyFieldWidth(float maxWidth, float fraction = 0.5f);
+
+	// 静态/蒙皮模型组件的属性面板几乎一样，只有模型资产的类型名不同。
+	template<typename ModelComponent>
+	static bool DrawModelComponent(ModelComponent& comp, ProjectManager* assetManager, const char* modelLabel);
 };
 
 template<typename T>

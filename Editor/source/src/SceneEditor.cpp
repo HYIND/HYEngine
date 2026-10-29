@@ -704,7 +704,7 @@ void SceneEditor::SetInputActive(bool enable)
         inputContext->SetActive(enable);
 }
 
-Entity SceneEditor::CreateModelEntity(std::shared_ptr<StaticModel> model)
+Entity SceneEditor::CreateStaticModelEntity(std::shared_ptr<StaticModel> model)
 {
     if (!model)
         return Entity();
@@ -720,7 +720,30 @@ Entity SceneEditor::CreateModelEntity(std::shared_ptr<StaticModel> model)
         rendermodel.model = model;
 
         AddPickProxy(entity);
-        SetNameTag(entity, std::format("model_entity_{}", entity.getId()));
+        SetNameTag(entity, std::format("static_model_entity_{}", entity.getId()));
+        }).get();
+
+    return entity;
+}
+
+Entity SceneEditor::CreateSkinnedModelEntity(std::shared_ptr<SkinnedModel> model)
+{
+    if (!model)
+        return Entity();
+
+    Entity entity;
+    _world->SubmitCommand([&] {
+        entity = _world->createEntity();
+        auto& trans = entity.addComponent<Transform>();
+        trans.position = glm::vec3(0, 0, 0);
+        trans.rotation = glm::identity<glm::quat>();
+
+        auto& rendermodel = entity.addComponent<RenderSkinnedModel>();
+        rendermodel.model = model;
+
+        entity.addComponent<SkeletonPose>();
+        AddPickProxy(entity);
+        SetNameTag(entity, std::format("skinned_model_entity_{}", entity.getId()));
         }).get();
 
     return entity;

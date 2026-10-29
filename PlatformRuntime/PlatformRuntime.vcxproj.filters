@@ -150,7 +150,7 @@
     <ClInclude Include="source\include\Render\Components\RenderStaticModel.h">
       <Filter>头文件\Render\Components</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Render\Components\SkeletonAnimator.h">
+    <ClInclude Include="source\include\Render\Components\SkeletonAnimatorGroup.h">
       <Filter>头文件\Render\Components</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Render\Components\SkyBox.h">

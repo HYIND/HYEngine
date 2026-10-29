@@ -295,7 +295,7 @@ void MaterialAssetDescription::SetTexture(TextureType type, const AssetGUID& gui
 
 void MaterialAssetDescription::SetTexture(const std::map<TextureType, AssetGUID>& map) { _dependencyTexture = map; }
 
-bool ModelAssetDescription::LoadFromFile(const std::string& filePath)
+bool StaticModelAssetDescription::LoadFromFile(const std::string& filePath)
 {
 	Json content;
 	if (!LoadJsonFile(filePath, content))
@@ -305,7 +305,7 @@ bool ModelAssetDescription::LoadFromFile(const std::string& filePath)
 	return true;
 }
 
-bool ModelAssetDescription::SaveToFile(const std::string& filePath)
+bool StaticModelAssetDescription::SaveToFile(const std::string& filePath)
 {
 	Json content;
 	content["meshes"] = _dependencyStaticMesh;
@@ -313,15 +313,15 @@ bool ModelAssetDescription::SaveToFile(const std::string& filePath)
 	return SaveJsonFile(filePath, content);
 }
 
-std::vector<AssetGUID> ModelAssetDescription::GetStaticMesh() const { return _dependencyStaticMesh; }
+std::vector<AssetGUID> StaticModelAssetDescription::GetStaticMesh() const { return _dependencyStaticMesh; }
 
-std::unordered_map<uint32_t, AssetGUID> ModelAssetDescription::GetMaterial() const { return _dependencyMaterial; }
+std::unordered_map<uint32_t, AssetGUID> StaticModelAssetDescription::GetMaterial() const { return _dependencyMaterial; }
 
-void ModelAssetDescription::AddStaticMesh(const AssetGUID& guid) { _dependencyStaticMesh.push_back(guid); }
+void StaticModelAssetDescription::AddStaticMesh(const AssetGUID& guid) { _dependencyStaticMesh.push_back(guid); }
 
-void ModelAssetDescription::SetMaterial(uint32_t index, const AssetGUID& guid) { _dependencyMaterial[index] = guid; }
+void StaticModelAssetDescription::SetMaterial(uint32_t index, const AssetGUID& guid) { _dependencyMaterial[index] = guid; }
 
-void ModelAssetDescription::SetMaterial(const std::unordered_map<uint32_t, AssetGUID>& materials) { _dependencyMaterial = materials; }
+void StaticModelAssetDescription::SetMaterial(const std::unordered_map<uint32_t, AssetGUID>& materials) { _dependencyMaterial = materials; }
 
 bool SceneAssetDescription::LoadFromFile(const std::string& filePath)
 {
@@ -362,3 +362,140 @@ void ScriptAssetDescription::SetSource(const std::string& s)
 {
 	_source = s;
 }
+
+bool SkinnedMeshAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+
+	if (content.contains("SkinnedMeshs"))
+	{
+		for (const auto& a : content["SkinnedMeshs"])
+		{
+			auto path = a.value("path", "");
+			if (path.empty()) continue;
+			_paths.push_back(std::move(path));
+		}
+	}
+
+	return true;
+}
+
+bool SkinnedMeshAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json content;
+	for (const auto& path : _paths)
+	{
+		Json a;
+		a["path"] = path;
+		content["SkinnedMeshs"].push_back(a);
+	}
+
+	return SaveJsonFile(filePath, content);
+}
+
+std::vector<AssetPath>& SkinnedMeshAssetDescription::GetPath() { return _paths; }
+
+void SkinnedMeshAssetDescription::SetPath(const std::vector<AssetPath>& paths)
+{
+	_paths = paths;
+}
+
+bool SkinnedModelAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+	_dependencyStaticMesh = content["meshes"].get<std::vector<AssetGUID>>();
+	_dependencyMaterial = content["materials"].get<std::unordered_map<uint32_t, AssetGUID>>();
+	return true;
+}
+
+bool SkinnedModelAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json content;
+	content["meshes"] = _dependencyStaticMesh;
+	content["materials"] = _dependencyMaterial;
+	return SaveJsonFile(filePath, content);
+}
+
+std::vector<AssetGUID> SkinnedModelAssetDescription::GetStaticMesh() const { return _dependencyStaticMesh; }
+
+std::unordered_map<uint32_t, AssetGUID> SkinnedModelAssetDescription::GetMaterial() const { return _dependencyMaterial; }
+
+void SkinnedModelAssetDescription::AddStaticMesh(const AssetGUID& guid) { _dependencyStaticMesh.push_back(guid); }
+
+void SkinnedModelAssetDescription::SetMaterial(uint32_t index, const AssetGUID& guid) { _dependencyMaterial[index] = guid; }
+
+void SkinnedModelAssetDescription::SetMaterial(const std::unordered_map<uint32_t, AssetGUID>& materials) { _dependencyMaterial = materials; }
+
+bool SkeletonAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+
+	if (content.contains("SkeletonSetting"))
+	{
+		auto& a = content["SkeletonSetting"];
+		_path = a.value("path", "");
+	}
+
+	return true;
+}
+
+bool SkeletonAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json content;
+
+	{
+		Json a;
+		a["path"] = _path;
+		content["SkeletonSetting"] = a;
+	}
+
+	return SaveJsonFile(filePath, content);
+}
+
+AssetPath SkeletonAssetDescription::GetPath() const { return _path; }
+
+void SkeletonAssetDescription::SetPath(const AssetPath& assetPath) { _path = assetPath; }
+
+bool AnimationClipAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+
+	if (content.contains("AnimationClipSetting"))
+	{
+		auto& a = content["AnimationClipSetting"];
+		_path = a.value("path", "");
+		_index = a.value("index", -1);
+	}
+
+	return true;
+}
+
+bool AnimationClipAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json content;
+
+	{
+		Json a;
+		a["path"] = _path;
+		a["index"] = _index;
+		content["AnimationClipSetting"] = a;
+	}
+
+	return SaveJsonFile(filePath, content);
+}
+
+AssetPath AnimationClipAssetDescription::GetPath() const { return _path; }
+
+int AnimationClipAssetDescription::GetIndex() const { return _index; }
+
+void AnimationClipAssetDescription::SetPath(const AssetPath& assetPath) { _path = assetPath; }
+
+void AnimationClipAssetDescription::SetIndex(int index) { _index = index; }
