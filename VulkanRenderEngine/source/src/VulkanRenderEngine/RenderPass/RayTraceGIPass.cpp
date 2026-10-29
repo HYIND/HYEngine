@@ -343,6 +343,7 @@ bool RayTraceGIPass::BindGeneralData(ComputeBindingRecord& binding)
 		if (!ssbo)
 			return false;
 		binding.SetStorageBlock(ssbo, bp);
+		return true;
 		};
 
 	return bindSSBO(BindingPoint{ .binding = 0,.set = 0 }, _buffers->GetTraiangles())

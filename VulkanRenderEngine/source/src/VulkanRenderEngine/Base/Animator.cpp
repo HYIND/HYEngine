@@ -27,7 +27,6 @@ void Animator::SetTime(float second)
 
 	if (!m_CurrentAnimation)
 	{
-		// 没有 clip 也要出绑定姿态，否则蒙皮矩阵是空的。
 		Rebuild();
 		return;
 	}
@@ -83,7 +82,6 @@ void Animator::Rebuild()
 	{
 		const SkeletonNode& node = nodes[i];
 
-		// 动画给的是父骨骼空间里的 local，没曲线的节点就用绑定姿态顶替。
 		const glm::mat4 local = m_CurrentAnimation
 			? m_CurrentAnimation->SampleLocal(static_cast<SkeletonNodeIndex>(i), m_CurrentTime, node.bindLocalTransform)
 			: node.bindLocalTransform;
@@ -93,8 +91,6 @@ void Animator::Rebuild()
 			: m_GlobalTransforms[node.parentIndex] * local;
 
 		m_GlobalTransforms[i] = global;
-
-		// 乘上逆绑定：抵掉骨骼在绑定姿态里的位置，剩下的才是这次动画多出来的变换。
 		m_FinalBoneMatrices[i] = global * node.inverseBindTransform;
 	}
 }

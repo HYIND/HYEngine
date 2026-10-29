@@ -470,6 +470,8 @@ void EngineRuntime::StepEditorFrame(float deltaMilliseconds)
 
 	if (auto* cameraSystem = m_world->getSystem<CameraFollowSystem>())
 		cameraSystem->postUpdate(deltaMilliseconds);
+	if (auto* animationSystem = m_world->getSystem<AnimationSystem>())
+		animationSystem->postUpdate(0.f);
 	if (auto* renderSystem = m_world->getSystem<RenderSystem>())
 		renderSystem->postUpdate(deltaMilliseconds);
 }
