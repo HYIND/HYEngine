@@ -16,6 +16,7 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 	sol::table render = lua["Render"].get_or_create<sol::table>();
 
 	static auto DefaultCube = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "");
+	static auto DefaultSphere = RenderHelper::GetSphereModel(0.5f, 72, 36);
 
 	auto setVisiable = [this](const Entity& entity, const std::string& field, bool value) ->bool {
 		return SetVisiable(entity, field, value);
@@ -27,14 +28,16 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 		if (!IsValid(_world, entity))
 			return false;
 
-		if (modelName != "DefaultCube")
+		if (modelName != "DefaultCube" || modelName != "DefaultSphere")
 			return false;
 
 		auto& comp = entity.hasComponent<RenderStaticModel>() ? entity.getComponent<RenderStaticModel>() : entity.addComponent<RenderStaticModel>();
 
 		if (modelName == "DefaultCube")
 			comp.model = DefaultCube->Clone(false, true);
-
+		if (modelName == "DefaultSphere")
+			comp.model = DefaultSphere->Clone(false, true);
+		return true;
 		};
 
 
@@ -98,6 +101,7 @@ bool RenderableBaseModule::SetColor(const Entity& entity, const glm::vec3& color
 		if (info.material)
 			info.material->SetAlbedo(color);
 	}
+	return true;
 }
 
 RenderSystem::RenderSystem()
