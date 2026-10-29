@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/SkinnedModel.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
@@ -377,6 +378,11 @@ SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, co
 	uint32_t overflowVertices = 0;
 	uint32_t unweightedVertices = 0;
 
+	// 每个顶点可能被任意多根骨骼影响：先按「顶点」收集，再按权重从大到小取前
+	// Mesh_Max_Bone_Influence 个。不能按骨骼遍历顺序先到先得——那样会保留权重很小的
+	// 影响、把真正主导的那根挤掉，顶点就会跟错骨头。
+	std::vector<std::vector<std::pair<BoneID, float>>> influences(vertices.size());
+
 	if (mesh->mNumBones > 0)
 	{
 		for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
@@ -410,39 +416,48 @@ SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, co
 			for (unsigned int i = 0; i < bone->mNumWeights; ++i)
 			{
 				const aiVertexWeight& weight = bone->mWeights[i];
-				if (weight.mVertexId >= vertices.size())
+				if (weight.mVertexId >= vertices.size() || weight.mWeight <= 0.0f)
 					continue;
-
-				if (!skinned[weight.mVertexId].SetVertexBoneData(static_cast<BoneID>(nodeIndex), weight.mWeight))
-					++overflowVertices;
+				influences[weight.mVertexId].emplace_back(static_cast<BoneID>(nodeIndex), weight.mWeight);
 			}
 		}
 	}
 
-	// 归一化：缺失的影响会让和小于 1，不归一化模型会被拉向原点
-	for (auto& data : skinned)
+	for (size_t vertexIndex = 0; vertexIndex < influences.size(); ++vertexIndex)
 	{
-		float sum = 0.0f;
-		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
+		auto& list = influences[vertexIndex];
+		if (list.empty())
 		{
-			if (data.m_BoneIDs[i] == SkinnedData::InvalidBoneID)
-				continue;
-			sum += data.m_Weights[i];
+			++unweightedVertices;
+			continue;
 		}
 
+		const bool truncated = list.size() > GlobalConfig::Mesh_Max_Bone_Influence;
+		if (truncated)
+			++overflowVertices;
+
+		std::sort(list.begin(), list.end(),
+			[](const auto& a, const auto& b) { return a.second > b.second; });
+		if (truncated)
+			list.resize(GlobalConfig::Mesh_Max_Bone_Influence);
+
+		float sum = 0.0f;
+		for (const auto& influence : list)
+			sum += influence.second;
 		if (sum <= 0.0f)
 		{
 			++unweightedVertices;
 			continue;
 		}
 
-		for (uint32_t i = 0; i < GlobalConfig::Mesh_Max_Bone_Influence; ++i)
+		SkinnedData& data = skinned[vertexIndex];
+		for (size_t i = 0; i < list.size(); ++i)
 		{
-			if (data.m_BoneIDs[i] == SkinnedData::InvalidBoneID)
-				continue;
-			data.m_Weights[i] /= sum;
+			data.m_BoneIDs[i] = list[i].first;
+			data.m_Weights[i] = list[i].second / sum;
 		}
 	}
+
 
 	if (mesh->mNumBones > 0 && (unresolvedBones > 0 || overflowVertices > 0 || byNameFallback > 0 || unweightedVertices > 0))
 	{

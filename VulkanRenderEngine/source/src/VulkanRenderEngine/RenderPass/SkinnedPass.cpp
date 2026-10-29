@@ -2,11 +2,24 @@
 #include "VulkanRenderEngine/RenderPass/SkinnedPass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 #include "SpinLock.h"
+#include <iostream>
+
+#include "VulkanRenderEngine/Base/Mesh.h"
+#include "VulkanRenderEngine/Base/SkinnedMesh.h"
+
+static_assert(sizeof(Vertex) == 80);
+static_assert(offsetof(Vertex, Position) == 0);
+static_assert(offsetof(Vertex, Normal) == 16);
+static_assert(offsetof(Vertex, TexCoords) == 32);
+static_assert(offsetof(Vertex, Tangent) == 48);
+static_assert(offsetof(Vertex, Bitangent) == 64);
+static_assert(sizeof(SkinnedData) == 64);
 
 using namespace VKRenderObjectData;
 
 SkinnedPass::SkinnedPass(const std::string& skinnedComputeShaderPass)
 {
+	static_assert(sizeof(SkinningDispatch) == 24);
 	ComputePipelineConfig config;
 	config.computePath = skinnedComputeShaderPass;
 	config.AddDefineMacro("MAX_BONE_INFLUENCE", GlobalConfig::Mesh_Max_Bone_Influence);
