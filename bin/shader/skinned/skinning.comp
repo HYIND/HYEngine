@@ -66,7 +66,10 @@ void main()
 	{
 		uint boneID = skin.boneIDs[influence / 4][influence % 4];
 		float weight = skin.weights[influence / 4][influence % 4];
-		if (weight <= 0.0 || boneID == 0xffffffffu)
+
+		if (boneID == 0xffffffffu)
+			break;
+		if (weight <= 0.0)
 			continue;
 
 		if (boneID < params.paletteCount)
@@ -92,13 +95,13 @@ void main()
 	Vertex result = source;
 	if (totalWeight > 1e-8)
 	{
-		result.position = vec4(position / totalWeight, 1.0);
+		result.position.xyz = position.xyz / totalWeight;
 		if (dot(normal, normal) > 1e-12)
-			result.normal = vec4(normalize(normal), source.normal.w);
+			result.normal.xyz = normalize(normal);
 		if (dot(tangent, tangent) > 1e-12)
-			result.tangent = vec4(normalize(tangent), source.tangent.w);
+			result.tangent.xyz = normalize(tangent);
 		if (dot(bitangent, bitangent) > 1e-12)
-			result.bitangent = vec4(normalize(bitangent), source.bitangent.w);
+			result.bitangent.xyz = normalize(bitangent);
 	}
 
 	outputVertices.vertices[params.outputVertexOffset + vertexIndex] = result;
