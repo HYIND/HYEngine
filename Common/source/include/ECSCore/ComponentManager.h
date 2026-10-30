@@ -99,7 +99,8 @@ public:
     {
         ComponentTypeID typeId = ComponentType<T>::getId();
         auto array = TryGetComponentArray<T>(typeId);
-        assert(array && "ComponentArray do not exist!");
+        if (!array)
+            throw std::runtime_error(std::string("ECS ComponentArray do not exist: ") + GetEcsTypeName<T>());
         array->removeComponent(entity);
     }
 
@@ -108,7 +109,8 @@ public:
     {
         ComponentTypeID typeId = ComponentType<T>::getId();
         auto array = TryGetComponentArray<T>(typeId);
-        assert(array && "ComponentArray do not exist!");
+        if (!array)
+            throw std::runtime_error(std::string("ECS ComponentArray do not exist: ") + GetEcsTypeName<T>());
         return array->getComponent(entityId);
     }
 
@@ -132,7 +134,7 @@ public:
 
     void entityDestroyed(const Entity& entity)
     {
-        SharedLockGuard guard_componentArrays(componentArraysMutex);
+        LockGuard guard_componentArrays(componentArraysMutex);
         for (auto& pair : componentArrays)
         {
             auto array = std::static_pointer_cast<IComponentArray>(pair.second);
@@ -180,8 +182,8 @@ public:
 
     void DuplicateAllComponent(Entity& newEntity, const Entity& srcEntity, std::vector<ComponentSlotID>& outComponentIds)
     {
-        SharedLockGuard guard_componentArrays(componentArraysMutex);
         SharedLockGuard guard_componentSlots(componentSlotsMutex);
+        SharedLockGuard guard_componentArrays(componentArraysMutex);
         for (auto& pair : componentArrays)
         {
             auto array = std::static_pointer_cast<IComponentArray>(pair.second);

@@ -155,6 +155,9 @@ private:
 	template<typename... Ts>
 	ComponentMask getComponentMask() const;
 
+	template<typename... Ts>
+	bool tryGetComponentMask(ComponentMask& out) const;
+
 private:
 	EntityManager* m_entityManager;
 	ComponentManager* m_componentManager;

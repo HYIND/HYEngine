@@ -1,4 +1,4 @@
-﻿#include "ECSCore/EntityManager.h"
+#include "ECSCore/EntityManager.h"
 
 EntityManager::EntityManager() {
 	// 预分配所有实体ID
@@ -70,6 +70,8 @@ void EntityManager::removeComponent(EntityID id, ComponentSlotID componentSlot)
 
 ComponentMask EntityManager::getEntityComponentMask(EntityID id)
 {
+	if (id >= MAX_ENTITIES)
+		throw std::runtime_error("EntityManager::getEntityComponentMask: entity id out of range");
 	return componentMasks[id];
 }
 

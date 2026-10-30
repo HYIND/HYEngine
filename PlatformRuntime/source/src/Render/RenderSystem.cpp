@@ -31,7 +31,7 @@ void RenderableBaseModule::Register(sol::state_view lua, sol::usertype<Entity>& 
 		if (!IsValid(_world, entity))
 			return false;
 
-		if (modelName != "DefaultCube" || modelName != "DefaultSphere")
+		if (modelName != "DefaultCube" && modelName != "DefaultSphere")
 			return false;
 
 		auto& comp = entity.hasComponent<RenderStaticModel>() ? entity.getComponent<RenderStaticModel>() : entity.addComponent<RenderStaticModel>();
@@ -148,14 +148,14 @@ void RenderSystem::postUpdate(float deltaTime)
 		auto entities = m_world->getEntitiesWith<TagMainCamera, Transform, CameraComponent>();
 		if (!entities.empty())
 		{
-			Entity maincamera = entities[0];
+			Entity& maincamera = entities[0];
 
-			tasks.push_back(_threadPool.submit([&] {ProcessModel(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {ProcessLight(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {ProcessParticle(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {ProcessLaserBeam(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {ProcessSkybox(framebuffer3D, maincamera); }));
-			tasks.push_back(_threadPool.submit([&] {SyncGLCamera(framebuffer3D, maincamera); }));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessModel(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLight(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessParticle(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLaserBeam(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessSkybox(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {SyncGLCamera(framebuffer3D, maincamera); })));
 		}
 	}
 
@@ -218,6 +218,7 @@ void RenderSystem::ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuf
 
 void RenderSystem::pushDebugLine(const Line2& line)
 {
+	LockGuard guard(_D2D_SpinLock);
 	_DebugLines.push_back(line);
 }
 
@@ -303,9 +304,14 @@ void RenderSystem::ProcessGIFAnimation(std::shared_ptr<Render::Render2DFrameData
 
 void RenderSystem::ProcessDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
+	std::vector<Line2> lines;
+	{
+		lines.swap(_DebugLines);
+	}
+
 	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
-	temp.reserve(_DebugLines.size());
-	for (auto& line : _DebugLines)
+	temp.reserve(lines.size());
+	for (auto& line : lines)
 	{
 		auto renderdata = std::make_shared <D2DRenderContext::DebugLineRenderData>();
 		renderdata->line_pos1 = line.pos1;
@@ -317,7 +323,6 @@ void RenderSystem::ProcessDebugLines(std::shared_ptr<Render::Render2DFrameData> 
 
 		temp.emplace_back(std::move(context));
 	}
-	_DebugLines.clear();
 	LockGuard guard(_D2D_SpinLock);
 	framebuffer->D2D_Contexts.append_range(temp);
 }
@@ -594,6 +599,7 @@ void RenderSystem::ProcessSkybox(std::shared_ptr<Render::Render3DFrameData> fram
 		if (!skybox.visible || !skybox.cube)
 			continue;
 
+		LockGuard guard(_Scene3D_SpinLock);
 		framebuffer->skybox = skybox.cube;
 		return;
 	}

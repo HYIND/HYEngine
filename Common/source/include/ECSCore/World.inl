@@ -96,7 +96,9 @@ bool World::hasComponent(const Entity& entity) const {
 	if (!IsValidWorldEntity(entity))
 		return false;
 
-	ComponentSlotID slot = m_componentManager->getComponentSlot<T>();
+	ComponentSlotID slot = 0;
+	if (!m_componentManager->tryGetComponentSlot(ComponentType<T>::getId(), slot))
+		return false;
 	return m_entityManager->getEntityComponentMask(entity.getId()).test(slot);
 }
 
@@ -105,21 +107,27 @@ bool World::hasComponents(const Entity& entity) const {
 	if (!IsValidWorldEntity(entity))
 		return false;
 
-	ComponentMask required = getComponentMask<Ts...>();
+	ComponentMask required;
+	if (!tryGetComponentMask<Ts...>(required))
+		return false;
 	ComponentMask actual = m_entityManager->getEntityComponentMask(entity.getId());
 	return (actual & required) == required;
 }
 
 template<typename... Ts>
 bool World::hasComponents(const EntityID& entityId) const {
-	ComponentMask required = getComponentMask<Ts...>();
+	ComponentMask required;
+	if (!tryGetComponentMask<Ts...>(required))
+		return false;
 	ComponentMask actual = m_entityManager->getEntityComponentMask(entityId);
 	return (actual & required) == required;
 }
 
 template<typename... Ts>
 bool World::hasAnyComponent(const EntityID& entityId) const {
-	ComponentMask required = getComponentMask<Ts...>();
+	ComponentMask required;
+	if (!tryGetComponentMask<Ts...>(required))
+		return false;
 	ComponentMask actual = m_entityManager->getEntityComponentMask(entityId);
 	return (actual & required) != 0;  // 位与不为0表示至少有一个
 }
@@ -128,12 +136,18 @@ bool World::hasAnyComponent(const EntityID& entityId) const {
 template<typename... Ts>
 std::vector<Entity> World::getEntitiesWith() {
 	std::vector<Entity> result;
-	std::vector<EntityID> allEntities;
 
+	ComponentMask required;
+	if (!tryGetComponentMask<Ts...>(required))
+		return result;
+
+	std::vector<EntityID> allEntities;
 	m_entityManager->getAllActiveEntities(allEntities);
+	result.reserve(allEntities.size());
 
 	for (EntityID entityId : allEntities) {
-		if (hasComponents<Ts...>(entityId)) {
+		ComponentMask actual = m_entityManager->getEntityComponentMask(entityId);
+		if ((actual & required) == required) {
 			result.push_back(Entity(this, entityId));
 		}
 	}
@@ -144,12 +158,18 @@ std::vector<Entity> World::getEntitiesWith() {
 template<typename... Ts>
 std::vector<Entity> World::getEntitiesWithAny() {
 	std::vector<Entity> result;
-	std::vector<EntityID> allEntities;
 
+	ComponentMask required;
+	if (!tryGetComponentMask<Ts...>(required))
+		return result;
+
+	std::vector<EntityID> allEntities;
 	m_entityManager->getAllActiveEntities(allEntities);
+	result.reserve(allEntities.size());
 
 	for (EntityID entityId : allEntities) {
-		if (hasAnyComponent<Ts...>(entityId)) {
+		ComponentMask actual = m_entityManager->getEntityComponentMask(entityId);
+		if ((actual & required) != 0) {
 			result.push_back(Entity(this, entityId));
 		}
 	}
@@ -208,6 +228,23 @@ ComponentMask World::getComponentMask() const {
 	ComponentMask mask;
 	((mask.set(m_componentManager->getComponentSlot<Ts>())), ...);
 	return mask;
+}
+
+// 只读版本：绝不注册组件。有一个类型没注册过就返回 false（没有实体能匹配）。
+template<typename ...Ts>
+bool World::tryGetComponentMask(ComponentMask& out) const {
+	bool allRegistered = true;
+	ComponentMask mask;
+	(
+		[&]() {
+			ComponentSlotID slot = 0;
+			if (m_componentManager->tryGetComponentSlot(ComponentType<Ts>::getId(), slot))
+				mask.set(slot);
+			else
+				allRegistered = false;
+		}(), ...);
+	out = mask;
+	return allRegistered;
 }
 
 #endif
