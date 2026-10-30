@@ -14,6 +14,8 @@ static_assert(offsetof(Vertex, TexCoords) == 32);
 static_assert(offsetof(Vertex, Tangent) == 48);
 static_assert(offsetof(Vertex, Bitangent) == 64);
 static_assert(sizeof(SkinnedData) == 64);
+// shader 里 BoneMatrices 是两个 mat4，std430 下结构体 128 字节、数组步长也是 128。
+static_assert(sizeof(VKRenderContext::BoneMatrices) == 128);
 
 using namespace VKRenderObjectData;
 
@@ -75,7 +77,7 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 		DataType{skinnedRenderData.transparentItems,transparentMesh_Command }
 	};
 
-	std::vector<glm::mat4> paletteMatrices;
+	std::vector<VKRenderContext::BoneMatrices> paletteMatrices;
 	std::vector<SkinningDispatch> dispatches;
 	std::vector<TransAndMaterialIndex> skinnedMesh_TransformAndMaterialIndices;
 	uint32_t outputVertexOffset = 0;
@@ -95,7 +97,7 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 	skinnedMesh_PaletteBuffer = std::make_shared<StorageBlock>();
 	if (!paletteMatrices.empty())
 	{
-		skinnedMesh_PaletteBuffer->WriteDataAsync(cmd, paletteMatrices.data(), paletteMatrices.size() * sizeof(glm::mat4));
+		skinnedMesh_PaletteBuffer->WriteDataAsync(cmd, paletteMatrices.data(), paletteMatrices.size() * sizeof(VKRenderContext::BoneMatrices));
 		skinnedMesh_PaletteBuffer->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 	}
 
@@ -154,7 +156,7 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 
 std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 	const std::vector<VKRenderObjectData::SceneSkinnedRenderData::SkinnedMeshItem>& items,
-	std::vector<glm::mat4>& paletteMatrices,
+	std::vector<VKRenderContext::BoneMatrices>& paletteMatrices,
 	std::vector<SkinningDispatch>& dispatches,
 	std::vector<TransAndMaterialIndex>& skinnedMesh_TransformAndMaterialIndices,
 	uint32_t commandStartOffset,

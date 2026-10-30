@@ -299,7 +299,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 
 		std::string openProjectError;
-		if (!GameEngine::Instance().Runtime().OpenProject("D:/Desktop/code/HYEngine/bin/temp/project2/333333.project", &openProjectError))
+		//if (!GameEngine::Instance().Runtime().OpenProject("D:/Desktop/code/HYEngine/bin/temp/project2/333333.project", &openProjectError))
+		if (!GameEngine::Instance().Runtime().OpenProject("D:/Desktop/code/HYEngine/bin/temp/project3/testAK.project", &openProjectError))
 		{
 			MessageBoxA(hWnd, openProjectError.c_str(), "项目初始化失败", MB_OK);
 			DestroyWindow(hWnd);
@@ -313,6 +314,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			DestroyWindow(hWnd);
 			break;
 		}
+		GameEngine::Instance().SetTargetFps(0);
 
 		SyncInputViewport(hWnd);
 

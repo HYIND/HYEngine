@@ -389,10 +389,7 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 			auto& pose = entity.getComponent<SkeletonPose>();
 			if (!pose.globalTransforms.empty())
 			{
-				// palette 是 per-mesh 的：globalTransforms 来自骨架（各网格共用），
-				// 逆绑定矩阵来自各网格自己的 aiBone::mOffsetMatrix。
-				// 任务粒度 = 一个网格 + 一份 globalTransforms，结果写进它自己的 palette；
-				// 真正的矩阵乘留到遍历结束后的并行段。
+				// palette 是 per-mesh
 				const std::vector<glm::mat4>* globalTransforms = &pose.globalTransforms;
 				auto& meshInfos = renderdata->model->GetMeshInfos();
 				renderdata->palettes.resize(meshInfos.size());
@@ -419,9 +416,13 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 							{
 								// 网格没有导出骨骼时（inverseBindMatrices 为空）没有顶点会引用骨骼，
 								// 这里给单位阵让顶点保持网格局部空间。
-								palette->matrices[boneIndex] = bones.empty()
+								const glm::mat4 boneMatrix = bones.empty()
 									? glm::mat4(1.0f)
 									: (*globalTransforms)[boneIndex] * bones[boneIndex];
+
+								VKRenderContext::BoneMatrices& bone = palette->matrices[boneIndex];
+								bone.matrices = boneMatrix;
+								bone.normalMatrices = glm::mat4(glm::transpose(glm::inverse(glm::mat3(boneMatrix))));
 							}
 						});
 				}

@@ -44,9 +44,15 @@ namespace VKRenderContext
 		std::shared_ptr<StaticModel> model;
 	};
 
+	struct BoneMatrices
+	{
+		glm::mat4 matrices;
+		glm::mat4 normalMatrices;
+	};
+
 	struct BonePalette
 	{
-		std::vector<glm::mat4> matrices;
+		std::vector<BoneMatrices> matrices;
 	};
 
 	struct SkinnedModelRenderData :public ModelRenderData
