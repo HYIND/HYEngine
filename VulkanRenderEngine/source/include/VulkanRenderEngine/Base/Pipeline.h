@@ -121,9 +121,11 @@ class BindingRecord;
 
 class Pipeline
 {
+public:
+	struct DescriptorSetGroup;
+
 private:
 	struct DescriptorSetLayoutData;
-	struct DescriptorSetGroup;
 
 	class DescriptorSetGroupPool
 	{
@@ -356,9 +358,9 @@ public:
 	void SetBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
 	void SetShadowBindlessMaterialTexture(const std::shared_ptr<StorageBlock>& materials, const std::shared_ptr<ITextureArrayProvider>& textures);
 	void SetLightStorageData(
-		const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta, 
-		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade, 
-		const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta, 
+		const std::shared_ptr<StorageBlock>& _ssbo_dirLightMeta,
+		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascade,
+		const std::shared_ptr<StorageBlock>& _ssbo_pointLightMeta,
 		const std::shared_ptr<StorageBlock>& _ssbo_spotLightMeta,
 		const std::shared_ptr<StorageBlock>& _ssbo_dirLightCascadeDistances
 	);

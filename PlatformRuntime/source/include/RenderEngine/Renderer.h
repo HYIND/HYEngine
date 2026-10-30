@@ -14,7 +14,7 @@
 #include <vector>
 
 class Texture2D;
-class RenderState;
+struct RenderState;
 class World;
 class RenderSystem;
 
