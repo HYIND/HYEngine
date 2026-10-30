@@ -30,7 +30,7 @@ private:
 
 	std::vector<IndirectDrawCommand> AnlysisSkinnedIndirectCommands(
 		const std::vector<VKRenderObjectData::SceneSkinnedRenderData::SkinnedMeshItem>& items,
-		std::vector<glm::mat4>& paletteMatrices,
+		std::vector<VKRenderContext::BoneMatrices>& paletteMatrices,
 		std::vector<SkinningDispatch>& dispatches,
 		std::vector<TransAndMaterialIndex>& skinnedMesh_TransformAndMaterialIndices,
 		uint32_t commandStartOffset,
