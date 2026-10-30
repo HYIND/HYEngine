@@ -14,6 +14,7 @@
 #include <functional>
 #include <future>
 #include <queue>
+#include <atomic>
 #include "CriticalSectionLock.h"
 
 class Entity;
@@ -120,6 +121,9 @@ public:
 
 	uint64_t getFrameCount() const;
 	float getDeltaTime() const;
+	void setTimeScale(float scale);
+	float getTimeScale() const;
+	float getUnscaledDeltaTime() const;
 	float getLogicDeltaTime() const;
 	void setLogicDeltaTime(float dt);
 	float getFixedDeltaTime() const;
@@ -172,6 +176,8 @@ private:
 	float m_fixedAccumulator = 0.0f;
 
 	float m_deltaTime = 0.0f;
+	std::atomic<float> m_timeScale{ 1.0f };
+	float m_unscaledDeltaTime = 0.0f;
 	uint64_t m_frameCount = 0;
 
 	bool m_isRunning = false;

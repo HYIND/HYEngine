@@ -1,5 +1,8 @@
 #include "ECSCore/World.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "ECSCore/EntityManager.h"
 #include "ECSCore/ComponentManager.h"
 #include "ECSCore/SystemManager.h"
@@ -164,12 +167,16 @@ void World::update(float deltaTime)
 	if (!m_isRunning)
 		return;
 
-	m_deltaTime = deltaTime;
+	// 时间膨胀：真实 dt 乘上系数后再喂给逻辑/固定步长
+	// 系统里拿到的 deltaTime 一律是膨胀后的值，物理的固定步长频率也跟着变慢/变快。
+	const float scaledDeltaTime = deltaTime * m_timeScale.load(std::memory_order_relaxed);
+	m_unscaledDeltaTime = deltaTime;
+	m_deltaTime = scaledDeltaTime;
 	m_frameCount++;
 
 	ProcessCommands();
 
-	m_logicAccumulator += deltaTime;
+	m_logicAccumulator += scaledDeltaTime;
 	bool shouupdateLogic = m_logicAccumulator >= m_logicDeltaTime;
 	if (shouupdateLogic)
 	{
@@ -182,7 +189,7 @@ void World::update(float deltaTime)
 		const int MAX_ITERATIONS = 6;
 
 		int iterations = 0;
-		m_fixedAccumulator += deltaTime;
+		m_fixedAccumulator += scaledDeltaTime;
 		while (m_fixedAccumulator >= m_fixedDeltaTime && iterations < MAX_ITERATIONS)
 		{
 			m_systemManager->fixedUpdate(m_fixedDeltaTime);
@@ -226,6 +233,17 @@ bool World::isRunning() const { return m_isRunning; }
 uint64_t World::getFrameCount() const { return m_frameCount; }
 
 float World::getDeltaTime() const { return m_deltaTime; }
+
+void World::setTimeScale(float scale)
+{
+	if (!std::isfinite(scale))
+		return;
+	m_timeScale.store(std::clamp(scale, 0.0f, 100.0f), std::memory_order_relaxed);
+}
+
+float World::getTimeScale() const { return m_timeScale.load(std::memory_order_relaxed); }
+
+float World::getUnscaledDeltaTime() const { return m_unscaledDeltaTime; }
 
 float World::getLogicDeltaTime() const { return m_logicDeltaTime; }
 

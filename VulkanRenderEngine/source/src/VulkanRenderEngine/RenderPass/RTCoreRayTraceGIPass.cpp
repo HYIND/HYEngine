@@ -48,6 +48,7 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 			.AddStorageBuffer(1)
 			.AddStorageBuffer(2)
 			.AddStorageBuffer(3)
+			.AddStorageBuffer(4)
 			.AddUnifromBuffer(5)
 			.AddUnifromBuffer(6)
 			.AddStorageImage(7)
@@ -265,7 +266,11 @@ bool RTCoreRayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrappe
 	}
 
 	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.rayTraceGIParams.maxAccumulateCount
+		.maxAccumulateCount = state.option.rayTraceGIParams.maxAccumulateCount,
+		.depthThreshold = state.option.rayTraceGIParams.depthThreshold,
+		.positiondistThreshold = state.option.rayTraceGIParams.positiondistThreshold,
+		.normalThreshold = state.option.rayTraceGIParams.normalThreshold,
+		.motionWeightScale = state.option.rayTraceGIParams.motionWeightScale
 	};
 
 	_temporalAccumulate.Execute(
@@ -353,6 +358,11 @@ bool RTCoreRayTraceGIPass::BindAccelerationStructure(RayTracingBindingRecord& bi
 
 	binding.SetStorageBlock(IndirectDrawManager::Instance()->GetVertexBlock(), 1);
 	binding.SetStorageBlock(IndirectDrawManager::Instance()->GetIndexBlock(), 2);
+
+	// 蒙皮顶点：命中着色器按 instanceInfo.skinned 决定要不要从这里取顶点。
+	// 没有蒙皮网格的帧绑静态顶点块兜底（skinned==0 时不会读）。
+	auto skinnedVertexBlock = _buffers->GetSkinnedVertexBlock();
+	binding.SetStorageBlock(skinnedVertexBlock ? skinnedVertexBlock : IndirectDrawManager::Instance()->GetVertexBlock(), 4);
 
 	return true;
 }

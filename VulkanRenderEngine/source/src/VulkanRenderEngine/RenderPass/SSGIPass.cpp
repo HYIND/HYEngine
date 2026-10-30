@@ -252,7 +252,11 @@ bool SSGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommand
 	}
 
 	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.ssgiTraceParams.maxAccumulateCount
+		.maxAccumulateCount = state.option.ssgiTraceParams.maxAccumulateCount,
+		.depthThreshold = state.option.ssgiTraceParams.depthThreshold,
+		.positiondistThreshold = state.option.ssgiTraceParams.positiondistThreshold,
+		.normalThreshold = state.option.ssgiTraceParams.normalThreshold,
+		.motionWeightScale = state.option.ssgiTraceParams.motionWeightScale
 	};
 
 	_temporalAccumulate.Execute(

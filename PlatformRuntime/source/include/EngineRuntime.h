@@ -127,6 +127,9 @@ public:
 	void SetTargetFps(uint32_t fps);
 	uint32_t GetTargetFps() const;
 
+	void SetWorldTimeScale(float scale);
+	float GetWorldTimeScale() const;
+
 	bool LoadModules(const std::string& directory, std::string* error = nullptr);
 
 	bool OpenProject(const std::string& projectFilePath, std::string* error = nullptr);
@@ -216,4 +219,6 @@ private:
 	// 启动场景线程时用的步长，切完场景要按同样节拍重启。
 	float m_logicDeltaMilliseconds = 16.0f;
 	float m_fixedDeltaMilliseconds = 16.0f;
+	// 世界时间膨胀系数。切场景时新建的 World 也要继承它，否则换场景会悄悄回到 1x。
+	float m_worldTimeScale = 1.0f;
 };
