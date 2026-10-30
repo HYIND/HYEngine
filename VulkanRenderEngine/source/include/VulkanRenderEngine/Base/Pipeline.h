@@ -123,9 +123,9 @@ class Pipeline
 {
 public:
 	struct DescriptorSetGroup;
+	struct DescriptorSetLayoutData;
 
 private:
-	struct DescriptorSetLayoutData;
 
 	class DescriptorSetGroupPool
 	{

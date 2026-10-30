@@ -48,6 +48,11 @@ public:
 
         {
             LockGuard guard_componentSlots(componentSlotsMutex);
+            // 复检
+            auto raced = componentSlots.find(typeId);
+            if (raced != componentSlots.end())
+                return raced->second;
+
             LockGuard guard_typeIdentities(typeIdentitiesMutex);
             LockGuard guard_componentArrays(componentArraysMutex);
             if (componentSlots.size() >= MAX_COMPONENTS)
