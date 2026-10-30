@@ -2730,10 +2730,17 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 	ImGui::Text("渲染选项");
 	ImGui::Separator();
 
-	// 3D 帧消费线程的节流；0 = 不限帧。改完下一帧生效。
 	int targetFps = static_cast<int>(editorApp->GetTargetFps());
-	if (ImGui::SliderInt("目标帧率", &targetFps, 0, 240, targetFps == 0 ? "不限" : "%d FPS"))
+	if (ImGui::SliderInt("目标帧率", &targetFps, 0, 360, targetFps == 0 ? "不限" : "%d FPS"))
 		editorApp->SetTargetFps(static_cast<uint32_t>(targetFps < 0 ? 0 : targetFps));
+
+	float timeScale = editorApp->Runtime().GetWorldTimeScale();
+	if (ImGui::SliderFloat("世界时间膨胀", &timeScale, 0.0f, 20.0f, "%.2fx"))
+		editorApp->Runtime().SetWorldTimeScale(timeScale);
+	ImGui::SameLine();
+	if (ImGui::SmallButton("重置 1x"))
+		editorApp->Runtime().SetWorldTimeScale(1.0f);
+
 	ImGui::Separator();
 
 	auto option = editorApp->GetOption();

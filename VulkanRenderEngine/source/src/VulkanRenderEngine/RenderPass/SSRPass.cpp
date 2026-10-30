@@ -292,7 +292,11 @@ bool SSRPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandB
 	}
 
 	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.ssrTraceParams.maxAccumulateCount
+		.maxAccumulateCount = state.option.ssrTraceParams.maxAccumulateCount,
+		.depthThreshold = state.option.ssrTraceParams.depthThreshold,
+		.positiondistThreshold = state.option.ssrTraceParams.positiondistThreshold,
+		.normalThreshold = state.option.ssrTraceParams.normalThreshold,
+		.motionWeightScale = state.option.ssrTraceParams.motionWeightScale
 	};
 
 	_temporalAccumulate.Execute(

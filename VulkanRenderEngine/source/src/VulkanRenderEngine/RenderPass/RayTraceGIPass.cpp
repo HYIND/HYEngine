@@ -255,7 +255,11 @@ bool RayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKC
 	}
 
 	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.rayTraceGIParams.maxAccumulateCount
+		.maxAccumulateCount = state.option.rayTraceGIParams.maxAccumulateCount,
+		.depthThreshold = state.option.rayTraceGIParams.depthThreshold,
+		.positiondistThreshold = state.option.rayTraceGIParams.positiondistThreshold,
+		.normalThreshold = state.option.rayTraceGIParams.normalThreshold,
+		.motionWeightScale = state.option.rayTraceGIParams.motionWeightScale
 	};
 
 	_temporalAccumulate.Execute(

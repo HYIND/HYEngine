@@ -143,19 +143,25 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGen
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceReflectParams,
 	tMin, tMax, maxBounceLimit, NumSamples, normalFactor, depthFactor, luminanceFactor,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGIParams,
 	tMin, tMax, maxBounceLimit, NumSamples, GIIntensity, normalFactor, depthFactor,
-	luminanceFactor, maxAccumulateCount, filterCount)
+	luminanceFactor,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSRTraceParams,
 	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
-	DistanceFactor, normalFactor, depthFactor, luminanceFactor, maxAccumulateCount, filterCount)
+	DistanceFactor, normalFactor, depthFactor, luminanceFactor,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSGITraceParams,
 	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
 	GIIntensity, AOIntensity, DistanceFactor, normalFactor, depthFactor, luminanceFactor,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSAOParams, radius, bias)
@@ -709,6 +715,23 @@ uint32_t EngineRuntime::GetTargetFps() const
 	return m_renderer ? m_renderer->GetRenderer3D()->GetTargetFps() : 0u;
 }
 
+void EngineRuntime::SetWorldTimeScale(float scale)
+{
+	if (!std::isfinite(scale))
+		return;
+
+	m_worldTimeScale = std::clamp(scale, 0.0f, 20.0f);
+
+	if (m_world)
+		m_world->setTimeScale(m_worldTimeScale);
+}
+
+float EngineRuntime::GetWorldTimeScale() const
+{
+	// 以当前 World 为准：宿主可能绕过引擎直接改过它。
+	return m_world ? m_world->getTimeScale() : m_worldTimeScale;
+}
+
 Render::Renderer* EngineRuntime::GetRenderer()
 {
 	return m_renderer.get();
@@ -803,6 +826,7 @@ bool EngineRuntime::OpenEmptyScene(const std::function<bool(World&)>& initialize
 		return false;
 
 	auto candidate = std::make_shared<World>();
+	candidate->setTimeScale(m_worldTimeScale);
 	RegisterBaseSystems(*candidate);
 	if (m_moduleManager)
 		m_moduleManager->RegisterSystems(*candidate);

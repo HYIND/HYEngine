@@ -18,6 +18,7 @@ layout (binding = 0) uniform Params
     float depthThreshold;
     float positiondistThreshold;
     float normalThreshold;
+    float motionWeightScale;
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -160,10 +161,15 @@ void main()
     uint blendlenth = min(accumulateLength + 1, maxAccumulateCount);
     float historyBlendFactor = float(blendlenth - 1) / float(blendlenth);
 
+    float motionPixels = length(motionVector * vec2(imageSize));
+    float motionAttenuation = exp(-max(motionWeightScale, 0.0) * motionPixels);
+    historyBlendFactor *= motionAttenuation;
+    float finalAccumulateLength = min(float(accumulateLength) * motionAttenuation + 1.0, float(maxAccumulateCount));
+
     vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
     float finalM1 = mix(currentM1, historyM1, historyBlendFactor);
     float finalM2 = mix(currentM2, historyM2, historyBlendFactor);
 
     imageStore(outputImage, coord, finalColor);
-    imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), float(accumulateLength + 1)));
+    imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), finalAccumulateLength));
 }

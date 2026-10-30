@@ -299,7 +299,11 @@ bool RayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper
 	}
 
 	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.rayTraceReflectParams.maxAccumulateCount
+		.maxAccumulateCount = state.option.rayTraceReflectParams.maxAccumulateCount,
+		.depthThreshold = state.option.rayTraceReflectParams.depthThreshold,
+		.positiondistThreshold = state.option.rayTraceReflectParams.positiondistThreshold,
+		.normalThreshold = state.option.rayTraceReflectParams.normalThreshold,
+		.motionWeightScale = state.option.rayTraceReflectParams.motionWeightScale
 	};
 
 	_temporalAccumulate.Execute(

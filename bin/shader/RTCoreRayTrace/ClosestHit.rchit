@@ -17,6 +17,8 @@ struct InstanceInfo {
     uint materialIndex;
     uint indexOffset;
     uint vertexOffset;
+    uint skinned;               // 1 = 蒙皮网格，顶点要去蒙皮顶点缓冲里取
+    uint skinnedVertexOffset;   // 该网格在蒙皮顶点缓冲里的起始顶点
 };
 
 struct HitPayLoad {
@@ -45,6 +47,10 @@ layout(binding = 3) readonly buffer InstanceInfoBuffer {
     InstanceInfo infos[];
 };
 
+layout(binding = 4) readonly buffer SkinnedVertexBuffer {
+    Vertex skinnedVertices[];
+};
+
 vec3 lerpVec3(vec3 v0, vec3 v1, vec3 v2, vec3 bary)
 {
     return v0 * bary.x + v1 * bary.y + v2 * bary.z;
@@ -55,7 +61,8 @@ vec2 lerpVec2(vec2 v0, vec2 v1, vec2 v2, vec3 bary)
     return v0 * bary.x + v1 * bary.y + v2 * bary.z;
 }
 
-void main() {
+void main() 
+{
 
     uint instanceIndex = gl_InstanceCustomIndexEXT;
     InstanceInfo instanceInfo = infos[instanceIndex];
@@ -66,9 +73,21 @@ void main() {
     uint i1 = indices[instanceInfo.indexOffset + primitiveIndex * 3 + 1];
     uint i2 = indices[instanceInfo.indexOffset + primitiveIndex * 3 + 2];
 
-    Vertex v0 = vertices[instanceInfo.vertexOffset + i0];
-    Vertex v1 = vertices[instanceInfo.vertexOffset + i1];
-    Vertex v2 = vertices[instanceInfo.vertexOffset + i2];
+    Vertex v0;
+    Vertex v1;
+    Vertex v2;
+
+    if (instanceInfo.skinned != 0u) {
+        // 蒙皮网格：顶点在本帧的蒙皮顶点缓冲里，索引是网格内局部索引，起始顶点由 skinnedVertexOffset 给
+        uint base = instanceInfo.skinnedVertexOffset;
+        v0 = skinnedVertices[base + i0];
+        v1 = skinnedVertices[base + i1];
+        v2 = skinnedVertices[base + i2];
+    } else {
+        v0 = vertices[instanceInfo.vertexOffset + i0];
+        v1 = vertices[instanceInfo.vertexOffset + i1];
+        v2 = vertices[instanceInfo.vertexOffset + i2];
+    }
 
     // 重心坐标
     vec3 bary = vec3(1.0 - attrib.x - attrib.y, attrib.x, attrib.y);

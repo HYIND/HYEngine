@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
+#include <unordered_set>
 
 
 struct alignas(16) InstanceInfo
@@ -15,7 +16,21 @@ struct alignas(16) InstanceInfo
 	uint32_t materialIndex;
 	uint32_t indexOffset;
 	uint32_t vertexOffset;
+
+	uint32_t skinned;				// 1 = 蒙皮网格：顶点要去本帧的蒙皮顶点缓冲里取（否则从静态顶点块里取）
+	uint32_t skinnedVertexOffset;	// 该网格在本帧蒙皮顶点缓冲里的起始顶点
 };
+
+static_assert(sizeof(InstanceInfo) == 208, "InstanceInfo 布局要和 ClosestHit.rchit 里的同名结构保持一致");
+
+// 蒙皮 BLAS 的键：姿势身份（SkinnedPoseHistory 指针）+ 网格 UUID。
+// 同一个实体的不同网格、不同实体的网格都会落到不同的键上；
+// 指针地址被复用的情况（旧实体销毁、新实体的 history 正好在同一个地址）
+// 在 UpdateSkinnedBlas 里用 weak_ptr 校验，对不上就销毁重建。
+static std::string MakeSkinnedBlasKey(const VKRenderContext::SkinnedPoseHistory* pose, const std::string& meshUUID)
+{
+	return std::to_string(reinterpret_cast<std::uintptr_t>(pose)) + '|' + meshUUID;
+}
 
 static vk::TransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix)
 {
@@ -48,8 +63,10 @@ static vk::TransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix)
 
 BlasHandleManager::BlasHandleManager()
 	:_blasBufferManager(1024 * 1024 * 20)
+	, _skinnedBlasBufferManager(1024 * 1024 * 8)
 {
 	_blasBufferManager.SetAlign(256);
+	_skinnedBlasBufferManager.SetAlign(256);
 }
 
 void BlasHandleManager::RemoveBlasData(std::shared_ptr<StaticMesh>& mesh, std::shared_ptr<VKCore::VulkanDevice>& device)
@@ -113,16 +130,16 @@ bool BlasHandleManager::UpdateBlasData(
 			std::vector<IndirectDrawMeta> indirectDrawMetas;
 			indirectDrawMetas.resize(toCreateMeshs.size());
 			indirectManager->WithSharedLock(
-				{ IndirectDrawManager::SharedLockType::Mesh},
+				{ IndirectDrawManager::SharedLockType::Mesh },
 				[&]() {
-				for (size_t i = 0; i < toCreateMeshs.size(); i++)
-				{
-					auto& mesh = toCreateMeshs[i];
-					auto& meta = indirectDrawMetas[i];
+					for (size_t i = 0; i < toCreateMeshs.size(); i++)
+					{
+						auto& mesh = toCreateMeshs[i];
+						auto& meta = indirectDrawMetas[i];
 
-					indirectDrawMetas[i].vertexOffset = -1;
-					indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
-				}
+						indirectDrawMetas[i].vertexOffset = -1;
+						indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta);
+					}
 				});
 
 			for (size_t i = 0; i < toCreateMeshs.size(); i++)
@@ -255,6 +272,246 @@ bool BlasHandleManager::UpdateBlasData(
 }
 
 
+// 蒙皮网格的 BLAS：第一次 eBuild，之后每帧 eUpdate（refit）。
+// 顶点每帧都变，但拓扑不变，所以不用重建句柄，只需要把新的顶点地址喂进去。
+bool BlasHandleManager::UpdateSkinnedBlas(
+	std::vector<SkinnedBlasRequest>& requests,
+	std::vector<vk::DeviceAddress>& outAddresses,
+	std::shared_ptr<IndexBufferBlock>& indexBlock,
+	std::shared_ptr<VKCore::VulkanDevice>& device,
+	std::shared_ptr<StorageBlock>& scratchBlock
+)
+{
+	outAddresses.assign(requests.size(), 0);
+
+	if (requests.empty() || !device || !indexBlock)
+		return true;
+
+	++_skinnedFrameIndex;
+
+	const vk::DeviceAddress indexBufferAddress = indexBlock->GetDeviceAddress();
+
+	// 每个 BLAS 一次构建/更新，几何体和构建信息必须一直活着到 build 调用
+	struct BuildUnit
+	{
+		vk::AccelerationStructureGeometryTrianglesDataKHR trianglesData;
+		vk::AccelerationStructureGeometryKHR geometry;
+		vk::AccelerationStructureBuildGeometryInfoKHR buildInfo;
+		vk::AccelerationStructureBuildRangeInfoKHR buildRange;
+		vk::AccelerationStructureBuildSizesInfoKHR buildSizes;
+
+		SkinnedBlasData* data = nullptr;
+		size_t requestIndex = 0;
+		size_t segmentOffset = 0;
+		uint64_t scratchOffset = 0;
+		bool create = false;
+	};
+
+	std::vector<std::unique_ptr<BuildUnit>> units;
+	units.reserve(requests.size());
+
+	// 先把需要的 BLAS 段分配好（SetSegment 可能让缓冲区扩容，所以必须在取 block 句柄之前全部做完）
+	for (size_t i = 0; i < requests.size(); i++)
+	{
+		auto& request = requests[i];
+		if (!request.mesh || !request.poseHistory || !request.vertexBuffer)
+			continue;
+		if (request.vertexCount == 0 || request.indexCount < 3)
+			continue;
+
+		const std::string key = MakeSkinnedBlasKey(request.poseHistory.get(), request.mesh->GetUUID());
+		const uint32_t primitiveCount = request.indexCount / 3;
+
+		auto it = _skinnedBlasHandles.find(key);
+		if (it != _skinnedBlasHandles.end() && it->second.poseWeakPtr.lock() != request.poseHistory)
+		{
+			// 地址被复用，但对象已经不是同一个了 —— 旧 BLAS 不能再用
+			if (it->second.handle != VK_NULL_HANDLE)
+				device->GetHandle().destroyAccelerationStructureKHR(it->second.handle);
+			_skinnedBlasBufferManager.RemoveSegment(it->second.key);
+			_skinnedBlasHandles.erase(it);
+			it = _skinnedBlasHandles.end();
+		}
+
+		bool create = false;
+		if (it == _skinnedBlasHandles.end())
+		{
+			SkinnedBlasData data;
+			data.key = key;
+			data.meshWeakPtr = request.mesh;
+			data.poseWeakPtr = request.poseHistory;
+			data.primitiveCount = primitiveCount;
+			it = _skinnedBlasHandles.emplace(key, std::move(data)).first;
+			create = true;
+		}
+		else if (it->second.primitiveCount != primitiveCount)
+		{
+			// 拓扑变了（换网格、换 LOD），refit 不合法，只能重建
+			if (it->second.handle != VK_NULL_HANDLE)
+				device->GetHandle().destroyAccelerationStructureKHR(it->second.handle);
+			it->second.handle = VK_NULL_HANDLE;
+			it->second.address = 0;
+			it->second.primitiveCount = primitiveCount;
+			create = true;
+		}
+
+		auto& data = it->second;
+		data.lastUsedFrame = _skinnedFrameIndex;
+
+		auto unit = std::make_unique<BuildUnit>();
+		unit->data = &data;
+		unit->requestIndex = i;
+		unit->create = create;
+
+		const vk::DeviceAddress vertexAddress =
+			request.vertexBuffer->GetDeviceAddress() + static_cast<vk::DeviceSize>(request.vertexStart) * sizeof(Vertex);
+
+		unit->trianglesData = vk::AccelerationStructureGeometryTrianglesDataKHR(
+			vk::Format::eR32G32B32Sfloat,
+			vertexAddress,
+			sizeof(Vertex),
+			request.vertexCount - 1,
+			vk::IndexType::eUint32,
+			indexBufferAddress
+		);
+
+		unit->geometry = vk::AccelerationStructureGeometryKHR(
+			vk::GeometryTypeKHR::eTriangles,
+			vk::AccelerationStructureGeometryDataKHR(unit->trianglesData),
+			vk::GeometryFlagBitsKHR::eOpaque
+		);
+
+		unit->buildInfo
+			.setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
+			.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)		// 允许 refit
+			.setGeometries(unit->geometry);
+
+		if (create)
+		{
+			unit->buildInfo.setMode(vk::BuildAccelerationStructureModeKHR::eBuild);
+			unit->buildSizes = device->GetHandle().getAccelerationStructureBuildSizesKHR(
+				vk::AccelerationStructureBuildTypeKHR::eDevice,
+				unit->buildInfo,
+				primitiveCount
+			);
+
+			auto segData = _skinnedBlasBufferManager.SetSegment(key, (void*)&data, nullptr, unit->buildSizes.accelerationStructureSize);
+			unit->segmentOffset = segData.first;
+			data.scratchSize = unit->buildSizes.buildScratchSize;
+		}
+		else
+		{
+			// 上一次创建失败（或者句柄已失效），没有可 refit 的对象，这一帧先跳过
+			if (data.handle == VK_NULL_HANDLE)
+				continue;
+
+			unit->buildInfo.setMode(vk::BuildAccelerationStructureModeKHR::eUpdate);
+			unit->buildInfo.setSrcAccelerationStructure(data.handle);
+			unit->buildInfo.setDstAccelerationStructure(data.handle);
+		}
+
+		unit->buildRange.primitiveCount = primitiveCount;
+		unit->buildRange.primitiveOffset = request.firstIndex * sizeof(uint32_t);		// 索引字节偏移
+		unit->buildRange.firstVertex = 0;												// 顶点地址已经带上了 vertexStart
+		unit->buildRange.transformOffset = 0;
+
+		units.emplace_back(std::move(unit));
+	}
+
+	if (units.empty())
+		return true;
+
+	// 所有 BLAS 共用一块 scratch，各自占一段，最后一次提交
+	uint64_t totalScratch = 0;
+	for (auto& unitPtr : units)
+	{
+		auto& unit = *unitPtr;
+		const uint32_t need = unit.create ? unit.buildSizes.buildScratchSize : unit.data->scratchSize;
+		totalScratch = (totalScratch + 255) / 256 * 256;
+		unit.scratchOffset = totalScratch;
+		totalScratch += need;
+	}
+
+	if (totalScratch > 0)
+		scratchBlock->SetSize(totalScratch);
+
+	const vk::DeviceAddress scratchAddress = scratchBlock->GetDeviceAddress();
+	auto blasBlockHandle = _skinnedBlasBufferManager.GetBuffer()->GetBlock()->GetHandle();
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+
+	std::vector<std::shared_ptr<VertexBufferBlock>> barrieredBuffers;
+	{
+		std::unordered_set<VertexBufferBlock*> barriered;
+		for (auto& request : requests)
+		{
+			if (!request.vertexBuffer)
+				continue;
+			if (!barriered.insert(request.vertexBuffer.get()).second)
+				continue;
+			request.vertexBuffer->Barrier(cmd, BufferUsage::VertexAttributeRead, BufferUsage::AccelerationStructureRead);
+			barrieredBuffers.push_back(request.vertexBuffer);
+		}
+	}
+
+	for (auto& unitPtr : units)
+	{
+		auto& unit = *unitPtr;
+		auto& data = *unit.data;
+
+		if (unit.create)
+		{
+			vk::AccelerationStructureCreateInfoKHR createInfo;
+			createInfo
+				.setBuffer(blasBlockHandle)
+				.setOffset(unit.segmentOffset)
+				.setSize(unit.buildSizes.accelerationStructureSize)
+				.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
+
+			auto [result, handle] = device->GetHandle().createAccelerationStructureKHR(createInfo);
+			if (result != vk::Result::eSuccess)
+				continue;
+
+			data.handle = handle;
+			data.address = device->GetHandle().getAccelerationStructureAddressKHR(vk::AccelerationStructureDeviceAddressInfoKHR().setAccelerationStructure(handle));
+			unit.buildInfo.setDstAccelerationStructure(handle);
+		}
+
+		unit.buildInfo.scratchData.deviceAddress = scratchAddress + unit.scratchOffset;
+
+		cmd->buildAccelerationStructuresKHR(unit.buildInfo, &unit.buildRange);
+
+		outAddresses[unit.requestIndex] = data.address;
+	}
+
+	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+
+	return true;
+}
+
+// 回收长期没用到的蒙皮 BLAS：实体已经销毁（weak_ptr 过期），或者很久没有出现在渲染列表里
+void BlasHandleManager::PruneSkinnedBlas(std::shared_ptr<VKCore::VulkanDevice>& device, uint64_t maxUnusedFrames)
+{
+	for (auto it = _skinnedBlasHandles.begin(); it != _skinnedBlasHandles.end(); )
+	{
+		auto& data = it->second;
+
+		const bool expired = data.poseWeakPtr.expired() || data.meshWeakPtr.expired();
+		const bool stale = _skinnedFrameIndex > data.lastUsedFrame + maxUnusedFrames;
+		if (!expired && !stale)
+		{
+			++it;
+			continue;
+		}
+
+		if (data.handle != VK_NULL_HANDLE)
+			device->GetHandle().destroyAccelerationStructureKHR(data.handle);
+		_skinnedBlasBufferManager.RemoveSegment(data.key);
+
+		it = _skinnedBlasHandles.erase(it);
+	}
+}
+
 RTCoreRayTraceGeneralBuffer::RTCoreRayTraceGeneralBuffer()
 {
 	_tlasInstancesBlock = std::make_shared<StorageBlock>();
@@ -265,6 +522,8 @@ RTCoreRayTraceGeneralBuffer::RTCoreRayTraceGeneralBuffer()
 vk::AccelerationStructureKHR RTCoreRayTraceGeneralBuffer::GetAccelerationStructure() const { return _tlasAccelerationStructure; }
 
 std::shared_ptr<StorageBlock> RTCoreRayTraceGeneralBuffer::GetInstancesInfosBlock() const { return _tlasInstancesInfosBlock; }
+
+std::shared_ptr<VertexBufferBlock> RTCoreRayTraceGeneralBuffer::GetSkinnedVertexBlock() const { return _skinnedVertexBlock; }
 
 RTCoreRayTraceGeneralPass::RTCoreRayTraceGeneralPass()
 {
@@ -425,6 +684,8 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		info.materialIndex = materialIndex;
 		info.indexOffset = meta.firstIndex;
 		info.vertexOffset = meta.vertexOffset;
+		info.skinned = 0;
+		info.skinnedVertexOffset = 0;
 
 		BlasHandleManager::BlasHandleData data;
 		if (!_buffers->_blasManager.FindBlasData(mesh, data)
@@ -442,6 +703,126 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 		tlasInstances.push_back(tlasInstance);
 		tlasInstanceInfos.push_back(std::move(info));
+	}
+
+	// ---------------- 蒙皮网格 ----------------
+	// 蒙皮顶点是 SkinnedPass 算出来的，算完记在 curFrameSkinnedData 里：
+	// pose(实体身份) -> 每个 mesh 在这份共享顶点缓冲里的 (vertexStart, vertexCount)。
+	// 这里按同一份记账把 BLAS refit 一遍（拓扑不变，不重建句柄），再把实例挂进 TLAS。
+	using SkinnedItem = VKRenderObjectData::SceneSkinnedRenderData::SkinnedMeshItem;
+
+	std::vector<BlasHandleManager::SkinnedBlasRequest> skinnedRequests;
+	std::vector<SkinnedItem*> skinnedMatches;
+	std::vector<IndirectDrawMeta> skinnedIndirectDrawMetas;
+	std::vector<uint32_t> skinnedMaterialIndexs;
+
+	auto& skinnedObjects = state.objects.sceneSkinnedRenderData;
+	auto* frameSkinnedData = state.curFrameSkinnedData.get();
+
+	// 命中着色器要用本帧的蒙皮顶点取顶点，先记下来给 BindAccelerationStructure 绑 binding 4
+	_buffers->_skinnedVertexBlock = (frameSkinnedData && frameSkinnedData->skinnedMesh_VertexBuffer)
+		? frameSkinnedData->skinnedMesh_VertexBuffer->buffer
+		: nullptr;
+
+	if (frameSkinnedData && _buffers->_skinnedVertexBlock)
+	{
+		auto collectSkinnedItem = [&](SkinnedItem& item) -> void
+			{
+				auto& meshInfo = item.meshinfo;
+				if (!meshInfo.mesh || !meshInfo.material || !item.poseHistory)
+					return;
+
+				auto poseIt = frameSkinnedData->poses.find(item.poseHistory.get());
+				if (poseIt == frameSkinnedData->poses.end())
+					return;
+
+				auto meshIt = poseIt->second.meshes.find(meshInfo.mesh->GetUUID());
+				if (meshIt == poseIt->second.meshes.end())
+					return;
+
+				if (meshIt->second.vertexCount == 0)
+					return;
+
+				BlasHandleManager::SkinnedBlasRequest request;
+				request.mesh = meshInfo.mesh;
+				request.poseHistory = item.poseHistory;
+				request.vertexBuffer = _buffers->_skinnedVertexBlock;
+				request.vertexStart = meshIt->second.vertexStart;
+				request.vertexCount = meshIt->second.vertexCount;
+
+				skinnedRequests.emplace_back(std::move(request));
+				skinnedMatches.push_back(&item);
+			};
+
+		for (auto& item : skinnedObjects.opaqueOneSideItems)
+			collectSkinnedItem(item);
+		for (auto& item : skinnedObjects.opaqueTwoSideItems)
+			collectSkinnedItem(item);
+	}
+
+	if (!skinnedRequests.empty())
+	{
+		skinnedIndirectDrawMetas.resize(skinnedRequests.size());
+		skinnedMaterialIndexs.resize(skinnedRequests.size(), std::numeric_limits<uint32_t>::max());
+
+		indirectManager->WithSharedLock(
+			{ SharedLockType::Mesh, SharedLockType::Material },
+			[&]()
+			{
+				for (size_t i = 0; i < skinnedRequests.size(); i++)
+				{
+					auto& item = *skinnedMatches[i];
+
+					skinnedIndirectDrawMetas[i].vertexOffset = -1;
+					indirectManager->GetIndirectDrawMeta_LockFree(*item.meshinfo.mesh, skinnedIndirectDrawMetas[i]);
+					indirectManager->GetMaterialIndex_LockFree(*item.meshinfo.material, skinnedMaterialIndexs[i]);
+				}
+			});
+
+		for (size_t i = 0; i < skinnedRequests.size(); i++)
+		{
+			skinnedRequests[i].firstIndex = skinnedIndirectDrawMetas[i].firstIndex;
+			skinnedRequests[i].indexCount = skinnedIndirectDrawMetas[i].indexCount;
+		}
+
+		std::vector<vk::DeviceAddress> skinnedBlasAddresses;
+		_buffers->_blasManager.UpdateSkinnedBlas(skinnedRequests, skinnedBlasAddresses, indexBlock, device, _scratchBlock);
+		_buffers->_blasManager.PruneSkinnedBlas(device, 240);
+
+		for (size_t i = 0; i < skinnedRequests.size(); i++)
+		{
+			if (skinnedBlasAddresses[i] == 0)
+				continue;
+			if (skinnedMaterialIndexs[i] == std::numeric_limits<uint32_t>::max())
+				continue;
+
+			auto& item = *skinnedMatches[i];
+
+			InstanceInfo info;
+			info.model = item.transform;
+			info.invModel = glm::inverse(item.transform);
+			glm::mat4 mat = transpose(info.invModel);
+			info.normalMatRow1 = mat[0];
+			info.normalMatRow2 = mat[1];
+			info.normalMatRow3 = mat[2];
+			info.materialIndex = skinnedMaterialIndexs[i];
+			info.indexOffset = skinnedRequests[i].firstIndex;
+			info.vertexOffset = 0;										// 蒙皮网格不用静态顶点块
+			info.skinned = 1;
+			info.skinnedVertexOffset = skinnedRequests[i].vertexStart;
+
+			vk::AccelerationStructureInstanceKHR tlasInstance;
+			tlasInstance
+				.setTransform(toTransformMatrixKHR(item.transform))
+				.setInstanceCustomIndex(infosIndex++)
+				.setAccelerationStructureReference(skinnedBlasAddresses[i])	// 蒙皮 BLAS 的句柄地址
+				.setMask(0xFF)
+				.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable)
+				.setInstanceShaderBindingTableRecordOffset(0);
+
+			tlasInstances.push_back(tlasInstance);
+			tlasInstanceInfos.push_back(std::move(info));
+		}
 	}
 
 	tlasInstancesInfosBlock->WriteData(tlasInstanceInfos.data(), tlasInstanceInfos.size() * sizeof(InstanceInfo));

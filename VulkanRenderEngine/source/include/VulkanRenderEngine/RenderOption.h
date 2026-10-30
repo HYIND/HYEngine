@@ -18,6 +18,11 @@ struct Scene3DRenderOption
 		float depthFactor = 1.0;
 		float luminanceFactor = 0.04;
 
+		float depthThreshold = 0.02;
+		float positiondistThreshold = 0.05;
+		float normalThreshold = 0.988;
+		float motionWeightScale = 0.05;
+
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
 	} rayTraceReflectParams;
@@ -31,8 +36,13 @@ struct Scene3DRenderOption
 		float GIIntensity = 1.0;
 
 		float normalFactor = 128.0;
-		float depthFactor = 1.0;
+		float depthFactor = 0.8;
 		float luminanceFactor = 0.04;
+
+		float depthThreshold = 0.02;
+		float positiondistThreshold = 0.05;
+		float normalThreshold = 0.988;
+		float motionWeightScale = 0.05;
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
@@ -51,6 +61,11 @@ struct Scene3DRenderOption
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
 		float luminanceFactor = 0.04;
+
+		float depthThreshold = 0.02;
+		float positiondistThreshold = 0.05;
+		float normalThreshold = 0.988;
+		float motionWeightScale = 0.05;
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
@@ -71,6 +86,11 @@ struct Scene3DRenderOption
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
 		float luminanceFactor = 0.04;
+
+		float depthThreshold = 0.02;
+		float positiondistThreshold = 0.05;
+		float normalThreshold = 0.988;
+		float motionWeightScale = 0.05;
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
