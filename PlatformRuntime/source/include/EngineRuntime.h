@@ -7,6 +7,9 @@
 
 #include "Project/ProjectManager.h"
 
+#include <glm/glm.hpp>
+#include "VulkanRenderEngine/RenderOption.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -130,6 +133,13 @@ public:
 	void CloseProject();
 	bool IsProjectOpen() const;
 	ProjectManager* GetProjectManager() const;
+
+	Scene3DRenderOption GetSceneRenderOption() const;
+	void SetSceneRenderOption(const Scene3DRenderOption& option);
+
+	void CaptureSceneRenderOption(SceneCodec& scene) const;
+	// 以场景为准：文件里没记录就还原成引擎默认值，不沿用渲染器当前值。
+	void ApplySceneRenderOption(const SceneCodec& scene);
 
 	bool OpenEmptyScene(const std::function<bool(World&)>& initializeScene);
 
