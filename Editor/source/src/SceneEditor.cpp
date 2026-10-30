@@ -570,6 +570,7 @@ bool SceneEditor::PlayWorld()
         break;
     }
 
+    m_runtime.CaptureSceneRenderOption(*snapshot);
     _playSnapshot = std::move(snapshot);
 
     bool findSceneCamera = false;

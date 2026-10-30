@@ -268,6 +268,8 @@ bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
 
 					auto& settings = scene.GetSettings();
 					settings.erase("editorFreeCamera");
+					if (auto runtimeApp = EditorApp::Instance())
+						runtimeApp->Runtime().CaptureSceneRenderOption(scene);
 					for (Entity entity : activeWorld.getAllEntity())
 					{
 						if (!entity.hasComponents<CameraComponent, Transform, CameraFollow>())
@@ -1024,6 +1026,8 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 					else
 					{
 						scene->SetName(name);
+						if (auto runtimeApp = EditorApp::Instance())
+							runtimeApp->Runtime().CaptureSceneRenderOption(*scene);
 						AssetMeta sceneMeta;
 						created = projectManager->CreateSceneAsset(targetPath.string(), *scene, &sceneMeta);
 						if (created)

@@ -27,6 +27,8 @@
 #include "UI/EngineCommands.h"
 #include "UI/UiTypes.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
@@ -46,6 +48,129 @@ namespace
 		return NComponentCodec::ModuleHost::Editor;
 	}
 }
+
+namespace
+{
+	constexpr const char* kSceneRenderOptionKey = "renderOption";
+
+	template <typename T>
+	void ReadOptionField(const nlohmann::json& json, const char* key, T& out)
+	{
+		const auto value = json.find(key);
+		if (value == json.end() || value->is_null())
+			return;
+		try
+		{
+			out = value->get<T>();
+		}
+		catch (const nlohmann::json::exception&)
+		{
+		}
+	}
+
+	void ReadOptionVec3(const nlohmann::json& json, const char* key, glm::vec3& out)
+	{
+		const auto value = json.find(key);
+		if (value == json.end() || !value->is_array() || value->size() < 3)
+			return;
+		for (nlohmann::json::size_type index = 0; index < 3; ++index)
+		{
+			const auto& component = (*value)[index];
+			if (component.is_number())
+				out[static_cast<int>(index)] = component.get<float>();
+		}
+	}
+}
+
+void to_json(nlohmann::json& json, const Scene3DRenderOption::ExponentialHeightFogParams& params)
+{
+	json = nlohmann::json{
+		{"fogAlbedo", {params.fogAlbedo.x, params.fogAlbedo.y, params.fogAlbedo.z}},
+		{"globalDensity", params.globalDensity},
+		{"fogStartHeight", params.fogStartHeight},
+		{"fogStartDistance", params.fogStartDistance},
+		{"fogHeightFalloff", params.fogHeightFalloff},
+		{"volumeFogOn", params.volumeFogOn},
+		{"fogMaxOpacity", params.fogMaxOpacity},
+		{"VolumeLightScatterPathSampleCount", params.VolumeLightScatterPathSampleCount}
+	};
+}
+
+void from_json(const nlohmann::json& json, Scene3DRenderOption::ExponentialHeightFogParams& params)
+{
+	ReadOptionVec3(json, "fogAlbedo", params.fogAlbedo);
+	ReadOptionField(json, "globalDensity", params.globalDensity);
+	ReadOptionField(json, "fogStartHeight", params.fogStartHeight);
+	ReadOptionField(json, "fogStartDistance", params.fogStartDistance);
+	ReadOptionField(json, "fogHeightFalloff", params.fogHeightFalloff);
+	ReadOptionField(json, "volumeFogOn", params.volumeFogOn);
+	ReadOptionField(json, "fogMaxOpacity", params.fogMaxOpacity);
+	ReadOptionField(json, "VolumeLightScatterPathSampleCount", params.VolumeLightScatterPathSampleCount);
+}
+
+void to_json(nlohmann::json& json, const Scene3DRenderOption::AtmosphereParams& params)
+{
+	json = nlohmann::json{
+		{"CubeCapturePosition", {params.CubeCapturePosition.x, params.CubeCapturePosition.y, params.CubeCapturePosition.z}},
+		{"PlanetRadius", params.PlanetRadius},
+		{"AtmosphereHeight", params.AtmosphereHeight},
+		{"RayleighScatteringScalarHeight", params.RayleighScatteringScalarHeight},
+		{"MieScatteringScalarHeight", params.MieScatteringScalarHeight},
+		{"MieAnisotropy", params.MieAnisotropy},
+		{"OzoneLevelCenterHeight", params.OzoneLevelCenterHeight},
+		{"OzoneLevelWidth", params.OzoneLevelWidth},
+		{"ScatterPathSampleCount", params.ScatterPathSampleCount},
+		{"TransmittanceSampleCount", params.TransmittanceSampleCount}
+	};
+}
+
+void from_json(const nlohmann::json& json, Scene3DRenderOption::AtmosphereParams& params)
+{
+	ReadOptionVec3(json, "CubeCapturePosition", params.CubeCapturePosition);
+	ReadOptionField(json, "PlanetRadius", params.PlanetRadius);
+	ReadOptionField(json, "AtmosphereHeight", params.AtmosphereHeight);
+	ReadOptionField(json, "RayleighScatteringScalarHeight", params.RayleighScatteringScalarHeight);
+	ReadOptionField(json, "MieScatteringScalarHeight", params.MieScatteringScalarHeight);
+	ReadOptionField(json, "MieAnisotropy", params.MieAnisotropy);
+	ReadOptionField(json, "OzoneLevelCenterHeight", params.OzoneLevelCenterHeight);
+	ReadOptionField(json, "OzoneLevelWidth", params.OzoneLevelWidth);
+	ReadOptionField(json, "ScatterPathSampleCount", params.ScatterPathSampleCount);
+	ReadOptionField(json, "TransmittanceSampleCount", params.TransmittanceSampleCount);
+}
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGeneralParams,
+	maxDistance, maxCacheClearDistance)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceReflectParams,
+	tMin, tMax, maxBounceLimit, NumSamples, normalFactor, depthFactor, luminanceFactor,
+	maxAccumulateCount, filterCount)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGIParams,
+	tMin, tMax, maxBounceLimit, NumSamples, GIIntensity, normalFactor, depthFactor,
+	luminanceFactor, maxAccumulateCount, filterCount)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSRTraceParams,
+	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
+	DistanceFactor, normalFactor, depthFactor, luminanceFactor, maxAccumulateCount, filterCount)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSGITraceParams,
+	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
+	GIIntensity, AOIntensity, DistanceFactor, normalFactor, depthFactor, luminanceFactor,
+	maxAccumulateCount, filterCount)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSAOParams, radius, bias)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessParams, EV100, gamma)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessFlags,
+	bloomOn, gammaOn, lightDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
+	exponentialHeightFogOn, atmosphereOn, rayTraceReflectOn, rayTraceGIOn,
+	autoExposureOn, calculateOcclusionCulling)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption,
+	rayTraceGeneralParams, rayTraceReflectParams, rayTraceGIParams, ssrTraceParams,
+	ssgiTraceParams, exponentialHeightFogParams, atmosphereParams, ssaoParams,
+	postProcessParams, flags)
 
 EngineRuntime::EngineRuntime() = default;
 
@@ -217,6 +342,51 @@ ProjectManager* EngineRuntime::GetProjectManager() const
 	return m_project.get();
 }
 
+Scene3DRenderOption EngineRuntime::GetSceneRenderOption() const
+{
+	const auto* renderer = GetRenderer3D();
+	return renderer ? renderer->GetOption() : Scene3DRenderOption{};
+}
+
+void EngineRuntime::SetSceneRenderOption(const Scene3DRenderOption& option)
+{
+	if (auto* renderer = GetRenderer3D())
+		renderer->SetOption(option);
+}
+
+void EngineRuntime::CaptureSceneRenderOption(SceneCodec& scene) const
+{
+	auto& settings = scene.GetSettings();
+	if (!settings.is_object())
+		settings = nlohmann::json::object();
+
+	settings[kSceneRenderOptionKey] = GetSceneRenderOption();
+}
+
+void EngineRuntime::ApplySceneRenderOption(const SceneCodec& scene)
+{
+	Scene3DRenderOption option{};
+
+	const auto& settings = scene.GetSettings();
+	if (settings.is_object())
+	{
+		const auto value = settings.find(kSceneRenderOptionKey);
+		if (value != settings.end() && value->is_object())
+		{
+			try
+			{
+				option = value->get<Scene3DRenderOption>();
+			}
+			catch (const nlohmann::json::exception&)
+			{
+				option = Scene3DRenderOption{};
+			}
+		}
+	}
+
+	SetSceneRenderOption(option);
+}
+
 bool EngineRuntime::OpenScene(const std::string& sceneAsset, const SceneOpenHooks& hooks, std::string* error)
 {
 	if (!m_initialized)
@@ -286,8 +456,7 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 	auto* project = m_project.get();
 
 	// 资源解析交给工程资产库：场景里只存 GUID，具体模型/材质/脚本由这里查出来。
-	// 没有打开工程时解析器一律返回空，宿主自己塞进场景的内置资源照样能加载。
-	const bool opened = OpenEmptyScene([project, &scene, &hooks](World& world) {
+	const bool opened = OpenEmptyScene([this, project, &scene, &hooks](World& world) {
 		if (hooks.prepare && !hooks.prepare(world))
 			return false;
 
@@ -383,6 +552,8 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 
 		if (!scene->Deserialize(world, resolveScriptAsset, resolveModelAsset, resolveSkinnedModelAsset, resolveSkeletonAsset, resolveAnimationClipAsset, resolveMaterialAsset))
 			return false;
+
+		ApplySceneRenderOption(*scene);
 
 		if (hooks.finish)
 			hooks.finish(world, *scene);
