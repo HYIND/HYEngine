@@ -452,7 +452,6 @@ void VulkanRenderer::Resize(uint32_t width, uint32_t height)
 void VulkanRenderer::InitRenderGraph()
 {
 	InitSceneRenderGraph();
-	//InitCombinRenderGraph();
 }
 
 // RenderGraphResource生成器，输入描述信息或者参照物（如其他res，已有的Texture2D），获取资源声明
@@ -1163,6 +1162,8 @@ void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 	_cameraCache = data->cameraCurData;
 	_cameraCacheValid = true;
 
+	// 蒙皮重投影历史在构建 FrameData 时已经挂好（cur/preFrameSkinnedData），这里不用再管。
+
 	auto& staticRenderData = state.objects.sceneStaticRenderData;
 	auto& skinnedRenderData = state.objects.sceneSkinnedRenderData;
 	const uint32_t frameIndex = state.renderRecord.frameIndex;
@@ -1179,10 +1180,11 @@ void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 				items.begin(),
 				items.end(),
 				[&](auto& item) {
-					if (!item.transformHistory)
-						return;
-					const auto& history = *item.transformHistory;
-					item.prevTransform = history.valid ? history.prevTransform : item.transform;// 第一次出现（或物体被剔除过几帧）时没有可用的 prev，退化成零运动
+					if (item.transformHistory)
+					{
+						const auto& history = *item.transformHistory;
+						item.prevTransform = history.valid ? history.prevTransform : item.transform;// 第一次出现（或物体被剔除过几帧）时没有可用的 prev，退化成零运动
+					}
 				});
 		};
 
@@ -1193,14 +1195,16 @@ void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 
 			for (auto& item : items)
 			{
-				if (!item.transformHistory)
-					continue;
-				auto& history = *item.transformHistory;
-				if (history.committedFrame == frameIndex) // 同一物体的多个 item 拿到的是同一个 transform，一帧推进一次就够
-					continue;
-				history.prevTransform = item.transform;
-				history.valid = true;
-				history.committedFrame = frameIndex;
+				if (item.transformHistory)
+				{
+					auto& history = *item.transformHistory;
+					if (history.committedFrame != frameIndex) // 同一物体的多个 item 拿到的是同一个 transform，一帧推进一次就够
+					{
+						history.prevTransform = item.transform;
+						history.valid = true;
+						history.committedFrame = frameIndex;
+					}
+				}
 			}
 		};
 
@@ -1436,6 +1440,9 @@ void VulkanRenderer::ExecuteLoop()
 				data->state->renderRecord.frameStartMicroTimeStamp = Tool::GetTimestampMircoseconds();
 				data->state->option = _option;
 				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
+
+				data->state->curFrameSkinnedData = std::make_shared<FrameHistoryData>();
+				data->state->preFrameSkinnedData = !_runningFrames.empty() ? _runningFrames.back()->state->curFrameSkinnedData : nullptr;
 
 				ResolveFrameHistory(data);
 

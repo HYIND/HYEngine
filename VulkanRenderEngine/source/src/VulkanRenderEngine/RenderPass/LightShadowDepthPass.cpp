@@ -415,7 +415,7 @@ void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 	selfctx.ssbo_StaticMesh_TransformAndMaterialIndices = state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices;
 	selfctx.ssbo_StaticMesh_WorldAABB = state.indirectCommands.ssbo_StaticMesh_WorldAABB;
 	selfctx.ssbo_SkinnedMesh_TransformAndMaterialIndices = state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices;
-	selfctx.skinnedMesh_VertexBuffer = state.indirectCommands.skinnedMesh_VertexBuffer;
+	selfctx.skinnedMesh_VertexBuffer = (state.curFrameSkinnedData && state.curFrameSkinnedData->skinnedMesh_VertexBuffer) ? state.curFrameSkinnedData->skinnedMesh_VertexBuffer->buffer : nullptr;
 
 	selfctx.oneSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_OneSideCommand.data(), state.indirectCommands.staticMesh_OneSideCommand.size() * sizeof(IndirectDrawCommand));
 	selfctx.twoSideIndirectCommandBuffer->WriteDataAsync(cmd, state.indirectCommands.staticMesh_TwoSideCommand.data(), state.indirectCommands.staticMesh_TwoSideCommand.size() * sizeof(IndirectDrawCommand));

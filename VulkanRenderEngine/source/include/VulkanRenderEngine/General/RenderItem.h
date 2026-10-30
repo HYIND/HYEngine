@@ -41,6 +41,7 @@ namespace VKRenderObjectData
 		{
 			SkinnedMeshInfo meshinfo;
 			std::shared_ptr<VKRenderContext::BonePalette> palette;
+			std::shared_ptr<VKRenderContext::SkinnedPoseHistory> poseHistory;
 		};
 
 		std::vector<SkinnedMeshItem> opaqueOneSideItems;

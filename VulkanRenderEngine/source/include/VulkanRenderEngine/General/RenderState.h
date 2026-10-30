@@ -93,7 +93,37 @@ struct alignas(16) GeometryRenderData
 	alignas(16) glm::mat4 curTransform = glm::mat4(1.0f);
 	alignas(16) glm::mat4 prevTransform = glm::mat4(1.0f);
 	uint32_t materialIndex = 0;
-	uint32_t motionVectorEnabled = 1;
+};
+
+struct alignas(16) SkinnedMotionData
+{
+	uint32_t enabled = 0;			// 1 = 上一帧的蒙皮顶点可用，做重投影；0 = 没有上一帧数据
+	uint32_t vertexOffset = 0;		// 本帧顶点区间在本帧蒙皮顶点缓冲里的起始顶点
+	uint32_t prevVertexOffset = 0;	// 上一帧顶点区间在上一帧蒙皮顶点缓冲里的起始顶点
+	uint32_t vertexCount = 0;		// 顶点数量（本帧与上一帧必须一致才算有效）
+};
+
+struct SkinnedVertexBufferState
+{
+	std::shared_ptr<VertexBufferBlock> buffer;
+};
+
+struct FrameHistoryData
+{
+	struct SkinnedMeshRange
+	{
+		uint32_t vertexStart = 0;
+		uint32_t vertexCount = 0;
+	};
+
+	struct PoseInfo
+	{
+		uint32_t globalTransformCount = 0;
+		std::unordered_map<std::string, SkinnedMeshRange> meshes;
+	};
+
+	std::shared_ptr<SkinnedVertexBufferState> skinnedMesh_VertexBuffer = std::make_shared<SkinnedVertexBufferState>();
+	std::unordered_map<const VKRenderContext::SkinnedPoseHistory*, PoseInfo> poses;
 };
 
 struct RenderState
@@ -151,11 +181,16 @@ struct RenderState
 		std::vector<IndirectDrawCommand> skinnedMesh_OneSideCommand;
 		std::vector<IndirectDrawCommand> skinnedMesh_TwoSideCommand;
 		std::vector<IndirectDrawCommand> transparentMesh_Command;
-		std::shared_ptr<VertexBufferBlock> skinnedMesh_VertexBuffer;
 		std::shared_ptr<StorageBlock> skinnedMesh_PaletteBuffer;
 		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_TransformAndMaterialIndices;
 		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_GeometryRenderData;
+		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_MotionData;
 	} indirectCommands;   
+
+	// 蒙皮重投影的两帧关系数据：和 FilghtSync 的 curframeTimeLine/preFrameTimeLine 一样，
+	// 本帧这份在构建 FrameData 时 make_shared，上一帧那份直接取上一帧 state 里的那份
+	std::shared_ptr<FrameHistoryData> curFrameSkinnedData;
+	std::shared_ptr<FrameHistoryData> preFrameSkinnedData;
 
 	struct SkyBoxParams {
 		std::shared_ptr<TextureCube> skyCube;

@@ -164,7 +164,7 @@ private:
 
     std::vector<std::shared_ptr<RenderTargetData>> _renderTargets;
 
-    // 上一张真正提交渲染的帧的相机数据（只在分发线程读写）
+    // 上一张真正提交渲染的帧的相机数据
     camera_compData _cameraCache{};
     bool _cameraCacheValid = false;
 

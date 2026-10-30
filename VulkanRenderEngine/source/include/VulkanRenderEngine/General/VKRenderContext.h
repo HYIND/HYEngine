@@ -55,10 +55,17 @@ namespace VKRenderContext
 		std::vector<BoneMatrices> matrices;
 	};
 
+	// 蒙皮重投影的身份标记：不存任何数据，只用来在相邻两帧之间认出「同一个实体」。
+	// 帧与帧之间的差异（骨架节点数、顶点区间）都存在 FrameHistoryData 里，按这个指针索引。
+	struct SkinnedPoseHistory
+	{
+	};
+
 	struct SkinnedModelRenderData :public ModelRenderData
 	{
 		std::shared_ptr<SkinnedModel> model;
 		std::vector<std::shared_ptr<BonePalette>> palettes;
+		std::shared_ptr<SkinnedPoseHistory> poseHistory;
 	};
 
 	struct DirLightRenderData :public BaseLightData

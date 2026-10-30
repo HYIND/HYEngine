@@ -166,7 +166,7 @@ namespace Render
 			item.transformHistory = transformHistory;
 			item.meshinfo = info;
 			item.palette = (meshIndex < data->palettes.size()) ? data->palettes[meshIndex] : nullptr;
-
+			item.poseHistory = data->poseHistory;
 			bool isTransprant = (mode == AlphaMode::Blend);
 			if (isTransprant) {
 				renderData.transparentItems.push_back(item);

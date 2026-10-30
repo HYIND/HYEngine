@@ -5,7 +5,8 @@
 
 GeometryPass::GeometryPass(
 	const std::string& staticMeshVertexShaderPath,
-	const std::string& staticMeshFragmentShaderPath
+	const std::string& staticMeshFragmentShaderPath,
+	const std::string& skinnedMeshVertexShaderPath
 )
 {
 	{
@@ -38,6 +39,37 @@ GeometryPass::GeometryPass(
 			_staticShader->Create(config);
 	}
 
+	{
+		_skinnedShader = std::make_shared<GraphicsPipeline>();
+
+		GraphicsPipelineConfig config;
+		config.vertexPath = skinnedMeshVertexShaderPath;
+		config.fragmentPath = staticMeshFragmentShaderPath;
+
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
+
+		config.AddColorAttachment(vk::Format::eR32G32B32A32Sfloat);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
+		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
+		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
+
+		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
+
+		config
+			.AddBindlessMaterialTextureBinding()
+			.AddCameraUnifromDataBinding()
+			.AddStorageBuffer(2)
+			.AddStorageBuffer(3)
+			.AddStorageBuffer(4);
+
+		config.AddDynamicState(vk::DynamicState::eCullMode);
+
+		if (config.Validate())
+			_skinnedShader->Create(config);
+	}
 }
 
 GeometryPass::~GeometryPass()
@@ -187,7 +219,6 @@ bool GeometryPass::SetupStaticBufferData(
 
 						data.curTransform = item.transform;
 						data.prevTransform = item.prevTransform;
-						data.motionVectorEnabled = 1;
 
 						uint64_t materialIndex;
 						if (indirectManager->GetMaterialIndex_LockFree(*material, materialIndex))
@@ -224,7 +255,10 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 	auto& indirectCommands = state.indirectCommands;
 	bool hasStaticMeshes = !opaqueMeshes.empty() || !renderIndex.oneSideIndex.empty() || !renderIndex.twoSideIndex.empty();
 	bool hasSkinnedMeshes = !indirectCommands.skinnedMesh_OneSideCommand.empty() || !indirectCommands.skinnedMesh_TwoSideCommand.empty();
-	if (!hasStaticMeshes && (!hasSkinnedMeshes || !indirectCommands.skinnedMesh_VertexBuffer))
+	if (!hasStaticMeshes && (!hasSkinnedMeshes
+		|| !state.curFrameSkinnedData
+		|| !state.curFrameSkinnedData->skinnedMesh_VertexBuffer
+		|| !state.curFrameSkinnedData->skinnedMesh_VertexBuffer->buffer))
 		return;
 
 	auto& shader = _staticShader;
@@ -287,18 +321,38 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 
 	if (hasSkinnedMeshes)
 	{
+		auto& curSkinnedVertices = state.curFrameSkinnedData->skinnedMesh_VertexBuffer;
+
+		std::shared_ptr<StorageBlock> prevSkinnedVertices;
+		if (state.preFrameSkinnedData
+			&& state.preFrameSkinnedData->skinnedMesh_VertexBuffer
+			&& state.preFrameSkinnedData->skinnedMesh_VertexBuffer->buffer)
+			prevSkinnedVertices = state.preFrameSkinnedData->skinnedMesh_VertexBuffer->buffer;
+		else
+		{
+			if (!_dummySkinnedVertexBuffer)
+				_dummySkinnedVertexBuffer = std::make_shared<VertexBufferBlock>(sizeof(Vertex));
+			prevSkinnedVertices = _dummySkinnedVertexBuffer;
+		}
+
 		GraphicsBindingRecord skinnedBinding;
 		skinnedBinding.SetStorageBlock(indirectCommands.ssbo_SkinnedMesh_GeometryRenderData, 2);
+		skinnedBinding.SetStorageBlock(indirectCommands.ssbo_SkinnedMesh_MotionData, 3);
+		skinnedBinding.SetStorageBlock(prevSkinnedVertices, 4);
+		prevSkinnedVertices->Barrier(cmd, BufferUsage::VertexAttributeRead, BufferUsage::StorageRead);
 		auto indirectManager = IndirectDrawManager::Instance();
 		skinnedBinding.SetBindlessMaterialTexture(indirectManager->GetMaterialSSBO(), BindlessTextureManager::Instance());
 		skinnedBinding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
-		shader->Bind(cmd, skinnedBinding);
+		if (_skinnedShader->IsValid())
+			_skinnedShader->Bind(cmd, skinnedBinding);
+		else
+			shader->Bind(cmd, skinnedBinding);
 
 		if (!indirectCommands.skinnedMesh_OneSideCommand.empty())
 		{
 			skinnedOneSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
 			cmd->setCullMode(vk::CullModeFlagBits::eBack);
-			cmd->bindVertexBuffers(indirectCommands.skinnedMesh_VertexBuffer);
+			cmd->bindVertexBuffers(curSkinnedVertices->buffer);
 			cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
 			cmd->drawIndexedIndirect(skinnedOneSideCommandBuffer, indirectCommands.skinnedMesh_OneSideCommand.size());
 		}
@@ -307,7 +361,7 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 		{
 			skinnedTwoSideCommandBuffer->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
 			cmd->setCullMode(vk::CullModeFlagBits::eNone);
-			cmd->bindVertexBuffers(indirectCommands.skinnedMesh_VertexBuffer);
+			cmd->bindVertexBuffers(curSkinnedVertices->buffer);
 			cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
 			cmd->drawIndexedIndirect(skinnedTwoSideCommandBuffer, indirectCommands.skinnedMesh_TwoSideCommand.size());
 		}

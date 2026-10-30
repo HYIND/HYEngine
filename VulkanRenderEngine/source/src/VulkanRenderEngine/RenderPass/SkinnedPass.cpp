@@ -59,10 +59,11 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 		state.indirectCommands.skinnedMesh_OneSideCommand.clear();
 		state.indirectCommands.skinnedMesh_TwoSideCommand.clear();
 		state.indirectCommands.transparentMesh_Command.clear();
-		state.indirectCommands.skinnedMesh_VertexBuffer.reset();
+		if (state.curFrameSkinnedData)state.curFrameSkinnedData->poses.clear();
 		state.indirectCommands.skinnedMesh_PaletteBuffer.reset();
 		state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices.reset();
 		state.indirectCommands.ssbo_SkinnedMesh_GeometryRenderData.reset();
+		state.indirectCommands.ssbo_SkinnedMesh_MotionData.reset();
 		return;
 	}
 
@@ -80,18 +81,25 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 	std::vector<VKRenderContext::BoneMatrices> paletteMatrices;
 	std::vector<SkinningDispatch> dispatches;
 	std::vector<TransAndMaterialIndex> skinnedMesh_TransformAndMaterialIndices;
+	std::vector<SkinnedMotionData> skinnedMotionDatas;
 	uint32_t outputVertexOffset = 0;
 	uint32_t commandStartOffset = 0;
 
+	auto* frameHistory = state.curFrameSkinnedData.get();
+	const auto* prevFrameHistory = state.preFrameSkinnedData ? state.preFrameSkinnedData.get() : nullptr;
+
 	for (auto& [items, commands] : data)
 	{
-		commands = AnlysisSkinnedIndirectCommands(items, paletteMatrices, dispatches, skinnedMesh_TransformAndMaterialIndices, commandStartOffset, outputVertexOffset);
+		commands = AnlysisSkinnedIndirectCommands(items, paletteMatrices, dispatches, skinnedMesh_TransformAndMaterialIndices, skinnedMotionDatas,
+			commandStartOffset, outputVertexOffset, frameHistory, prevFrameHistory);
 		commandStartOffset += commands.size();
 	}
 
 	auto indirectManager = IndirectDrawManager::Instance();
 	auto vertexBuffer = std::make_shared<VertexBufferBlock>();
 	vertexBuffer->SetSizeAsync(cmd, static_cast<uint64_t>(outputVertexOffset) * sizeof(Vertex), false);
+	frameHistory->skinnedMesh_VertexBuffer = std::make_shared<SkinnedVertexBufferState>();
+	frameHistory->skinnedMesh_VertexBuffer->buffer = vertexBuffer;
 
 	auto& skinnedMesh_PaletteBuffer = state.indirectCommands.skinnedMesh_PaletteBuffer;
 	skinnedMesh_PaletteBuffer = std::make_shared<StorageBlock>();
@@ -121,10 +129,17 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 			geometryRenderData[i].curTransform = source.model;
 			geometryRenderData[i].prevTransform = source.model;
 			geometryRenderData[i].materialIndex = source.materialIndex;
-			geometryRenderData[i].motionVectorEnabled = 0;
 		}
 		ssbo_SkinnedMesh_GeometryRenderData->WriteDataAsync(cmd, geometryRenderData.data(), geometryRenderData.size() * sizeof(GeometryRenderData));
 		ssbo_SkinnedMesh_GeometryRenderData->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+	}
+
+	auto& ssbo_SkinnedMesh_MotionData = state.indirectCommands.ssbo_SkinnedMesh_MotionData;
+	ssbo_SkinnedMesh_MotionData = std::make_shared<StorageBlock>();
+	if (!skinnedMotionDatas.empty())
+	{
+		ssbo_SkinnedMesh_MotionData->WriteDataAsync(cmd, skinnedMotionDatas.data(), skinnedMotionDatas.size() * sizeof(SkinnedMotionData));
+		ssbo_SkinnedMesh_MotionData->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
 	}
 
 	if (!dispatches.empty() && _skinningShader.IsValid())
@@ -151,7 +166,6 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 	state.indirectCommands.skinnedMesh_OneSideCommand = std::move(skinnedMesh_OneSideCommand);
 	state.indirectCommands.skinnedMesh_TwoSideCommand = std::move(skinnedMesh_TwoSideCommand);
 	state.indirectCommands.transparentMesh_Command = std::move(transparentMesh_Command);
-	state.indirectCommands.skinnedMesh_VertexBuffer = std::move(vertexBuffer);
 }
 
 std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
@@ -159,13 +173,17 @@ std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 	std::vector<VKRenderContext::BoneMatrices>& paletteMatrices,
 	std::vector<SkinningDispatch>& dispatches,
 	std::vector<TransAndMaterialIndex>& skinnedMesh_TransformAndMaterialIndices,
+	std::vector<SkinnedMotionData>& motionDatas,
 	uint32_t commandStartOffset,
-	uint32_t& outputVertexOffset
+	uint32_t& outputVertexOffset,
+	FrameHistoryData* frameHistory,
+	const FrameHistoryData* prevFrameHistory
 )
 {
 	auto indirectManager = IndirectDrawManager::Instance();
 	std::vector<IndirectDrawCommand> commands(items.size());
 	skinnedMesh_TransformAndMaterialIndices.resize(commandStartOffset + items.size());
+	motionDatas.resize(commandStartOffset + items.size());
 
 	SpinLock mutex;
 
@@ -235,6 +253,35 @@ std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 							.paletteCount = paletteCount,
 							.outputVertexOffset = outputVertexOffset
 							});
+
+						const std::string meshKey = mesh->GetUUID();
+						const VKRenderContext::SkinnedPoseHistory* poseKey = item.poseHistory.get();
+
+						if (frameHistory && poseKey)
+						{
+							auto& poseInfo = frameHistory->poses[poseKey];
+							poseInfo.globalTransformCount = paletteCount;
+							poseInfo.meshes[meshKey] = FrameHistoryData::SkinnedMeshRange{ outputVertexOffset, meshVertexCount };
+						}
+
+						auto& motion = motionDatas[transformIndex];
+						motion.vertexOffset = outputVertexOffset;
+						motion.vertexCount = meshVertexCount;
+
+						if (prevFrameHistory && prevFrameHistory->skinnedMesh_VertexBuffer
+							&& prevFrameHistory->skinnedMesh_VertexBuffer->buffer && poseKey)
+						{
+							auto poseIt = prevFrameHistory->poses.find(poseKey);
+							if (poseIt != prevFrameHistory->poses.end() && poseIt->second.globalTransformCount == paletteCount)
+							{
+								auto meshIt = poseIt->second.meshes.find(meshKey);
+								if (meshIt != poseIt->second.meshes.end() && meshIt->second.vertexCount == meshVertexCount)
+								{
+									motion.enabled = 1;
+									motion.prevVertexOffset = meshIt->second.vertexStart;
+								}
+							}
+						}
 
 						outputVertexOffset += meshVertexCount;
 					}

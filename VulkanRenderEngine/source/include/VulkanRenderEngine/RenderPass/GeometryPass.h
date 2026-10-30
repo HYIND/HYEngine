@@ -11,7 +11,8 @@ class GeometryPass :public RenderPassBase
 public:
 	GeometryPass(
 		const std::string& staticMeshVertexShaderPath,
-		const std::string& staticMeshFragmentShaderPath
+		const std::string& staticMeshFragmentShaderPath,
+		const std::string& skinnedMeshVertexShaderPath = "shader/gbuffer/geometrypass_SkinnedMesh.vs"
 	);
 	~GeometryPass();
 
@@ -43,4 +44,8 @@ private:
 
 private:
 	std::shared_ptr<GraphicsPipeline> _staticShader;
+	// 蒙皮网格用另一套 VS：除了静态那套，还要从上一帧的蒙皮顶点缓冲取重投影位置
+	std::shared_ptr<GraphicsPipeline> _skinnedShader;
+	// 没有上一帧顶点缓冲时占位用的假缓冲（重投影关闭时 shader 不会读它）
+	std::shared_ptr<VertexBufferBlock> _dummySkinnedVertexBuffer;
 };
