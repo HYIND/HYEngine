@@ -131,13 +131,14 @@ void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, 
 				if (params.rotationUpdater) particle->rotationUpdater = params.rotationUpdater->Clone();
 				if (params.localAccelerationUpdater) particle->localAccelerationUpdater = params.localAccelerationUpdater->Clone();
 				if (params.worldAccelerationUpdater) particle->worldAccelerationUpdater = params.worldAccelerationUpdater->Clone();
+
 				if (params.type == ParticleType::Color)
 				{
 					glm::vec3 baseColor;
 					auto properties = std::make_shared<ColorParticleProperties>(params.colorGenerator->generate(), params.opacityGenerator->generate(), params.shape);
 					particle->properties = properties;
 				}
-				else if (params.type == ParticleType::Color_Texture)
+				else if (params.type == ParticleType::ColorTexture)
 				{
 					auto properties = std::make_shared<TextureParticleProperties>(params.texture, params.colorGenerator->generate(), params.opacityGenerator->generate(), params.shape);
 					particle->properties = properties;

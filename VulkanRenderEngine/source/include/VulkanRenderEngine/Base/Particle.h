@@ -8,7 +8,7 @@
 #include "Effect.h"
 
 enum class ParticleShape { BillboardDisc = 0, BillboardSoftDisc = 1, BillboardQuad = 2, Sphere = 3 };	//Billboard模式：始终朝向玩家；WorldTrans模式，正常应用旋转
-enum class ParticleType { Color = 0, Color_Texture = 1, StaticModel = 2 };
+enum class ParticleType { Color = 0, ColorTexture = 1, StaticModel = 2 };
 
 struct BaseParticleProperties :public BaseEffectProperties
 {
@@ -63,7 +63,7 @@ struct TextureParticleProperties :public BaseParticleProperties
 	TextureParticleProperties(std::shared_ptr<Texture2D> texture, const glm::vec3& color = glm::vec3(1.0f), float opacity = 1.0f, ParticleShape shape = ParticleShape::BillboardQuad)
 		:BaseParticleProperties(color, opacity), texture(texture)
 	{
-		particleType = ParticleType::Color_Texture;
+		particleType = ParticleType::ColorTexture;
 	}
 	TextureParticleProperties(const TextureParticleProperties& other)
 		: BaseParticleProperties(other), shape(other.shape), texture(other.texture) {

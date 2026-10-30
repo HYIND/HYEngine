@@ -146,7 +146,7 @@ Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& 
 	emitter.emitterParams.burstInterval = 2.f;
 
 	emitter.emitterParams.shape = ParticleShape::BillboardQuad;
-	emitter.emitterParams.type = ParticleType::Color_Texture;
+	emitter.emitterParams.type = ParticleType::ColorTexture;
 	emitter.emitterParams.texture = texture;
 
 	return emitterEntity;
