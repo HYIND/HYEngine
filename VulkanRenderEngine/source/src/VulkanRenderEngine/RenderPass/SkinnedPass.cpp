@@ -19,6 +19,8 @@ using namespace VKRenderObjectData;
 
 SkinnedPass::SkinnedPass(const std::string& skinnedComputeShaderPass)
 {
+	SkinningWorkgroupSize = GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y;
+
 	static_assert(sizeof(SkinningDispatch) == 24);
 	ComputePipelineConfig config;
 	config.computePath = skinnedComputeShaderPass;

@@ -18,8 +18,6 @@ public:
 	void Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, RenderState& state);
 
 private:
-	static constexpr uint32_t SkinningWorkgroupSize = 64;
-
 	struct SkinningDispatch
 	{
 		uint32_t vertexCount;
@@ -39,5 +37,7 @@ private:
 		uint32_t& outputVertexOffset
 	);
 
+private:
+	uint32_t SkinningWorkgroupSize = 64;
 	ComputePipeline _skinningShader;
 };
