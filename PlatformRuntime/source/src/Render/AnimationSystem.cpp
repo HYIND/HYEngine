@@ -65,7 +65,7 @@ void AnimationSystem::postUpdate(float deltaTime)
 
 			ani_data->animator->SetTime((float)ani_data->curPlayTimeMs / 1000.f);
 			if (!palette)
-				palette = &ani_data->animator->GetFinalBoneMatrices();
+				palette = &ani_data->animator->GetGlobalTransforms();
 
 			isAnyAniPlaying = true;
 		}
@@ -88,7 +88,7 @@ void AnimationSystem::postUpdate(float deltaTime)
 					idleData->curPlayTimeMs %= loopMs;
 
 				idleData->animator->SetTime(static_cast<float>(idleData->curPlayTimeMs) / 1000.f);
-				palette = &idleData->animator->GetFinalBoneMatrices();
+				palette = &idleData->animator->GetGlobalTransforms();
 				return true;
 			};
 
@@ -103,7 +103,7 @@ void AnimationSystem::postUpdate(float deltaTime)
 				 
 				ani_data->curPlayTimeMs = 0;
 				ani_data->animator->SetTime(0.f);
-				palette = &ani_data->animator->GetFinalBoneMatrices();
+				palette = &ani_data->animator->GetGlobalTransforms();
 				return true;
 			};
 
@@ -119,11 +119,23 @@ void AnimationSystem::postUpdate(float deltaTime)
 
 		auto& pose = entity.hasComponent<SkeletonPose>() ? entity.getComponent<SkeletonPose>() : entity.addComponent<SkeletonPose>();
 		if (palette)
-			pose.palette.matrices = *palette;
+			pose.globalTransforms = *palette;
 		else if (aniGroup.skeleton && !aniGroup.skeleton->nodes.empty())
-			pose.palette.matrices.assign(aniGroup.skeleton->nodes.size(), glm::mat4(1.0f));
+		{
+			// 没有 animator：用骨架的绑定姿态（沿父链累乘 bindLocal）作为全局变换。
+			// 不能直接填单位阵——palette 还要乘各网格自己的逆绑定矩阵。
+			auto& nodes = aniGroup.skeleton->nodes;
+			pose.globalTransforms.resize(nodes.size());
+			for (std::size_t i = 0; i < nodes.size(); ++i)
+			{
+				const SkeletonNode& node = nodes[i];
+				pose.globalTransforms[i] = (node.parentIndex == SkeletonNode::InvalidIndex)
+					? node.bindLocalTransform
+					: pose.globalTransforms[node.parentIndex] * node.bindLocalTransform;
+			}
+		}
 		else
-			pose.palette.matrices.clear();
+			pose.globalTransforms.clear();
 
 	}
 }

@@ -73,7 +73,7 @@ void main()
 		{
 			mat4 boneMatrix = palette.matrices[params.paletteOffset + boneID];
 			mat3 normalMatrix = transpose(inverse(mat3(boneMatrix)));
-			position += (boneMatrix * source.position).xyz * weight;
+			position += (boneMatrix * vec4(source.position.xyz, 1.0)).xyz * weight;
 			normal += normalMatrix * source.normal.xyz * weight;
 			tangent += normalMatrix * source.tangent.xyz * weight;
 			bitangent += normalMatrix * source.bitangent.xyz * weight;

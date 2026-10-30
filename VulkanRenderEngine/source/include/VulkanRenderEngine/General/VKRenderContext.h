@@ -52,8 +52,7 @@ namespace VKRenderContext
 	struct SkinnedModelRenderData :public ModelRenderData
 	{
 		std::shared_ptr<SkinnedModel> model;
-		// 每帧在 RenderSystem 里新建一份，之后整条链共享同一个指针
-		std::shared_ptr<BonePalette> palette;
+		std::vector<std::shared_ptr<BonePalette>> palettes;
 	};
 
 	struct DirLightRenderData :public BaseLightData

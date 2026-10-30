@@ -147,8 +147,11 @@ namespace Render
 		auto& transform = data->transform;
 		auto transformHistory = data->transformHistory;
 
-		for (auto& info : data->model->GetMeshInfos())
+		auto& meshInfos = data->model->GetMeshInfos();
+		for (std::size_t meshIndex = 0; meshIndex < meshInfos.size(); ++meshIndex)
 		{
+			auto& info = meshInfos[meshIndex];
+
 			if (!info.mesh || !info.material)
 				continue;
 
@@ -162,7 +165,7 @@ namespace Render
 			item.prevTransform = transform;
 			item.transformHistory = transformHistory;
 			item.meshinfo = info;
-			item.palette = data->palette;
+			item.palette = (meshIndex < data->palettes.size()) ? data->palettes[meshIndex] : nullptr;
 
 			bool isTransprant = (mode == AlphaMode::Blend);
 			if (isTransprant) {
