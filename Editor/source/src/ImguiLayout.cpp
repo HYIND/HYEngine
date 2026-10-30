@@ -86,8 +86,7 @@ namespace
 
 		// .cmd 必须经 cmd.exe 启动；路径里有空格，所以整体再加一层引号。
 		const std::string commandLine = "cmd /c \"\"" + codeCommand + "\" \"" + filePath + "\"\"";
-		if (RunDetached(commandLine))
-			return true;
+		return RunDetached(commandLine);
 	}
 
 	bool OpenWithNotePad(const std::string& filePath)

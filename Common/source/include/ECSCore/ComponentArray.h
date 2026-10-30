@@ -3,6 +3,7 @@
 #include <array>
 #include <unordered_map>
 #include <cassert>
+#include <stdexcept>
 #include "Types.h"
 #include "ComponentTypes.h"
 #include "IComponent.h"
@@ -109,8 +110,10 @@ public:
 	}
 
 	T& getComponent(const EntityID& entityId) {
-		assert(hasComponent(entityId) && "Entity does not have this component!");
-		return componentData[entityToIndex[entityId]];
+		auto it = entityToIndex.find(entityId);
+		if (it == entityToIndex.end())
+			throw std::runtime_error("ECS: entity does not have this component type");
+		return componentData[it->second];
 	}
 
 	//const T& getComponent(EntityID entityId) const {
