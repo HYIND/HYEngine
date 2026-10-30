@@ -7,6 +7,9 @@
 #include "Systems/ScriptSystem.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
 
+#include <execution>
+#include <functional>
+
 using namespace Render;
 
 RenderableBaseModule::RenderableBaseModule(World* world) :_world(world) {}
@@ -359,6 +362,12 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 
 	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
 	temp.reserve(view.size());
+
+	// 每个实体投递一个「合成 per-mesh palette」的任务：等整个遍历结束后再统一并行执行。
+	// 任务只写自己那个 renderdata->palettes，彼此没有交集。
+	std::vector<std::function<void()>> paletteTasks;
+	paletteTasks.reserve(view.size());
+
 	for (auto [entity, transform, renderModel] : view)
 	{
 		if (!renderModel.visible || !renderModel.model)
@@ -373,8 +382,45 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 		if (entity.hasComponent<SkeletonPose>())
 		{
 			auto& pose = entity.getComponent<SkeletonPose>();
-			if (!pose.palette.matrices.empty())
-				renderdata->palette = std::make_shared<VKRenderContext::BonePalette>(pose.palette);
+			if (!pose.globalTransforms.empty())
+			{
+				// palette 是 per-mesh 的：globalTransforms 来自骨架（各网格共用），
+				// 逆绑定矩阵来自各网格自己的 aiBone::mOffsetMatrix。
+				// 任务粒度 = 一个网格 + 一份 globalTransforms，结果写进它自己的 palette；
+				// 真正的矩阵乘留到遍历结束后的并行段。
+				const std::vector<glm::mat4>* globalTransforms = &pose.globalTransforms;
+				auto& meshInfos = renderdata->model->GetMeshInfos();
+				renderdata->palettes.resize(meshInfos.size());
+
+				for (std::size_t meshIndex = 0; meshIndex < meshInfos.size(); ++meshIndex)
+				{
+					const std::shared_ptr<SkinnedMesh>& mesh = meshInfos[meshIndex].mesh;
+					if (!mesh)
+						continue;
+
+					auto palette = std::make_shared<VKRenderContext::BonePalette>();
+					const std::vector<glm::mat4>& inverseBindMatrices = mesh->GetInverseBindMatrices();
+
+					std::size_t count = globalTransforms->size();
+					if (!inverseBindMatrices.empty() && inverseBindMatrices.size() < count)
+						count = inverseBindMatrices.size();
+					palette->matrices.resize(count);
+					renderdata->palettes[meshIndex] = palette;
+
+					paletteTasks.emplace_back([globalTransforms, mesh, palette, count]()
+						{
+							const std::vector<glm::mat4>& bones = mesh->GetInverseBindMatrices();
+							for (std::size_t boneIndex = 0; boneIndex < count; ++boneIndex)
+							{
+								// 网格没有导出骨骼时（inverseBindMatrices 为空）没有顶点会引用骨骼，
+								// 这里给单位阵让顶点保持网格局部空间。
+								palette->matrices[boneIndex] = bones.empty()
+									? glm::mat4(1.0f)
+									: (*globalTransforms)[boneIndex] * bones[boneIndex];
+							}
+						});
+				}
+			}
 		}
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
@@ -382,6 +428,12 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 		context->data = renderdata;
 
 		temp.emplace_back(std::move(context));
+	}
+
+	if (!paletteTasks.empty())
+	{
+		std::for_each(std::execution::par_unseq, paletteTasks.begin(), paletteTasks.end(),
+			[](const std::function<void()>& task) { task(); });
 	}
 
 	LockGuard guard(_Scene3D_SpinLock);

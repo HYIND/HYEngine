@@ -53,7 +53,7 @@ std::vector<vk::VertexInputAttributeDescription> SkinnedMesh::GetVertexInputAttr
 		vk::VertexInputAttributeDescription()
 		.setLocation(locaitonOffset + 5)
 		.setBinding(baseBinding + 1)
-		.setFormat(vk::Format::eR32G32B32A32Sint)
+		.setFormat(vk::Format::eR32G32B32A32Uint)
 		.setOffset(offsetof(SkinnedData, m_BoneIDs))
 	);
 
@@ -62,7 +62,7 @@ std::vector<vk::VertexInputAttributeDescription> SkinnedMesh::GetVertexInputAttr
 		vk::VertexInputAttributeDescription()
 		.setLocation(locaitonOffset + 6)
 		.setBinding(baseBinding + 1)
-		.setFormat(vk::Format::eR32G32B32A32Sint)
+		.setFormat(vk::Format::eR32G32B32A32Uint)
 		.setOffset(offsetof(SkinnedData, m_BoneIDs) + 4 * sizeof(BoneID))
 	);
 
@@ -117,10 +117,21 @@ SkinnedMesh::~SkinnedMesh()
 std::shared_ptr<SkinnedMesh> SkinnedMesh::Clone()
 {
 	auto other = std::make_shared<SkinnedMesh>(_vertices, _indices, _skinned);
+	other->_inverseBindMatrices = _inverseBindMatrices;
 	return other;
 }
 
 const std::vector<SkinnedData>& SkinnedMesh::GetSkinnedData() const
 {
 	return _skinned;
+}
+
+const std::vector<glm::mat4>& SkinnedMesh::GetInverseBindMatrices() const
+{
+	return _inverseBindMatrices;
+}
+
+void SkinnedMesh::SetInverseBindMatrices(std::vector<glm::mat4> matrices)
+{
+	_inverseBindMatrices = std::move(matrices);
 }

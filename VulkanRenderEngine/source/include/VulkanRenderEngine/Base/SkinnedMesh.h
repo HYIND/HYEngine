@@ -49,6 +49,14 @@ public:
 	std::shared_ptr<SkinnedMesh> Clone();
 	const std::vector<SkinnedData>& GetSkinnedData() const;
 
+	// 逆绑定矩阵必须是 per-mesh 的：aiBone::mOffsetMatrix 定义在「这个网格的绑定空间」里，
+	// 已经把这个网格节点的变换烘焙进去了（导入器常给 mesh 节点挂 scale=100 或一个平移），
+	// 所以同一根骨骼在不同网格里的矩阵并不相同，跨网格共用一份就会让别的网格整体缩放/平移。
+	// 下标与 SkinnedData::m_BoneIDs 一致（骨架节点下标）。
+	const std::vector<glm::mat4>& GetInverseBindMatrices() const;
+	void SetInverseBindMatrices(std::vector<glm::mat4> matrices);
+
 private:
 	std::vector<SkinnedData> _skinned;
+	std::vector<glm::mat4> _inverseBindMatrices;
 };

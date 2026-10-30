@@ -5,14 +5,18 @@
 #include "ECSCore/Entity.h"
 
 #include <memory>
+#include <vector>
 
-// 当前骨架姿态的渲染快照
+#include <glm/glm.hpp>
+
+// 当前骨架姿态的渲染快照。
+// 这里存的是骨架每个节点的**全局变换**（不含逆绑定矩阵）：
 struct SkeletonPose :public IComponent
 {
-	VKRenderContext::BonePalette palette;
+	std::vector<glm::mat4> globalTransforms;
 
 	virtual void OnRemove(const Entity& e) {
-		palette.matrices.clear();
+		globalTransforms.clear();
 	}
 };
 

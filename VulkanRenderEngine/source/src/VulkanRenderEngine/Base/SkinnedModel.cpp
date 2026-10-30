@@ -373,14 +373,16 @@ SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, co
 	for (auto& data : skinned)
 		data.SetVertexBoneDataToDefault();
 
+	std::vector<glm::mat4> inverseBindMatrices(index.skeleton.nodes.size(), glm::mat4(1.0f));
+	for (std::size_t nodeIndex = 0; nodeIndex < index.skeleton.nodes.size(); ++nodeIndex)
+		inverseBindMatrices[nodeIndex] = index.skeleton.nodes[nodeIndex].inverseBindTransform;
+
 	uint32_t unresolvedBones = 0;
 	uint32_t byNameFallback = 0;
 	uint32_t overflowVertices = 0;
 	uint32_t unweightedVertices = 0;
 
-	// 每个顶点可能被任意多根骨骼影响：先按「顶点」收集，再按权重从大到小取前
-	// Mesh_Max_Bone_Influence 个。不能按骨骼遍历顺序先到先得——那样会保留权重很小的
-	// 影响、把真正主导的那根挤掉，顶点就会跟错骨头。
+	// 先按「顶点」收集，再按权重从大到小取前
 	std::vector<std::vector<std::pair<BoneID, float>>> influences(vertices.size());
 
 	if (mesh->mNumBones > 0)
@@ -412,6 +414,8 @@ SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, co
 				++unresolvedBones;
 				continue;
 			}
+
+			inverseBindMatrices[nodeIndex] = AssimpGLMHelpers::ConvertMatrixToGLMFormat(bone->mOffsetMatrix);
 
 			for (unsigned int i = 0; i < bone->mNumWeights; ++i)
 			{
@@ -470,6 +474,7 @@ SkinnedMeshInfo SkinnedModel::ProcessMesh(aiMesh* mesh, const aiScene* scene, co
 	}
 
 	auto meshptr = std::make_shared<SkinnedMesh>(vertices, indices, skinned);
+	meshptr->SetInverseBindMatrices(std::move(inverseBindMatrices));
 
 	return SkinnedMeshInfo{ meshptr,material };
 }

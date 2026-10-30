@@ -43,13 +43,11 @@ void Animator::SetSkeleton(std::shared_ptr<Skeleton> skeleton)
 
 	if (!m_Skeleton)
 	{
-		m_FinalBoneMatrices.clear();
 		m_GlobalTransforms.clear();
 		return;
 	}
 
 	m_GlobalTransforms.resize(m_Skeleton->nodes.size());
-	m_FinalBoneMatrices.resize(m_Skeleton->nodes.size());
 
 	Rebuild();
 }
@@ -67,7 +65,6 @@ void Animator::Rebuild()
 {
 	if (!m_Skeleton || m_Skeleton->nodes.empty())
 	{
-		m_FinalBoneMatrices.clear();
 		m_GlobalTransforms.clear();
 		return;
 	}
@@ -75,7 +72,6 @@ void Animator::Rebuild()
 	const std::vector<SkeletonNode>& nodes = m_Skeleton->nodes;
 
 	m_GlobalTransforms.resize(nodes.size());
-	m_FinalBoneMatrices.resize(nodes.size());
 
 	// 节点是先父后子编号的，父下标一定小于子下标，所以一趟顺序遍历就够，不需要递归。
 	for (std::size_t i = 0; i < nodes.size(); ++i)
@@ -91,13 +87,12 @@ void Animator::Rebuild()
 			: m_GlobalTransforms[node.parentIndex] * local;
 
 		m_GlobalTransforms[i] = global;
-		m_FinalBoneMatrices[i] = global * node.inverseBindTransform;
 	}
 }
 
-std::vector<glm::mat4>& Animator::GetFinalBoneMatrices()
+std::vector<glm::mat4>& Animator::GetGlobalTransforms()
 {
-	return m_FinalBoneMatrices;
+	return m_GlobalTransforms;
 }
 
 float Animator::GetCurrentTime() const

@@ -73,27 +73,7 @@ std::shared_ptr<Skeleton> LoadSkeleton(const std::string& path)
 	SkeletonIndex index = BuildSkeletonIndex(scene->mRootNode);
 	auto skeleton = std::make_shared<Skeleton>(std::move(index.skeleton));
 
-	// 导出器自己算的逆绑定矩阵比 inverse(globalBind) 可靠：骨架根节点带缩放时两者会差一截。
-	// 按 aiNode 指针取，重名骨骼也不会串。
-	for (unsigned int meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex)
-	{
-		const aiMesh* mesh = scene->mMeshes[meshIndex];
-		if (!mesh)
-			continue;
 
-		for (unsigned int boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
-		{
-			const aiBone* bone = mesh->mBones[boneIndex];
-			if (!bone || !bone->mNode)
-				continue;
-
-			const auto it = index.nodeIds.find(bone->mNode);
-			if (it == index.nodeIds.end())
-				continue;
-
-			skeleton->nodes[it->second].inverseBindTransform = AssimpGLMHelpers::ConvertMatrixToGLMFormat(bone->mOffsetMatrix);
-		}
-	}
 
 	return skeleton;
 }
