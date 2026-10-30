@@ -1006,11 +1006,22 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		_preCalculatePass->Execute(cmd, *state);
-		_skinnedPass->Execute(cmd, *state);
-		cmd->SubmitNowAndWait();
+
+		{
+			auto guard = sync->MakeProgressGuard();
+			_preCalculatePass->Execute(cmd, *state);
+		}
+
+		{
+			auto guard = sync->MakeProgressGuard();
+			_skinnedPass->Execute(cmd, *state);
+		}
+
+		{
+			auto guard = sync->MakeProgressGuard();
+			cmd->SubmitNowAndWait();
+		}
 	}
 
 	{

@@ -142,7 +142,6 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 			_skinningShader.SetPushConstants(cmd, &dispatch, sizeof(dispatch));
 			cmd->dispatch((dispatch.vertexCount + SkinningWorkgroupSize - 1) / SkinningWorkgroupSize, 1, 1);
 		}
-		vertexBuffer->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::VertexAttributeRead);
 	}
 
 	state.indirectCommands.skinnedMesh_OneSideCommand = std::move(skinnedMesh_OneSideCommand);
@@ -150,7 +149,6 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 	state.indirectCommands.transparentMesh_Command = std::move(transparentMesh_Command);
 	state.indirectCommands.skinnedMesh_VertexBuffer = std::move(vertexBuffer);
 }
-
 
 std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 	const std::vector<VKRenderObjectData::SceneSkinnedRenderData::SkinnedMeshItem>& items,
@@ -165,77 +163,78 @@ std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 	std::vector<IndirectDrawCommand> commands(items.size());
 	skinnedMesh_TransformAndMaterialIndices.resize(commandStartOffset + items.size());
 
+	SpinLock mutex;
+
 	using SharedLockType = IndirectDrawManager::SharedLockType;
 	indirectManager->WithSharedLock(
 		{ SharedLockType::Mesh, SharedLockType::Material, SharedLockType::Skinned },
 		[&]()
 		{
-			for (size_t itemIndex = 0; itemIndex < items.size(); ++itemIndex)
-			{
-				const auto& item = items[itemIndex];
-				auto& command = commands[itemIndex];
+			std::for_each(std::execution::par_unseq,
+				std::views::enumerate(items).begin(),
+				std::views::enumerate(items).end(),
+				[&](const auto& pair) {
+					const auto& [itemIndex, item] = pair;
 
-				const uint32_t transformIndex = commandStartOffset + static_cast<uint32_t>(itemIndex);
-				command.indexCount = 0;
-				command.instanceCount = 0;
-				command.firstIndex = 0;
-				command.vertexOffset = 0;
-				command.firstInstance = transformIndex;
+					const uint32_t transformIndex = commandStartOffset + static_cast<uint32_t>(itemIndex);
 
-				auto& transformAndMaterial = skinnedMesh_TransformAndMaterialIndices[transformIndex];
-				transformAndMaterial.model = item.transform;
-				transformAndMaterial.materialIndex = 0;
+					auto& command = commands[itemIndex];
+					command.indexCount = 0;
+					command.instanceCount = 0;
+					command.firstIndex = 0;
+					command.vertexOffset = 0;
+					command.firstInstance = transformIndex;
 
-				auto& mesh = item.meshinfo.mesh;
-				auto& material = item.meshinfo.material;
-				if (!mesh || !material)
-					continue;
+					auto& transformAndMaterial = skinnedMesh_TransformAndMaterialIndices[transformIndex];
+					transformAndMaterial.model = item.transform;
+					transformAndMaterial.materialIndex = 0;
 
-				indirectManager->GetMaterialIndex_LockFree(*material, transformAndMaterial.materialIndex);
+					const auto& mesh = item.meshinfo.mesh;
+					const auto& material = item.meshinfo.material;
+					if (!mesh || !material)
+						return;
 
-				IndirectDrawMeta meta;
-				uint32_t skinnedDataIndex = 0;
-				if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta) ||
-					!indirectManager->GetSkinnedIndex_LockFree(*mesh, skinnedDataIndex))
-					continue;
+					indirectManager->GetMaterialIndex_LockFree(*material, transformAndMaterial.materialIndex);
 
-				const size_t meshVertexCount = mesh->GetVertices().size();
-				const size_t paletteSize = item.palette ? item.palette->matrices.size() : 0;
-				const uint32_t maxVertexOffset = static_cast<uint32_t>(std::numeric_limits<int32_t>::max());
+					IndirectDrawMeta meta;
+					uint32_t skinnedDataIndex = 0;
+					if (!indirectManager->GetIndirectDrawMeta_LockFree(*mesh, meta) ||
+						!indirectManager->GetSkinnedIndex_LockFree(*mesh, skinnedDataIndex))
+						return;
 
-				if (meshVertexCount == 0
-					|| meshVertexCount > std::numeric_limits<uint32_t>::max()
-					|| meshVertexCount != mesh->GetSkinnedData().size()
-					|| meta.vertexOffset < 0
-					|| outputVertexOffset > maxVertexOffset
-					|| meshVertexCount > maxVertexOffset - outputVertexOffset
-					|| skinnedDataIndex > std::numeric_limits<uint32_t>::max() - meshVertexCount
-					|| paletteMatrices.size() > std::numeric_limits<uint32_t>::max()
-					|| paletteSize > std::numeric_limits<uint32_t>::max() - paletteMatrices.size()
-					)
-					continue;
+					const size_t paletteSize = item.palette ? item.palette->matrices.size() : 0;
+					const uint32_t meshVertexCount = mesh->GetVertices().size();
+					if (meshVertexCount == 0
+						|| meshVertexCount != mesh->GetSkinnedData().size()
+						|| meta.vertexOffset < 0
+						)
+						return;
 
-				const uint32_t vertexCount = static_cast<uint32_t>(meshVertexCount);
-				const uint32_t paletteOffset = static_cast<uint32_t>(paletteMatrices.size());
-				const uint32_t paletteCount = static_cast<uint32_t>(paletteSize);
-				if (paletteCount > 0)
-					paletteMatrices.append_range(item.palette->matrices);
+					command.indexCount = meta.indexCount;
+					command.firstIndex = meta.firstIndex;
+					command.instanceCount = 1;
 
-				dispatches.push_back(SkinningDispatch{
-					.vertexCount = vertexCount,
-					.sourceVertexOffset = static_cast<uint32_t>(meta.vertexOffset),
-					.skinnedDataOffset = skinnedDataIndex,
-					.paletteOffset = paletteOffset,
-					.paletteCount = paletteCount,
-					.outputVertexOffset = outputVertexOffset
-					});
+					const uint32_t paletteCount = static_cast<uint32_t>(paletteSize);
+					if (paletteCount > 0)
+					{
+						LockGuard guard(mutex);
+						command.vertexOffset = static_cast<int32_t>(outputVertexOffset);
 
-				command.indexCount = meta.indexCount;
-				command.firstIndex = meta.firstIndex;
-				command.vertexOffset = static_cast<int32_t>(outputVertexOffset);
-				command.instanceCount = 1;
-				outputVertexOffset += vertexCount;
-			}
+						const uint32_t paletteOffset = static_cast<uint32_t>(paletteMatrices.size());
+						paletteMatrices.append_range(item.palette->matrices);
+
+						dispatches.push_back(SkinningDispatch{
+							.vertexCount = meshVertexCount,
+							.sourceVertexOffset = static_cast<uint32_t>(meta.vertexOffset),
+							.skinnedDataOffset = skinnedDataIndex,
+							.paletteOffset = paletteOffset,
+							.paletteCount = paletteCount,
+							.outputVertexOffset = outputVertexOffset
+							});
+
+						outputVertexOffset += meshVertexCount;
+					}
+				});
 		});
 
 	return commands;
