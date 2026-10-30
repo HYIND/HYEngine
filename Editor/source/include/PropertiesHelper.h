@@ -40,6 +40,8 @@ public:
 	template<typename T>
 	static bool DrawWithTitle(const std::string& title, T& data);
 
+	static void SetNextPropertyFieldWidth(float maxWidth, float fraction = 0.5f);
+
 private:
 	static std::unordered_map<ComponentTypeID, DrawFunction>& GetCustomDrawRegistry();
 
@@ -60,8 +62,6 @@ private:
 	// 字段绘制辅助
 	template<typename FieldType>
 	static bool DrawField(const std::string& name, FieldType* value, PropertyWidget widget);
-
-	static void SetNextPropertyFieldWidth(float maxWidth, float fraction = 0.5f);
 
 	// 静态/蒙皮模型组件的属性面板几乎一样，只有模型资产的类型名不同。
 	template<typename ModelComponent>
