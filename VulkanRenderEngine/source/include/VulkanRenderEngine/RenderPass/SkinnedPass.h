@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/RenderItem.h"
@@ -33,8 +33,11 @@ private:
 		std::vector<VKRenderContext::BoneMatrices>& paletteMatrices,
 		std::vector<SkinningDispatch>& dispatches,
 		std::vector<TransAndMaterialIndex>& skinnedMesh_TransformAndMaterialIndices,
+		std::vector<SkinnedMotionData>& motionDatas,
 		uint32_t commandStartOffset,
-		uint32_t& outputVertexOffset
+		uint32_t& outputVertexOffset,
+		FrameHistoryData* frameHistory,				// 本帧：登记每个 pose 的骨架规模与网格顶点区间
+		const FrameHistoryData* prevFrameHistory	// 上一帧：查重投影来源
 	);
 
 private:

@@ -427,6 +427,8 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 						});
 				}
 			}
+
+			renderdata->poseHistory = pose.history;
 		}
 
 		auto context = std::make_shared<VKRenderContext::RenderContext>();
