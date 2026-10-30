@@ -2730,12 +2730,14 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 	ImGui::Text("渲染选项");
 	ImGui::Separator();
 
+	PropertiesHelper::SetNextPropertyFieldWidth(250.0f, 0.55f);
 	int targetFps = static_cast<int>(editorApp->GetTargetFps());
 	if (ImGui::SliderInt("目标帧率", &targetFps, 0, 360, targetFps == 0 ? "不限" : "%d FPS"))
 		editorApp->SetTargetFps(static_cast<uint32_t>(targetFps < 0 ? 0 : targetFps));
 
+	PropertiesHelper::SetNextPropertyFieldWidth(250.0f, 0.55f);
 	float timeScale = editorApp->Runtime().GetWorldTimeScale();
-	if (ImGui::SliderFloat("世界时间膨胀", &timeScale, 0.0f, 20.0f, "%.2fx"))
+	if (ImGui::SliderFloat("世界时间膨胀", &timeScale, 0.0f, 20.0f, "%.2fx", ImGuiSliderFlags_AlwaysClamp))
 		editorApp->Runtime().SetWorldTimeScale(timeScale);
 	ImGui::SameLine();
 	if (ImGui::SmallButton("重置 1x"))
