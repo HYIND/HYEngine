@@ -19,8 +19,6 @@ void main()
 	MaterialData material = materials[materialIndex];
 
 	vec3 normal = calculateNormal(material, FragNormal, TBN, FragTextureCoords);
-	if (!gl_FrontFacing)		// 双面渲染，背面要翻法线，否则光照是反的
-		normal = -normal;
 	if (dot(normal, normal) < 1e-6)
 		discard;
 
