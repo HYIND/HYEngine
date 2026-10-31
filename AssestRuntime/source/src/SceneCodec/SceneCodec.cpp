@@ -3,6 +3,7 @@
 #include "Render/Components/RenderStaticModel.h"
 #include "Render/Components/RenderSkinnedModel.h"
 #include "Render/Components/SkeletonAnimatorGroup.h"
+#include "Render/Components/ParticleEmitter.h"
 #include "VulkanRenderEngine/Base/Skeleton.h"
 #include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "VulkanRenderEngine/Base/StaticModel.h"
@@ -328,6 +329,50 @@ bool SceneCodec::Deserialize(
 
 				data->clip = std::move(clip);
 				data->animator = std::make_shared<Animator>(data->clip, group->skeleton);
+			}
+		}
+
+		// 粒子发射器：材质和模型也是独立资产，按 GUID 解析后替换掉解码期只存了 GUID 的槽位。
+		for (Entity entity : entityHandles)
+		{
+			auto* emitter = entity.tryGetComponent<ParticleEmitter>();
+			if (!emitter)
+				continue;
+
+			auto& renderer = emitter->emitterParams.renderer;
+
+			if (auto* billboardRenderer = std::get_if<ParticleBillboardRenderer>(&renderer))
+			{
+				if (!billboardRenderer->materialGuid.empty() && resolveMaterialAsset)
+				{
+					auto material = resolveMaterialAsset(billboardRenderer->materialGuid);
+					if (material && material->GetAssetGUID() == billboardRenderer->materialGuid)
+						billboardRenderer->material = std::move(material);
+					else
+						billboardRenderer->material.reset();
+				}
+			}
+			else if (auto* meshRenderer = std::get_if<ParticleMeshRenderer>(&renderer))
+			{
+				// Custom：模型自带几何与材质
+				if (!meshRenderer->modelGuid.empty() && resolveModelAsset)
+				{
+					auto model = resolveModelAsset(meshRenderer->modelGuid);
+					if (model && model->GetAssetGUID() == meshRenderer->modelGuid)
+						meshRenderer->model = std::move(model);
+					else
+						meshRenderer->model.reset();
+				}
+
+				// Cube / Sphere：内置网格，只解析可选材质
+				if (!meshRenderer->materialGuid.empty() && resolveMaterialAsset)
+				{
+					auto material = resolveMaterialAsset(meshRenderer->materialGuid);
+					if (material && material->GetAssetGUID() == meshRenderer->materialGuid)
+						meshRenderer->material = std::move(material);
+					else
+						meshRenderer->material.reset();
+				}
 			}
 		}
 	}

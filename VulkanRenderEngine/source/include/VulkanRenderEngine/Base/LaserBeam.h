@@ -23,5 +23,5 @@ public:
 		, end(other.end) {
 		effectType = EffectType::LaserBeam;
 	}
-	virtual std::shared_ptr<BaseEffectProperties> Clone() override { return std::make_shared<LaserBeamProperties>(*this); };
+	virtual std::shared_ptr<BaseEffectProperties> Clone() const override { return std::make_shared<LaserBeamProperties>(*this); };
 };

@@ -2,6 +2,8 @@
 #include "SceneCodec/ComponentCodec.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
+#include "VulkanRenderEngine/Base/StaticModel.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
 #include <nlohmann/json.hpp>
 
 using Json = nlohmann::json;
@@ -312,6 +314,644 @@ namespace
             && std::isfinite(physics.jumpSpeed)
             && std::isfinite(physics.maxSlope)
             && std::isfinite(physics.maxPenetrationDepth);
+    }
+}
+
+namespace
+{
+    Json KindJson(const char* kind, Json fields = Json::object())
+    {
+        fields["kind"] = kind;
+        return fields;
+    }
+
+    std::string ReadKind(const Json& j)
+    {
+        if (!j.is_object() || !j.contains("kind") || !j["kind"].is_string())
+            return {};
+        return j["kind"].get<std::string>();
+    }
+
+    bool ReadFloat(const Json& j, const char* key, float& out)
+    {
+        if (!j.is_object() || !j.contains(key) || !j[key].is_number())
+            return false;
+        out = j[key].get<float>();
+        return std::isfinite(out);
+    }
+
+    bool ReadInt(const Json& j, const char* key, int& out)
+    {
+        if (!j.is_object() || !j.contains(key) || !j[key].is_number_integer())
+            return false;
+        out = j[key].get<int>();
+        return true;
+    }
+
+    bool ReadVec3(const Json& j, const char* key, glm::vec3& out)
+    {
+        return j.is_object() && j.contains(key) && DecodeVec3(j[key], out);
+    }
+
+    bool ReadQuat(const Json& j, const char* key, glm::quat& out)
+    {
+        return j.is_object() && j.contains(key) && DecodeQuat(j[key], out);
+    }
+
+    // ---------------- 生成器 ----------------
+
+    Json EncodeScaleGenerator(const std::shared_ptr<IScaleGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const RandomScaleGenerator*>(generator.get()))
+            return KindJson("Random", { {"min", EncodeVec3(p->min)}, {"max", EncodeVec3(p->max)} });
+        if (auto* p = dynamic_cast<const FixedScaleGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"scale", EncodeVec3(p->scale)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IScaleGenerator> DecodeScaleGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Random")
+        {
+            glm::vec3 min(1.0f), max(1.0f);
+            ReadVec3(j, "min", min);
+            ReadVec3(j, "max", max);
+            return std::make_shared<RandomScaleGenerator>(min, max);
+        }
+        if (kind == "Fixed")
+        {
+            glm::vec3 scale(1.0f);
+            ReadVec3(j, "scale", scale);
+            return std::make_shared<FixedScaleGenerator>(scale);
+        }
+        return nullptr;
+    }
+
+    Json EncodeColorGenerator(const std::shared_ptr<IColorGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const RandomColorGenerator*>(generator.get()))
+            return KindJson("Random", { {"min", EncodeVec3(p->min)}, {"max", EncodeVec3(p->max)} });
+        if (auto* p = dynamic_cast<const FixedColorGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"color", EncodeVec3(p->color)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IColorGenerator> DecodeColorGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Random")
+        {
+            glm::vec3 min(1.0f), max(1.0f);
+            ReadVec3(j, "min", min);
+            ReadVec3(j, "max", max);
+            return std::make_shared<RandomColorGenerator>(min, max);
+        }
+        if (kind == "Fixed")
+        {
+            glm::vec3 color(1.0f);
+            ReadVec3(j, "color", color);
+            return std::make_shared<FixedColorGenerator>(color);
+        }
+        return nullptr;
+    }
+
+    Json EncodeLifeTimeGenerator(const std::shared_ptr<ILifeTimeGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const RandomLifeTimeGenerator*>(generator.get()))
+            return KindJson("Random", { {"min", p->min}, {"max", p->max} });
+        if (auto* p = dynamic_cast<const FixedLifeTimeGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"lifetime", p->lifetime} });
+        return nullptr;
+    }
+
+    std::shared_ptr<ILifeTimeGenerator> DecodeLifeTimeGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Random")
+        {
+            float min = 1.0f, max = 1.0f;
+            ReadFloat(j, "min", min);
+            ReadFloat(j, "max", max);
+            return std::make_shared<RandomLifeTimeGenerator>(min, max);
+        }
+        if (kind == "Fixed")
+        {
+            float lifetime = 1.0f;
+            ReadFloat(j, "lifetime", lifetime);
+            return std::make_shared<FixedLifeTimeGenerator>(lifetime);
+        }
+        return nullptr;
+    }
+
+    Json EncodeOpacityGenerator(const std::shared_ptr<IOpacityGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const RandomOpacityGenerator*>(generator.get()))
+            return KindJson("Random", { {"min", p->min}, {"max", p->max} });
+        if (auto* p = dynamic_cast<const FixedOpactiyGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"opacity", p->opacity} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IOpacityGenerator> DecodeOpacityGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Random")
+        {
+            float min = 1.0f, max = 1.0f;
+            ReadFloat(j, "min", min);
+            ReadFloat(j, "max", max);
+            return std::make_shared<RandomOpacityGenerator>(min, max);
+        }
+        if (kind == "Fixed")
+        {
+            float opacity = 1.0f;
+            ReadFloat(j, "opacity", opacity);
+            return std::make_shared<FixedOpactiyGenerator>(opacity);
+        }
+        return nullptr;
+    }
+
+    Json EncodePositionGenerator(const std::shared_ptr<IPositionGenerator>& generator)
+    {
+        if (dynamic_cast<const PointGenerator*>(generator.get()))
+            return KindJson("Point");
+        if (auto* p = dynamic_cast<const SphericalGenerator*>(generator.get()))
+            return KindJson("Spherical", { {"radius", p->radius} });
+        if (auto* p = dynamic_cast<const BallGenerator*>(generator.get()))
+            return KindJson("Ball", { {"radius", p->radius} });
+        if (auto* p = dynamic_cast<const BoxGenerator*>(generator.get()))
+            return KindJson("Box", { {"halfSize", EncodeVec3(p->halfSize)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IPositionGenerator> DecodePositionGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Point")
+            return std::make_shared<PointGenerator>();
+        if (kind == "Spherical")
+        {
+            float radius = 1.0f;
+            ReadFloat(j, "radius", radius);
+            return std::make_shared<SphericalGenerator>(radius);
+        }
+        if (kind == "Ball")
+        {
+            float radius = 1.0f;
+            ReadFloat(j, "radius", radius);
+            return std::make_shared<BallGenerator>(radius);
+        }
+        if (kind == "Box")
+        {
+            glm::vec3 halfSize(1.0f);
+            ReadVec3(j, "halfSize", halfSize);
+            return std::make_shared<BoxGenerator>(halfSize);
+        }
+        return nullptr;
+    }
+
+    Json EncodeDirectionGenerator(const std::shared_ptr<IDirectionGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const FixedDirectionConeGenerator*>(generator.get()))
+            return KindJson("FixedCone", { {"direction", EncodeVec3(p->direction)}, {"spreadAngle", p->spreadAngle} });
+        if (auto* p = dynamic_cast<const FollowEmitterDirectionConeGenerator*>(generator.get()))
+            return KindJson("FollowEmitterCone", { {"spreadAngle", p->spreadAngle} });
+        if (auto* p = dynamic_cast<const RadialDirectionGenerator*>(generator.get()))
+            return KindJson("Radial", { {"spreadAngle", p->spreadAngle} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IDirectionGenerator> DecodeDirectionGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "FixedCone")
+        {
+            glm::vec3 direction(0.0f, 1.0f, 0.0f);
+            float spreadAngle = 0.0f;
+            ReadVec3(j, "direction", direction);
+            ReadFloat(j, "spreadAngle", spreadAngle);
+            if (glm::length(direction) < 1e-6f)
+                direction = glm::vec3(0.0f, 1.0f, 0.0f);
+            return std::make_shared<FixedDirectionConeGenerator>(direction, spreadAngle);
+        }
+        if (kind == "FollowEmitterCone")
+        {
+            float spreadAngle = 0.0f;
+            ReadFloat(j, "spreadAngle", spreadAngle);
+            return std::make_shared<FollowEmitterDirectionConeGenerator>(spreadAngle);
+        }
+        if (kind == "Radial")
+        {
+            float spreadAngle = 0.0f;
+            ReadFloat(j, "spreadAngle", spreadAngle);
+            return std::make_shared<RadialDirectionGenerator>(spreadAngle);
+        }
+        return nullptr;
+    }
+
+    Json EncodeRotationGenerator(const std::shared_ptr<IRotationGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const FixedRotationGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"rotation", EncodeQuat(p->rotation)} });
+        if (dynamic_cast<const FollowEmitterRotationGenerator*>(generator.get()))
+            return KindJson("FollowEmitter");
+        if (dynamic_cast<const FollowVelocityRotationGenerator*>(generator.get()))
+            return KindJson("FollowVelocity");
+        return nullptr;
+    }
+
+    std::shared_ptr<IRotationGenerator> DecodeRotationGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Fixed")
+        {
+            glm::quat rotation = glm::identity<glm::quat>();
+            ReadQuat(j, "rotation", rotation);
+            return std::make_shared<FixedRotationGenerator>(rotation);
+        }
+        if (kind == "FollowEmitter")
+            return std::make_shared<FollowEmitterRotationGenerator>();
+        if (kind == "FollowVelocity")
+            return std::make_shared<FollowVelocityRotationGenerator>();
+        return nullptr;
+    }
+
+    Json EncodeSpeedGenerator(const std::shared_ptr<ISpeedGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const RandomSpeedGenerator*>(generator.get()))
+            return KindJson("Random", { {"min", p->min}, {"max", p->max} });
+        if (auto* p = dynamic_cast<const FixedSpeedGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"speed", p->speed} });
+        return nullptr;
+    }
+
+    std::shared_ptr<ISpeedGenerator> DecodeSpeedGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Random")
+        {
+            float min = 1.0f, max = 1.0f;
+            ReadFloat(j, "min", min);
+            ReadFloat(j, "max", max);
+            return std::make_shared<RandomSpeedGenerator>(min, max);
+        }
+        if (kind == "Fixed")
+        {
+            float speed = 1.0f;
+            ReadFloat(j, "speed", speed);
+            return std::make_shared<FixedSpeedGenerator>(speed);
+        }
+        return nullptr;
+    }
+
+    Json EncodePositionOffsetGenerator(const std::shared_ptr<IPositionOffsetGenerator>& generator)
+    {
+        if (auto* p = dynamic_cast<const FixedPositionOffsetGenerator*>(generator.get()))
+            return KindJson("Fixed", { {"offset", EncodeVec3(p->offset)} });
+        if (dynamic_cast<const RadialPositionOffsetGenerator*>(generator.get()))
+            return KindJson("Radial");
+        return nullptr;
+    }
+
+    std::shared_ptr<IPositionOffsetGenerator> DecodePositionOffsetGenerator(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Fixed")
+        {
+            glm::vec3 offset(0.0f);
+            ReadVec3(j, "offset", offset);
+            return std::make_shared<FixedPositionOffsetGenerator>(offset);
+        }
+        if (kind == "Radial")
+            return std::make_shared<RadialPositionOffsetGenerator>();
+        return nullptr;
+    }
+
+    // ---------------- 更新器 ----------------
+
+    Json EncodeOpacityUpdater(const std::shared_ptr<IOpacityUpdater>& updater)
+    {
+        if (auto* p = dynamic_cast<const LinearOpacityUpdater*>(updater.get()))
+            return KindJson("Linear", { {"goalOpacity", p->goalOpacity} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IOpacityUpdater> DecodeOpacityUpdater(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Linear")
+        {
+            float goalOpacity = 0.0f;
+            ReadFloat(j, "goalOpacity", goalOpacity);
+            return std::make_shared<LinearOpacityUpdater>(goalOpacity);
+        }
+        return nullptr;
+    }
+
+    Json EncodeBaseColorUpdater(const std::shared_ptr<IBaseColorUpdater>& updater)
+    {
+        if (auto* p = dynamic_cast<const LinearBaseColorUpdater*>(updater.get()))
+            return KindJson("Linear", { {"goalColor", EncodeVec3(p->goalColor)} });
+        if (auto* p = dynamic_cast<const FireColorUpdater*>(updater.get()))
+            return KindJson("Fire", {
+                {"innerColor", EncodeVec3(p->innerColor)},
+                {"midColor", EncodeVec3(p->midColor)},
+                {"outerColor", EncodeVec3(p->outerColor)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IBaseColorUpdater> DecodeBaseColorUpdater(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Linear")
+        {
+            glm::vec3 goalColor(1.0f);
+            ReadVec3(j, "goalColor", goalColor);
+            return std::make_shared<LinearBaseColorUpdater>(goalColor);
+        }
+        if (kind == "Fire")
+        {
+            FireColorUpdater defaults;
+            glm::vec3 inner = defaults.innerColor;
+            glm::vec3 mid = defaults.midColor;
+            glm::vec3 outer = defaults.outerColor;
+            ReadVec3(j, "innerColor", inner);
+            ReadVec3(j, "midColor", mid);
+            ReadVec3(j, "outerColor", outer);
+            return std::make_shared<FireColorUpdater>(inner, mid, outer);
+        }
+        return nullptr;
+    }
+
+    Json EncodeScaleUpdater(const std::shared_ptr<IScaleUpdater>& updater)
+    {
+        if (auto* p = dynamic_cast<const LinearScaleUpdater*>(updater.get()))
+            return KindJson("Linear", { {"goalScale", EncodeVec3(p->goalScale)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IScaleUpdater> DecodeScaleUpdater(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "Linear")
+        {
+            glm::vec3 goalScale(1.0f);
+            ReadVec3(j, "goalScale", goalScale);
+            return std::make_shared<LinearScaleUpdater>(goalScale);
+        }
+        return nullptr;
+    }
+
+    Json EncodeRotationUpdater(const std::shared_ptr<IRotationUpdater>& updater)
+    {
+        if (dynamic_cast<const FollowVelocityRotationUpdater*>(updater.get()))
+            return KindJson("FollowVelocity");
+        return nullptr;
+    }
+
+    std::shared_ptr<IRotationUpdater> DecodeRotationUpdater(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "FollowVelocity")
+            return std::make_shared<FollowVelocityRotationUpdater>();
+        return nullptr;
+    }
+
+    Json EncodeAccelerationUpdater(const std::shared_ptr<IAccelerationUpdater>& updater)
+    {
+        if (dynamic_cast<const NoneAccelerationUpdater*>(updater.get()))
+            return KindJson("None");
+        if (dynamic_cast<const GravityAccelerationUpdater*>(updater.get()))
+            return KindJson("Gravity");
+        if (auto* p = dynamic_cast<const LinearAccelerationUpdater*>(updater.get()))
+            return KindJson("Linear", {
+                {"accelerationDir", EncodeVec3(p->accelerationDir)},
+                {"initAccelerationValue", p->initAccelerationValue},
+                {"goalAccelerationValue", p->goalAccelerationValue} });
+        if (auto* p = dynamic_cast<const PerlinTurbulenceUpdater*>(updater.get()))
+            return KindJson("PerlinTurbulence", { {"strength", p->strength}, {"frequency", p->frequency} });
+        if (auto* p = dynamic_cast<const FiexedAccelerationUpdater*>(updater.get()))
+            return KindJson("Fixed", { {"acceleration", EncodeVec3(p->acceleration)} });
+        return nullptr;
+    }
+
+    std::shared_ptr<IAccelerationUpdater> DecodeAccelerationUpdater(const Json& j)
+    {
+        const auto kind = ReadKind(j);
+        if (kind == "None")
+            return nullptr;		// 空指针就是 None
+        if (kind == "Gravity")
+            return std::make_shared<GravityAccelerationUpdater>();
+        if (kind == "Linear")
+        {
+            glm::vec3 accelerationDir(0.0f, 1.0f, 0.0f);
+            float initAccelerationValue = 0.0f;
+            float goalAccelerationValue = 0.0f;
+            ReadVec3(j, "accelerationDir", accelerationDir);
+            ReadFloat(j, "initAccelerationValue", initAccelerationValue);
+            ReadFloat(j, "goalAccelerationValue", goalAccelerationValue);
+            if (glm::length(accelerationDir) < 1e-6f)
+                accelerationDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            return std::make_shared<LinearAccelerationUpdater>(accelerationDir, initAccelerationValue, goalAccelerationValue);
+        }
+        if (kind == "PerlinTurbulence")
+        {
+            float strength = 0.5f;
+            float frequency = 1.5f;
+            ReadFloat(j, "strength", strength);
+            ReadFloat(j, "frequency", frequency);
+            return std::make_shared<PerlinTurbulenceUpdater>(strength, frequency);
+        }
+        if (kind == "Fixed")
+        {
+            glm::vec3 acceleration(0.0f);
+            ReadVec3(j, "acceleration", acceleration);
+            return std::make_shared<FiexedAccelerationUpdater>(acceleration);
+        }
+        return nullptr;
+    }
+
+    // ---------------- 粒子渲染器 ----------------
+    const char* GetParticleFacingName(ParticleFacing facing)
+    {
+        switch (facing)
+        {
+        case ParticleFacing::CameraPlane: return "CameraPlane";
+        case ParticleFacing::CameraPosition: return "CameraPosition";
+        case ParticleFacing::VelocityAligned: return "VelocityAligned";
+        case ParticleFacing::AxisLocked: return "AxisLocked";
+        default: return "CameraPlane";
+        }
+    }
+
+    bool DecodeParticleFacing(const Json& value, ParticleFacing& facing)
+    {
+        if (!value.is_string())
+            return false;
+        const auto name = value.get<std::string>();
+        if (name == "CameraPlane") facing = ParticleFacing::CameraPlane;
+        else if (name == "CameraPosition") facing = ParticleFacing::CameraPosition;
+        else if (name == "VelocityAligned") facing = ParticleFacing::VelocityAligned;
+        else if (name == "AxisLocked") facing = ParticleFacing::AxisLocked;
+        else return false;
+        return true;
+    }
+
+    const char* GetParticleMaskName(ParticleMask mask)
+    {
+        switch (mask)
+        {
+        case ParticleMask::None: return "None";
+        case ParticleMask::Disc: return "Disc";
+        case ParticleMask::SoftDisc: return "SoftDisc";
+        default: return "Disc";
+        }
+    }
+
+    bool DecodeParticleMask(const Json& value, ParticleMask& mask)
+    {
+        if (!value.is_string())
+            return false;
+        const auto name = value.get<std::string>();
+        if (name == "None") mask = ParticleMask::None;
+        else if (name == "Disc") mask = ParticleMask::Disc;
+        else if (name == "SoftDisc") mask = ParticleMask::SoftDisc;
+        else return false;
+        return true;
+    }
+
+    const char* GetParticleMeshTypeName(ParticleMeshType meshType)
+    {
+        switch (meshType)
+        {
+        case ParticleMeshType::Cube: return "Cube";
+        case ParticleMeshType::Sphere: return "Sphere";
+        case ParticleMeshType::Custom: return "Custom";
+        default: return "Sphere";
+        }
+    }
+
+    bool DecodeParticleMeshType(const Json& value, ParticleMeshType& meshType)
+    {
+        if (!value.is_string())
+            return false;
+        const auto name = value.get<std::string>();
+        if (name == "Cube") meshType = ParticleMeshType::Cube;
+        else if (name == "Sphere") meshType = ParticleMeshType::Sphere;
+        else if (name == "Custom") meshType = ParticleMeshType::Custom;
+        else return false;
+        return true;
+    }
+
+    // 场景里只存 GUID：材质由 SceneCodec 解析成 material，模型由 SceneCodec 解析成 model。
+    Json EncodeAssetGuid(const std::shared_ptr<Material>& material, const AssetGUID& cachedGuid)
+    {
+        if (material)
+        {
+            const auto& guid = !cachedGuid.empty() ? cachedGuid : material->GetAssetGUID();
+            if (!guid.empty())
+                return guid;
+        }
+
+        if (!cachedGuid.empty())
+            return cachedGuid;
+
+        return nullptr;
+    }
+
+    Json EncodeAssetGuid(const std::shared_ptr<StaticModel>& model, const AssetGUID& cachedGuid)
+    {
+        if (model)
+        {
+            const auto& guid = !cachedGuid.empty() ? cachedGuid : model->GetAssetGUID();
+            if (!guid.empty())
+                return guid;
+        }
+
+        if (!cachedGuid.empty())
+            return cachedGuid;
+
+        return nullptr;
+    }
+
+    // 渲染器：billboard / 内置 cube / 内置 sphere / 自定义模型
+    Json EncodeParticleRenderer(const ParticleRenderer& renderer)
+    {
+        if (const auto* meshRenderer = std::get_if<ParticleMeshRenderer>(&renderer))
+        {
+            const bool custom = meshRenderer->meshType == ParticleMeshType::Custom;
+
+            return Json{
+                { "type", "Mesh" },
+                { "meshType", GetParticleMeshTypeName(meshRenderer->meshType) },
+                { "modelGuid", custom ? EncodeAssetGuid(meshRenderer->model, meshRenderer->modelGuid) : Json(nullptr) },
+                { "materialGuid", custom ? Json(nullptr) : EncodeAssetGuid(meshRenderer->material, meshRenderer->materialGuid) }
+            };
+        }
+
+        const auto& billboardRenderer = std::get<ParticleBillboardRenderer>(renderer);
+
+        return Json{
+            { "type", "Billboard" },
+            { "facing", GetParticleFacingName(billboardRenderer.facing) },
+            { "mask", GetParticleMaskName(billboardRenderer.mask) },
+            { "materialGuid", EncodeAssetGuid(billboardRenderer.material, billboardRenderer.materialGuid) }
+        };
+    }
+
+    ParticleRenderer DecodeParticleRenderer(const Json& value)
+    {
+        if (!value.is_object())
+            return ParticleBillboardRenderer{};
+
+        const auto type = value.value("type", std::string("Billboard"));
+
+        if (type == "Mesh")
+        {
+            ParticleMeshRenderer renderer;
+
+            if (auto it = value.find("meshType"); it != value.end())
+                DecodeParticleMeshType(*it, renderer.meshType);
+
+            if (auto it = value.find("modelGuid"); it != value.end() && it->is_string())
+                renderer.modelGuid = it->get<std::string>();
+
+            if (auto it = value.find("materialGuid"); it != value.end() && it->is_string())
+                renderer.materialGuid = it->get<std::string>();
+
+            return renderer;
+        }
+
+        ParticleBillboardRenderer renderer;
+        if (auto it = value.find("facing"); it != value.end())
+            DecodeParticleFacing(*it, renderer.facing);
+        if (auto it = value.find("mask"); it != value.end())
+            DecodeParticleMask(*it, renderer.mask);
+        if (auto it = value.find("materialGuid"); it != value.end() && it->is_string())
+            renderer.materialGuid = it->get<std::string>();
+        return renderer;
+    }
+
+    const char* GetParticleBlendModeName(ParticleBlendMode blendMode)
+    {
+        switch (blendMode)
+        {
+        case ParticleBlendMode::Additive: return "Additive";
+        case ParticleBlendMode::AlphaBlend: return "AlphaBlend";
+        default: return "Additive";
+        }
+    }
+
+    bool DecodeParticleBlendMode(const Json& value, ParticleBlendMode& blendMode)
+    {
+        if (!value.is_string())
+            return false;
+        const auto name = value.get<std::string>();
+        if (name == "Additive") blendMode = ParticleBlendMode::Additive;
+        else if (name == "AlphaBlend") blendMode = ParticleBlendMode::AlphaBlend;
+        else return false;
+        return true;
     }
 }
 
@@ -1170,6 +1810,95 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
             light.renderCube = json.at("renderCube").get<bool>();
             return true;
         }));
+
+    result.push_back(GenerateComponentCodec<ParticleEmitter>(
+        "engine.particle_emitter",
+        "Particle Emitter",
+        // Encode
+        [](const ParticleEmitter& emitter) {
+            const auto& p = emitter.emitterParams;
+
+            return Json{
+                { "enable", emitter.enable },
+                { "renderer", EncodeParticleRenderer(p.renderer) },
+                { "blendMode", GetParticleBlendModeName(p.blendMode) },
+                { "emitRate", p.emitRate },
+                { "emitRateJitter", p.emitRateJitter },
+                { "burstAmount", p.burstAmount },
+                { "burstCount", p.burstCount },
+                { "burstInterval", p.burstInterval },
+                { "warmupTime", p.warmupTime },
+                { "scaleGenerator", EncodeScaleGenerator(p.scaleGenerator) },
+                { "colorGenerator", EncodeColorGenerator(p.colorGenerator) },
+                { "lifeTimeGenerator", EncodeLifeTimeGenerator(p.lifeTimeGenerator) },
+                { "opacityGenerator", EncodeOpacityGenerator(p.opacityGenerator) },
+                { "positionGenerator", EncodePositionGenerator(p.posGenerator) },
+                { "directionGenerator", EncodeDirectionGenerator(p.dirGenerator) },
+                { "speedGenerator", EncodeSpeedGenerator(p.speedGenerator) },
+                { "rotationGenerator", EncodeRotationGenerator(p.rotGenerator) },
+                { "positionOffsetGenerator", EncodePositionOffsetGenerator(p.posOffsetGenerator) },
+                { "opacityUpdater", EncodeOpacityUpdater(p.opacityUpdater) },
+                { "baseColorUpdater", EncodeBaseColorUpdater(p.baseColorUpdater) },
+                { "scaleUpdater", EncodeScaleUpdater(p.scaleUpdater) },
+                { "rotationUpdater", EncodeRotationUpdater(p.rotationUpdater) },
+                { "localAccelerationUpdater", EncodeAccelerationUpdater(p.localAccelerationUpdater) },
+                { "worldAccelerationUpdater", EncodeAccelerationUpdater(p.worldAccelerationUpdater) }
+            };
+        },
+        // Decode
+        [](ParticleEmitter& emitter, const Json& data) -> bool {
+            if (!data.is_object())
+                return false;
+            if (data.contains("enable") && !data["enable"].is_boolean())
+                return false;
+
+            ParticleEmitter decoded;
+            decoded.enable = data.value("enable", true);
+
+            auto& p = decoded.emitterParams;
+            p.renderer = DecodeParticleRenderer(data.value("renderer", Json()));
+            if (data.contains("blendMode") && !DecodeParticleBlendMode(data["blendMode"], p.blendMode))
+                return false;
+
+            ReadFloat(data, "emitRate", p.emitRate);
+            ReadFloat(data, "emitRateJitter", p.emitRateJitter);
+            ReadInt(data, "burstAmount", p.burstAmount);
+            ReadInt(data, "burstCount", p.burstCount);
+            ReadFloat(data, "burstInterval", p.burstInterval);
+            ReadFloat(data, "warmupTime", p.warmupTime);
+
+            p.scaleGenerator = DecodeScaleGenerator(data.value("scaleGenerator", Json()));
+            p.colorGenerator = DecodeColorGenerator(data.value("colorGenerator", Json()));
+            p.lifeTimeGenerator = DecodeLifeTimeGenerator(data.value("lifeTimeGenerator", Json()));
+            p.opacityGenerator = DecodeOpacityGenerator(data.value("opacityGenerator", Json()));
+            p.posGenerator = DecodePositionGenerator(data.value("positionGenerator", Json()));
+            p.dirGenerator = DecodeDirectionGenerator(data.value("directionGenerator", Json()));
+            p.speedGenerator = DecodeSpeedGenerator(data.value("speedGenerator", Json()));
+            p.rotGenerator = DecodeRotationGenerator(data.value("rotationGenerator", Json()));
+            p.posOffsetGenerator = DecodePositionOffsetGenerator(data.value("positionOffsetGenerator", Json()));
+            p.opacityUpdater = DecodeOpacityUpdater(data.value("opacityUpdater", Json()));
+            p.baseColorUpdater = DecodeBaseColorUpdater(data.value("baseColorUpdater", Json()));
+            p.scaleUpdater = DecodeScaleUpdater(data.value("scaleUpdater", Json()));
+            p.rotationUpdater = DecodeRotationUpdater(data.value("rotationUpdater", Json()));
+            p.localAccelerationUpdater = DecodeAccelerationUpdater(data.value("localAccelerationUpdater", Json()));
+            p.worldAccelerationUpdater = DecodeAccelerationUpdater(data.value("worldAccelerationUpdater", Json()));
+
+            emitter = std::move(decoded);
+            return true;
+        },
+        {}, {}, {}, 1,
+        std::vector<ComponentProperty>{
+            MakeComponentProperty<ParticleEmitter, bool>("enable", "Enable", &ParticleEmitter::enable, EditorPropertyKind::Boolean)
+        },
+        // 编辑器里 Add Component 时给一套能立刻出画面的默认参数（否则 IsVaild() 为 false 什么都看不到）。
+        ComponentEditorBehavior{
+            .add = [](Entity entity) {
+                ParticleEmitter emitter;
+                FillDefaultParticleEmitterParams(emitter.emitterParams);
+                entity.addComponent<ParticleEmitter>(std::move(emitter));
+            }
+        }
+    ));
 
     return result;
 }

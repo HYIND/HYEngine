@@ -8,6 +8,8 @@
 #include "glm/gtc/random.hpp"
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
+#include <variant>
+#include <vector>
 
 struct IOpacityUpdater;
 struct IBaseColorUpdater;
@@ -53,6 +55,7 @@ struct Particle :public Renderable
 // Color生成器接口
 struct IScaleGenerator {
 	virtual glm::vec3 generate() const = 0;
+	virtual std::shared_ptr<IScaleGenerator> Clone() const = 0;
 	virtual ~IScaleGenerator() = default;
 };
 
@@ -60,17 +63,20 @@ struct RandomScaleGenerator : IScaleGenerator {
 	glm::vec3 min, max;
 	RandomScaleGenerator(const glm::vec3& min, const glm::vec3& max) :min(min), max(max) {}
 	glm::vec3 generate() const override { return Tool::RandomLinear(min, max); }
+	std::shared_ptr<IScaleGenerator> Clone() const override { return std::make_shared<RandomScaleGenerator>(min, max); }
 };
 
 struct FixedScaleGenerator : IScaleGenerator {
 	glm::vec3 scale;
 	FixedScaleGenerator(const glm::vec3& scale) :scale(scale) {}
 	glm::vec3 generate() const override { return scale; }
+	std::shared_ptr<IScaleGenerator> Clone() const override { return std::make_shared<FixedScaleGenerator>(scale); }
 };
 
 // Color生成器接口
 struct IColorGenerator {
 	virtual glm::vec3 generate() const = 0;
+	virtual std::shared_ptr<IColorGenerator> Clone() const = 0;
 	virtual ~IColorGenerator() = default;
 };
 
@@ -78,17 +84,20 @@ struct RandomColorGenerator : IColorGenerator {
 	glm::vec3 min, max;
 	RandomColorGenerator(const glm::vec3& min, const glm::vec3& max) :min(min), max(max) {}
 	glm::vec3 generate() const override { return Tool::RandomLinear(min, max); }
+	std::shared_ptr<IColorGenerator> Clone() const override { return std::make_shared<RandomColorGenerator>(min, max); }
 };
 
 struct FixedColorGenerator : IColorGenerator {
 	glm::vec3 color;
 	FixedColorGenerator(const glm::vec3& color) :color(color) {}
 	glm::vec3 generate() const override { return color; }
+	std::shared_ptr<IColorGenerator> Clone() const override { return std::make_shared<FixedColorGenerator>(color); }
 };
 
 // lifetime生成器接口
 struct ILifeTimeGenerator {
 	virtual float generate() const = 0;
+	virtual std::shared_ptr<ILifeTimeGenerator> Clone() const = 0;
 	virtual ~ILifeTimeGenerator() = default;
 };
 
@@ -96,17 +105,20 @@ struct RandomLifeTimeGenerator : ILifeTimeGenerator {
 	float min, max;
 	RandomLifeTimeGenerator(float min, float max) :min(min), max(max) {}
 	float generate() const override { return Tool::RandomLinear(min, max); }
+	std::shared_ptr<ILifeTimeGenerator> Clone() const override { return std::make_shared<RandomLifeTimeGenerator>(min, max); }
 };
 
 struct FixedLifeTimeGenerator : ILifeTimeGenerator {
 	float lifetime;
 	FixedLifeTimeGenerator(float lifetime) :lifetime(lifetime) {}
 	float generate() const override { return lifetime; }
+	std::shared_ptr<ILifeTimeGenerator> Clone() const override { return std::make_shared<FixedLifeTimeGenerator>(lifetime); }
 };
 
 // Aplha生成器接口
 struct IOpacityGenerator {
 	virtual float generate() const = 0;
+	virtual std::shared_ptr<IOpacityGenerator> Clone() const = 0;
 	virtual ~IOpacityGenerator() = default;
 };
 
@@ -114,22 +126,26 @@ struct RandomOpacityGenerator : IOpacityGenerator {
 	float min, max;
 	RandomOpacityGenerator(float min, float max) :min(min), max(max) {}
 	float generate() const override { return Tool::RandomLinear(min, max); }
+	std::shared_ptr<IOpacityGenerator> Clone() const override { return std::make_shared<RandomOpacityGenerator>(min, max); }
 };
 
 struct FixedOpactiyGenerator : IOpacityGenerator {
 	float opacity;
 	FixedOpactiyGenerator(float opacity) :opacity(opacity) {}
 	float generate() const override { return opacity; }
+	std::shared_ptr<IOpacityGenerator> Clone() const override { return std::make_shared<FixedOpactiyGenerator>(opacity); }
 };
 
 // 位置生成器接口
 struct IPositionGenerator {
 	virtual glm::vec3 generate() const = 0;
+	virtual std::shared_ptr<IPositionGenerator> Clone() const = 0;
 	virtual ~IPositionGenerator() = default;
 };
 
 struct PointGenerator : IPositionGenerator {
 	glm::vec3 generate() const override { return glm::vec3(0.0f); }
+	std::shared_ptr<IPositionGenerator> Clone() const override { return std::make_shared<PointGenerator>(); }
 };
 
 struct SphericalGenerator : IPositionGenerator {
@@ -138,6 +154,7 @@ struct SphericalGenerator : IPositionGenerator {
 	glm::vec3 generate() const override {
 		return radius * glm::sphericalRand(1.0f);
 	}
+	std::shared_ptr<IPositionGenerator> Clone() const override { return std::make_shared<SphericalGenerator>(radius); }
 };
 
 struct BallGenerator : IPositionGenerator {
@@ -146,6 +163,7 @@ struct BallGenerator : IPositionGenerator {
 	glm::vec3 generate() const override {
 		return radius * glm::ballRand(1.0f);
 	}
+	std::shared_ptr<IPositionGenerator> Clone() const override { return std::make_shared<BallGenerator>(radius); }
 };
 
 struct BoxGenerator : IPositionGenerator {
@@ -158,11 +176,13 @@ struct BoxGenerator : IPositionGenerator {
 			Tool::RandomLinear(-halfSize.z, halfSize.z)
 		);
 	}
+	std::shared_ptr<IPositionGenerator> Clone() const override { return std::make_shared<BoxGenerator>(halfSize); }
 };
 
 // 方向生成器接口
 struct IDirectionGenerator {
 	virtual glm::vec3 generate(const glm::vec3& pos, const Transform& emitterTrans) const = 0;
+	virtual std::shared_ptr<IDirectionGenerator> Clone() const = 0;
 	virtual ~IDirectionGenerator() = default;
 };
 
@@ -174,6 +194,7 @@ struct FixedDirectionConeGenerator : IDirectionGenerator {
 		glm::quat baseQuat = Tool::SafeQuatLookAt(direction);
 		return glm::normalize(Tool::RandomSpread(baseQuat, spreadAngle) * glm::vec3(0, 0, -1));
 	}
+	std::shared_ptr<IDirectionGenerator> Clone() const override { return std::make_shared<FixedDirectionConeGenerator>(direction, spreadAngle); }
 };
 
 struct FollowEmitterDirectionConeGenerator : IDirectionGenerator {
@@ -182,6 +203,7 @@ struct FollowEmitterDirectionConeGenerator : IDirectionGenerator {
 	glm::vec3 generate(const glm::vec3& pos, const Transform& emitterTrans) const override {
 		return glm::normalize(Tool::RandomSpread(emitterTrans.rotation, spreadAngle) * glm::vec3(0, 0, -1));
 	}
+	std::shared_ptr<IDirectionGenerator> Clone() const override { return std::make_shared<FollowEmitterDirectionConeGenerator>(spreadAngle); }
 };
 
 struct RadialDirectionGenerator : IDirectionGenerator {
@@ -194,10 +216,12 @@ struct RadialDirectionGenerator : IDirectionGenerator {
 		glm::quat baseQuat = Tool::SafeQuatLookAt(pos);
 		return emitterTrans.GetMatrix() * glm::vec4(glm::normalize(Tool::RandomSpread(baseQuat, spreadAngle) * glm::vec3(0, 0, -1)), 0.f);
 	}
+	std::shared_ptr<IDirectionGenerator> Clone() const override { return std::make_shared<RadialDirectionGenerator>(spreadAngle); }
 };
 
 struct IRotationGenerator {
 	virtual glm::quat generate(const glm::vec3& position, const glm::vec3& direction, const Transform& emitterTrans) const = 0;
+	virtual std::shared_ptr<IRotationGenerator> Clone() const = 0;
 	virtual ~IRotationGenerator() = default;
 };
 
@@ -207,12 +231,14 @@ struct FixedRotationGenerator : IRotationGenerator {
 	glm::quat generate(const glm::vec3&, const glm::vec3&, const Transform& emitterTrans) const override {
 		return rotation;
 	}
+	std::shared_ptr<IRotationGenerator> Clone() const override { return std::make_shared<FixedRotationGenerator>(rotation); }
 };
 
 struct FollowEmitterRotationGenerator : IRotationGenerator {
 	glm::quat generate(const glm::vec3&, const glm::vec3& direction, const Transform& emitterTrans) const override {
 		return emitterTrans.rotation;
 	}
+	std::shared_ptr<IRotationGenerator> Clone() const override { return std::make_shared<FollowEmitterRotationGenerator>(); }
 };
 
 struct FollowVelocityRotationGenerator : IRotationGenerator {
@@ -221,11 +247,13 @@ struct FollowVelocityRotationGenerator : IRotationGenerator {
 			return Tool::SafeQuatLookAt(glm::normalize(direction));
 		return glm::identity<glm::quat>();
 	}
+	std::shared_ptr<IRotationGenerator> Clone() const override { return std::make_shared<FollowVelocityRotationGenerator>(); }
 };
 
 // Aplha生成器接口
 struct ISpeedGenerator {
 	virtual float generate() const = 0;
+	virtual std::shared_ptr<ISpeedGenerator> Clone() const = 0;
 	virtual ~ISpeedGenerator() = default;
 };
 
@@ -233,16 +261,19 @@ struct RandomSpeedGenerator : ISpeedGenerator {
 	float min, max;
 	RandomSpeedGenerator(float min, float max) :min(min), max(max) {}
 	float generate() const override { return Tool::RandomLinear(min, max); }
+	std::shared_ptr<ISpeedGenerator> Clone() const override { return std::make_shared<RandomSpeedGenerator>(min, max); }
 };
 
 struct FixedSpeedGenerator : ISpeedGenerator {
 	float speed;
 	FixedSpeedGenerator(float speed) :speed(speed) {}
 	float generate() const override { return speed; }
+	std::shared_ptr<ISpeedGenerator> Clone() const override { return std::make_shared<FixedSpeedGenerator>(speed); }
 };
 
 struct IPositionOffsetGenerator {
 	virtual glm::vec3 generate(Particle* particle) const = 0;
+	virtual std::shared_ptr<IPositionOffsetGenerator> Clone() const = 0;
 	virtual ~IPositionOffsetGenerator() = default;
 };
 
@@ -250,11 +281,13 @@ struct FixedPositionOffsetGenerator :public IPositionOffsetGenerator {
 	glm::vec3 offset;
 	FixedPositionOffsetGenerator(const glm::vec3& offset) :offset(offset) {}
 	glm::vec3 generate(Particle* particle) const override { return offset; }
+	std::shared_ptr<IPositionOffsetGenerator> Clone() const override { return std::make_shared<FixedPositionOffsetGenerator>(offset); }
 };
 
 struct RadialPositionOffsetGenerator :public IPositionOffsetGenerator {
 	RadialPositionOffsetGenerator() {}
 	glm::vec3 generate(Particle* particle) const override { return ((glm::length(particle->velocity) * glm::length(particle->velocity)) / 60.f) * glm::vec3(1, 0, 0); }
+	std::shared_ptr<IPositionOffsetGenerator> Clone() const override { return std::make_shared<RadialPositionOffsetGenerator>(); }
 };
 
 
@@ -385,7 +418,7 @@ struct LinearOpacityUpdater :public IOpacityUpdater
 {
 	float initOpacity;
 	float goalOpacity;
-	LinearOpacityUpdater(float goalOpactiy) :goalOpacity(goalOpacity) {}
+	LinearOpacityUpdater(float goalOpacity) :goalOpacity(goalOpacity) {}
 	std::shared_ptr<IOpacityUpdater> Clone() override { return std::make_shared<LinearOpacityUpdater>(goalOpacity); }
 	void Init(Particle* particle) override { initOpacity = particle->properties->opacity; }
 	float update(Particle* particle, float deltaTime) override {
@@ -481,13 +514,84 @@ struct LinearScaleUpdater :public IScaleUpdater
 };
 
 // ============================================================
+//  渲染器
+// ============================================================
+// 一个发射器只选一种渲染器：
+//   Billboard —— 内置 quad，圆形/软边在片元里裁；材质可空（空 = 纯 baseColor 颜色）。
+//   Mesh      —— 模型渲染
+struct ParticleBillboardRenderer
+{
+	ParticleFacing facing = ParticleFacing::CameraPlane;
+	ParticleMask mask = ParticleMask::Disc;
+
+	std::shared_ptr<Material> material;
+	AssetGUID materialGuid;
+};
+
+struct ParticleMeshRenderer
+{
+	ParticleMeshType meshType = ParticleMeshType::Sphere;	// Cube / Sphere 用内置网格，Custom 用下面的 model
+
+	std::shared_ptr<StaticModel> model;		// 仅 Custom：用户自己的模型
+	AssetGUID modelGuid;
+
+	std::shared_ptr<Material> material;
+	AssetGUID materialGuid;
+};
+
+using ParticleRenderer = std::variant<ParticleBillboardRenderer, ParticleMeshRenderer>;
+
+inline ParticleRenderInfo MakeParticleRenderInfo(const ParticleBillboardRenderer& renderer)
+{
+	ParticleRenderInfo info;
+	info.mesh = false;
+	info.facing = renderer.facing;
+	info.mask = renderer.mask;
+	info.material = renderer.material;
+	return info;
+}
+
+inline ParticleRenderInfo MakeParticleRenderInfo(const ParticleMeshRenderer& renderer)
+{
+	ParticleRenderInfo info;
+	info.mesh = true;
+	info.mask = ParticleMask::None;
+	info.meshType = renderer.meshType;
+
+	if (renderer.meshType == ParticleMeshType::Custom)
+	{
+		info.model = renderer.model;
+	}
+	else
+	{
+		info.material = renderer.material;
+	}
+
+	return info;
+}
+
+inline ParticleRenderInfo MakeParticleRenderInfo(const ParticleRenderer& renderer)
+{
+	return std::visit([](const auto& r) { return MakeParticleRenderInfo(r); }, renderer);
+}
+
+template <typename T>
+inline void CloneShared(const std::shared_ptr<T>& source, std::shared_ptr<T>& target)
+{
+	if (auto object = source)
+		target = object->Clone();
+	else
+		target = nullptr;
+}
+
+// ============================================================
 //  发射参数
 // ============================================================
 struct EmitterParams
 {
 	// ===== 发射速率 =====
 	float emitRate = 30.0f;						// 每秒发射粒子数
-	float emitRateVariance = 0.0f;				// 速率随机变化（0~1）
+	float emitRateJitter = 0.0f;				// 速率抖动比例（0~1）：本帧速率在 emitRate*(1±jitter) 内随机
 
 	// ===== 外观参数 =====
 
@@ -522,14 +626,67 @@ struct EmitterParams
 	// ===== 预热 =====
 	float warmupTime = 0.0f;             // 预热时间（秒），让粒子系统提前发射
 
-	ParticleShape shape = ParticleShape::BillboardDisc;
-	ParticleType type = ParticleType::Color;
+	ParticleBlendMode blendMode = ParticleBlendMode::Additive;
+	ParticleRenderer renderer = ParticleBillboardRenderer{};
 
-	std::shared_ptr<Texture2D> texture;
-	std::shared_ptr<StaticModel> model;
+	EmitterParams() = default;
+	EmitterParams(const EmitterParams& other) { CopyFrom(other); }
+	EmitterParams& operator=(const EmitterParams& other)
+	{
+		if (this != &other)
+			CopyFrom(other);
+		return *this;
+	}
+
+	void CopyFrom(const EmitterParams& other)
+	{
+		emitRate = other.emitRate;
+		emitRateJitter = other.emitRateJitter;
+
+		CloneShared(other.scaleGenerator, scaleGenerator);
+		CloneShared(other.colorGenerator, colorGenerator);
+		CloneShared(other.lifeTimeGenerator, lifeTimeGenerator);
+		CloneShared(other.opacityGenerator, opacityGenerator);
+
+		CloneShared(other.posGenerator, posGenerator);
+		CloneShared(other.dirGenerator, dirGenerator);
+		CloneShared(other.speedGenerator, speedGenerator);
+		CloneShared(other.rotGenerator, rotGenerator);
+		CloneShared(other.posOffsetGenerator, posOffsetGenerator);
+
+		CloneShared(other.opacityUpdater, opacityUpdater);
+		CloneShared(other.baseColorUpdater, baseColorUpdater);
+		CloneShared(other.scaleUpdater, scaleUpdater);
+		CloneShared(other.rotationUpdater, rotationUpdater);
+		CloneShared(other.localAccelerationUpdater, localAccelerationUpdater);
+		CloneShared(other.worldAccelerationUpdater, worldAccelerationUpdater);
+
+		burstAmount = other.burstAmount;
+		burstCount = other.burstCount;
+		burstInterval = other.burstInterval;
+		warmupTime = other.warmupTime;
+
+		blendMode = other.blendMode;
+		renderer = other.renderer;
+	}
 
 	bool IsVaild() { return scaleGenerator && colorGenerator && lifeTimeGenerator && opacityGenerator && posGenerator && dirGenerator && speedGenerator && rotGenerator; }
 };
+
+inline void FillDefaultParticleEmitterParams(EmitterParams& params)
+{
+	params.emitRate = 30.0f;
+	params.emitRateJitter = 0.0f;
+	params.scaleGenerator = std::make_shared<FixedScaleGenerator>(glm::vec3(0.2f));
+	params.colorGenerator = std::make_shared<FixedColorGenerator>(glm::vec3(1.0f));
+	params.lifeTimeGenerator = std::make_shared<FixedLifeTimeGenerator>(3.0f);
+	params.opacityGenerator = std::make_shared<FixedOpactiyGenerator>(1.0f);
+	params.posGenerator = std::make_shared<PointGenerator>();
+	params.dirGenerator = std::make_shared<FollowEmitterDirectionConeGenerator>(0.3f);
+	params.speedGenerator = std::make_shared<FixedSpeedGenerator>(5.0f);
+	params.rotGenerator = std::make_shared<FollowVelocityRotationGenerator>();
+	params.posOffsetGenerator = std::make_shared<FixedPositionOffsetGenerator>(glm::vec3(0.0f));
+}
 
 struct EmitterState
 {
@@ -548,6 +705,21 @@ struct ParticleEmitter :public IComponent
 	EmitterState emitterState;
 
 	ParticleEmitter() {};
+
+	ParticleEmitter(const ParticleEmitter& other)
+		: enable(other.enable), emitterParams(other.emitterParams), emitterState(other.emitterState) {}
+
+	ParticleEmitter& operator=(const ParticleEmitter& other)
+	{
+		if (this != &other)
+		{
+			enable = other.enable;
+			emitterParams = other.emitterParams;
+			emitterState = other.emitterState;
+		}
+		return *this;
+	}
+
 	virtual void OnRemove(const Entity& e) {
 		emitterParams = EmitterParams();
 		emitterState = EmitterState();

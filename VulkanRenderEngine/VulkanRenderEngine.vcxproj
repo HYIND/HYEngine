@@ -294,6 +294,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CombinPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EffectPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GeometryPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\GlobalPostProcessPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\HZBPass.cpp" />
