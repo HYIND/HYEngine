@@ -450,6 +450,85 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 	std::vector<MaterialEdit> edits;
 	std::vector<MaterialDrop> drops;
 	auto& meshInfos = comp.model->GetMeshInfos();
+
+	if (!meshInfos.empty())
+	{
+		float sharedOpacity = 0.f;
+		int sharedAlphaMode = 0;
+		bool hasShared = false;
+		bool mixedOpacity = false;
+		bool mixedAlphaMode = false;
+		for (const auto& meshInfo : meshInfos)
+		{
+			if (!meshInfo.material)
+				continue;
+			const MaterialProperties properties = meshInfo.material->GetProperties();
+			if (!hasShared)
+			{
+				sharedOpacity = properties.opacity;
+				sharedAlphaMode = static_cast<int>(properties.alphamode);
+				hasShared = true;
+			}
+			else
+			{
+				if (properties.opacity - sharedOpacity > 1e-4f || sharedOpacity - properties.opacity > 1e-4f)
+					mixedOpacity = true;
+				if (static_cast<int>(properties.alphamode) != sharedAlphaMode)
+					mixedAlphaMode = true;
+			}
+		}
+
+		if (hasShared)
+		{
+			const auto commitAll = [&]()
+				{
+					for (size_t index = 0; index < meshInfos.size(); ++index)
+					{
+						auto& material = meshInfos[index].material;
+						if (!material)
+							continue;
+						edits.push_back({ index, material->GetProperties(), material, material->GetAssetGUID() });
+					}
+				};
+
+			bool released = false;
+			SetNextPropertyFieldWidth(130.0f, 0.55f);
+			const char* opacityLabel = mixedOpacity ? "All Materials Opacity (+)" : "All Materials Opacity";
+			if (ImGui::SliderFloat(opacityLabel, &sharedOpacity, 0.0f, 1.0f, "%.3f"))
+			{
+				for (auto& meshInfo : meshInfos)
+				{
+					if (!meshInfo.material)
+						continue;
+					MaterialProperties properties = meshInfo.material->GetProperties();
+					properties.opacity = sharedOpacity;
+					meshInfo.material->SetProperty(properties);
+				}
+			}
+			released |= ImGui::IsItemDeactivatedAfterEdit();
+
+			const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+			SetNextPropertyFieldWidth(130.0f, 0.55f);
+			const char* alphaModeLabel = mixedAlphaMode ? "All Materials Alpha Mode (+)" : "All Materials Alpha Mode";
+			if (ImGui::Combo(alphaModeLabel, &sharedAlphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+			{
+				for (auto& meshInfo : meshInfos)
+				{
+					if (!meshInfo.material)
+						continue;
+					MaterialProperties properties = meshInfo.material->GetProperties();
+					properties.alphamode = static_cast<AlphaMode>((uint32_t)sharedAlphaMode);
+					meshInfo.material->SetProperty(properties);
+				}
+			}
+			released |= ImGui::IsItemDeactivatedAfterEdit();
+
+			if (released)
+				commitAll();
+			ImGui::Separator();
+		}
+	}
+
 	for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 	{
 		ImGui::PushID(static_cast<int>(slot));

@@ -386,7 +386,8 @@ int ImGuiMain()
 		EditorApp::Instance()->Scene().InitDefaultWorld();
 	}
 
-	glfwShowWindow(window);
+	static bool show = false;
+
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
@@ -470,6 +471,12 @@ int ImGuiMain()
 				FrameRender(wd, draw_data);
 				FramePresent(wd);
 			}
+		}
+
+		if (!show)
+		{
+			glfwShowWindow(window);
+			show = true;
 		}
 	}
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "stdafx.h"
 
@@ -33,6 +33,8 @@ public:
 	static void OpenMaterialEditor(const AssetGUID& guid);
 
 private:
+	static bool RequestProjectFlow(ProjectManager* projectManager, const std::string& action, bool needSaveConfirm);
+
 	static void DrawFolderTree(const std::string& currentPath, const std::string& parentPathStr, const std::string& rootPathStr);
 	static void DrawFolderContent(ProjectManager* projectManager, const std::string& currentPath);
 	static std::string GetWindowAtPosition(const ImVec2& pos);
@@ -55,6 +57,8 @@ public:
 
 	static bool s_openSaveConfirmPopup;
 	static bool s_openNewProjectPopup;
+	static bool s_openStopPlayConfirmPopup;
+	static bool s_pendingNeedSaveConfirm;
 
 	static AssetType importAssetType;
 

@@ -166,6 +166,7 @@ char ImguiLayout::m_wantOpenProjectPathBuffer[1000];
 
 bool ImguiLayout::s_openSaveConfirmPopup = false;
 bool ImguiLayout::s_openNewProjectPopup = false;
+bool ImguiLayout::s_openStopPlayConfirmPopup = false;
 
 std::string ImguiLayout::m_selectedFolder;
 
@@ -173,7 +174,6 @@ AssetImportPopup ImguiLayout::s_assetImportPopup;
 AssetGUID ImguiLayout::m_currentSceneAssetGuid;
 static AssetGUID s_materialEditorGuid;
 static bool s_materialEditorOpen = false;
-// Edit Component 弹窗里的“移除模式”开关：关掉弹窗必须复位，避免下次打开时右栏还能一点就删。
 static bool s_editComponentRemoveArmed = false;
 struct MaterialOrigin
 {
@@ -240,6 +240,28 @@ void ImguiLayout::OpenMaterialEditor(const AssetGUID& guid)
 	s_materialEditorOpen = true;
 	if (isNewSession)
 		s_materialOrigin.valid = false;
+}
+
+bool ImguiLayout::s_pendingNeedSaveConfirm = true;
+
+bool ImguiLayout::RequestProjectFlow(ProjectManager* projectManager, const std::string& action, bool needSaveConfirm)
+{
+	m_pendingAction = action;
+	s_pendingNeedSaveConfirm = needSaveConfirm;
+
+	auto editorApp = EditorApp::Instance();
+	if (editorApp && editorApp->Scene().GetEditorState() != EditorWorldState::Editing) {
+		s_openStopPlayConfirmPopup = true;
+		return true;
+	}
+
+	if (needSaveConfirm && projectManager && projectManager->IsProjectOpen()) {
+		s_openSaveConfirmPopup = true;
+		return true;
+	}
+
+	m_pendingAction.clear();
+	return false;
 }
 
 bool ImguiLayout::SaveCurrentScene(ProjectManager* projectManager)
@@ -1253,13 +1275,64 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		m_pendingAction = "";
 		};
 
+	auto IsWorldRunning = [&]()->bool {
+		return editorApp && editorApp->Scene().GetEditorState() != EditorWorldState::Editing;
+		};
+
+	// 停止运行/暂停，回到编辑态：StopPlayback 会把播放前的快照载回来，世界指针会变
+	auto StopPlaybackToEditing = [&]()->void {
+		if (!IsWorldRunning())
+			return;
+		editorApp->Scene().StopPlayback();
+		selectedEntity = Entity();
+		};
+
 	// 保存项目时顺带把当前场景也存下去
 	auto SaveProjectWithScene = [&]()->void {
 		if (!projectManager || !projectManager->IsProjectOpen())
 			return;
-		if (editorApp && editorApp->Scene().GetEditorState() == EditorWorldState::Editing)
-			SaveCurrentScene(projectManager);
+		// 这里只会在编辑态被调用：运行/暂停态的入口已经先走「是否停止运行」确认
+		if (editorApp && editorApp->Scene().GetEditorState() != EditorWorldState::Editing)
+			return;
+		SaveCurrentScene(projectManager);
 		projectManager->SaveProject();
+		};
+
+	auto StopPlayConfirmPopup = [&]()->void {
+		ImGui::OpenPopup("StopPlayConfirmPopup");
+		if (ImGui::BeginPopupModal("StopPlayConfirmPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::Text("当前场景正在运行（或已暂停）。");
+			ImGui::Text("需要先停止运行回到编辑态，才能继续这个操作。");
+			ImGui::Separator();
+
+			if (ImGui::Button("停止并继续", ImVec2(120, 0))) {
+				StopPlaybackToEditing();
+				ImGui::CloseCurrentPopup();
+				s_openStopPlayConfirmPopup = false;
+
+				if (m_pendingAction == "save") {
+					m_pendingAction = "";
+					// 没打开项目时，场景资产不属于任何项目，没有可保存的东西，停止运行就够了
+					if (projectManager->IsProjectOpen())
+						SaveProjectWithScene();
+				}
+				else if (s_pendingNeedSaveConfirm && projectManager->IsProjectOpen()) {
+					// 有项目才需要问未保存变更；pendingAction 原样留给后续确认流程
+					s_openSaveConfirmPopup = true;
+				}
+				else {
+					// 没有项目：直接执行（打开/新建/关闭都不需要问保存）
+					ExecutePendingAction(window);
+				}
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("取消", ImVec2(120, 0))) {
+				ImGui::CloseCurrentPopup();
+				s_openStopPlayConfirmPopup = false;
+				m_pendingAction = "";
+			}
+			ImGui::EndPopup();
+		}
 		};
 
 	auto SaveConfirmPopup = [&]()->void {
@@ -1298,22 +1371,13 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		{
 			// ===== New =====
 			if (ImGui::MenuItem("新建项目", "Ctrl+N")) {
-				if (projectManager->IsProjectOpen()) {
-					m_pendingAction = "new";
-					s_openSaveConfirmPopup = true;
-				}
-				else {
+				if (!RequestProjectFlow(projectManager, "new", true))
 					s_openNewProjectPopup = true;
-				}
 			}
 
 			// ===== Open =====
 			if (ImGui::MenuItem("打开项目", "Ctrl+O")) {
-				if (projectManager->IsProjectOpen()) {
-					m_pendingAction = "open";
-					s_openSaveConfirmPopup = true;
-				}
-				else {
+				if (!RequestProjectFlow(projectManager, "open", true)) {
 					std::string filePath;
 					if (FileIO::OpenOneFile(filePath, { { "project",".project" } }))
 					{
@@ -1323,14 +1387,11 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 				}
 			}
 
-			// ===== Save（只有项目打开时才可用）=====
-			if (ImGui::MenuItem("保存项目", "Ctrl+S", false, projectManager->IsProjectOpen())) {
-				if (projectManager->IsProjectOpen()) {
-					SaveProjectWithScene();
-				}
-				else
-				{
-					ImGui::OpenPopup("SaveTempProjectPopup");
+			// ===== Save（没打开项目时只用于「停止运行」，因为场景资产属于项目）=====
+			if (ImGui::MenuItem("保存项目", "Ctrl+S", false, projectManager->IsProjectOpen() || IsWorldRunning())) {
+				if (!RequestProjectFlow(projectManager, "save", false)) {
+					if (projectManager->IsProjectOpen())
+						SaveProjectWithScene();
 				}
 			}
 
@@ -1341,13 +1402,8 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 
 			ImGui::Separator();
 			if (ImGui::MenuItem("关闭", "Alt+F4")) {
-				if (projectManager->IsProjectOpen()) {
-					m_pendingAction = "exit";
-					s_openSaveConfirmPopup = true;
-				}
-				else {
+				if (!RequestProjectFlow(projectManager, "exit", true))
 					glfwSetWindowShouldClose(window, true);
-				}
 			}
 			ImGui::EndMenu();
 		}
@@ -1420,6 +1476,9 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		ImGui::EndMainMenuBar();
 	}
 
+	if (s_openStopPlayConfirmPopup) {
+		StopPlayConfirmPopup();
+	}
 	if (s_openSaveConfirmPopup) {
 		SaveConfirmPopup();
 	}
@@ -2850,13 +2909,12 @@ void ImguiLayout::DropFile(const std::string& filePathStr, ProjectManager* proje
 	// 拖入项目文件
 	if (filePath.extension().string() == ".project")
 	{
-		if (projectManager->IsProjectOpen()) {
-			m_pendingAction = "wantOpenProject";
-			memset(m_wantOpenProjectPathBuffer, 0, sizeof(m_wantOpenProjectPathBuffer));
-			strcpy(m_wantOpenProjectPathBuffer, filePath.string().c_str());
-			s_openSaveConfirmPopup = true;
-		}
-		else {
+		memset(m_wantOpenProjectPathBuffer, 0, sizeof(m_wantOpenProjectPathBuffer));
+		strcpy(m_wantOpenProjectPathBuffer, filePath.string().c_str());
+
+		// 运行中先问是否停止运行；没有项目则直接打开
+		if (!RequestProjectFlow(projectManager, "wantOpenProject", true)) {
+			m_wantOpenProjectPathBuffer[0] = '\0';
 			OpenProjectAndLoadDefaultScene(filePath.string(), projectManager, EditorApp::Instance());
 			m_selectedFolder.clear();
 		}
@@ -2898,21 +2956,16 @@ void ImguiLayout::DropFolder(const std::string& folderPath, ProjectManager* proj
 	{
 		if (filePath.extension().string() == ".project")
 		{
-			if (projectManager->IsProjectOpen())
-			{
-				memset(m_wantOpenProjectPathBuffer, 0, sizeof(m_wantOpenProjectPathBuffer));
-				strcpy(m_wantOpenProjectPathBuffer, filePath.string().c_str());
-				m_pendingAction = "wantOpenProject";
-				s_openSaveConfirmPopup = true;
-				hasOpenProject = true;
-				break;
+			memset(m_wantOpenProjectPathBuffer, 0, sizeof(m_wantOpenProjectPathBuffer));
+			strcpy(m_wantOpenProjectPathBuffer, filePath.string().c_str());
+			hasOpenProject = true;
+
+			if (!RequestProjectFlow(projectManager, "wantOpenProject", true)) {
+				m_wantOpenProjectPathBuffer[0] = '\0';
+				OpenProjectAndLoadDefaultScene(filePath.string(), projectManager, EditorApp::Instance());
+				m_selectedFolder.clear();
 			}
-			else {
-				if (OpenProjectAndLoadDefaultScene(filePath.string(), projectManager, EditorApp::Instance()))
-					m_selectedFolder.clear();
-				hasOpenProject = true;
-				break;
-			}
+			break;
 		}
 	}
 
@@ -2921,13 +2974,8 @@ void ImguiLayout::DropFolder(const std::string& folderPath, ProjectManager* proj
 
 		memset(m_newProjectPathBuffer, 0, sizeof(m_newProjectPathBuffer));
 		strcpy(m_newProjectPathBuffer, folderPath.c_str());
-		if (projectManager->IsProjectOpen()) {
-			m_pendingAction = "new";
-			s_openSaveConfirmPopup = true;
-		}
-		else {
+		if (!RequestProjectFlow(projectManager, "new", true))
 			s_openNewProjectPopup = true;
-		}
 	}
 }
 
