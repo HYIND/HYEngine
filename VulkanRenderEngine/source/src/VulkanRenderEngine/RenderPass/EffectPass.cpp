@@ -212,7 +212,7 @@ EffectPass::EffectPass(
 		config.vertexPath = oitCompositeVertexShaderPath;
 		config.fragmentPath = oitCompositeFragmentShaderPath;
 
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat, GraphicsPipelineConfig::DefaultColorAttachmentBlend);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat, GraphicsPipelineConfig::DefaultColorAttachmentTransparentBlend);
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 		config.SetDepthTest(false, false, vk::CompareOp::eAlways);
 		config.SetCullMode(vk::CullModeFlagBits::eNone);

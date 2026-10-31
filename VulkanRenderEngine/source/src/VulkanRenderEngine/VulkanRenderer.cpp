@@ -15,7 +15,7 @@
 #include "VulkanRenderEngine/RenderPass/EffectPass.h"
 #include "VulkanRenderEngine/Base/Effect.h"
 #include "VulkanRenderEngine/Base/Particle.h"
-//#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
+#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGIPass.h"
@@ -667,7 +667,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
 
-	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
+	auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
@@ -974,10 +974,13 @@ void VulkanRenderer::InitSceneRenderGraph()
 		)
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
-	//transparentNode->SetRenderPass(std::move(transparentPass))
-	//	.Input(atlasShadowMap)
-	//	.After(opaqueFence, effectPass)
-	//	.Before(transprantFence);
+	// 半透明：在不透明光照 + 体积光之后、粒子之前，按由远到近的顺序前向着色
+	transparentNode->SetRenderPass(std::move(transparentPass))
+		.Input(ResourceData{ atlasShadowMap, graphicsReadLayout })
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
+		.After(opaqueFence, volumeCalculateNode)
+		.Before(effectNode, transprantFence)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
 
 	autoExposureNode->SetRenderPass(std::move(autoExposurePass))
@@ -1238,8 +1241,6 @@ void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
 	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 
-	// 每帧各持一份在分发时解析好的数据，这里只上传；
-	// 不再读写成员缓存，多帧并行渲染时不会互相覆盖
 	state->camera.prevUBO->WriteDataAsync(cmd, &data->cameraPrevData, sizeof(camera_compData));
 	state->camera.curUBO->WriteDataAsync(cmd, &data->cameraCurData, sizeof(camera_compData));
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);

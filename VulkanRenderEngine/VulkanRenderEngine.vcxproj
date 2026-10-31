@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -313,6 +313,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\TransparentPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\VolumeCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\SharedTexture.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKContext.cpp" />

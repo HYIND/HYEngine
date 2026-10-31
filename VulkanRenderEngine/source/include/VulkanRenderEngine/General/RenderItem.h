@@ -32,6 +32,8 @@ namespace VKRenderObjectData
 		RenderIndex opaqueItems_renderIndex;
 		RenderIndex opaqueItems_cullRenderIndex;
 
+		std::vector<size_t> transparentItems_cullRenderIndex;
+
 		std::vector<std::shared_ptr<BaseEffectProperties>> effectItems;
 	};
 
