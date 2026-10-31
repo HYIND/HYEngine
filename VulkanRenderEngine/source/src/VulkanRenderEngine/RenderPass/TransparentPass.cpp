@@ -195,7 +195,7 @@ void TransparentPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGr
 
 		_shader->Bind(cmd, binding);
 
-		cmd->setCullMode(vk::CullModeFlagBits::eNone);
+		cmd->setCullMode(vk::CullModeFlagBits::eBack);
 		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
 		cmd->drawIndexedIndirect(commandBuffer, _commands.size());
@@ -230,7 +230,7 @@ void TransparentPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGr
 
 		_shader->Bind(cmd, binding);
 
-		cmd->setCullMode(vk::CullModeFlagBits::eNone);
+		cmd->setCullMode(vk::CullModeFlagBits::eBack);
 		cmd->bindVertexBuffers(skinnedVertices);
 		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
 		cmd->drawIndexedIndirect(commandBuffer, skinnedCommands.size());
