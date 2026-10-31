@@ -2308,17 +2308,18 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 		{
 			static std::unordered_map<VkImageView, VkDescriptorSet> imguiRegisterTexture;
 
-			auto prevClear = [&]() {
+			auto prevClear = [&]()
 				{
-					LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
-					vkDeviceWaitIdle(g_Device);
-					for (auto& [view, textureId] : imguiRegisterTexture)
 					{
-						if (textureId != VK_NULL_HANDLE)
-							ImGui_ImplVulkan_RemoveTexture(textureId);
+						LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+						vkDeviceWaitIdle(g_Device);
+						for (auto& [view, textureId] : imguiRegisterTexture)
+						{
+							if (textureId != VK_NULL_HANDLE)
+								ImGui_ImplVulkan_RemoveTexture(textureId);
+						}
 					}
-				}
-				imguiRegisterTexture.clear();
+					imguiRegisterTexture.clear();
 				};
 
 			editorApp->ResizeVulkan(viewportSize.x, viewportSize.y, prevClear);
