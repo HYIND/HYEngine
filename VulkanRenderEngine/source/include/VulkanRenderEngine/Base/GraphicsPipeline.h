@@ -14,6 +14,17 @@ struct GraphicsPipelineConfig : public PipelineConfig
 		.setDstAlphaBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
 		.setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
 
+	inline static vk::PipelineColorBlendAttachmentState DefaultColorAttachmentTransparentBlend =
+		vk::PipelineColorBlendAttachmentState()
+		.setColorBlendOp(vk::BlendOp::eAdd)
+		.setAlphaBlendOp(vk::BlendOp::eAdd)
+		.setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
+		.setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
+		.setSrcAlphaBlendFactor(vk::BlendFactor::eSrcAlpha)
+		.setDstAlphaBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
+		.setBlendEnable(vk::True)
+		.setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+
 	struct GraphicsPipelineCreateInfoPack
 	{
 		vk::GraphicsPipelineCreateInfo createInfo;

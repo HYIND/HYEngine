@@ -1253,6 +1253,15 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		m_pendingAction = "";
 		};
 
+	// 保存项目时顺带把当前场景也存下去
+	auto SaveProjectWithScene = [&]()->void {
+		if (!projectManager || !projectManager->IsProjectOpen())
+			return;
+		if (editorApp && editorApp->Scene().GetEditorState() == EditorWorldState::Editing)
+			SaveCurrentScene(projectManager);
+		projectManager->SaveProject();
+		};
+
 	auto SaveConfirmPopup = [&]()->void {
 		ImGui::OpenPopup("SaveConfirmPopup");
 		if (ImGui::BeginPopupModal("SaveConfirmPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -1260,7 +1269,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			ImGui::Text("是否在继续操作前保存项目?");
 
 			if (ImGui::Button("保存")) {
-				projectManager->SaveProject();
+				SaveProjectWithScene();
 				ImGui::CloseCurrentPopup();
 				ExecutePendingAction(window);
 				m_pendingAction = "";
@@ -1317,7 +1326,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			// ===== Save（只有项目打开时才可用）=====
 			if (ImGui::MenuItem("保存项目", "Ctrl+S", false, projectManager->IsProjectOpen())) {
 				if (projectManager->IsProjectOpen()) {
-					projectManager->SaveProject();
+					SaveProjectWithScene();
 				}
 				else
 				{

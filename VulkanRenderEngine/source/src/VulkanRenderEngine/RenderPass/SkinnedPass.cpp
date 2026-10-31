@@ -14,7 +14,6 @@ static_assert(offsetof(Vertex, TexCoords) == 32);
 static_assert(offsetof(Vertex, Tangent) == 48);
 static_assert(offsetof(Vertex, Bitangent) == 64);
 static_assert(sizeof(SkinnedData) == 64);
-// shader 里 BoneMatrices 是两个 mat4，std430 下结构体 128 字节、数组步长也是 128。
 static_assert(sizeof(VKRenderContext::BoneMatrices) == 128);
 
 using namespace VKRenderObjectData;
