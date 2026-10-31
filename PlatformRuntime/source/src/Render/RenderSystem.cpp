@@ -548,22 +548,42 @@ void RenderSystem::ProcessParticle(std::shared_ptr<Render::Render3DFrameData> fr
 		return;
 
 	auto& particles = particleSystem->GetParticles();
+	if (particles.empty())
+		return;
+
+	uint32_t tempSlotCount = 0;
 	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
-	temp.reserve(particles.size());
-	for (auto& particle : particles)
+
+	std::vector<std::function<void()>> tasks;
+	tasks.reserve(particles.size());
+
+	for (std::size_t particleIndex = 0; particleIndex < particles.size(); particleIndex++)
 	{
+		auto& particle = particles[particleIndex];
 		if (!particle || !particle->visible || !particle->properties)
 			continue;
 
-		auto renderdata = std::make_shared<VKRenderContext::EffectRenderData>();
-		renderdata->properties = particle->properties->Clone();
+		tasks.emplace_back([&particles, &temp, particleIndex, slot = tempSlotCount++]()
+			{
+				auto renderdata = std::make_shared<VKRenderContext::EffectRenderData>();
+				renderdata->properties = particles[particleIndex]->properties->Clone();
 
-		auto context = std::make_shared<VKRenderContext::RenderContext>();
-		context->type = VKRenderContext::RenderContextType::Effect;
-		context->data = renderdata;
+				auto context = std::make_shared<VKRenderContext::RenderContext>();
+				context->type = VKRenderContext::RenderContextType::Effect;
+				context->data = renderdata;
 
-		temp.emplace_back(std::move(context));
+				temp[slot] = std::move(context);
+			});
 	}
+
+	if (tasks.empty())
+		return;
+
+	temp.resize(tasks.size());
+
+	std::for_each(std::execution::par, tasks.begin(), tasks.end(),
+		[](const std::function<void()>& task) { task(); });
+
 	LockGuard guard(_Scene3D_SpinLock);
 	framebuffer->Scene3D_Contexts.append_range(temp);
 }

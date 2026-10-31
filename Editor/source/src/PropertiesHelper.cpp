@@ -1,4 +1,4 @@
-﻿
+
 #include "PropertiesHelper.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
@@ -177,6 +177,7 @@ static void RegisterAllComponents()
     PropertiesHelper::RegisterComponent<RenderStaticModel>();
     PropertiesHelper::RegisterComponent<RenderSkinnedModel>();
     PropertiesHelper::RegisterComponent<SkeletonAnimatorGroup>();
+    PropertiesHelper::RegisterComponent<ParticleEmitter>();
     PropertiesHelper::RegisterComponent<Script>();
     PropertiesHelper::RegisterComponent<UIView>();
     PropertiesHelper::RegisterComponent<TagCurrentControl>();

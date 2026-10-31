@@ -1,6 +1,7 @@
 #include "PropertiesHelper.h"
 #include "ImguiLayout.h"
 #include "SceneCodec/ComponentCodec.h"
+#include "Render/Components/ParticleEmitter.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -71,16 +72,33 @@ void PropertiesHelper::RegisterComponent()
 
 			if constexpr (sizeof(T) > sizeof(IComponent))
 			{
-				T* temp = new T();
+				struct EditorBuffer
+				{
+					EntityID entityId = 0;
+					const void* source = nullptr;
+					T* buffer = nullptr;
+				};
+				static EditorBuffer cache;
+
 				auto& component = *(static_cast<T*>(comp));
-				EditorSnapshot<T>::Make(component, *temp);
-				bool changed = DrawComponent(*temp, assetManager);
+				if (cache.buffer == nullptr)
+					cache.buffer = new T();
+
+				if (cache.entityId != entity.getId() || cache.source != comp)
+				{
+					EditorSnapshot<T>::Make(component, *cache.buffer);
+					cache.entityId = entity.getId();
+					cache.source = comp;
+				}
+
+				bool changed = DrawComponent(*cache.buffer, assetManager);
 				if (changed)
 				{
 					auto world = entity.getWorld();
-					world->SubmitCommand([entity, temp, &component] mutable ->void {
-						EditorSnapshot<T>::Apply(std::move(*temp), component);
-						delete(temp);
+					T* buffer = cache.buffer;
+					world->SubmitCommand([entity, buffer, &component] mutable ->void {
+						T value = *buffer;
+						EditorSnapshot<T>::Apply(std::move(value), component);
 						OnComponentChange(entity, component);
 						});
 				}
@@ -838,6 +856,735 @@ inline bool PropertiesHelper::DrawComponent<SkeletonAnimatorGroup>(SkeletonAnima
 	}
 
 	return anyChanged;
+}
+
+// 粒子发射器：生成器/更新器是多态槽位，只能手写抽屉——先选种类，再画这个种类的字段。
+template<>
+inline bool PropertiesHelper::DrawComponent<ParticleEmitter>(ParticleEmitter& comp, ProjectManager* assetManager)
+{
+	bool changed = false;
+	auto& p = comp.emitterParams;
+	auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+
+	const auto assetLabel = [database](const AssetGUID& guid, const char* emptyLabel)
+		{
+			if (guid.empty())
+				return std::string(emptyLabel);
+			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+			return meta ? meta->name : guid;
+		};
+	const auto acceptDrop = [database](AssetType type, AssetGUID& target)
+		{
+			if (!ImGui::BeginDragDropTarget())
+				return false;
+			bool accepted = false;
+			if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			{
+				const auto* guidData = static_cast<const char*>(payload->Data);
+				auto dropped = (guidData && guidData[0] != 0 && database) ? database->GetAssetMetaByGuid(AssetGUID(guidData)) : nullptr;
+				if (dropped && dropped->type == type)
+				{
+					target = dropped->guid;
+					accepted = true;
+				}
+			}
+			ImGui::EndDragDropTarget();
+			return accepted;
+		};
+	// 返回 -1 = 没选；否则是选中的种类下标。
+	const auto kindCombo = [](const char* id, const char* const* names, int count, int current)
+		{
+			int picked = -1;
+			ImGui::SetNextItemWidth(150.f);
+			if (ImGui::BeginCombo(id, current >= 0 ? names[current] : "(unset)"))
+			{
+				for (int index = 0; index < count; ++index)
+					if (ImGui::Selectable(names[index], index == current))
+						picked = index;
+				ImGui::EndCombo();
+			}
+			return picked;
+		};
+
+	if (ImGui::Checkbox("Enable", &comp.enable))
+		changed = true;
+
+	ImGui::TextDisabled("Emission");
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragFloat("Emit Rate", &p.emitRate, 0.1f, 0.f, 10000.f);
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragFloat("Rate Jitter", &p.emitRateJitter, 0.005f, 0.f, 1.f);
+
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragInt("Burst Amount", &p.burstAmount, 0.2f, 0, 100000);
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragInt("Burst Count", &p.burstCount, 0.2f, 0, 100000);
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragFloat("Burst Interval", &p.burstInterval, 0.01f, 0.f, 1000.f);
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragFloat("Warmup Time", &p.warmupTime, 0.01f, 0.f, 1000.f);
+
+	ImGui::TextDisabled("Appearance");
+	{
+		static const char* rendererNames[] = { "Billboard", "Mesh" };
+		const int current = std::holds_alternative<ParticleMeshRenderer>(p.renderer) ? 1 : 0;
+		ImGui::SetNextItemWidth(150.f);
+		if (ImGui::BeginCombo("##particle_renderer", rendererNames[current]))
+		{
+			for (int index = 0; index < 2; ++index)
+			{
+				if (ImGui::Selectable(rendererNames[index], index == current))
+				{
+					if (index == 0 && !std::holds_alternative<ParticleBillboardRenderer>(p.renderer))
+						p.renderer = ParticleBillboardRenderer{};
+					else if (index == 1 && !std::holds_alternative<ParticleMeshRenderer>(p.renderer))
+						p.renderer = ParticleMeshRenderer{};
+					changed = true;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		ImGui::TextUnformatted("Renderer");
+	}
+
+	if (auto* billboardRenderer = std::get_if<ParticleBillboardRenderer>(&p.renderer))
+	{
+		{
+			static const char* facingNames[] = { "Camera Plane", "Camera Position", "Velocity Aligned", "Axis Locked" };
+			const int current = static_cast<int>(billboardRenderer->facing);
+			ImGui::SetNextItemWidth(150.f);
+			if (ImGui::BeginCombo("##particle_facing", facingNames[current]))
+			{
+				for (int index = 0; index < 4; ++index)
+				{
+					if (ImGui::Selectable(facingNames[index], index == current))
+					{
+						billboardRenderer->facing = static_cast<ParticleFacing>(index);
+						changed = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted("Facing");
+		}
+
+		{
+			static const char* maskNames[] = { "None", "Disc", "Soft Disc" };
+			const int current = static_cast<int>(billboardRenderer->mask);
+			ImGui::SetNextItemWidth(150.f);
+			if (ImGui::BeginCombo("##particle_mask", maskNames[current]))
+			{
+				for (int index = 0; index < 3; ++index)
+				{
+					if (ImGui::Selectable(maskNames[index], index == current))
+					{
+						billboardRenderer->mask = static_cast<ParticleMask>(index);
+						changed = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted("Mask");
+		}
+
+		ImGui::TextUnformatted("Material");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-1.f);
+		ImGui::Button(assetLabel(billboardRenderer->materialGuid, "None (drag a material here)").c_str(), ImVec2(-1.f, 0.f));
+		if (acceptDrop(AssetType::Material, billboardRenderer->materialGuid))
+		{
+			auto asset = assetManager ? assetManager->LoadAsset(billboardRenderer->materialGuid) : nullptr;
+			billboardRenderer->material = asset ? asset->AsMaterial() : nullptr;
+			changed = true;
+		}
+		if (!billboardRenderer->materialGuid.empty())
+		{
+			ImGui::SameLine();
+			if (ImGui::SmallButton("X##clear_material"))
+			{
+				billboardRenderer->materialGuid = AssetGUID();
+				billboardRenderer->material.reset();
+				changed = true;
+			}
+		}
+	}
+	else if (auto* meshRenderer = std::get_if<ParticleMeshRenderer>(&p.renderer))
+	{
+		// 网格类型：Cube / Sphere 用内置网格，Custom 用用户自己的模型
+		{
+			static const char* meshTypeNames[] = { "Cube", "Sphere", "Custom" };
+			const int current = static_cast<int>(meshRenderer->meshType);
+			ImGui::SetNextItemWidth(150.f);
+			if (ImGui::BeginCombo("##particle_mesh_type", meshTypeNames[current]))
+			{
+				for (int index = 0; index < 3; ++index)
+				{
+					if (ImGui::Selectable(meshTypeNames[index], index == current))
+					{
+						meshRenderer->meshType = static_cast<ParticleMeshType>(index);
+						changed = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted("Mesh Type");
+		}
+
+		if (meshRenderer->meshType == ParticleMeshType::Custom)
+		{
+			// Custom：几何与材质都来自模型本身
+			ImGui::TextUnformatted("Model");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(-1.f);
+			ImGui::Button(assetLabel(meshRenderer->modelGuid, "None (drag a model here)").c_str(), ImVec2(-1.f, 0.f));
+			if (acceptDrop(AssetType::StaticModel, meshRenderer->modelGuid))
+			{
+				auto asset = assetManager ? assetManager->LoadAsset(meshRenderer->modelGuid) : nullptr;
+				meshRenderer->model = asset ? asset->AsStaticModel() : nullptr;
+				changed = true;
+			}
+			if (!meshRenderer->modelGuid.empty())
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton("X##clear_model"))
+				{
+					meshRenderer->modelGuid = AssetGUID();
+					meshRenderer->model.reset();
+					changed = true;
+				}
+			}
+		}
+		else
+		{
+			// Cube / Sphere：内置网格，材质可选，留空就只用粒子的 tint 颜色
+			ImGui::TextUnformatted("Material");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(-1.f);
+			ImGui::Button(assetLabel(meshRenderer->materialGuid, "None (particle tint only)").c_str(), ImVec2(-1.f, 0.f));
+			if (acceptDrop(AssetType::Material, meshRenderer->materialGuid))
+			{
+				auto asset = assetManager ? assetManager->LoadAsset(meshRenderer->materialGuid) : nullptr;
+				meshRenderer->material = asset ? asset->AsMaterial() : nullptr;
+				changed = true;
+			}
+			if (!meshRenderer->materialGuid.empty())
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton("X##clear_mesh_material"))
+				{
+					meshRenderer->materialGuid = AssetGUID();
+					meshRenderer->material.reset();
+					changed = true;
+				}
+			}
+		}
+	}
+
+	// 混合模式：加色顺序无关、直出；AlphaBlend 走 OIT 的权重累积，两者可以逐发射器选。
+	{
+		static const char* blendNames[] = { "Additive", "Alpha Blend (OIT)" };
+		const int current = static_cast<int>(p.blendMode);
+		ImGui::SetNextItemWidth(150.f);
+		if (ImGui::BeginCombo("##particle_blend_mode", blendNames[current]))
+		{
+			for (int index = 0; index < 2; ++index)
+			{
+				if (ImGui::Selectable(blendNames[index], index == current))
+				{
+					p.blendMode = static_cast<ParticleBlendMode>(index);
+					changed = true;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		ImGui::TextUnformatted("Blend");
+	}
+
+	// ------------------------------------------------------------ 生成器
+	ImGui::TextDisabled("Generators");
+
+	// scaleGenerator
+	if (ImGui::TreeNode("Scale Generator"))
+	{
+		auto* random = dynamic_cast<RandomScaleGenerator*>(p.scaleGenerator.get());
+		auto* fixed = dynamic_cast<FixedScaleGenerator*>(p.scaleGenerator.get());
+		static const char* kinds[] = { "Random", "Fixed" };
+		const int current = random ? 0 : (fixed ? 1 : -1);
+		const int picked = kindCombo("##scale_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.scaleGenerator = std::make_shared<RandomScaleGenerator>(glm::vec3(0.05f), glm::vec3(0.15f));
+			else
+				p.scaleGenerator = std::make_shared<FixedScaleGenerator>(glm::vec3(0.1f));
+			random = dynamic_cast<RandomScaleGenerator*>(p.scaleGenerator.get());
+			fixed = dynamic_cast<FixedScaleGenerator*>(p.scaleGenerator.get());
+			changed = true;
+		}
+		if (random)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("##scale_min", &random->min.x, 0.001f, 0.f, 1000.f);
+			ImGui::SameLine();
+			ImGui::TextUnformatted("min");
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("##scale_max", &random->max.x, 0.001f, 0.f, 1000.f);
+			ImGui::SameLine();
+			ImGui::TextUnformatted("max");
+		}
+		else if (fixed)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("##scale_value", &fixed->scale.x, 0.001f, 0.f, 1000.f);
+			ImGui::SameLine();
+			ImGui::TextUnformatted("scale");
+		}
+		ImGui::TreePop();
+	}
+
+	// colorGenerator
+	if (ImGui::TreeNode("Color Generator"))
+	{
+		auto* random = dynamic_cast<RandomColorGenerator*>(p.colorGenerator.get());
+		auto* fixed = dynamic_cast<FixedColorGenerator*>(p.colorGenerator.get());
+		static const char* kinds[] = { "Random", "Fixed" };
+		const int current = random ? 0 : (fixed ? 1 : -1);
+		const int picked = kindCombo("##color_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.colorGenerator = std::make_shared<RandomColorGenerator>(glm::vec3(0.2f), glm::vec3(1.0f));
+			else
+				p.colorGenerator = std::make_shared<FixedColorGenerator>(glm::vec3(1.0f));
+			random = dynamic_cast<RandomColorGenerator*>(p.colorGenerator.get());
+			fixed = dynamic_cast<FixedColorGenerator*>(p.colorGenerator.get());
+			changed = true;
+		}
+		if (random)
+		{
+			changed |= ImGui::ColorEdit3("min##color_min", &random->min.x);
+			changed |= ImGui::ColorEdit3("max##color_max", &random->max.x);
+		}
+		else if (fixed)
+			changed |= ImGui::ColorEdit3("value##color_value", &fixed->color.x);
+		ImGui::TreePop();
+	}
+
+	// lifeTimeGenerator
+	if (ImGui::TreeNode("Lifetime Generator"))
+	{
+		auto* random = dynamic_cast<RandomLifeTimeGenerator*>(p.lifeTimeGenerator.get());
+		auto* fixed = dynamic_cast<FixedLifeTimeGenerator*>(p.lifeTimeGenerator.get());
+		static const char* kinds[] = { "Random", "Fixed" };
+		const int current = random ? 0 : (fixed ? 1 : -1);
+		const int picked = kindCombo("##life_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.lifeTimeGenerator = std::make_shared<RandomLifeTimeGenerator>(0.8f, 1.6f);
+			else
+				p.lifeTimeGenerator = std::make_shared<FixedLifeTimeGenerator>(2.0f);
+			random = dynamic_cast<RandomLifeTimeGenerator*>(p.lifeTimeGenerator.get());
+			fixed = dynamic_cast<FixedLifeTimeGenerator*>(p.lifeTimeGenerator.get());
+			changed = true;
+		}
+		if (random)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("min##life_min", &random->min, 0.01f, 0.01f, 1000.f);
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("max##life_max", &random->max, 0.01f, 0.01f, 1000.f);
+		}
+		else if (fixed)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("lifetime##life_value", &fixed->lifetime, 0.01f, 0.01f, 1000.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// opacityGenerator
+	if (ImGui::TreeNode("Opacity Generator"))
+	{
+		auto* random = dynamic_cast<RandomOpacityGenerator*>(p.opacityGenerator.get());
+		auto* fixed = dynamic_cast<FixedOpactiyGenerator*>(p.opacityGenerator.get());
+		static const char* kinds[] = { "Random", "Fixed" };
+		const int current = random ? 0 : (fixed ? 1 : -1);
+		const int picked = kindCombo("##opacity_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.opacityGenerator = std::make_shared<RandomOpacityGenerator>(0.5f, 1.0f);
+			else
+				p.opacityGenerator = std::make_shared<FixedOpactiyGenerator>(1.0f);
+			random = dynamic_cast<RandomOpacityGenerator*>(p.opacityGenerator.get());
+			fixed = dynamic_cast<FixedOpactiyGenerator*>(p.opacityGenerator.get());
+			changed = true;
+		}
+		if (random)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("min##opacity_min", &random->min, 0.f, 1.f);
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("max##opacity_max", &random->max, 0.f, 1.f);
+		}
+		else if (fixed)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("opacity##opacity_value", &fixed->opacity, 0.f, 1.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// positionGenerator
+	if (ImGui::TreeNode("Position Generator"))
+	{
+		auto* spherical = dynamic_cast<SphericalGenerator*>(p.posGenerator.get());
+		auto* ball = dynamic_cast<BallGenerator*>(p.posGenerator.get());
+		auto* box = dynamic_cast<BoxGenerator*>(p.posGenerator.get());
+		const bool point = p.posGenerator && !spherical && !ball && !box;
+		static const char* kinds[] = { "Point", "Spherical", "Ball", "Box" };
+		const int current = point ? 0 : (spherical ? 1 : (ball ? 2 : (box ? 3 : -1)));
+		const int picked = kindCombo("##pos_kind", kinds, 4, current);
+		if (picked >= 0 && picked != current)
+		{
+			switch (picked)
+			{
+			case 0: p.posGenerator = std::make_shared<PointGenerator>(); break;
+			case 1: p.posGenerator = std::make_shared<SphericalGenerator>(1.0f); break;
+			case 2: p.posGenerator = std::make_shared<BallGenerator>(1.0f); break;
+			default: p.posGenerator = std::make_shared<BoxGenerator>(glm::vec3(1.0f)); break;
+			}
+			spherical = dynamic_cast<SphericalGenerator*>(p.posGenerator.get());
+			ball = dynamic_cast<BallGenerator*>(p.posGenerator.get());
+			box = dynamic_cast<BoxGenerator*>(p.posGenerator.get());
+			changed = true;
+		}
+		if (spherical || ball)
+		{
+			float* radius = spherical ? &spherical->radius : &ball->radius;
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("radius##pos_radius", radius, 0.01f, 0.f, 1000.f);
+		}
+		else if (box)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("half size##pos_half", &box->halfSize.x, 0.01f, 0.f, 1000.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// directionGenerator
+	if (ImGui::TreeNode("Direction Generator"))
+	{
+		auto* fixedCone = dynamic_cast<FixedDirectionConeGenerator*>(p.dirGenerator.get());
+		auto* follow = dynamic_cast<FollowEmitterDirectionConeGenerator*>(p.dirGenerator.get());
+		auto* radial = dynamic_cast<RadialDirectionGenerator*>(p.dirGenerator.get());
+		static const char* kinds[] = { "Fixed Cone", "Emitter Cone", "Radial" };
+		const int current = fixedCone ? 0 : (follow ? 1 : (radial ? 2 : -1));
+		const int picked = kindCombo("##dir_kind", kinds, 3, current);
+		if (picked >= 0 && picked != current)
+		{
+			switch (picked)
+			{
+			case 0: p.dirGenerator = std::make_shared<FixedDirectionConeGenerator>(glm::vec3(0.f, 0.f, -1.f), 0.2f); break;
+			case 1: p.dirGenerator = std::make_shared<FollowEmitterDirectionConeGenerator>(0.3f); break;
+			default: p.dirGenerator = std::make_shared<RadialDirectionGenerator>(0.3f); break;
+			}
+			fixedCone = dynamic_cast<FixedDirectionConeGenerator*>(p.dirGenerator.get());
+			follow = dynamic_cast<FollowEmitterDirectionConeGenerator*>(p.dirGenerator.get());
+			radial = dynamic_cast<RadialDirectionGenerator*>(p.dirGenerator.get());
+			changed = true;
+		}
+		if (fixedCone)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("direction##dir_value", &fixedCone->direction.x, 0.01f, -1.f, 1.f);
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("spread##dir_spread", &fixedCone->spreadAngle, 0.f, 3.14159f);
+		}
+		else if (follow)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("spread##dir_spread_follow", &follow->spreadAngle, 0.f, 3.14159f);
+		}
+		else if (radial)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("spread##dir_spread_radial", &radial->spreadAngle, 0.f, 3.14159f);
+		}
+		ImGui::TreePop();
+	}
+
+	// rotationGenerator
+	if (ImGui::TreeNode("Rotation Generator"))
+	{
+		auto* fixedRotation = dynamic_cast<FixedRotationGenerator*>(p.rotGenerator.get());
+		auto* followEmitter = dynamic_cast<FollowEmitterRotationGenerator*>(p.rotGenerator.get());
+		auto* followVelocity = dynamic_cast<FollowVelocityRotationGenerator*>(p.rotGenerator.get());
+		static const char* kinds[] = { "Fixed", "Emitter", "Velocity" };
+		const int current = fixedRotation ? 0 : (followEmitter ? 1 : (followVelocity ? 2 : -1));
+		const int picked = kindCombo("##rot_kind", kinds, 3, current);
+		if (picked >= 0 && picked != current)
+		{
+			switch (picked)
+			{
+			case 0: p.rotGenerator = std::make_shared<FixedRotationGenerator>(glm::identity<glm::quat>()); break;
+			case 1: p.rotGenerator = std::make_shared<FollowEmitterRotationGenerator>(); break;
+			default: p.rotGenerator = std::make_shared<FollowVelocityRotationGenerator>(); break;
+			}
+			fixedRotation = dynamic_cast<FixedRotationGenerator*>(p.rotGenerator.get());
+			changed = true;
+		}
+		if (fixedRotation)
+		{
+			float quat[4] = { fixedRotation->rotation.w, fixedRotation->rotation.x, fixedRotation->rotation.y, fixedRotation->rotation.z };
+			ImGui::SetNextItemWidth(220.f);
+			if (ImGui::DragFloat4("quat##rot_value", quat, 0.01f, -1.f, 1.f))
+			{
+				fixedRotation->rotation = glm::normalize(glm::quat(quat[0], quat[1], quat[2], quat[3]));
+				changed = true;
+			}
+		}
+		ImGui::TreePop();
+	}
+
+	// speedGenerator
+	if (ImGui::TreeNode("Speed Generator"))
+	{
+		auto* random = dynamic_cast<RandomSpeedGenerator*>(p.speedGenerator.get());
+		auto* fixed = dynamic_cast<FixedSpeedGenerator*>(p.speedGenerator.get());
+		static const char* kinds[] = { "Random", "Fixed" };
+		const int current = random ? 0 : (fixed ? 1 : -1);
+		const int picked = kindCombo("##speed_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.speedGenerator = std::make_shared<RandomSpeedGenerator>(0.5f, 1.5f);
+			else
+				p.speedGenerator = std::make_shared<FixedSpeedGenerator>(1.0f);
+			random = dynamic_cast<RandomSpeedGenerator*>(p.speedGenerator.get());
+			fixed = dynamic_cast<FixedSpeedGenerator*>(p.speedGenerator.get());
+			changed = true;
+		}
+		if (random)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("min##speed_min", &random->min, 0.01f, -1000.f, 1000.f);
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("max##speed_max", &random->max, 0.01f, -1000.f, 1000.f);
+		}
+		else if (fixed)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat("speed##speed_value", &fixed->speed, 0.01f, -1000.f, 1000.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// positionOffsetGenerator
+	if (ImGui::TreeNode("Position Offset Generator"))
+	{
+		auto* fixed = dynamic_cast<FixedPositionOffsetGenerator*>(p.posOffsetGenerator.get());
+		auto* radial = dynamic_cast<RadialPositionOffsetGenerator*>(p.posOffsetGenerator.get());
+		static const char* kinds[] = { "Fixed", "Radial" };
+		const int current = fixed ? 0 : (radial ? 1 : -1);
+		const int picked = kindCombo("##offset_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.posOffsetGenerator = std::make_shared<FixedPositionOffsetGenerator>(glm::vec3(0.0f));
+			else
+				p.posOffsetGenerator = std::make_shared<RadialPositionOffsetGenerator>();
+			fixed = dynamic_cast<FixedPositionOffsetGenerator*>(p.posOffsetGenerator.get());
+			changed = true;
+		}
+		if (fixed)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("offset##offset_value", &fixed->offset.x, 0.01f, -1000.f, 1000.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// ------------------------------------------------------------ 更新器
+	ImGui::TextDisabled("Updaters");
+
+	// opacityUpdater
+	if (ImGui::TreeNode("Opacity Updater"))
+	{
+		auto* linear = dynamic_cast<LinearOpacityUpdater*>(p.opacityUpdater.get());
+		static const char* kinds[] = { "None", "Linear" };
+		const int current = linear ? 1 : 0;
+		const int picked = kindCombo("##opacityupd_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.opacityUpdater.reset();
+			else
+				p.opacityUpdater = std::make_shared<LinearOpacityUpdater>(0.0f);
+			linear = dynamic_cast<LinearOpacityUpdater*>(p.opacityUpdater.get());
+			changed = true;
+		}
+		if (linear)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::SliderFloat("goal##opacityupd_goal", &linear->goalOpacity, 0.f, 1.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// baseColorUpdater
+	if (ImGui::TreeNode("Base Color Updater"))
+	{
+		auto* linear = dynamic_cast<LinearBaseColorUpdater*>(p.baseColorUpdater.get());
+		auto* fire = dynamic_cast<FireColorUpdater*>(p.baseColorUpdater.get());
+		static const char* kinds[] = { "None", "Linear", "Fire" };
+		const int current = linear ? 1 : (fire ? 2 : 0);
+		const int picked = kindCombo("##colorupd_kind", kinds, 3, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.baseColorUpdater.reset();
+			else if (picked == 1)
+				p.baseColorUpdater = std::make_shared<LinearBaseColorUpdater>(glm::vec3(1.0f));
+			else
+				p.baseColorUpdater = std::make_shared<FireColorUpdater>();
+			linear = dynamic_cast<LinearBaseColorUpdater*>(p.baseColorUpdater.get());
+			fire = dynamic_cast<FireColorUpdater*>(p.baseColorUpdater.get());
+			changed = true;
+		}
+		if (linear)
+			changed |= ImGui::ColorEdit3("goal##colorupd_goal", &linear->goalColor.x);
+		else if (fire)
+		{
+			changed |= ImGui::ColorEdit3("inner##fire_inner", &fire->innerColor.x);
+			changed |= ImGui::ColorEdit3("mid##fire_mid", &fire->midColor.x);
+			changed |= ImGui::ColorEdit3("outer##fire_outer", &fire->outerColor.x);
+		}
+		ImGui::TreePop();
+	}
+
+	// scaleUpdater
+	if (ImGui::TreeNode("Scale Updater"))
+	{
+		auto* linear = dynamic_cast<LinearScaleUpdater*>(p.scaleUpdater.get());
+		static const char* kinds[] = { "None", "Linear" };
+		const int current = linear ? 1 : 0;
+		const int picked = kindCombo("##scaleupd_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.scaleUpdater.reset();
+			else
+				p.scaleUpdater = std::make_shared<LinearScaleUpdater>(glm::vec3(0.1f));
+			linear = dynamic_cast<LinearScaleUpdater*>(p.scaleUpdater.get());
+			changed = true;
+		}
+		if (linear)
+		{
+			ImGui::SetNextItemWidth(150.f);
+			changed |= ImGui::DragFloat3("goal##scaleupd_goal", &linear->goalScale.x, 0.001f, 0.f, 1000.f);
+		}
+		ImGui::TreePop();
+	}
+
+	// rotationUpdater
+	if (ImGui::TreeNode("Rotation Updater"))
+	{
+		auto* follow = dynamic_cast<FollowVelocityRotationUpdater*>(p.rotationUpdater.get());
+		static const char* kinds[] = { "None", "Follow Velocity" };
+		const int current = follow ? 1 : 0;
+		const int picked = kindCombo("##rotupd_kind", kinds, 2, current);
+		if (picked >= 0 && picked != current)
+		{
+			if (picked == 0)
+				p.rotationUpdater.reset();
+			else
+				p.rotationUpdater = std::make_shared<FollowVelocityRotationUpdater>();
+			changed = true;
+		}
+		ImGui::TreePop();
+	}
+
+	// 局部/世界加速度：同一套 5 种，None = 空指针。
+	const auto drawAccelerationUpdater = [&](const char* label, std::shared_ptr<IAccelerationUpdater>& slot)
+		{
+			auto* gravity = dynamic_cast<GravityAccelerationUpdater*>(slot.get());
+			auto* linear = dynamic_cast<LinearAccelerationUpdater*>(slot.get());
+			auto* perlin = dynamic_cast<PerlinTurbulenceUpdater*>(slot.get());
+			auto* fixed = (gravity || linear || perlin) ? nullptr : dynamic_cast<FiexedAccelerationUpdater*>(slot.get());
+			static const char* kinds[] = { "None", "Fixed", "Gravity", "Linear", "Perlin" };
+			const int current = slot == nullptr ? 0 : (fixed ? 1 : (gravity ? 2 : (linear ? 3 : (perlin ? 4 : -1))));
+			const int picked = kindCombo(label, kinds, 5, current);
+			bool localChanged = false;
+			if (picked >= 0 && picked != current)
+			{
+				switch (picked)
+				{
+				case 0: slot.reset(); break;
+				case 1: slot = std::make_shared<FiexedAccelerationUpdater>(glm::vec3(0.f, -9.8f, 0.f)); break;
+				case 2: slot = std::make_shared<GravityAccelerationUpdater>(); break;
+				case 3: slot = std::make_shared<LinearAccelerationUpdater>(glm::vec3(0.f, 1.f, 0.f), 0.f, 9.8f); break;
+				default: slot = std::make_shared<PerlinTurbulenceUpdater>(0.5f, 1.5f); break;
+				}
+				gravity = dynamic_cast<GravityAccelerationUpdater*>(slot.get());
+				linear = dynamic_cast<LinearAccelerationUpdater*>(slot.get());
+				perlin = dynamic_cast<PerlinTurbulenceUpdater*>(slot.get());
+				fixed = (gravity || linear || perlin) ? nullptr : dynamic_cast<FiexedAccelerationUpdater*>(slot.get());
+				localChanged = true;
+			}
+			if (fixed && !gravity)
+			{
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat3("acceleration##acc_value", &fixed->acceleration.x, 0.01f, -1000.f, 1000.f);
+			}
+			else if (gravity)
+				ImGui::TextDisabled("acceleration = %s", std::format("({:.2f}, {:.2f}, {:.2f})", gravity->acceleration.x, gravity->acceleration.y, gravity->acceleration.z).c_str());
+			else if (linear)
+			{
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat3("dir##acc_dir", &linear->accelerationDir.x, 0.01f, -1.f, 1.f);
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat("init##acc_init", &linear->initAccelerationValue, 0.01f, -1000.f, 1000.f);
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat("goal##acc_goal", &linear->goalAccelerationValue, 0.01f, -1000.f, 1000.f);
+			}
+			else if (perlin)
+			{
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat("strength##perlin_strength", &perlin->strength, 0.01f, 0.f, 100.f);
+				ImGui::SetNextItemWidth(150.f);
+				localChanged |= ImGui::DragFloat("frequency##perlin_freq", &perlin->frequency, 0.01f, 0.f, 100.f);
+			}
+			return localChanged;
+		};
+
+	// localAccelerationUpdater
+	if (ImGui::TreeNode("Local Acceleration Updater"))
+	{
+		changed |= drawAccelerationUpdater("##local_acc_kind", p.localAccelerationUpdater);
+		ImGui::TreePop();
+	}
+
+	// worldAccelerationUpdater
+	if (ImGui::TreeNode("World Acceleration Updater"))
+	{
+		changed |= drawAccelerationUpdater("##world_acc_kind", p.worldAccelerationUpdater);
+		ImGui::TreePop();
+	}
+
+	ImGui::Spacing();
+	ImGui::SameLine();
+	if (!p.IsVaild())
+		ImGui::TextColored(ImVec4(1.f, 0.55f, 0.35f, 1.f), "Generators incomplete - nothing will emit");
+
+	return changed;
 }
 
 template<>

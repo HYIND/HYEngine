@@ -8,6 +8,6 @@ struct BaseEffectProperties
 	EffectType effectType;
 public:
 	BaseEffectProperties() = default;
-	virtual std::shared_ptr<BaseEffectProperties> Clone() = 0;
+	virtual std::shared_ptr<BaseEffectProperties> Clone() const = 0;
 	virtual ~BaseEffectProperties() = default;
 };

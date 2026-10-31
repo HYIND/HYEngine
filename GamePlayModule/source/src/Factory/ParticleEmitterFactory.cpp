@@ -33,7 +33,9 @@ Entity ParticleEmitterFactory::CreateFireEmitter(World& world, const glm::vec3& 
 	emitter.emitterParams.burstAmount = 0;
 	emitter.emitterParams.burstInterval = 2.f;
 
-	emitter.emitterParams.shape = ParticleShape::BillboardSoftDisc;
+	ParticleBillboardRenderer renderer;
+	renderer.mask = ParticleMask::SoftDisc;
+	emitter.emitterParams.renderer = renderer;
 
 	return entity;
 }
@@ -71,7 +73,9 @@ Entity ParticleEmitterFactory::CreateVortexEmitter(World& world, const glm::vec3
 	emitter.emitterParams.burstAmount = 0;
 	emitter.emitterParams.burstInterval = 2.f;
 
-	emitter.emitterParams.shape = ParticleShape::BillboardDisc;
+	ParticleBillboardRenderer renderer;
+	renderer.mask = ParticleMask::Disc;
+	emitter.emitterParams.renderer = renderer;
 
 	return emitterEntity;
 }
@@ -106,13 +110,15 @@ Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& 
 	emitter.emitterParams.burstAmount = 0;
 	emitter.emitterParams.burstInterval = 2.f;
 
-	emitter.emitterParams.type = ParticleType::StaticModel;
-	emitter.emitterParams.model = model;
+	ParticleMeshRenderer renderer;
+	renderer.meshType = ParticleMeshType::Custom;	// 用用户传进来的模型，而不是内置球
+	renderer.model = model;
+	emitter.emitterParams.renderer = renderer;
 
 	return emitterEntity;
 }
 
-Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<Texture2D> texture)
+Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& position, const glm::quat& rotation, std::shared_ptr<Material> material)
 {
 	Entity emitterEntity = world.createEntity();
 
@@ -145,9 +151,10 @@ Entity ParticleEmitterFactory::CreateTestEmitter(World& world, const glm::vec3& 
 	emitter.emitterParams.burstAmount = 0;
 	emitter.emitterParams.burstInterval = 2.f;
 
-	emitter.emitterParams.shape = ParticleShape::BillboardQuad;
-	emitter.emitterParams.type = ParticleType::ColorTexture;
-	emitter.emitterParams.texture = texture;
+	ParticleBillboardRenderer renderer;
+	renderer.mask = ParticleMask::None;
+	renderer.material = material;
+	emitter.emitterParams.renderer = renderer;
 
 	return emitterEntity;
 }

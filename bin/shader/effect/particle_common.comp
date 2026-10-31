@@ -1,0 +1,60 @@
+#ifndef PARTICLE_COMMON_COMP
+#define PARTICLE_COMMON_COMP
+
+// 逐粒子实例数据（80 字节，与 C++ 的 ParticleInstance 逐字段对应）：
+//  position   世界空间中心
+//  extentX    billboard 全宽
+//  extentY    billboard 全高
+//  roll       billboard 绕视轴旋转（弧度）
+//  mask       billboard 的片元裁剪方式
+//  flags      材质/几何开关
+//  color      rgb = tint（乘到材质 albedo 上），a = alpha（乘到材质 opacity 上）
+//  scale      mesh 几何的缩放
+//  materialIndex  材质 SSBO 下标（0xffffffff = 没材质，走纯色分支）
+//  rotation   quat(x, y, z, w)
+struct ParticleInstance
+{
+	vec3 position;
+	float extentX;
+	float extentY;
+	float roll;
+	uint mask;
+	uint flags;
+	vec4 color;
+	vec3 scale;
+	uint materialIndex;
+	vec4 rotation;
+};
+
+const uint PARTICLE_MASK_NONE = 0u;
+const uint PARTICLE_MASK_DISC = 1u;
+const uint PARTICLE_MASK_SOFT_DISC = 2u;
+
+const uint PARTICLE_FLAG_MATERIAL = 1u;		// 有材质：albedo/opacity 从材质取
+const uint PARTICLE_FLAG_MESH = 2u;			// 几何是网格（内置球 / 模型），不是 billboard
+
+const uint PARTICLE_INVALID_MATERIAL = 0xffffffffu;
+
+vec3 RotateByQuat(vec4 q, vec3 v)
+{
+	vec3 u = q.xyz;
+	float s = q.w;
+	return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
+}
+
+// billboard 的圆形/软边裁剪：几何永远是同一个方片，圆是在片元里裁出来的。
+// 返回 false 表示这个片元应该 discard。
+bool ApplyParticleMask(uint mask, vec2 uv, inout vec4 color)
+{
+	if (mask == PARTICLE_MASK_DISC || mask == PARTICLE_MASK_SOFT_DISC)
+	{
+		float r = length(uv * 2.0 - 1.0);
+		if (r >= 1.0)
+			return false;
+		if (mask == PARTICLE_MASK_SOFT_DISC)
+			color.a *= 1.0 - r;		// 径向羽化
+	}
+	return true;
+}
+
+#endif

@@ -103,6 +103,21 @@ struct alignas(16) SkinnedMotionData
 	uint32_t vertexCount = 0;		// 顶点数量（本帧与上一帧必须一致才算有效）
 };
 
+struct alignas(16) ParticleInstance
+{
+	alignas(16) glm::vec3 position = glm::vec3(0.0f);						// 世界空间中心
+	float extentX = 1.0f;													// billboard 全宽（= transform 的 scale.x）
+	float extentY = 1.0f;													// billboard 全高（= transform 的 scale.y）
+	float roll = 0.0f;														// billboard 绕视轴旋转（弧度，0 = 与相机对齐）
+	uint32_t mask = 0;														// billboard 的片元裁剪：0 None / 1 Disc / 2 SoftDisc
+	uint32_t flags = 0;														// bit0 = 有材质，bit1 = mesh 几何
+	alignas(16) glm::vec4 color = glm::vec4(1.0f);							// rgb = tint（乘材质 albedo），a = alpha（乘材质 opacity）
+	alignas(16) glm::vec3 scale = glm::vec3(1.0f);							// mesh 几何（内置球 / 模型）的缩放
+	uint32_t materialIndex = 0xffffffffu;									// 材质 SSBO 下标，0xffffffff = 没有材质
+	alignas(16) glm::vec4 rotation = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);		// quat(x, y, z, w)，mesh 几何的朝向
+};
+static_assert(sizeof(ParticleInstance) == 80, "ParticleInstance 必须与 shader 的 std430 布局一致");
+
 struct SkinnedVertexBufferState
 {
 	std::shared_ptr<VertexBufferBlock> buffer;

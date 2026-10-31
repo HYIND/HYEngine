@@ -160,9 +160,10 @@ float Tool::AngleToRadian(float angle)
 	return angle / 180.f * M_PI;
 }
 
-glm::quat Tool::RandomSpread(const glm::quat& baseQuat, float spreadAngle) {
-	static std::random_device rd;
-	static std::mt19937 gen(rd());
+glm::quat Tool::RandomSpread(const glm::quat& baseQuat, float spreadAngle) 
+{
+	thread_local std::random_device rd;
+	thread_local std::mt19937 gen(rd());
 	std::uniform_real_distribution<float> disAngle(0.0f, 2.0f * glm::pi<float>());
 	std::uniform_real_distribution<float> disRadius(0.0f, 1.0f);
 

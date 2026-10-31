@@ -12,7 +12,9 @@
 #include "VulkanRenderEngine/RenderPass/SSRPass.h"
 #include "VulkanRenderEngine/RenderPass/SkyBoxPass.h"
 #include "VulkanRenderEngine/RenderPass/SSAOPass.h"
-//#include "VulkanRenderEngine/RenderPass/EffectPass.h"
+#include "VulkanRenderEngine/RenderPass/EffectPass.h"
+#include "VulkanRenderEngine/Base/Effect.h"
+#include "VulkanRenderEngine/Base/Particle.h"
 //#include "VulkanRenderEngine/RenderPass/TransparentPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGeneralPass.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
@@ -660,14 +662,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	auto lightDrawPass = std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs");
 
-	//auto effectPass = std::make_unique<EffectPass>("shader/effect/effectpass.vs", "shader/effect/effectpass.fs");
+	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeLut.comp", "shader/Volume/VolumeCalculate.comp");
+
+
+	auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
 
 	//auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparentpass.vs", "shader/Transparent/transparentpass.fs")
 
-	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeLut.comp", "shader/Volume/VolumeCalculate.comp");
-
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
-
 
 	auto& sceneColorBuffer = _renderTargets[0]->sceneColorBuffer;
 
@@ -935,16 +937,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
-
-	//effectNode->SetRenderPass(std::move(effectPass));
-	//	.After(opaqueFence)
-	//	.Before(transprantFence);
-
-	//transparentNode->SetRenderPass(std::move(transparentPass))
-	//	.Input(atlasShadowMap)
-	//	.After(opaqueFence, effectPass)
-	//	.Before(transprantFence);
-
 	{
 		auto scatterColorRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
 		auto tramsmittanceRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
@@ -967,9 +959,26 @@ void VulkanRenderer::InitSceneRenderGraph()
 				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout }
 			)
 			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
-			.After(atmospherePreCalculateNode, opaqueFence, transprantFence)
-			.Before(postProcessFence);
+			.After(atmospherePreCalculateNode, opaqueFence)
+			.Before(transprantFence);
 	}
+
+	effectNode->SetRenderPass(std::move(effectPass))
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
+		.After(opaqueFence, volumeCalculateNode)
+		.Before(transprantFence)
+		// OIT 的两张离屏目标：accum(RGBA16F) 与 reveal(R16F)，只在 EffectPass 内部使用
+		.Temp(
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitAccum"), graphicsWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitReveal"), graphicsWriteLayout }
+		)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
+
+	//transparentNode->SetRenderPass(std::move(transparentPass))
+	//	.Input(atlasShadowMap)
+	//	.After(opaqueFence, effectPass)
+	//	.Before(transprantFence);
+
 
 	autoExposureNode->SetRenderPass(std::move(autoExposurePass))
 		.After(postProcessFence)
@@ -1261,7 +1270,6 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 						willUpdateMaterials.insert(material.get());
 					if (mesh->GetNeedUpdateIndirectDraw())
 					{
-
 						willUpdateMeshs.insert(mesh.get());
 
 						using MeshType = std::remove_cv_t<std::remove_reference_t<decltype(*mesh)>>;
@@ -1276,6 +1284,34 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 		updateMesh(state->objects.sceneSkinnedRenderData.opaqueOneSideItems);
 		updateMesh(state->objects.sceneSkinnedRenderData.opaqueTwoSideItems);
 		updateMesh(state->objects.sceneSkinnedRenderData.transparentItems);
+
+		for (auto& item : state->objects.sceneStaticRenderData.effectItems)
+		{
+			if (!item || item->effectType != EffectType::Particle)
+				continue;
+
+			auto properties = std::static_pointer_cast<BaseParticleProperties>(item);
+			if (!properties)
+				continue;
+
+			const auto& renderInfo = properties->renderInfo;
+
+			auto& material = renderInfo.material;
+			if (material && material->GetNeedUpdateIndirectDraw())
+				willUpdateMaterials.insert(material.get());
+
+			if (renderInfo.mesh && renderInfo.model)
+			{
+				for (auto& info : renderInfo.model->GetMeshInfos())
+				{
+					if (info.mesh && info.mesh->GetNeedUpdateIndirectDraw())
+						willUpdateMeshs.insert(info.mesh.get());
+
+					if (info.material && info.material->GetNeedUpdateIndirectDraw())
+						willUpdateMaterials.insert(info.material.get());
+				}
+			}
+		}
 	}
 
 	if (!willUpdateMeshs.empty())
