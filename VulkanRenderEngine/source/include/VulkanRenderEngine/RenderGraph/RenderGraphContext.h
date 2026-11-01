@@ -1,7 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include "vkstdafx.h"
 #include "../Base/Texture2D.h"
+#include "../Base/Texture3D.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
 
@@ -12,15 +13,19 @@ namespace RenderGraph
 	struct TextureDesc {
 		uint32_t width = 0;
 		uint32_t height = 0;
+		uint32_t depth = 1;					// > 1 表示 3D 体积纹理（走 Texture3D）
 
 		vk::Format format = vk::Format::eR8G8B8A8Unorm;
 		vk::Filter minFilter = vk::Filter::eLinear;
 		vk::Filter magFilter = vk::Filter::eLinear;
 		vk::SamplerAddressMode wrapU = vk::SamplerAddressMode::eClampToEdge;
 		vk::SamplerAddressMode wrapV = vk::SamplerAddressMode::eClampToEdge;
+		vk::SamplerAddressMode wrapW = vk::SamplerAddressMode::eClampToEdge;	// 仅 3D 生效
 
 		uint32_t maxLevel = 1;
 		bool isVariable = false;
+
+		bool IsVolume() const { return depth > 1; }
 	};
 
 	class TextureHandle
@@ -39,26 +44,76 @@ namespace RenderGraph
 		TextureDesc _desc;
 	};
 
+	struct TextureSlot
+	{
+		using Variant = std::variant<std::monostate, std::shared_ptr<Texture2D>, std::shared_ptr<Texture3D>>;
+
+		Variant data;
+
+		TextureSlot() = default;
+		TextureSlot(std::shared_ptr<Texture2D> tex) : data(std::move(tex)) {}
+		TextureSlot(std::shared_ptr<Texture3D> tex) : data(std::move(tex)) {}
+
+		bool IsValid() const { return !std::holds_alternative<std::monostate>(data); }
+		bool IsVolume() const { return std::holds_alternative<std::shared_ptr<Texture3D>>(data); }
+
+		template<typename T>
+		std::shared_ptr<T> As() const
+		{
+			auto* p = std::get_if<std::shared_ptr<T>>(&data);
+			return p ? *p : nullptr;
+		}
+
+		template<typename T>
+		void Set(std::shared_ptr<T> tex) { data = std::move(tex); }
+
+		void Reset() { data = std::monostate{}; }
+	};
+
 	struct PassFrameContext
 	{
 		std::string passName;
 
-		std::vector<std::shared_ptr<Texture2D>> inputTextures;
-		std::vector<std::shared_ptr<Texture2D>> optionInputTextures;
-		std::vector<std::shared_ptr<Texture2D>> outputTextures;
-		std::vector<std::shared_ptr<Texture2D>> tempTextures;
-		std::vector<std::shared_ptr<Texture2D>> persitentTextures;
-		std::vector<std::shared_ptr<Texture2D>> externalTextures;
-		std::vector<std::shared_ptr<Texture2D>> frameLocalTextures;
+		std::vector<TextureSlot> inputs;
+		std::vector<TextureSlot> optionInputs;
+		std::vector<TextureSlot> outputs;
+		std::vector<TextureSlot> temps;
+		std::vector<TextureSlot> persistents;
+		std::vector<TextureSlot> externals;
+		std::vector<TextureSlot> frameLocals;
 
 		const std::string& GetName() const { return passName; };
-		std::shared_ptr<Texture2D> GetInput(uint32_t idx) const { return idx >= 0 && idx < inputTextures.size() ? inputTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetOptionalInput(uint32_t idx) const { return idx >= 0 && idx < optionInputTextures.size() ? optionInputTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetOutput(uint32_t idx) const { return idx >= 0 && idx < outputTextures.size() ? outputTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetTemp(uint32_t idx) const { return idx >= 0 && idx < tempTextures.size() ? tempTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetPersitent(uint32_t idx) const { return idx >= 0 && idx < persitentTextures.size() ? persitentTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetExternal(uint32_t idx) const { return idx >= 0 && idx < externalTextures.size() ? externalTextures[idx] : nullptr; };
-		std::shared_ptr<Texture2D> GetFrameLocal(uint32_t idx) const { return idx >= 0 && idx < frameLocalTextures.size() ? frameLocalTextures[idx] : nullptr; };
+
+		std::shared_ptr<Texture2D> GetInput(uint32_t idx) const { return GetInputAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetOptionalInput(uint32_t idx) const { return GetOptionalInputAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetOutput(uint32_t idx) const { return GetOutputAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetTemp(uint32_t idx) const { return GetTempAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetPersitent(uint32_t idx) const { return GetPersitentAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetExternal(uint32_t idx) const { return GetExternalAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetFrameLocal(uint32_t idx) const { return GetFrameLocalAs<Texture2D>(idx); };
+
+		std::shared_ptr<Texture3D> GetVolumeInput(uint32_t idx) const { return GetInputAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetOptionalVolumeInput(uint32_t idx) const { return GetOptionalInputAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetVolumeOutput(uint32_t idx) const { return GetOutputAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetVolumeTemp(uint32_t idx) const { return GetTempAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetVolumePersitent(uint32_t idx) const { return GetPersitentAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetVolumeExternal(uint32_t idx) const { return GetExternalAs<Texture3D>(idx); };
+		std::shared_ptr<Texture3D> GetVolumeFrameLocal(uint32_t idx) const { return GetFrameLocalAs<Texture3D>(idx); };
+
+		template<typename T> std::shared_ptr<T> GetInputAs(uint32_t idx) const { return GetAt<T>(inputs, idx); }
+		template<typename T> std::shared_ptr<T> GetOptionalInputAs(uint32_t idx) const { return GetAt<T>(optionInputs, idx); }
+		template<typename T> std::shared_ptr<T> GetOutputAs(uint32_t idx) const { return GetAt<T>(outputs, idx); }
+		template<typename T> std::shared_ptr<T> GetTempAs(uint32_t idx) const { return GetAt<T>(temps, idx); }
+		template<typename T> std::shared_ptr<T> GetPersitentAs(uint32_t idx) const { return GetAt<T>(persistents, idx); }
+		template<typename T> std::shared_ptr<T> GetExternalAs(uint32_t idx) const { return GetAt<T>(externals, idx); }
+		template<typename T> std::shared_ptr<T> GetFrameLocalAs(uint32_t idx) const { return GetAt<T>(frameLocals, idx); }
+
+	private:
+		template<typename T>
+		static std::shared_ptr<T> GetAt(const std::vector<TextureSlot>& slots, uint32_t idx)
+		{
+			return static_cast<size_t>(idx) < slots.size() ? slots[idx].As<T>() : nullptr;
+		}
 	};
 
 	using ResourceName = std::string;
@@ -205,7 +260,7 @@ namespace RenderGraph
 	{
 	private:
 		struct TexLayoutData {
-			std::shared_ptr<Texture2D> tex;
+			std::shared_ptr<VKWrapper::BaseVKImage> image;
 			RenderGraphResourceLayout layout;
 		};
 
@@ -219,7 +274,11 @@ namespace RenderGraph
 		void SubmitNow(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
 		void SubmitNowAndWait(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore = {});
 
-		void PushTexWithLayout(const std::shared_ptr<Texture2D>& tex, const RenderGraphResourceLayout& layout);
+		template<typename TextureType>
+		void PushTexWithLayout(const std::shared_ptr<TextureType>& tex, const RenderGraphResourceLayout& layout) {
+			if (tex)
+				_texDatas.push_back(TexLayoutData{ tex->GetImageSharedPtr(), layout });
+		}
 
 	public:
 		void Start();

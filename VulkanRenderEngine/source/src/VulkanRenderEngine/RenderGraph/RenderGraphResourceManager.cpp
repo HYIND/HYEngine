@@ -40,8 +40,40 @@ std::shared_ptr<Texture2D> ResourceManager::GetTexture(const RenderGraphResource
 	return nullptr;
 }
 
-void ResourceManager::ReleaseTexture(const RenderGraphResource& res, const std::string& prefix)
+std::shared_ptr<Texture3D> ResourceManager::TryGetVolume(const RenderGraphResource& res, const std::string& prefix)
 {
+	auto name = GenerateName(prefix, res.name);
+
+	LockGuard guard(_texturesMutex);
+	auto it = _textures.find(name);
+	if (it != _textures.end())
+		return _texPool.GetVolume(it->second);
+	return nullptr;
+}
+
+std::shared_ptr<Texture3D> ResourceManager::GetVolume(const RenderGraphResource& res, const std::string& prefix)
+{
+	auto name = GenerateName(prefix, res.name);
+
+	LockGuard guard(_texturesMutex);
+	auto it = _textures.find(name);
+	if (it != _textures.end())
+		return _texPool.GetVolume(it->second);
+
+	if (res.type == ResourceType::Texture)
+	{
+		if (auto desc = std::get_if<TextureDesc>(&res.desc))
+		{
+			auto texhandle = _texPool.AllocateTexture(*desc);
+			_textures[name] = texhandle;
+			return _texPool.GetVolume(texhandle);
+		}
+	}
+
+	return nullptr;
+}
+
+void ResourceManager::ReleaseTexture(const RenderGraphResource& res, const std::string& prefix){
 	auto name = GenerateName(prefix, res.name);
 
 	LockGuard guard(_texturesMutex);

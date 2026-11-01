@@ -470,13 +470,33 @@ public:
 		vk::SamplerAddressMode wrapU, vk::SamplerAddressMode wrapV,
 		const RenderGraph::ResourceName& name,
 		uint32_t maxLevel = 1) {
-		return _graph->CreateTexture(RenderGraph::TextureDesc{ width ,height,format,minFilter,magFilter,wrapU,wrapV,std::max(1u,maxLevel) }, name);
+		return _graph->CreateTexture(RenderGraph::TextureDesc{
+			.width = width, .height = height, .format = format,
+			.minFilter = minFilter, .magFilter = magFilter,
+			.wrapU = wrapU, .wrapV = wrapV,
+			.maxLevel = std::max(1u,maxLevel) }, name);
 	}
 	RenderGraph::RenderGraphResource CreateTexture(uint32_t width, uint32_t height,
 		vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap,
 		const RenderGraph::ResourceName& name,
 		uint32_t maxLevel = 1) {
-		return _graph->CreateTexture(RenderGraph::TextureDesc{ width ,height, format, filter, filter, wrap, wrap, std::max(1u,maxLevel) }, name);
+		return _graph->CreateTexture(RenderGraph::TextureDesc{
+			.width = width, .height = height, .format = format,
+			.minFilter = filter, .magFilter = filter,
+			.wrapU = wrap, .wrapV = wrap,
+			.maxLevel = std::max(1u,maxLevel) }, name);
+	}
+	// 3D 体积纹理（depth > 1）—— 进 TexturePool 的 3D 分支，pass 里用 GetVolumeXxx 取
+	RenderGraph::RenderGraphResource CreateVolume(
+		uint32_t width, uint32_t height, uint32_t depth,
+		vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap,
+		const RenderGraph::ResourceName& name,
+		uint32_t maxLevel = 1) {
+		return _graph->CreateTexture(RenderGraph::TextureDesc{
+			.width = width, .height = height, .depth = std::max(1u, depth), .format = format,
+			.minFilter = filter, .magFilter = filter,
+			.wrapU = wrap, .wrapV = wrap, .wrapW = wrap,
+			.maxLevel = std::max(1u,maxLevel) }, name);
 	}
 	RenderGraph::RenderGraphResource CreateTexture(const RenderGraph::RenderGraphResource& other, const RenderGraph::ResourceName& name) {
 		return _graph->CreateTexture(std::get<RenderGraph::TextureDesc>(other.desc), name);
@@ -488,7 +508,11 @@ public:
 		return _graph->CreateExternalTexture(name);
 	}
 	RenderGraph::RenderGraphResource CreateVariableTexture(vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap, const RenderGraph::ResourceName& name, uint32_t maxLevel = 1) {
-		return _graph->CreateTexture(RenderGraph::TextureDesc{ 1 ,1, format, filter, filter, wrap, wrap, std::max(1u,maxLevel) , true }, name);
+		return _graph->CreateTexture(RenderGraph::TextureDesc{
+			.width = 1, .height = 1, .format = format,
+			.minFilter = filter, .magFilter = filter,
+			.wrapU = wrap, .wrapV = wrap,
+			.maxLevel = std::max(1u,maxLevel), .isVariable = true }, name);
 	}
 
 private:
@@ -530,9 +554,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 					return;
 
 				std::vector<std::shared_ptr<Texture2D>> all_tex;
-				for (auto& textures : { ctx.inputTextures, ctx.optionInputTextures }) {
-					for (auto& tex : textures) {
-						if (tex) all_tex.push_back(tex);
+				for (auto* slots : { &ctx.inputs, &ctx.optionInputs }) {
+					for (auto& slot : *slots) {
+						if (auto tex = slot.As<Texture2D>()) all_tex.push_back(tex);
 					}
 				}
 				if (all_tex.empty())

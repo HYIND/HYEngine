@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderGraph/RenderGraphContext.h"
 
 using namespace RenderGraph;
@@ -88,17 +88,12 @@ void PassFrameCmdContext::SubmitNowAndWait(const std::shared_ptr<VKWrapper::VKCo
 		_timeLine->Wait(cmdcount);
 }
 
-void PassFrameCmdContext::PushTexWithLayout(const std::shared_ptr<Texture2D>& tex, const RenderGraphResourceLayout& layout) {
-	if (tex)
-		_texDatas.push_back(TexLayoutData{ tex,layout });
-}
-
 void RenderGraph::PassFrameCmdContext::Start()
 {
 	VKWrapper::PassImageStateRecord::StartRecord();
 	for (auto& data : _texDatas)
 	{
-		auto img = data.tex->GetImageSharedPtr();
+		auto img = data.image;
 		auto* texLayoutData = std::get_if<TextureLayout>(&data.layout.data);
 		VKWrapper::PassImageStateRecord::AddState(img, texLayoutData->stage, texLayoutData->usage);
 	}
