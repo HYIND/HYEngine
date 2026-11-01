@@ -664,13 +664,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeLut.comp", "shader/Volume/VolumeCalculate.comp");
 
-
-	auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
-
 	auto transparentPass = std::make_unique<TransparentPass>(
 		"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs",
 		"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_oit.fs",
 		"shader/Transparent/transparent_oit_composite.vs", "shader/Transparent/transparent_oit_composite.fs");
+
+	auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
