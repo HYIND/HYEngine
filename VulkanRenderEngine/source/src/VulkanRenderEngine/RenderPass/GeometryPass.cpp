@@ -24,7 +24,7 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 
@@ -54,7 +54,7 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
+		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 
