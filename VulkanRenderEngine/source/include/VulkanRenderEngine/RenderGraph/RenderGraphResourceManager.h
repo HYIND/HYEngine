@@ -16,6 +16,8 @@ namespace RenderGraph
 	public:
 		std::shared_ptr<Texture2D> TryGetTexture(const RenderGraphResource& res, const std::string& prefix);
 		std::shared_ptr<Texture2D> GetTexture(const RenderGraphResource& res, const std::string& prefix);
+		std::shared_ptr<Texture3D> TryGetVolume(const RenderGraphResource& res, const std::string& prefix);
+		std::shared_ptr<Texture3D> GetVolume(const RenderGraphResource& res, const std::string& prefix);
 		void ReleaseTexture(const RenderGraphResource& res, const std::string& prefix);
 
 		void CleanupIdleResource();

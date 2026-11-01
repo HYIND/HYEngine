@@ -24,10 +24,16 @@ TextureHandle TexturePool::AllocateTexture(const TextureDesc& desc)
 	config.magFilter = desc.magFilter;
 	config.wrapU = desc.wrapU;
 	config.wrapV = desc.wrapV;
-	auto tex = std::make_shared<Texture2D>(desc.width, desc.height, desc.format, config, desc.maxLevel);
+	config.wrapW = desc.wrapW;
+
+	TextureSlot slot;
+	if (desc.IsVolume())
+		slot.Set(std::make_shared<Texture3D>(desc.width, desc.height, desc.depth, desc.format, config, desc.maxLevel));
+	else
+		slot.Set(std::make_shared<Texture2D>(desc.width, desc.height, desc.format, config, desc.maxLevel));
 
 	handle = TextureHandle(_nextId++, desc);
-	_textures[handle] = tex;
+	_textures[handle] = slot;
 	return handle;
 }
 
@@ -35,8 +41,16 @@ std::shared_ptr<Texture2D> TexturePool::GetTexture(const TextureHandle& handle) 
 {
 	auto it = _textures.find(handle);
 	if (it != _textures.end())
-		return it->second;
+		return it->second.As<Texture2D>();
 	return std::shared_ptr<Texture2D>();
+}
+
+std::shared_ptr<Texture3D> TexturePool::GetVolume(const TextureHandle& handle) const
+{
+	auto it = _textures.find(handle);
+	if (it != _textures.end())
+		return it->second.As<Texture3D>();
+	return std::shared_ptr<Texture3D>();
 }
 
 void TexturePool::ReleaseTexture(const TextureHandle& handle) {
@@ -49,12 +63,13 @@ void TexturePool::ReleaseTexture(const TextureHandle& handle) {
 
 TexKey TexturePool::GenerateKey(const TextureDesc& desc) const
 {
+	// depth / wrapW 必须进 key，否则 2D 与 3D、不同体积尺寸会互相复用错资源
 	if (desc.isVariable)
-		return std::format("__Variable_{}_{}_{}_{}_{}_{}",
-			(uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, desc.maxLevel);
+		return std::format("__Variable_{}_{}_{}_{}_{}_{}_{}_{}",
+			(uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, (uint32_t)desc.wrapW, desc.maxLevel, desc.depth);
 	else
-		return std::format("{}_{}_{}_{}_{}_{}_{}_{}",
-			desc.width, desc.height, (uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, desc.maxLevel);
+		return std::format("{}_{}_{}_{}_{}_{}_{}_{}_{}_{}",
+			desc.width, desc.height, desc.depth, (uint32_t)desc.format, (uint32_t)desc.minFilter, (uint32_t)desc.magFilter, (uint32_t)desc.wrapU, (uint32_t)desc.wrapV, (uint32_t)desc.wrapW, desc.maxLevel);
 }
 
 TextureHandle TexturePool::FetchIdleTexture(const TexKey& key)

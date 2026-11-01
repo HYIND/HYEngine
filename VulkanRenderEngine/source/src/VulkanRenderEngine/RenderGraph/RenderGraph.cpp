@@ -205,50 +205,62 @@ void Graph::ExecutePass(
 	PassFrameContext ctx;
 	ctx.passName = node->GetName();
 
-	for (const auto& input : node->GetInputs()) {
-		auto tex = _resManager.GetTexture(input.resource, resPrefix);
-		ctx.inputTextures.push_back(tex);
-		cmdCtx.PushTexWithLayout(tex, input.layout);
-	}
+	static auto IsVolumeResource = [](const RenderGraphResource& res)->bool
+		{
+			if (auto desc = std::get_if<TextureDesc>(&res.desc))
+				return desc->IsVolume();
+			return false;
+		};
 
-	for (const auto& input : node->GetInputOptions()) {
-		auto tex = _resManager.TryGetTexture(input.resource, resPrefix);
-		ctx.optionInputTextures.push_back(tex);
-		cmdCtx.PushTexWithLayout(tex, input.layout);
-	}
+	auto FetchTexture = [&](const RenderGraphResource& res, const std::string& prefix, const RenderGraphResourceLayout& layout, bool optional,
+		std::vector<TextureSlot>& out)->void
+		{
+			TextureSlot slot;
+			if (IsVolumeResource(res))
+				slot.Set(optional ? _resManager.TryGetVolume(res, prefix) : _resManager.GetVolume(res, prefix));
+			else
+				slot.Set(optional ? _resManager.TryGetTexture(res, prefix) : _resManager.GetTexture(res, prefix));
 
-	for (const auto& output : node->GetOutputs()) {
-		auto tex = _resManager.GetTexture(output.resource, resPrefix);
-		ctx.outputTextures.push_back(tex);
-		cmdCtx.PushTexWithLayout(tex, output.layout);
-	}
+			// 谁被设进槽位就推谁，不再需要自己判断维度
+			if (auto tex3 = slot.As<Texture3D>())
+				cmdCtx.PushTexWithLayout(tex3, layout);
+			else if (auto tex2 = slot.As<Texture2D>())
+				cmdCtx.PushTexWithLayout(tex2, layout);
 
-	for (const auto& temp : node->GetTemps()) {
-		auto tex = _resManager.GetTexture(temp.resource, resPrefix);
-		ctx.tempTextures.push_back(tex);
-		cmdCtx.PushTexWithLayout(tex, temp.layout);
-	}
+			out.push_back(slot);
+		};
 
-	for (const auto& persitent : node->GetPersistents()) {
-		auto tex = _resManager.GetTexture(persitent.resource, "");
-		ctx.persitentTextures.push_back(tex);
-		cmdCtx.PushTexWithLayout(tex, persitent.layout);
-	}
+	for (const auto& input : node->GetInputs())
+		FetchTexture(input.resource, resPrefix, input.layout, false, ctx.inputs);
+
+	for (const auto& input : node->GetInputOptions())
+		FetchTexture(input.resource, resPrefix, input.layout, true, ctx.optionInputs);
+
+	for (const auto& output : node->GetOutputs())
+		FetchTexture(output.resource, resPrefix, output.layout, false, ctx.outputs);
+
+	for (const auto& temp : node->GetTemps())
+		FetchTexture(temp.resource, resPrefix, temp.layout, false, ctx.temps);
+
+	for (const auto& persitent : node->GetPersistents())
+		FetchTexture(persitent.resource, "", persitent.layout, false, ctx.persistents);
 
 	for (const auto& external : node->GetExternals()) {
 		if (external.resource.type == ResourceType::Texture)
 		{
-			auto tex = externalResManager.GetExternalTexture(external.resource.name);
-			ctx.externalTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, external.layout);
+			TextureSlot slot;
+			if (auto tex = externalResManager.GetExternalTexture(external.resource.name))
+			{
+				slot.Set(tex);
+				cmdCtx.PushTexWithLayout(tex, external.layout);
+			}
+			ctx.externals.push_back(slot);
 		}
 	}
 
 	for (const auto& framelocal : node->GetFrameLocal()) {
-		auto tex = _resManager.GetTexture(framelocal.resource, resPrefix);
-		ctx.frameLocalTextures.push_back(tex);
+		FetchTexture(framelocal.resource, resPrefix, framelocal.layout, false, ctx.frameLocals);
 		frameLocalResRecord.AddTexture(framelocal.resource);
-		cmdCtx.PushTexWithLayout(tex, framelocal.layout);
 	}
 
 	node->Execute(cmdCtx, registry, ctx, state);
