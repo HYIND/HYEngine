@@ -125,7 +125,7 @@ void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	auto HZBMap = ctx.GetOutput(0);
 	auto HZBMinMap = ctx.GetOutput(1);
 
-	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+	auto& frustumObjectIndex = registry.Get<std::vector<uint32_t>>("frustumObjectIndex");
 
 	auto cmd = cmdCtx.GetCmd();
 
@@ -152,9 +152,12 @@ void HZBPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 				oneSideIndex.push_back(meshIndex);
 		}
 
-		auto& transparentIndex = state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex;
-		auto& transparentFrustumIndex = registry.Load<std::vector<uint32_t>>("transparentFrustumObjectIndex");
-		transparentIndex.assign(transparentFrustumIndex.begin(), transparentFrustumIndex.end());
+		if (state.option.flags.drawTransparent)
+		{
+			auto& transparentIndex = state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex;
+			auto& transparentFrustumIndex = registry.Get<std::vector<uint32_t>>("transparentFrustumObjectIndex");
+			transparentIndex.assign(transparentFrustumIndex.begin(), transparentFrustumIndex.end());
+		}
 	}
 }
 
@@ -206,45 +209,7 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 	frustumOcclusionCullResult.resize(writePos, 0);
 	frustumObjectMeshaabbs.resize(writePos);
 
-	auto& transparentMeshes = state.objects.sceneStaticRenderData.transparentItems;
-
-	std::vector<uint32_t> transparentFrustumObjectIndex;
-	std::vector<AABB> transparentObjectMeshaabbs;
-
-	if (!transparentMeshes.empty())
-	{
-		std::vector<bool> transparentCullResult(transparentMeshes.size(), false);
-		transparentObjectMeshaabbs.resize(transparentMeshes.size());
-
-		std::for_each(std::execution::par_unseq, transparentMeshes.begin(), transparentMeshes.end(),
-			[&](VKRenderObjectData::SceneStaticRenderData::MeshItem& item)
-			{
-				uint32_t meshIndex = &item - transparentMeshes.data();
-
-				AABB aabbworld = item.meshinfo.mesh->GetAABB();
-				aabbworld.MakeTransform(item.transform);
-
-				transparentObjectMeshaabbs[meshIndex] = aabbworld;
-				transparentCullResult[meshIndex] = !frustum.IsAABBOnFrustum(aabbworld);
-			});
-
-		size_t transparentWritePos = 0;
-		for (size_t i = 0; i < transparentMeshes.size(); i++)
-		{
-			if (transparentCullResult[i]) continue;
-
-			if (transparentWritePos != i)
-				transparentObjectMeshaabbs[transparentWritePos] = transparentObjectMeshaabbs[i];
-
-			transparentFrustumObjectIndex.push_back(static_cast<uint32_t>(i));
-			transparentWritePos++;
-		}
-
-		transparentObjectMeshaabbs.resize(transparentWritePos);
-	}
-
-	auto commandPtrs = registry.Get<std::vector<IndirectDrawCommand>>("commands");
-	auto& commands = *commandPtrs;
+	auto& commands = registry.Get<std::vector<IndirectDrawCommand>>("commands");
 
 	auto indirectManager = IndirectDrawManager::Instance();
 	commands.resize(frustumObjectIndex.size());
@@ -281,8 +246,49 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 	registry.Store("frustumObjectMeshaabbs", std::move(frustumObjectMeshaabbs));
 	registry.Store("frustumObjectTransforms", std::move(frustumObjectTransforms));
 	registry.Store("frustumOcclusionCullResult", std::move(frustumOcclusionCullResult));
-	registry.Store("transparentFrustumObjectIndex", std::move(transparentFrustumObjectIndex));
-	registry.Store("transparentObjectMeshaabbs", std::move(transparentObjectMeshaabbs));
+
+	if (state.option.flags.drawTransparent)
+	{
+		auto& transparentMeshes = state.objects.sceneStaticRenderData.transparentItems;
+
+		std::vector<uint32_t> transparentFrustumObjectIndex;
+		std::vector<AABB> transparentObjectMeshaabbs;
+
+		if (!transparentMeshes.empty())
+		{
+			std::vector<bool> transparentCullResult(transparentMeshes.size(), false);
+			transparentObjectMeshaabbs.resize(transparentMeshes.size());
+
+			std::for_each(std::execution::par_unseq, transparentMeshes.begin(), transparentMeshes.end(),
+				[&](VKRenderObjectData::SceneStaticRenderData::MeshItem& item)
+				{
+					uint32_t meshIndex = &item - transparentMeshes.data();
+
+					AABB aabbworld = item.meshinfo.mesh->GetAABB();
+					aabbworld.MakeTransform(item.transform);
+
+					transparentObjectMeshaabbs[meshIndex] = aabbworld;
+					transparentCullResult[meshIndex] = !frustum.IsAABBOnFrustum(aabbworld);
+				});
+
+			size_t transparentWritePos = 0;
+			for (size_t i = 0; i < transparentMeshes.size(); i++)
+			{
+				if (transparentCullResult[i]) continue;
+
+				if (transparentWritePos != i)
+					transparentObjectMeshaabbs[transparentWritePos] = transparentObjectMeshaabbs[i];
+
+				transparentFrustumObjectIndex.push_back(static_cast<uint32_t>(i));
+				transparentWritePos++;
+			}
+
+			transparentObjectMeshaabbs.resize(transparentWritePos);
+		}
+		registry.Store("transparentFrustumObjectIndex", std::move(transparentFrustumObjectIndex));
+		registry.Store("transparentObjectMeshaabbs", std::move(transparentObjectMeshaabbs));
+	}
+
 }
 
 void HZBPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -295,13 +301,12 @@ uint32_t HZBPass::GetMaxLevel() const
 
 void HZBPass::DrawDepthMap(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& depthMap, RenderState& state)
 {
-	auto& frustumObjectTransforms = registry.Load<std::vector<glm::mat4>>("frustumObjectTransforms");
-	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
+	auto& frustumObjectTransforms = registry.Get<std::vector<glm::mat4>>("frustumObjectTransforms");
+	auto& frustumObjectIndex = registry.Get<std::vector<uint32_t>>("frustumObjectIndex");
 
 	GraphicsBindingRecord depthShaderBinding;
 
-	auto commandPtrs = registry.Get<std::vector<IndirectDrawCommand>>("commands");
-	auto& commands = *commandPtrs;
+	auto& commands = registry.Get<std::vector<IndirectDrawCommand>>("commands");
 
 	auto transform_ssbo = depthShaderBinding.GetStorageBlock(2);
 	transform_ssbo->WriteDataAsync(cmd, frustumObjectTransforms.data(), frustumObjectTransforms.size() * sizeof(glm::mat4));
@@ -407,11 +412,11 @@ void HZBPass::DrawHZB(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Re
 void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderGraph::FrameDataRegistry& registry, std::shared_ptr<Texture2D>& HZBMap, RenderState& state)
 {
 
-	auto& frustumObjectIndex = registry.Load<std::vector<uint32_t>>("frustumObjectIndex");
-	auto& frustumObjectMeshaabbs = registry.Load<std::vector<AABB>>("frustumObjectMeshaabbs");
-	auto& frustumOcclusionCullResult = registry.Load<std::vector<int>>("frustumOcclusionCullResult");
-	auto& transparentFrustumIndex = registry.Load<std::vector<uint32_t>>("transparentFrustumObjectIndex");
-	auto& transparentObjectMeshaabbs = registry.Load<std::vector<AABB>>("transparentObjectMeshaabbs");
+	auto& frustumObjectIndex = registry.Get<std::vector<uint32_t>>("frustumObjectIndex");
+	auto& frustumObjectMeshaabbs = registry.Get<std::vector<AABB>>("frustumObjectMeshaabbs");
+	auto& frustumOcclusionCullResult = registry.Get<std::vector<int>>("frustumOcclusionCullResult");
+	auto& transparentFrustumIndex = registry.Get<std::vector<uint32_t>>("transparentFrustumObjectIndex");
+	auto& transparentObjectMeshaabbs = registry.Get<std::vector<AABB>>("transparentObjectMeshaabbs");
 
 	const size_t opaqueCount = frustumObjectMeshaabbs.size();
 	const size_t transparentCount = transparentObjectMeshaabbs.size();
@@ -425,10 +430,7 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	frustumOcclusionCullResult.assign(allAabbs.size(), 0);
 
 	if (allAabbs.empty())
-	{
-		state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex.clear();
 		return;
-	}
 
 	struct alignas(16) OccData {
 		glm::mat4 viewProj;
@@ -450,12 +452,8 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	auto result_ssbo = occlusionCullShaderBinding.GetStorageBlock(3);
 	auto occDataBlock = occlusionCullShaderBinding.GetUniformBlock(4);
 
-	if (uint64_t size = allAabbs.size() * sizeof(AABB); aabb_ssbo->GetSize() < size)
-		aabb_ssbo->SetSizeAsync(cmd, size * 1.2);
-	if (uint64_t size = cullResult.size() * sizeof(int); result_ssbo->GetSize() < size)
-		result_ssbo->SetSizeAsync(cmd, size * 1.2);
-
 	aabb_ssbo->WriteDataAsync(cmd, allAabbs.data(), allAabbs.size() * sizeof(AABB));
+	result_ssbo->SetSizeAsync(cmd, cullResult.size() * sizeof(int));
 	occDataBlock->WriteDataAsync(cmd, &data, sizeof(data));
 
 	aabb_ssbo->Barrier(cmd, BufferUsage::TransferWrite);
@@ -486,14 +484,17 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 			oneSideIndex.push_back(meshIndex);
 	}
 
-	auto& transparentIndex = state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex;
-	transparentIndex.clear();
-	transparentIndex.reserve(transparentCount);
-
-	for (size_t i = 0; i < transparentCount; i++)
+	if (state.option.flags.drawTransparent && transparentCount > 0)
 	{
-		if (cullResult[opaqueCount + i] > 0) continue;
-		transparentIndex.push_back(transparentFrustumIndex[i]);
+		auto& transparentIndex = state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex;
+		transparentIndex.clear();
+		transparentIndex.reserve(transparentCount);
+
+		for (size_t i = 0; i < transparentCount; i++)
+		{
+			if (cullResult[opaqueCount + i] > 0) continue;
+			transparentIndex.push_back(transparentFrustumIndex[i]);
+		}
 	}
 	//std::cout << std::format("frustumObjectSize = {}, renderObjectSize = {}\n", frustumObjectIndex.size(), oneSideIndex.size() + twoSideIndex.size());
 }

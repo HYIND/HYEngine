@@ -1,7 +1,12 @@
-﻿#pragma once
+#pragma once
 
 struct Scene3DRenderOption
 {
+	enum class TransparentMode :uint32_t {
+		Sorted = 0,
+		OIT = 1
+	};
+
 	struct RayTraceGeneralParams {
 		float maxDistance = 750;				// 反射最大计算距离
 		float maxCacheClearDistance = 1000;		// mesh缓存清除距离
@@ -129,6 +134,11 @@ struct Scene3DRenderOption
 		float EV100 = 0.0f;
 		float gamma = 2.2f;
 	} postProcessParams;
+
+	// 半透明渲染方式
+	struct TransparentParams {
+		TransparentMode mode = TransparentMode::OIT;
+	} transparentParams;
 
 	// 渲染开关
 	struct PostProcessFlags {

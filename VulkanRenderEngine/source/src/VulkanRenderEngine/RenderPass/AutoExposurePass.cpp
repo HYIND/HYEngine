@@ -36,7 +36,7 @@ void AutoExposurePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Rend
 	if (!ShouldExecute(registry, state))
 		return;
 
-	ComputeBindingRecord& binding = *registry.Get<ComputeBindingRecord>("binding");
+	ComputeBindingRecord& binding = registry.Get<ComputeBindingRecord>("binding");
 	std::shared_ptr<StorageBlock> paramsSSBO = registry.GetStorageBlock("paramsSSBO");
 
 	HistogramSSBOParams params
@@ -54,7 +54,7 @@ void AutoExposurePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderG
 
 	auto cmd = cmdCtx.GetCmd();
 
-	ComputeBindingRecord& binding = *registry.Get<ComputeBindingRecord>("binding");
+	ComputeBindingRecord& binding = registry.Get<ComputeBindingRecord>("binding");
 	std::shared_ptr<StorageBlock> paramsSSBO = registry.GetStorageBlock("paramsSSBO");
 
 	binding.SetStorageImage(sceneColorBuffer, vk::ImageAspectFlagBits::eColor, 1);

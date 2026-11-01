@@ -115,7 +115,7 @@ void SSAOPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 		.bias = state.option.ssaoParams.bias
 	};
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 	paramsUBO->WriteData(&params, sizeof(params));
@@ -136,7 +136,7 @@ void SSAOPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 
 	auto gDepthStencil = ctx.GetFrameLocal(0);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetStorageImage(ssaoColorMap, vk::ImageAspectFlagBits::eColor, 0);
 	binding.SetUniformTexture(gPosition, vk::ImageAspectFlagBits::eColor, 1);

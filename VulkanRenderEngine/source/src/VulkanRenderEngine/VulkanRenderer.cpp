@@ -667,7 +667,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
 
-	auto transparentPass = std::make_unique<TransparentPass>("shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs");
+	auto transparentPass = std::make_unique<TransparentPass>(
+		"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs",
+		"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_oit.fs",
+		"shader/Transparent/transparent_oit_composite.vs", "shader/Transparent/transparent_oit_composite.fs");
 
 	auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
@@ -963,9 +966,20 @@ void VulkanRenderer::InitSceneRenderGraph()
 			.Before(transprantFence);
 	}
 
-	effectNode->SetRenderPass(std::move(effectPass))
+	transparentNode->SetRenderPass(std::move(transparentPass))
+		.Input(ResourceData{ atlasShadowMap, graphicsReadLayout })
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
 		.After(opaqueFence, volumeCalculateNode)
+		.Before(effectNode, transprantFence)
+		.Temp(
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "transparentNode_oitAccum"), graphicsWriteLayout },
+			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "transparentNode_oitReveal"), graphicsWriteLayout }
+		)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
+
+	effectNode->SetRenderPass(std::move(effectPass))
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
+		.After(opaqueFence, volumeCalculateNode, transparentNode)
 		.Before(transprantFence)
 		// OIT 的两张离屏目标：accum(RGBA16F) 与 reveal(R16F)，只在 EffectPass 内部使用
 		.Temp(
@@ -973,15 +987,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitReveal"), graphicsWriteLayout }
 		)
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
-
-	// 半透明：在不透明光照 + 体积光之后、粒子之前，按由远到近的顺序前向着色
-	transparentNode->SetRenderPass(std::move(transparentPass))
-		.Input(ResourceData{ atlasShadowMap, graphicsReadLayout })
-		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
-		.After(opaqueFence, volumeCalculateNode)
-		.Before(effectNode, transprantFence)
-		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
-
 
 	autoExposureNode->SetRenderPass(std::move(autoExposurePass))
 		.After(postProcessFence)

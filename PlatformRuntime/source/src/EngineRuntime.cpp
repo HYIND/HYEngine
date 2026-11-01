@@ -168,6 +168,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSAOParams,
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessParams, EV100, gamma)
 
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::TransparentParams, mode)
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessFlags,
 	bloomOn, gammaOn, lightDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
 	exponentialHeightFogOn, atmosphereOn, rayTraceReflectOn, rayTraceGIOn,
@@ -176,7 +178,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcess
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption,
 	rayTraceGeneralParams, rayTraceReflectParams, rayTraceGIParams, ssrTraceParams,
 	ssgiTraceParams, exponentialHeightFogParams, atmosphereParams, ssaoParams,
-	postProcessParams, flags)
+	postProcessParams, transparentParams, flags)
 
 EngineRuntime::EngineRuntime() = default;
 

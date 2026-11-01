@@ -128,7 +128,7 @@ void RayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	if (!ShouldExecute(registry, state))
 		return;
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	{
 		//光追参数
@@ -168,7 +168,7 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	CubeParams cubeParams;
 	std::shared_ptr<TextureCube> cubeMap;

@@ -69,8 +69,9 @@ private:
 		std::shared_ptr<IndirectBufferBlock> skinnedOneSideIndirectCommands;
 		std::shared_ptr<IndirectBufferBlock> skinnedTwoSideIndirectCommands;
 
+		PreRecordData() = default;
 		PreRecordData(PreRecordLightType t) :type(t) {}
-		PreRecordData(PreRecordData&& other) {
+		PreRecordData(PreRecordData&& other) noexcept {
 			type = other.type;
 			shadowMatrices = std::move(other.shadowMatrices);
 			viewPorts = std::move(other.viewPorts);

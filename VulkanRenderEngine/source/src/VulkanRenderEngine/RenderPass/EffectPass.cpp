@@ -75,7 +75,7 @@ namespace
 		return blend;
 	}
 
-	// OIT 累积缓冲：累加 color*α*w 与 α*w
+	// OIT 累积缓冲
 	vk::PipelineColorBlendAttachmentState MakeOitAccumBlend()
 	{
 		vk::PipelineColorBlendAttachmentState blend;
@@ -91,7 +91,7 @@ namespace
 		return blend;
 	}
 
-	// OIT 透射率缓冲：dst = dst * (1 - src)（R16F 没有 alpha 通道，只能用颜色的写法）
+	// OIT 透射率缓冲
 	vk::PipelineColorBlendAttachmentState MakeOitRevealBlend()
 	{
 		vk::PipelineColorBlendAttachmentState blend;
@@ -236,8 +236,8 @@ bool EffectPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderS
 
 void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	auto& drawGroups = *registry.Get<std::vector<DrawGroup>>("Groups");
-	auto& modelGeometries = *registry.Get<std::unordered_map<const StaticModel*, ModelGeometry>>("ModelGeometries");;
+	auto& drawGroups = registry.Get<std::vector<DrawGroup>>("Groups");
+	auto& modelGeometries = registry.Get<std::unordered_map<const StaticModel*, ModelGeometry>>("ModelGeometries");;
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
@@ -499,7 +499,7 @@ void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderStat
 
 void EffectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	auto& drawGroups = *registry.Get<std::vector<DrawGroup>>("Groups");
+	auto& drawGroups = registry.Get<std::vector<DrawGroup>>("Groups");
 	if (drawGroups.empty())
 		return;
 

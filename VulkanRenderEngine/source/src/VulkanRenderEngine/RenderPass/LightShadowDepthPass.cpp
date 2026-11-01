@@ -401,7 +401,7 @@ void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
 		return;
 
-	auto& selfctx = *registry.Get<SelfContext>("context");
+	auto& selfctx = registry.Get<SelfContext>("context");
 	state.lights.shadowAtlas = selfctx.atlas;
 
 	CalculateShadowAtlas(state, *selfctx.atlas);
@@ -431,7 +431,7 @@ void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, 
 	state.lights.ssbo_pointLightMeta = selfctx.ssbo_pointLightMeta;
 	state.lights.ssbo_spotLightMeta = selfctx.ssbo_spotLightMeta;
 
-	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
+	auto& datas = *registry.GetShared<std::vector<PreRecordData>>("PreRecordData");
 	PreRecordDirAndSpotLight(datas, selfctx, state);
 	PreRecordPointLight(datas, selfctx, state);
 }
@@ -450,7 +450,7 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
 		return;
 
-	auto& selfctx = *registry.Get<SelfContext>("context");
+	auto& selfctx = registry.Get<SelfContext>("context");
 
 	auto cmd = cmdCtx.GetCmd();
 
@@ -484,7 +484,7 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	pointLightShadowDepthSkinnedBinding.SetStorageBlock(state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices, 5);
 	pointLightShadowDepthSkinnedBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
-	auto& datas = *registry.Get<std::vector<PreRecordData>>("PreRecordData");
+	auto& datas = *registry.GetShared<std::vector<PreRecordData>>("PreRecordData");
 	for (auto& data : datas)
 	{
 		if (data.type == PreRecordLightType::Dir)

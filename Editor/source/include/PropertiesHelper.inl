@@ -232,6 +232,19 @@ inline bool PropertiesHelper::DrawField<Physics::BodyType>(const std::string& na
 	return false;
 }
 
+template<>
+inline bool PropertiesHelper::DrawField<Scene3DRenderOption::TransparentMode>(const std::string& name, Scene3DRenderOption::TransparentMode* value, PropertyWidget widget)
+{
+	int currentItem = static_cast<int>(*value);
+	const char* items[] = { "Sorted", "OIT" };
+	SetNextPropertyFieldWidth(250.0f, 0.55f);
+	if (ImGui::Combo(name.c_str(), &currentItem, items, IM_ARRAYSIZE(items))) {
+		*value = static_cast<Scene3DRenderOption::TransparentMode>(currentItem);
+		return true;
+	}
+	return false;
+}
+
 template <typename T, typename = void>
 struct has_reflector : std::false_type {};
 
@@ -1873,4 +1886,24 @@ template<>
 inline void PropertiesHelper::OnComponentChange(Entity entity, Physics& physics)
 {
 	physics.forceRecalculate = true;
+}
+
+template<>
+inline bool PropertiesHelper::DrawData(Scene3DRenderOption& option)
+{
+	bool anyChange = false;
+
+	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessFlags", option.flags);
+	anyChange |= PropertiesHelper::DrawWithTitle("PostProcessParams", option.postProcessParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("TransparentParams", option.transparentParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("AtmosphereParams", option.atmosphereParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("SSAOParams", option.ssaoParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("ExponentialHeightFog", option.exponentialHeightFogParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGeneralParams", option.rayTraceGeneralParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceReflectParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("SSReflectParams", option.ssrTraceParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("SSGIParams", option.ssgiTraceParams);
+
+	return anyChange;
 }

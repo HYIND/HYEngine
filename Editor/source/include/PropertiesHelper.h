@@ -62,7 +62,7 @@ private:
 	// 字段绘制辅助
 	template<typename FieldType>
 	static bool DrawField(const std::string& name, FieldType* value, PropertyWidget widget);
-
+	
 	// 静态/蒙皮模型组件的属性面板几乎一样，只有模型资产的类型名不同。
 	template<typename ModelComponent>
 	static bool DrawModelComponent(ModelComponent& comp, ProjectManager* assetManager, const char* modelLabel);
