@@ -1663,6 +1663,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "color", EncodeVec3(d->color) },
                     { "luxIntensity", d->luxIntensity },
                     { "volumetricScatteringIntensity", d->volumetricScatteringIntensity },
+                    { "volumeLightEnable", d->volumeLightEnable },
+                    { "volumeLightEffectByAtmospher", d->volumeLightEffectByAtmospher },
                     { "castShadow", d->castShadow },
                     { "cascadeLevel", d->cascadeLevel },
                     { "shadowMapSize", d->shadowMapSize }
@@ -1679,6 +1681,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "color", EncodeVec3(d->color) },
                     { "cdIntensity", d->cdIntensity },
                     { "volumetricScatteringIntensity", d->volumetricScatteringIntensity },
+                    { "volumeLightEnable", d->volumeLightEnable },
+                    { "volumeLightEffectByAtmospher", d->volumeLightEffectByAtmospher },
                     { "castShadow", d->castShadow },
                     { "shadowMapSize", d->shadowMapSize }
                 };
@@ -1694,6 +1698,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "color", EncodeVec3(d->color) },
                     { "cdIntensity", d->cdIntensity },
                     { "volumetricScatteringIntensity", d->volumetricScatteringIntensity },
+                    { "volumeLightEnable", d->volumeLightEnable },
+                    { "volumeLightEffectByAtmospher", d->volumeLightEffectByAtmospher },
                     { "cutOffAngle", d->cutOffAngle },
                     { "outercutOffAngle", d->outercutOffAngle },
                     { "castShadow", d->castShadow },
@@ -1747,6 +1753,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.luxIntensity = data.at("luxIntensity").get<float>();
                 d.volumetricScatteringIntensity =
                     data.at("volumetricScatteringIntensity").get<float>();
+                d.volumeLightEnable = data.value("volumeLightEnable", true);
+                d.volumeLightEffectByAtmospher = data.value("volumeLightEffectByAtmospher", false);
                 d.castShadow = data.at("castShadow").get<bool>();
                 d.cascadeLevel = data.at("cascadeLevel").get<uint32_t>();
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
@@ -1771,6 +1779,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.cdIntensity = data.at("cdIntensity").get<float>();
                 d.volumetricScatteringIntensity =
                     data.at("volumetricScatteringIntensity").get<float>();
+                d.volumeLightEnable = data.value("volumeLightEnable", true);
+                d.volumeLightEffectByAtmospher = data.value("volumeLightEffectByAtmospher", false);
                 d.castShadow = data.at("castShadow").get<bool>();
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
 
@@ -1794,6 +1804,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.cdIntensity = data.at("cdIntensity").get<float>();
                 d.volumetricScatteringIntensity =
                     data.at("volumetricScatteringIntensity").get<float>();
+                d.volumeLightEnable = data.value("volumeLightEnable", true);
+                d.volumeLightEffectByAtmospher = data.value("volumeLightEffectByAtmospher", false);
                 d.cutOffAngle = data.at("cutOffAngle").get<float>();
                 d.outercutOffAngle = data.at("outercutOffAngle").get<float>();
                 d.castShadow = data.at("castShadow").get<bool>();
