@@ -22,7 +22,6 @@ layout (binding = 0) uniform Params
     uint maxBounce;
     uint SampleRayCount;
     uint RayMarchingMaxStep;
-    float SampleIndirectClampValue;
     float GIIntensity;
     float AOIntensity;
     float DistanceFactor;
@@ -152,11 +151,8 @@ vec3 traceRay(
 
             float dist = distance(ray.origin, hitPosition);
             float attenuation = 1.0 / (1.0 + dist * DistanceFactor);
-            vec3 lightingColor = texture(colorMap, uv).rgb;
-            vec3 lightEnergy = lightingColor / (prop.albedo + 1e-4) * attenuation;
-            vec3 indirectColor = prop.albedo * min(lightEnergy, SampleIndirectClampValue);        //钳制入射光强
 
-            colors[hitCount] = indirectColor;
+            colors[hitCount] = texture(colorMap, uv).rgb * attenuation;
 
             viewPos = ray.origin;
             fragPos = hitPosition;

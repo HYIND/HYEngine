@@ -14,7 +14,6 @@ struct SSGIParams
 	uint32_t maxBounce = 0;
 	uint32_t SampleRayCount;
 	uint32_t RayMarchingMaxStep;
-	float SampleIndirectClampValue;
 	float GIIntensity;
 	float AOIntensity;
 	float DistanceFactor;
@@ -132,7 +131,6 @@ void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 			.maxBounce = std::max(1u, std::min(state.option.ssgiTraceParams.maxBounceLimit, GlobalConfig::SSTrace_Max_Bounce_limit)),
 			.SampleRayCount = state.option.ssgiTraceParams.NumSamples,
 			.RayMarchingMaxStep = std::max(2u, state.option.ssgiTraceParams.RayMarchingMaxStep),
-			.SampleIndirectClampValue = std::max(0.01f, state.option.ssgiTraceParams.Sample_Indirect_Clamp_Value),
 			.GIIntensity = std::max(0.01f, state.option.ssgiTraceParams.GIIntensity),
 			.AOIntensity = std::max(0.01f, state.option.ssgiTraceParams.AOIntensity),
 			.DistanceFactor = std::max(0.0001f, state.option.ssgiTraceParams.DistanceFactor),
