@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "vkstdafx.h"
 #include "./BaseVKImage.h"
@@ -15,7 +15,8 @@ namespace VKWrapper {
 		VmaImage(const VmaImage&) = delete;
 		VmaImage& operator=(const VmaImage&) = delete;
 
-		bool Create(VKCore::VulkanDevice* device, vk::Format format, vk::Extent2D size, uint32_t mipLevels, uint32_t layerCount, bool cpuAccess = false);
+		bool Create2D(VKCore::VulkanDevice* device, vk::Format format, vk::Extent2D size, uint32_t mipLevels, uint32_t layerCount, bool cpuAccess = false);
+		bool Create3D(VKCore::VulkanDevice* device, vk::Format format, vk::Extent3D size, uint32_t mipLevels, bool cpuAccess = false);
 		bool Create(VKCore::VulkanDevice* device, const vk::ImageCreateInfo& imageInfo, const VmaAllocationCreateInfo& allocInfo);
 		virtual void Release();
 

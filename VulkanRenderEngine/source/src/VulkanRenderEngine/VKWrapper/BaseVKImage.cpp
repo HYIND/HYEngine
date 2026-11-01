@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "VulkanRenderEngine/VKWrapper/BaseVKImage.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/VKContext.h"
@@ -105,7 +105,7 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 
 	// 计算像素大小（根据格式）
 	size_t bytesPerPixel = ImageLayout::GetFormatSize(m_format);
-	vk::DeviceSize dataSize = m_extent.width * m_extent.height * bytesPerPixel;
+	vk::DeviceSize dataSize = static_cast<vk::DeviceSize>(m_extent.width) * m_extent.height * std::max(1u, m_extent.depth) * bytesPerPixel;
 
 	// 创建 Staging Buffer（复用 VmaBuffer）
 	VmaBuffer stagingBuffer;

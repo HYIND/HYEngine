@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "VulkanRenderEngine/VKWrapper/VmaImage.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/VKContext.h"
@@ -74,6 +74,42 @@ void static PrintFormatSupport(vk::PhysicalDevice physicalDevice, vk::Format for
 	std::cout << std::endl;
 }
 
+static vk::ImageUsageFlags GetImageUsageFlagsForFormat(vk::Format format)
+{
+	static vk::ImageUsageFlags linearColorUsage =
+		vk::ImageUsageFlagBits::eTransferSrc |
+		vk::ImageUsageFlagBits::eTransferDst |
+		vk::ImageUsageFlagBits::eSampled |
+		vk::ImageUsageFlagBits::eStorage |
+		vk::ImageUsageFlagBits::eColorAttachment;
+
+	static vk::ImageUsageFlags colorUsage =
+		vk::ImageUsageFlagBits::eTransferSrc |
+		vk::ImageUsageFlagBits::eTransferDst |
+		vk::ImageUsageFlagBits::eSampled |
+		vk::ImageUsageFlagBits::eColorAttachment;
+
+	static vk::ImageUsageFlags depthUsage =
+		vk::ImageUsageFlagBits::eTransferSrc |
+		vk::ImageUsageFlagBits::eTransferDst |
+		vk::ImageUsageFlagBits::eSampled |
+		vk::ImageUsageFlagBits::eStorage |
+		vk::ImageUsageFlagBits::eDepthStencilAttachment;
+
+	static vk::ImageUsageFlags depthStencilUsage =
+		vk::ImageUsageFlagBits::eTransferSrc |
+		vk::ImageUsageFlagBits::eTransferDst |
+		vk::ImageUsageFlagBits::eSampled |
+		vk::ImageUsageFlagBits::eDepthStencilAttachment;
+
+	if (ImageLayout::IsColorFormat(format))
+		return ImageLayout::IsLinearFormat(format) ? linearColorUsage : colorUsage;
+	else if (ImageLayout::IsDepthFormat(format))
+		return depthUsage;
+	else
+		return depthStencilUsage;
+}
+
 VmaImage::~VmaImage() { Release(); }
 
 bool VmaImage::Create(VKCore::VulkanDevice* device,
@@ -103,7 +139,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	return true;
 }
 
-bool VmaImage::Create(VKCore::VulkanDevice* device,
+bool VmaImage::Create2D(VKCore::VulkanDevice* device,
 	vk::Format format,
 	vk::Extent2D size,
 	uint32_t mipLevels,
@@ -113,56 +149,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 
 	Release();
 
-	static vk::ImageUsageFlags linearColorUsage =
-		vk::ImageUsageFlagBits::eTransferSrc |
-		vk::ImageUsageFlagBits::eTransferDst |
-		vk::ImageUsageFlagBits::eSampled |
-		vk::ImageUsageFlagBits::eStorage |
-		vk::ImageUsageFlagBits::eColorAttachment;
-
-	static vk::ImageUsageFlags colorUsage =
-		vk::ImageUsageFlagBits::eTransferSrc |
-		vk::ImageUsageFlagBits::eTransferDst |
-		vk::ImageUsageFlagBits::eSampled |
-		vk::ImageUsageFlagBits::eColorAttachment;
-
-	static vk::ImageUsageFlags depthUsage =
-		vk::ImageUsageFlagBits::eTransferSrc |
-		vk::ImageUsageFlagBits::eTransferDst |
-		vk::ImageUsageFlagBits::eSampled |
-		vk::ImageUsageFlagBits::eStorage |
-		vk::ImageUsageFlagBits::eDepthStencilAttachment;
-
-	static vk::ImageUsageFlags depthStencilUsage =
-		vk::ImageUsageFlagBits::eTransferSrc |
-		vk::ImageUsageFlagBits::eTransferDst |
-		vk::ImageUsageFlagBits::eSampled |
-		vk::ImageUsageFlagBits::eDepthStencilAttachment;
-
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR32G32B32A32Sfloat);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8B8A8Unorm);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8B8A8Srgb);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR32G32B32Sfloat);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8B8Unorm);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8B8Srgb);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR32G32Sfloat);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8Unorm);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8G8Srgb);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR32Sfloat);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8Unorm);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eR8Srgb);
-	//PrintFormatSupport(device->GetPhysicalDevice(), vk::Format::eD32Sfloat);
-
-	auto GetUsageFlags = [&]->vk::ImageUsageFlags {
-		if (ImageLayout::IsColorFormat(format))
-			return ImageLayout::IsLinearFormat(format) ? linearColorUsage : colorUsage;
-		else if (ImageLayout::IsDepthFormat(format))
-			return depthUsage;
-		else
-			return depthStencilUsage;
-		};
-
-	vk::ImageUsageFlags usage = GetUsageFlags();
+	vk::ImageUsageFlags usage = GetImageUsageFlagsForFormat(format);
 
 	vk::ImageCreateInfo imageInfo = {};
 	imageInfo.
@@ -172,6 +159,59 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 		.setExtent({ size.width,size.height, 1 })
 		.setMipLevels(std::max((uint32_t)1, mipLevels))
 		.setArrayLayers(layerCount)
+		.setSamples(vk::SampleCountFlagBits::e1)
+		.setTiling(vk::ImageTiling::eOptimal)
+		.setUsage(usage)
+		.setSharingMode(vk::SharingMode::eExclusive)
+		.setInitialLayout(vk::ImageLayout::eUndefined);
+
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+	if (cpuAccess)
+		allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+	auto allocator = device->GetAllocator();
+	VkResult result = vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, reinterpret_cast<VkImage*>(&m_image), &m_allocation, nullptr);
+	if (result != VK_SUCCESS)
+		return false;
+
+	m_device = device;
+	m_allocator = allocator;
+	m_layerCount = imageInfo.arrayLayers;
+	m_mipLevels = imageInfo.mipLevels;
+	m_extent = imageInfo.extent;
+	m_format = imageInfo.format;
+
+	for (uint32_t i = 0; i < m_mipLevels; i++)
+	{
+		auto state = m_imageState.GetSubresourceState(i);
+		state.layout = imageInfo.initialLayout;
+		state.accessMask = vk::AccessFlags::BitsType::eNone;
+	}
+
+	return true;
+}
+
+
+bool VmaImage::Create3D(VKCore::VulkanDevice* device,
+	vk::Format format,
+	vk::Extent3D size,
+	uint32_t mipLevels,
+	bool cpuAccess
+) {
+
+	Release();
+
+	vk::ImageUsageFlags usage = GetImageUsageFlagsForFormat(format);
+
+	vk::ImageCreateInfo imageInfo = {};
+	imageInfo
+		.setFlags(vk::ImageCreateFlagBits(0))
+		.setImageType(vk::ImageType::e3D)
+		.setFormat(format)
+		.setExtent(size)
+		.setMipLevels(std::max((uint32_t)1, mipLevels))
+		.setArrayLayers(1)
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setTiling(vk::ImageTiling::eOptimal)
 		.setUsage(usage)

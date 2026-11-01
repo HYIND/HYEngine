@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "shaderc/shaderc.hpp"
 #include "VulkanRenderEngine/Base/Pipeline.h"
 #include "VulkanRenderEngine/VKContext.h"
@@ -985,6 +985,32 @@ std::shared_ptr<ITextureArrayProvider> BindingRecord::FindUniformTextureArray(co
 	return dataptr->provider;
 }
 
+void BindingRecord::SetUniformTexture3D(const std::shared_ptr<Texture3D>& uniformTex, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set)
+{
+	SetUniformTexture3D(uniformTex, aspect, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetStorageImage3D(const std::shared_ptr<Texture3D>& storageImage, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set)
+{
+	SetStorageImage3D(storageImage, aspect, BindingPoint{ .binding = binding, .set = set });
+}
+
+void BindingRecord::SetUniformTexture3D(const std::shared_ptr<Texture3D>& uniformTex, vk::ImageAspectFlags aspect, const BindingPoint& bp)
+{
+	if (!uniformTex)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::UniformTex3D, .data = UniformTexture3DEntry{.texture = uniformTex, .aspect = aspect} };
+	m_bindingData[bp] = entry;
+}
+
+void BindingRecord::SetStorageImage3D(const std::shared_ptr<Texture3D>& storageImage, vk::ImageAspectFlags aspect, const BindingPoint& bp)
+{
+	if (!storageImage)
+		return;
+	BindingEntry entry{ .type = BindingEntry::DataType::StorageImage3D, .data = StorageImage3DEntry{.texture = storageImage, .aspect = aspect} };
+	m_bindingData[bp] = entry;
+}
+
 void BindingRecord::SetCameraUnifromData(const std::shared_ptr<UniformBlock>& curCmaeraUBO, const std::shared_ptr<UniformBlock>& prevCameraUBO)
 {
 	if (curCmaeraUBO) SetUniformBlock(curCmaeraUBO, GeneralBindingPoint::Camera_Cur);
@@ -1092,6 +1118,18 @@ void BindingRecord::BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>&
 		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
 		if (!dataptr) return;
 		BindAccelerationStructure(*dataptr, data, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::UniformTex3D)
+	{
+		UniformTexture3DEntry* dataptr = std::get_if<UniformTexture3DEntry>(&entry.data);
+		if (!dataptr) return;
+		BindUniformTexture3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+	}
+	else if (entry.type == BindingEntry::DataType::StorageImage3D)
+	{
+		StorageImage3DEntry* dataptr = std::get_if<StorageImage3DEntry>(&entry.data);
+		if (!dataptr) return;
+		BindStorageImage3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
 	}
 }
 
@@ -1429,6 +1467,80 @@ void BindingRecord::BindAccelerationStructure(AccelerationStructureEntry& entry,
 		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
 		.setDescriptorCount(1)
 		.setPNext(&asWrite);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry(entry.aspect);
+	}
+
+	auto& texture = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texture || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texture->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setImageInfo(imageInfo);
+
+	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+}
+
+void BindingRecord::BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set)
+{
+	if (!cmdBuffer)
+		return;
+
+	if (entry.texture)
+	{
+		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
+			entry.descEntry = entry.texture->GetDescBindEntry(entry.aspect, entry.baseLevel, entry.levelCount);
+	}
+
+	auto& texture = entry.texture;
+	auto& imageView = entry.descEntry.imageView;
+	auto& sampler = entry.descEntry.sampler;
+
+	if (!texture || !imageView || !sampler)
+		return;
+
+	vk::ImageLayout imageLayout;
+	texture->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Write, entry.baseLevel);
+
+	vk::DescriptorImageInfo imageInfo;
+	imageInfo.setImageView(imageView->GetHandle())
+		.setSampler(sampler->GetHandle())
+		.setImageLayout(imageLayout);
+
+	vk::WriteDescriptorSet write;
+	write
+		.setDstSet(data->sets[set])
+		.setDstBinding(binding)
+		.setDstArrayElement(0)
+		.setDescriptorType(vk::DescriptorType::eStorageImage)
+		.setImageInfo(imageInfo);
 
 	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
 }

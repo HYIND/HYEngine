@@ -415,7 +415,7 @@ bool Texture2DArray::CreateImage()
 	LockGuard guard(_mutex);
 
 	auto image = std::make_shared<VKWrapper::VmaImage>();
-	bool result = image->Create(VKCONTEXT->GetDevice().get(), m_Format, { m_Width ,m_Height }, m_MaxLevel, m_layerCount);
+	bool result = image->Create2D(VKCONTEXT->GetDevice().get(), m_Format, { m_Width ,m_Height }, m_MaxLevel, m_layerCount);
 	if (!result)
 		return false;
 
