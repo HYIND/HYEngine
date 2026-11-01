@@ -15,7 +15,6 @@ struct SSRParams
 	uint32_t maxBounce = 0;
 	uint32_t SampleRayCount;
 	uint32_t RayMarchingMaxStep;
-	float SampleIndirectClampValue;
 	float DistanceFactor;
 	uint32_t frameIndex;
 };
@@ -134,7 +133,6 @@ void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 			.maxBounce = std::max(1u, std::min(state.option.ssrTraceParams.maxBounceLimit, GlobalConfig::SSTrace_Max_Bounce_limit)),
 			.SampleRayCount = state.option.ssrTraceParams.NumSamples,
 			.RayMarchingMaxStep = std::max(2u, state.option.ssrTraceParams.RayMarchingMaxStep),
-			.SampleIndirectClampValue = std::max(0.01f, state.option.ssrTraceParams.Sample_Indirect_Clamp_Value),
 			.DistanceFactor = std::max(0.0001f, state.option.ssrTraceParams.DistanceFactor),
 			.frameIndex = state.renderRecord.frameIndex % 100000
 		};

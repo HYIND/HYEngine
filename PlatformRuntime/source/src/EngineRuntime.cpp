@@ -153,13 +153,13 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGIP
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSRTraceParams,
-	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
+	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples,
 	DistanceFactor, normalFactor, depthFactor, luminanceFactor,
 	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSGITraceParams,
-	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples, Sample_Indirect_Clamp_Value,
+	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples,
 	GIIntensity, AOIntensity, DistanceFactor, normalFactor, depthFactor, luminanceFactor,
 	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
 	maxAccumulateCount, filterCount)

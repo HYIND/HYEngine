@@ -60,7 +60,6 @@ struct Scene3DRenderOption
 
 		uint32_t RayMarchingMaxStep = 40;
 		uint32_t NumSamples = 6;
-		float Sample_Indirect_Clamp_Value = 2.0;
 		float DistanceFactor = 0.02;
 
 		float normalFactor = 128.0;
@@ -83,7 +82,6 @@ struct Scene3DRenderOption
 
 		uint32_t RayMarchingMaxStep = 30;
 		uint32_t NumSamples = 6;
-		float Sample_Indirect_Clamp_Value = 2.0;
 		float GIIntensity = 1.0;
 		float AOIntensity = 0.8;
 		float DistanceFactor = 0.05;
