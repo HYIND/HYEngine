@@ -368,6 +368,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkinnedPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture3D.h">
+      <Filter>头文件\VulkanRenderEngine\Base</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -633,6 +636,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\TransparentPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture3D.cpp">
+      <Filter>源文件\VulkanRenderEngine\Base</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

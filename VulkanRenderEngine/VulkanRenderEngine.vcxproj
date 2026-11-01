@@ -160,6 +160,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\RayTracingPipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2DArray.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture3D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureCube.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\DynamicBlock.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureGeneralDef.h" />
@@ -268,6 +269,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2DArray.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture3D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\DynamicBlock.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureCube.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureGeneralDef.cpp" />

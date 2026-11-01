@@ -1,10 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include "vkstdafx.h"
 #include "VulkanRenderEngine\VKCore\VulkanDevice.h"
 #include "VulkanRenderEngine\VKWrapper\WrapperGeneral.h"
 #include "VulkanRenderEngine/General/ImageLayoutWrapper.h"
 #include "Texture2D.h"
+#include "Texture3D.h"
 #include "TextureCube.h"
 #include "DynamicBlock.h"
 
@@ -296,20 +297,38 @@ public:
 		vk::AccelerationStructureKHR handle;
 	};
 
+	struct UniformTexture3DEntry
+	{
+		std::shared_ptr<Texture3D> texture;
+		vk::ImageAspectFlags aspect;
+		TextureDescBindEntry descEntry;
+	};
+
+	struct StorageImage3DEntry
+	{
+		std::shared_ptr<Texture3D> texture;
+		vk::ImageAspectFlags aspect;
+		TextureDescBindEntry descEntry;
+		uint32_t baseLevel = 0;
+		uint32_t levelCount = UINT32_MAX;
+	};
+
 	struct BindingEntry
 	{
 		enum class DataType {
 			UniformBlock = 0, StorageBlock,
 			UniformTex, UniformTexCube, UniformTexArray,
 			StorageImage, StorageImageArray, StorageImage2DArray, StorageImageCube,
-			AccelerationStructure
+			AccelerationStructure,
+			UniformTex3D, StorageImage3D
 		};
 		DataType type;
 		std::variant<
 			UniformBlockEntry, StorageBlockEntry,
 			UniformTextureEntry, UniformTextureCubeEntry, UniformTextureArrayEntry,
 			StorageImageEntry, StorageImageArrayEntry, StorageImage2DArrayEntry, StorageImageCubeEntry,
-			AccelerationStructureEntry>
+			AccelerationStructureEntry,
+			UniformTexture3DEntry, StorageImage3DEntry>
 			data;
 	};
 
@@ -326,6 +345,8 @@ public:
 	void SetUniformTextureCube(const std::shared_ptr<TextureCube>& uniformTexCube, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
 	void SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, uint32_t binding, uint32_t set = 0);
 	void SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
+	void SetUniformTexture3D(const std::shared_ptr<Texture3D>& uniformTex, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
+	void SetStorageImage3D(const std::shared_ptr<Texture3D>& storageImage, vk::ImageAspectFlags aspect, uint32_t binding, uint32_t set = 0);
 
 	// 获取绑定点上的Buffer，绑定点未绑定或者和指定类型不同时，则创建新的Buffer/Texture并绑定
 	std::shared_ptr<UniformBlock> GetUniformBlock(uint32_t binding, uint32_t set = 0);
@@ -344,6 +365,8 @@ public:
 	void SetUniformTextureCube(const std::shared_ptr<TextureCube>& uniformTexCube, vk::ImageAspectFlags aspect, const BindingPoint& bp);
 	void SetUniformTextureArray(const std::shared_ptr<ITextureArrayProvider>& provider, const BindingPoint& bp);
 	void SetUniformTextureArray(const std::vector<std::shared_ptr<Texture2D>>& array, vk::ImageAspectFlags aspect, const BindingPoint& bp);
+	void SetUniformTexture3D(const std::shared_ptr<Texture3D>& uniformTex, vk::ImageAspectFlags aspect, const BindingPoint& bp);
+	void SetStorageImage3D(const std::shared_ptr<Texture3D>& storageImage, vk::ImageAspectFlags aspect, const BindingPoint& bp);
 
 	std::shared_ptr<UniformBlock> GetUniformBlock(const BindingPoint& bp);
 	std::shared_ptr<StorageBlock> GetStorageBlock(const BindingPoint& bp);
@@ -377,6 +400,8 @@ private:
 	void BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set);
 	void BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set);
+	void BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set);
+	void BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set);
 	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
 
 protected:
