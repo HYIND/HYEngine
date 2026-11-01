@@ -96,8 +96,8 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	bool exponentialHeightFogEnable = state.option.flags.exponentialHeightFogOn;
 	bool volumeFogEnable = exponentialHeightFogEnable && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
 
-	auto& lutBinding = *registry.Get<ComputeBindingRecord>("lutBinding");
-	auto& combinBinding = *registry.Get<ComputeBindingRecord>("combinBinding");
+	auto& lutBinding = registry.Get<ComputeBindingRecord>("lutBinding");
+	auto& combinBinding = registry.Get<ComputeBindingRecord>("combinBinding");
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
 	glm::vec3 dirLightColor(0.0f);
@@ -252,7 +252,7 @@ void VolumeCalculatePass::DrawLut(
 {
 	uint32_t width = data.tempScatterColor->GetWidth();
 	uint32_t height = data.tempScatterColor->GetHeight();
-	auto& binding = *registry.Get<ComputeBindingRecord>("lutBinding");
+	auto& binding = registry.Get<ComputeBindingRecord>("lutBinding");
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetLightStorageData(
@@ -358,7 +358,7 @@ void VolumeCalculatePass::CombinVolume(
 	Texture2D::CopyTextureAsync(cmd, target, data.tempSceneColor);
 	data.tempSceneColor->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("combinBinding");
+	auto& binding = registry.Get<ComputeBindingRecord>("combinBinding");
 
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 3);
 	binding.SetUniformTexture(data.tempSceneColor, vk::ImageAspectFlagBits::eColor, 4);

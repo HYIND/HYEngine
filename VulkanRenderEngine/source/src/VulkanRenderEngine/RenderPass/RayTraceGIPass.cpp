@@ -125,7 +125,7 @@ void RayTraceGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, Render
 	if (!ShouldExecute(registry, state))
 		return;
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	{
 		//光追参数
@@ -165,7 +165,7 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	CubeParams cubeParams;
 	std::shared_ptr<TextureCube> cubeMap;

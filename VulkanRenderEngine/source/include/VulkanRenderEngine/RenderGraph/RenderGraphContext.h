@@ -99,21 +99,12 @@ namespace RenderGraph
 	public:
 		template<typename T>
 		void Store(const std::string& name, T&& value) {
-			data[name] = std::forward<T>(value);
+			data.insert_or_assign(name, std::forward<T>(value));
 		}
 
 		template<typename T>
 		void Store(const std::string& name, const T& value) {
 			data[name] = value;
-		}
-
-		template<typename T>
-		T Load(const std::string& name) const {
-			auto it = data.find(name);
-			if (it == data.end()) {
-				throw std::runtime_error("Frame data not found: " + name);
-			}
-			return std::any_cast<T>(it->second);
 		}
 
 		template<typename T>
@@ -144,36 +135,49 @@ namespace RenderGraph
 		}
 
 		template<typename T>
-		std::shared_ptr<T> Get(const std::string& name) {
-			if (auto ptr = TryLoad<std::shared_ptr<T>>(name); ptr && *ptr)
-				return *ptr;
-			auto res = std::make_shared<T>();
-			Store(name, res);
-			return res;
+		T& Get(const std::string& name) {
+			auto it = data.find(name);
+			if (it == data.end()) {
+				it = data.emplace(name, T{}).first;
+			}
+			return std::any_cast<T&>(it->second);
+		}
+
+		template<typename T>
+		std::shared_ptr<T> GetShared(const std::string& name) {
+			auto it = data.find(name);
+
+			if (it == data.end()) {
+				auto ptr = std::make_shared<T>();
+				it = data.emplace(name, ptr).first;
+				return ptr;
+			}
+
+			return std::any_cast<std::shared_ptr<T>>(it->second);
 		}
 
 		std::shared_ptr<UniformBlock> GetUniformBlock(const std::string& name) {
-			return Get<UniformBlock>(name);
+			return GetShared<UniformBlock>(name);
 		}
 
 		std::shared_ptr<StorageBlock> GetStorageBlock(const std::string& name) {
-			return Get<StorageBlock>(name);
+			return GetShared<StorageBlock>(name);
 		}
 
 		std::shared_ptr<VertexBufferBlock> GetVertexBlock(const std::string& name) {
-			return Get<VertexBufferBlock>(name);
+			return GetShared<VertexBufferBlock>(name);
 		}
 
 		std::shared_ptr<IndexBufferBlock> GetIndexBlock(const std::string& name) {
-			return Get<IndexBufferBlock>(name);
+			return GetShared<IndexBufferBlock>(name);
 		}
 
 		std::shared_ptr<IndirectBufferBlock> GetIndirectBlock(const std::string& name) {
-			return Get<IndirectBufferBlock>(name);
+			return GetShared<IndirectBufferBlock>(name);
 		}
 
 		std::shared_ptr<SBTBufferBlock> GetSBTBlock(const std::string& name) {
-			return Get<SBTBufferBlock>(name);
+			return GetShared<SBTBufferBlock>(name);
 		}
 
 	private:

@@ -46,10 +46,10 @@ ParticleSystem::ParticleSystem()
 
 void ParticleSystem::update(float deltaTime)
 {
-	auto start = Tool::GetTimestampMircoseconds();
+	//auto start = Tool::GetTimestampMircoseconds();
 	UpdateParticle(deltaTime);
-	std::cout << std::format("ParticleSystem upadte cost {}us, Particle number = {}\n", Tool::GetTimestampMircoseconds() - start, _particles.size());
 	EmitParticle(deltaTime);
+	//std::cout << std::format("ParticleSystem upadte cost {}us, Particle number = {}\n", Tool::GetTimestampMircoseconds() - start, _particles.size());
 }
 
 void ParticleSystem::UpdateParticle(float deltaTime)

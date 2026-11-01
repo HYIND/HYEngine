@@ -125,7 +125,7 @@ void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 		return;
 
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	{
 		SSRParams params{
@@ -172,7 +172,7 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	CubeParams cubeParams;
 	std::shared_ptr<TextureCube> cubeMap;

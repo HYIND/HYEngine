@@ -122,7 +122,7 @@ void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState&
 	if (!ShouldExecute(registry, state))
 		return;
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	{
 
@@ -171,7 +171,7 @@ bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, 
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
-	auto& binding = *registry.Get<ComputeBindingRecord>("binding");
+	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	CubeParams cubeParams;
 	std::shared_ptr<TextureCube> cubeMap;

@@ -198,60 +198,60 @@ void Graph::ExecutePass(
 	//auto start = Tool::GetTimestampMircoseconds();
 	//std::cout << std::format("ExecutePass {}, threadid = {}\n", node->GetName(), std::this_thread::get_id());
 
-	if (node->ShouldExecute(registry, state))
-	{
-		PassFrameCmdContext cmdCtx(_cmdMutex);
-		PassFrameContext ctx;
-		ctx.passName = node->GetName();
+	if (!node->ShouldExecute(registry, state))
+		return;
 
-		for (const auto& input : node->GetInputs()) {
-			auto tex = _resManager.GetTexture(input.resource, resPrefix);
-			ctx.inputTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, input.layout);
-		}
+	PassFrameCmdContext cmdCtx(_cmdMutex);
+	PassFrameContext ctx;
+	ctx.passName = node->GetName();
 
-		for (const auto& input : node->GetInputOptions()) {
-			auto tex = _resManager.TryGetTexture(input.resource, resPrefix);
-			ctx.optionInputTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, input.layout);
-		}
-
-		for (const auto& output : node->GetOutputs()) {
-			auto tex = _resManager.GetTexture(output.resource, resPrefix);
-			ctx.outputTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, output.layout);
-		}
-
-		for (const auto& temp : node->GetTemps()) {
-			auto tex = _resManager.GetTexture(temp.resource, resPrefix);
-			ctx.tempTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, temp.layout);
-		}
-
-		for (const auto& persitent : node->GetPersistents()) {
-			auto tex = _resManager.GetTexture(persitent.resource, "");
-			ctx.persitentTextures.push_back(tex);
-			cmdCtx.PushTexWithLayout(tex, persitent.layout);
-		}
-
-		for (const auto& external : node->GetExternals()) {
-			if (external.resource.type == ResourceType::Texture)
-			{
-				auto tex = externalResManager.GetExternalTexture(external.resource.name);
-				ctx.externalTextures.push_back(tex);
-				cmdCtx.PushTexWithLayout(tex, external.layout);
-			}
-		}
-
-		for (const auto& framelocal : node->GetFrameLocal()) {
-			auto tex = _resManager.GetTexture(framelocal.resource, resPrefix);
-			ctx.frameLocalTextures.push_back(tex);
-			frameLocalResRecord.AddTexture(framelocal.resource);
-			cmdCtx.PushTexWithLayout(tex, framelocal.layout);
-		}
-
-		node->Execute(cmdCtx, registry, ctx, state);
+	for (const auto& input : node->GetInputs()) {
+		auto tex = _resManager.GetTexture(input.resource, resPrefix);
+		ctx.inputTextures.push_back(tex);
+		cmdCtx.PushTexWithLayout(tex, input.layout);
 	}
+
+	for (const auto& input : node->GetInputOptions()) {
+		auto tex = _resManager.TryGetTexture(input.resource, resPrefix);
+		ctx.optionInputTextures.push_back(tex);
+		cmdCtx.PushTexWithLayout(tex, input.layout);
+	}
+
+	for (const auto& output : node->GetOutputs()) {
+		auto tex = _resManager.GetTexture(output.resource, resPrefix);
+		ctx.outputTextures.push_back(tex);
+		cmdCtx.PushTexWithLayout(tex, output.layout);
+	}
+
+	for (const auto& temp : node->GetTemps()) {
+		auto tex = _resManager.GetTexture(temp.resource, resPrefix);
+		ctx.tempTextures.push_back(tex);
+		cmdCtx.PushTexWithLayout(tex, temp.layout);
+	}
+
+	for (const auto& persitent : node->GetPersistents()) {
+		auto tex = _resManager.GetTexture(persitent.resource, "");
+		ctx.persitentTextures.push_back(tex);
+		cmdCtx.PushTexWithLayout(tex, persitent.layout);
+	}
+
+	for (const auto& external : node->GetExternals()) {
+		if (external.resource.type == ResourceType::Texture)
+		{
+			auto tex = externalResManager.GetExternalTexture(external.resource.name);
+			ctx.externalTextures.push_back(tex);
+			cmdCtx.PushTexWithLayout(tex, external.layout);
+		}
+	}
+
+	for (const auto& framelocal : node->GetFrameLocal()) {
+		auto tex = _resManager.GetTexture(framelocal.resource, resPrefix);
+		ctx.frameLocalTextures.push_back(tex);
+		frameLocalResRecord.AddTexture(framelocal.resource);
+		cmdCtx.PushTexWithLayout(tex, framelocal.layout);
+	}
+
+	node->Execute(cmdCtx, registry, ctx, state);
 
 	//std::cout << std::format("ExecutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
 }

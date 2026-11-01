@@ -30,7 +30,7 @@ struct DynamicViewport
 	uint32_t x = 0;
 	uint32_t y = 0;
 
-	DynamicViewport() {}
+	DynamicViewport() = default;
 	DynamicViewport(uint32_t width, uint32_t height)
 		:width(width), height(height), x(0u), y(0u)
 	{}

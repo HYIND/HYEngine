@@ -87,7 +87,7 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 	if (!ShouldExecute(registry, state))
 		return;
 
-	std::vector<IndirectDrawCommand>& commands = *registry.Get<std::vector<IndirectDrawCommand>>("commands");
+	auto& commands = registry.Get<std::vector<IndirectDrawCommand>>("commands");
 
 	commands.reserve(
 		state.lights.dirLightInfos.size()
@@ -170,7 +170,7 @@ void LightDrawPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 
 void LightDrawPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
 {
-	auto& commands = *registry.Get<std::vector<IndirectDrawCommand>>("commands");
+	auto& commands = registry.Get<std::vector<IndirectDrawCommand>>("commands");
 	if (commands.empty())
 		return;
 
