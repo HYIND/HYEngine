@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include <DirectXTex/DirectXTex.h>
 #include <dxgiformat.h>
 
@@ -8,6 +8,7 @@ struct DDSLoadResult {
 	std::vector<uint8_t> data;
 	uint32_t width = 0;
 	uint32_t height = 0;
+	uint32_t depth = 1;			// 3D 体积纹理的层数，2D 纹理恒为 1
 	vk::Format format;
 	bool valid = false;
 };

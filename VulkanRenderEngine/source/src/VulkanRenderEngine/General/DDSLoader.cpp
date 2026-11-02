@@ -1,4 +1,4 @@
-﻿#include "vkstdafx.h"
+#include "vkstdafx.h"
 #include "VulkanRenderEngine/General/DDSLoader.h"
 
 
@@ -231,7 +231,6 @@ DDSLoadResult LoadDDSFile(const std::string& filepath, vk::Format targetFormat)
 		bool needConvert = metadata.format != dxgi_TargetFormat;
 
 		ScratchImage convertedImage;
-		const Image* img = nullptr;
 		if (needConvert) {
 			hr = Decompress(*image.GetImages(), dxgi_TargetFormat, convertedImage);
 
@@ -239,13 +238,12 @@ DDSLoadResult LoadDDSFile(const std::string& filepath, vk::Format targetFormat)
 				std::cout << std::format("DDSLoader Decompress Failed! hr = 0x{:08X}, path = {}\n", hr, filepath);
 				return {};
 			}
-
-			img = convertedImage.GetImage(0, 0, 0);
-		}
-		else {
-			img = image.GetImage(0, 0, 0);
 		}
 
+		// Decompress 会保留 dimension/depth，所以两种路径共用同一份元数据
+		const ScratchImage& source = needConvert ? convertedImage : image;
+
+		const Image* img = source.GetImage(0, 0, 0);
 		if (!img) {
 			std::cout << std::format("DDSLoader Get Image Data Failed! path = {}\n", filepath);
 			return {};
@@ -253,6 +251,7 @@ DDSLoadResult LoadDDSFile(const std::string& filepath, vk::Format targetFormat)
 
 		result.width = metadata.width;
 		result.height = metadata.height;
+		result.depth = static_cast<uint32_t>(metadata.depth == 0 ? 1 : metadata.depth);
 		result.format = targetFormat;
 
 		//ScratchImage filpYOutPut;
@@ -264,9 +263,19 @@ DDSLoadResult LoadDDSFile(const std::string& filepath, vk::Format targetFormat)
 
 		//img = filpYOutPut.GetImage(0, 0, 0);
 
-		size_t dataSize = img->slicePitch;
-		result.data.resize(dataSize);
-		memcpy(result.data.data(), img->pixels, dataSize);
+		// 逐切片拷贝：3D 纹理用第三个参数（z）索引切片；2D 纹理 depth == 1，行为与旧版一致。
+		// 直接按 slicePitch 拼接而不是整块 memcpy，避免 rowPitch 对齐带来的行尾填充被带进体数据。
+		const size_t sliceCount = result.depth;
+		result.data.clear();
+		result.data.reserve(static_cast<size_t>(img->slicePitch) * sliceCount);
+		for (size_t z = 0; z < sliceCount; ++z) {
+			const Image* slice = source.GetImage(0, 0, z);
+			if (!slice) {
+				std::cout << std::format("DDSLoader Get Slice Failed! z = {}, path = {}\n", z, filepath);
+				return {};
+			}
+			result.data.insert(result.data.end(), slice->pixels, slice->pixels + slice->slicePitch);
+		}
 
 		if (metadata.format == DXGI_FORMAT_BC5_UNORM && targetFormat == vk::Format::eR8G8B8A8Unorm)
 			FillNormalZ(result.data);
