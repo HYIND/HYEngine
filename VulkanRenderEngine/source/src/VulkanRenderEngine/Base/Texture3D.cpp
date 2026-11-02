@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/Texture3D.h"
 #include "VulkanRenderEngine/VKContext.h"
+#include "VulkanRenderEngine/General/DDSLoader.h"
 
 Texture3D::Texture3D(uint32_t width, uint32_t height, uint32_t depth, vk::Format format, const TextureConfig& config, uint32_t maxLevel)
 	: m_Width(width), m_Height(height), m_Depth(depth), m_Format(format), m_MaxLevel(std::max(1u, maxLevel)), m_config(config)
@@ -8,6 +9,12 @@ Texture3D::Texture3D(uint32_t width, uint32_t height, uint32_t depth, vk::Format
 	CreateImage();
 	CreateImageView();
 	CreateSampler();
+}
+
+Texture3D::Texture3D(const std::string& filepath, vk::Format format, const TextureConfig& config)
+	: m_Width(1), m_Height(1), m_Depth(1), m_Format(format), m_MaxLevel(1), m_config(config)
+{
+	LoadFromFile(filepath, format);
 }
 
 Texture3D& Texture3D::SetFiltering(vk::Filter xFilter)
@@ -76,6 +83,37 @@ void Texture3D::UpdateTextureData(void* data, uint32_t level)
 		return;
 
 	_image->UploadData(data, level, 0);
+}
+
+bool Texture3D::LoadFromFile(const std::string& filepath, vk::Format format)
+{
+	DDSLoadResult result = LoadDDSFile(filepath, format);
+	if (!result.valid || result.width == 0 || result.height == 0 || result.depth == 0)
+		return false;
+
+	// UploadData 会按 m_extent 算字节数，数据不够就会读越界，这里先挡住
+	const size_t formatSize = static_cast<size_t>(ImageLayout::GetFormatSize(format));
+	const size_t expectSize = static_cast<size_t>(result.width) * result.height * result.depth * formatSize;
+	if (formatSize == 0 || result.data.size() < expectSize)
+	{
+		std::cout << std::format(
+			"Texture3D::LoadFromFile data too small! got = {}, expect = {}, path = {}\n",
+			result.data.size(), expectSize, filepath);
+		return false;
+	}
+
+	m_Width = result.width;
+	m_Height = result.height;
+	m_Depth = result.depth;
+	m_Format = format;
+
+	if (!CreateImage())
+		return false;
+
+	CreateImageView();
+	CreateSampler();
+
+	return _image->UploadData(result.data.data(), 0);
 }
 
 void Texture3D::Resize(uint32_t width, uint32_t height, uint32_t depth)

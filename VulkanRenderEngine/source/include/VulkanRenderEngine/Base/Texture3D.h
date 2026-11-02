@@ -19,6 +19,13 @@ public:
 
 	~Texture3D() = default;
 
+	// 从 DDS 体积纹理加载。只有 DDS 能描述 3D 数据
+	Texture3D(
+		const std::string& filepath,
+		vk::Format format = vk::Format::eR8G8B8A8Unorm,
+		const TextureConfig& config = {}
+	);
+
 public:
 	Texture3D& SetFiltering(vk::Filter xFilter);
 	Texture3D& SetFiltering(vk::Filter minFilter, vk::Filter magFilter);
@@ -28,6 +35,9 @@ public:
 
 	// 上传某 mip 的整块体数据，数据布局为紧密排列的 width*height*depth
 	void UpdateTextureData(void* data, uint32_t level = 0);
+
+	// 从 DDS 体积纹理加载，成功时会按文件尺寸重建 GPU 资源并覆盖当前的尺寸/格式
+	bool LoadFromFile(const std::string& filepath, vk::Format format = vk::Format::eR8G8B8A8Unorm);
 
 	void Resize(uint32_t width, uint32_t height, uint32_t depth);	// 不保留数据！
 
