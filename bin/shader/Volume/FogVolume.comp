@@ -207,6 +207,8 @@ void LightSingleScatterToFrag(vec3 startPos, vec3 targetPos,
     float nearDistance = max(min(0.1, dstToTarget), min(max(fogStartDistance, 0.0), dstToTarget));
     float farDistance = dstToTarget;
 
+    float mid = JitterEnable ? halton(JitterSeed, 3) : 0.5;
+
     for (uint i = 0; i < sampleCount; i++) {
 
         float t0 = float(i) / float(sampleCount);
@@ -215,7 +217,6 @@ void LightSingleScatterToFrag(vec3 startPos, vec3 targetPos,
 		float d0 = nearDistance * pow(farDistance / nearDistance, t0);
 		float d1 = nearDistance * pow(farDistance / nearDistance, t1);
 
-        float mid = JitterEnable ? halton(JitterSeed + i * 567, 3) : 0.5;
         float d = mix(d0, d1, mid);
 
         float segmentLength = d1 - d0;
