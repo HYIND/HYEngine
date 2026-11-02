@@ -47,6 +47,7 @@ private:
 		bool atmoEnable = false;
 		bool exponentialHeightFogEnable = false;
 		bool volumeFogEnable = false;
+		bool cloudEnable = false;
 	};
 
 	void DrawLut(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);
@@ -59,6 +60,10 @@ private:
 private:
 	ComputePipeline _lutShader;
 	ComputePipeline _combinShader;
+
+	// 云噪声只加载一次，整个生命周期复用
+	std::shared_ptr<Texture3D> _cloudShapeNoise;
+	std::shared_ptr<Texture2D> _blueNoise;
 
 	TAAFilter _taaFilter;
 	AtrousGaussFilter _gaussFilter;

@@ -161,9 +161,10 @@ void AtmoSingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, DirL
     // 处理首次累积颜色时大气性质未计算的问题
     bool firstSampleAtmo = false;
 
+    float mid = JitterEnable ? halton(JitterSeed, 2) : 0.5;
+
     for (uint i = 0; i < sampleCount; i++) {
 
-        float mid = JitterEnable ? halton(JitterSeed + i * 456, 2) : 0.5;
         vec3 testPoint = mix(startPosInPlanet, targetPosInPlanet, (float(i) + mid)/float(sampleCount));
 
         atmosphereAccumlateStride++;

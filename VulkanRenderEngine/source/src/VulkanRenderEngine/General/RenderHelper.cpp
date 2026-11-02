@@ -427,7 +427,16 @@ std::shared_ptr<StaticModel> RenderHelper::RenderHelper::GetCylinderModel(float 
 }
 
 std::shared_ptr<Texture2D> RenderHelper::GetBlueNoise() {
-	return std::make_shared<Texture2D>("bin\\noise\\bluenoise64_r8.png");
+	static TextureConfig config{
+		.minFilter = vk::Filter::eNearest,
+		.magFilter = vk::Filter::eNearest,
+		.wrapU = vk::SamplerAddressMode::eRepeat,
+		.wrapV = vk::SamplerAddressMode::eRepeat,
+		.anisotropy = false,
+		.gammaCorrection = false,
+		.wrapW = vk::SamplerAddressMode::eRepeat
+	};
+	return std::make_shared<Texture2D>("noise\\bluenoise64_r8.png");
 }
 
 std::shared_ptr<Texture3D> RenderHelper::GetPerlinNoise() {
@@ -440,5 +449,5 @@ std::shared_ptr<Texture3D> RenderHelper::GetPerlinNoise() {
 		.gammaCorrection = false,
 		.wrapW = vk::SamplerAddressMode::eRepeat
 	};
-	return std::make_shared<Texture3D>("bin\\noise\\fractal_shape_128.dds", vk::Format::eR8Uint, config);
+	return std::make_shared<Texture3D>("noise\\fractal_shape_128.dds", vk::Format::eR8Unorm, config);
 }

@@ -138,6 +138,48 @@ void from_json(const nlohmann::json& json, Scene3DRenderOption::AtmosphereParams
 	ReadOptionField(json, "TransmittanceSampleCount", params.TransmittanceSampleCount);
 }
 
+void to_json(nlohmann::json& json, const Scene3DRenderOption::VolumetricCloudParams& params)
+{
+	json = nlohmann::json{
+		{"cloudAlbedo", {params.cloudAlbedo.x, params.cloudAlbedo.y, params.cloudAlbedo.z}},
+		{"cloudBottomHeight", params.cloudBottomHeight},
+		{"cloudAmbientColor", {params.cloudAmbientColor.x, params.cloudAmbientColor.y, params.cloudAmbientColor.z}},
+		{"cloudTopHeight", params.cloudTopHeight},
+		{"coverage", params.coverage},
+		{"density", params.density},
+		{"shapeScale", params.shapeScale},
+		{"detailScale", params.detailScale},
+		{"detailStrength", params.detailStrength},
+		{"phaseG", params.phaseG},
+		{"phaseBlend", params.phaseBlend},
+		{"powder", params.powder},
+		{"maxTraceDistance", params.maxTraceDistance},
+		{"erosionDepth", params.erosionDepth},
+		{"viewStepCount", params.viewStepCount},
+		{"lightStepCount", params.lightStepCount}
+	};
+}
+
+void from_json(const nlohmann::json& json, Scene3DRenderOption::VolumetricCloudParams& params)
+{
+	ReadOptionVec3(json, "cloudAlbedo", params.cloudAlbedo);
+	ReadOptionField(json, "cloudBottomHeight", params.cloudBottomHeight);
+	ReadOptionVec3(json, "cloudAmbientColor", params.cloudAmbientColor);
+	ReadOptionField(json, "cloudTopHeight", params.cloudTopHeight);
+	ReadOptionField(json, "coverage", params.coverage);
+	ReadOptionField(json, "density", params.density);
+	ReadOptionField(json, "shapeScale", params.shapeScale);
+	ReadOptionField(json, "detailScale", params.detailScale);
+	ReadOptionField(json, "detailStrength", params.detailStrength);
+	ReadOptionField(json, "phaseG", params.phaseG);
+	ReadOptionField(json, "phaseBlend", params.phaseBlend);
+	ReadOptionField(json, "powder", params.powder);
+	ReadOptionField(json, "maxTraceDistance", params.maxTraceDistance);
+	ReadOptionField(json, "erosionDepth", params.erosionDepth);
+	ReadOptionField(json, "viewStepCount", params.viewStepCount);
+	ReadOptionField(json, "lightStepCount", params.lightStepCount);
+}
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGeneralParams,
 	maxDistance, maxCacheClearDistance)
 
@@ -172,13 +214,13 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::Transparent
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessFlags,
 	bloomOn, gammaOn, lightDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
-	exponentialHeightFogOn, atmosphereOn, rayTraceReflectOn, rayTraceGIOn,
+	exponentialHeightFogOn, atmosphereOn, volumetricCloudOn, rayTraceReflectOn, rayTraceGIOn,
 	autoExposureOn, calculateOcclusionCulling)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption,
 	rayTraceGeneralParams, rayTraceReflectParams, rayTraceGIParams, ssrTraceParams,
-	ssgiTraceParams, exponentialHeightFogParams, atmosphereParams, ssaoParams,
-	postProcessParams, transparentParams, flags)
+	ssgiTraceParams, exponentialHeightFogParams, atmosphereParams, volumetricCloudParams,
+	ssaoParams, postProcessParams, transparentParams, flags)
 
 EngineRuntime::EngineRuntime() = default;
 

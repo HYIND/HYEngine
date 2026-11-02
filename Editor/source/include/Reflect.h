@@ -371,6 +371,17 @@ struct PropertyUI<Scene3DRenderOption::ExponentialHeightFogParams>
 };
 
 template<>
+struct PropertyUI<Scene3DRenderOption::VolumetricCloudParams>
+{
+	static PropertyWidget GetWidget(std::string_view name)
+	{
+		if (name == "cloudAlbedo" || name == "cloudAmbientColor")
+			return PropertyWidget::Color;
+		return PropertyWidget::Default;
+	}
+};
+
+template<>
 struct PropertyUI<CameraFollow>
 {
 	static PropertyWidget GetWidget(std::string_view name)

@@ -133,6 +133,28 @@ struct Scene3DRenderOption
 		float gamma = 2.2f;
 	} postProcessParams;
 
+	// 体积云参数。长度单位统一是米，和 AtmosphereParams 一致
+	struct VolumetricCloudParams {
+		glm::vec3 cloudAlbedo = glm::vec3(1.0f);						// 云的反照率
+		float cloudBottomHeight = 1500.0f;								// 云底高度（米）
+		glm::vec3 cloudAmbientColor = glm::vec3(0.35f, 0.42f, 0.55f);	// 环境光，天空散射的兜底
+		float cloudTopHeight = 4000.0f;									// 云顶高度（米）
+
+		float coverage = 0.45f;				// 覆盖率 0~1，越大云越多
+		float density = 0.03f;				// 密度缩放（1/米），密度为 1 时的消光系数
+		float shapeScale = 1.0f / 20000.0f;	// 世界坐标 -> 形状噪声坐标（1/米）
+		float detailScale = 1.0f / 2000.0f;	// 细节噪声的缩放（1/米）
+		float detailStrength = 0.35f;		// 细节侵蚀强度
+		float phaseG = 0.8f;				// 双瓣 HG 的前向 g
+		float phaseBlend = 0.5f;			// 前向瓣 / 后向瓣的混合比
+		float powder = 1.0f;				// powder 效应强度
+		float maxTraceDistance = 30000.0f;	// 视线追踪最远距离（米）
+		float erosionDepth = 400.0f;		// 云顶、云底的软收边深度（米）
+
+		uint32_t viewStepCount = 25;		// 视线步数
+		uint32_t lightStepCount = 6;		// 光步步数
+	} volumetricCloudParams;
+
 	// 半透明渲染方式
 	struct TransparentParams {
 		TransparentMode mode = TransparentMode::OIT;
@@ -149,6 +171,7 @@ struct Scene3DRenderOption
 		bool skyboxOn = true;
 		bool exponentialHeightFogOn = false;
 		bool atmosphereOn = true;
+		bool volumetricCloudOn = true;
 		bool rayTraceReflectOn = false;
 		bool rayTraceGIOn = false;
 		bool autoExposureOn = false;

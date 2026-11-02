@@ -1,0 +1,191 @@
+// 体积云：作为第三个体积介质，接口形状和 AtmoVolume / FogVolume 完全一致
+//
+// 依赖 VolumeLut.comp 中已经声明的：
+//   binding 2  Params        -> AtmoVolumeEnable / JitterEnable
+//   binding 9  CloudParams   -> 云参数
+//   binding 10 sampler3D     -> 128^3 FBM 形状噪声（三轴平铺，Linear）
+//   binding 11 sampler2D     -> 64x64 蓝噪声（Nearest + Repeat，用于抖动）
+
+#ifndef CLOUD_VOLUME_COMP
+#define CLOUD_VOLUME_COMP
+
+// 云层当作一块水平板求交：球形曲率在 20km 尺度上可以忽略，比两球求交便宜且不会出错
+bool GetCloudRaySegment(vec3 startPos, vec3 viewDir, out float tNear, out float tFar)
+{
+    float dirY = viewDir.y;
+
+    // 视线完全水平：只要起点在云层内，整条光线都在云里
+    if (abs(dirY) < 1e-6)
+    {
+        if (startPos.y < cloudParams.cloudBottomHeight || startPos.y > cloudParams.cloudTopHeight)
+            return false;
+
+        tNear = 0.0;
+        tFar = 1e9;
+        return true;
+    }
+
+    float tBottom = (cloudParams.cloudBottomHeight - startPos.y) / dirY;
+    float tTop = (cloudParams.cloudTopHeight - startPos.y) / dirY;
+
+    tNear = max(min(tBottom, tTop), 0.0);
+    tFar = max(tBottom, tTop);
+
+    return tFar > tNear;
+}
+
+float GetCloudHeightGradient(float height)
+{
+    float bottom = cloudParams.cloudBottomHeight;
+    float top = cloudParams.cloudTopHeight;
+    if (height <= bottom || height >= top)
+        return 0.0;
+
+    float erosion = max(cloudParams.erosionDepth, 1.0);
+    float bottomFade = smoothstep(bottom, min(bottom + erosion, top), height);
+    float topFade = 1.0 - smoothstep(max(top - erosion, bottom), top, height);
+    return bottomFade * topFade;
+}
+
+// 返回归一化密度 [0,1]，乘上 cloudParams.density 才是消光系数（1/米）
+float SampleCloudDensity(vec3 p)
+{
+    float heightGradient = GetCloudHeightGradient(p.y);
+    if (heightGradient <= 0.0)
+        return 0.0;
+
+    float shape = texture(cloudShapeNoise, p * cloudParams.shapeScale).r;
+
+    // 软阈值：coverage 越大阈值越低，冒出来的云越多
+    float threshold = 1.0 - cloudParams.coverage;
+    float density = clamp((shape - threshold) / max(1.0 - threshold, 1e-4), 0.0, 1.0);
+    density *= heightGradient;
+
+    // 高频细节侵蚀：同样的噪声用更大尺度再采一次，把边缘啃出丝状
+    if (density > 0.0 && cloudParams.detailStrength > 0.0)
+    {
+        float detail = texture(cloudShapeNoise, p * cloudParams.detailScale).r;
+        float erosion = (1.0 - detail) * cloudParams.detailStrength;
+        density = clamp(density * (1.0 - erosion), 0.0, 1.0);
+    }
+
+    return density;
+}
+
+// 从采样点朝太阳累积光学厚度。上限是「走到云顶的距离」，不是 1e4——
+// 云是有界的，朝天上走 10km 早就出了云层，那一步完全是白算
+float GetCloudSunTransmittance(vec3 p, vec3 toLight)
+{
+    uint steps = max(cloudParams.lightStepCount, 1u);
+
+    float distToTop;
+    if (toLight.y > 1e-4)
+        distToTop = (cloudParams.cloudTopHeight - p.y) / toLight.y;
+    else
+        distToTop = 2000.0;
+
+    distToTop = clamp(distToTop, 50.0, 8000.0);
+
+    float stepLength = distToTop / float(steps);
+    float opticalDepth = 0.0;
+
+    for (uint i = 0; i < steps; ++i)
+    {
+        vec3 q = p + toLight * ((float(i) + 0.5) * stepLength);
+        opticalDepth += SampleCloudDensity(q) * stepLength;
+    }
+
+    return exp(-opticalDepth * cloudParams.density);
+}
+
+vec3 CloudLighting(vec3 p, float density, vec3 viewDir)
+{
+    DirLight light = dirLightMetaData.info[0];
+    vec3 toLight = -normalize(light.direction);
+
+    // 双瓣 HG：前向瓣给银边和逆光透亮，后向瓣压住正对太阳时的过曝
+    float cosTheta = dot(viewDir, toLight);
+    float phaseForward = HenyeyGreenstein(cosTheta, cloudParams.phaseG);
+    float phaseBackward = HenyeyGreenstein(cosTheta, -0.2);
+    float phase = mix(phaseBackward, phaseForward, cloudParams.phaseBlend);
+
+    float lightTransmittance = GetCloudSunTransmittance(p, toLight);
+
+    // powder：薄的地方正对太阳更亮，云团边缘才不会像一块死白的塑料
+    float powder = 1.0 - exp(-density * 8.0);
+    powder = mix(1.0, powder, cloudParams.powder);
+
+    // 太阳光穿过大气剩下的那部分，和雾共用同一张 transmittance LUT
+    vec3 sunAtmoTransmittance = vec3(1.0);
+    if (AtmoVolumeEnable)
+    {
+        sunAtmoTransmittance = AtmoTransmittance(
+            p + vec3(0.0, PlanetRadius, 0.0),
+            p + toLight * 1e4 + vec3(0.0, PlanetRadius, 0.0));
+    }
+
+    vec3 sunColor = light.color * light.luxIntensity * light.volumetricScatteringIntensity;
+
+    return sunAtmoTransmittance * lightTransmittance * phase * powder * sunColor * cloudParams.cloudAlbedo
+         + cloudParams.cloudAmbientColor;
+}
+
+void CloudSingleScatterToFrag(vec3 startPos, vec3 targetPos,
+                              inout vec3 tramsmittance, inout vec3 scatterColor,
+                              bool JitterEnable, uint JitterSeed)
+{
+    vec3 delta = targetPos - startPos;
+    float maxDistance = length(delta);
+    if (maxDistance <= 0.0)
+        return;
+
+    vec3 viewDir = delta / maxDistance;
+
+    float tNear, tFar;
+    if (!GetCloudRaySegment(startPos, viewDir, tNear, tFar))
+        return;
+
+    // 被场景挡住的部分不算：云在山后面就该被山挡住
+    tFar = min(tFar, maxDistance);
+    tFar = min(tFar, cloudParams.maxTraceDistance);
+    if (tFar <= tNear)
+        return;
+
+    uint steps = max(cloudParams.viewStepCount, 1u);
+    float stepLength = (tFar - tNear) / float(steps);
+
+    // 整条光线只抖一次：每步各抖一次会把噪声平均掉，只剩噪点没有抖动
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy) + ivec2(uint(JitterSeed) * 37u, uint(JitterSeed) * 17u);
+    float jitter = JitterEnable ? texelFetch(blueNoise, pixel & 63, 0).r : 0.5;
+
+    vec3 transmittance = vec3(1.0);
+    vec3 scatter = vec3(0.0);
+
+    for (uint i = 0; i < steps; ++i)
+    {
+        float t = tNear + (float(i) + jitter) * stepLength;
+        vec3 p = startPos + viewDir * t;
+
+        float density = SampleCloudDensity(p);
+        if (density <= 0.0)
+            continue;
+
+        float sigmaT = density * cloudParams.density;
+        float segmentTransmittance = exp(-sigmaT * stepLength);
+
+        vec3 inScatter = CloudLighting(p, density, viewDir);
+
+        // 段内解析积分：解析衰减比「每步乘一次 exp」准得多，步数省一半
+        scatter += transmittance * inScatter * (1.0 - segmentTransmittance);
+        transmittance *= segmentTransmittance;
+
+        // 已经不透明了，后面的步都是白算
+        if (transmittance.x < 0.003)
+            break;
+    }
+
+    tramsmittance *= transmittance;
+    scatterColor += scatter;
+}
+
+#endif
