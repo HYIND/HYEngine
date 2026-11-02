@@ -469,15 +469,19 @@ public:
 		vk::Filter minFilter, vk::Filter magFilter,
 		vk::SamplerAddressMode wrapU, vk::SamplerAddressMode wrapV,
 		const RenderGraph::ResourceName& name,
-		uint32_t maxLevel = 1) {
+		uint32_t maxLevel = 1)
+	{
 		return _graph->CreateTexture(RenderGraph::TextureDesc{
 			.width = width, .height = height, .format = format,
 			.minFilter = minFilter, .magFilter = magFilter,
 			.wrapU = wrapU, .wrapV = wrapV,
 			.maxLevel = std::max(1u,maxLevel) }, name);
 	}
-	RenderGraph::RenderGraphResource CreateTexture(uint32_t width, uint32_t height,
-		vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap,
+	RenderGraph::RenderGraphResource CreateTexture(
+		uint32_t width, uint32_t height,
+		vk::Format format,
+		vk::Filter filter,
+		vk::SamplerAddressMode wrap,
 		const RenderGraph::ResourceName& name,
 		uint32_t maxLevel = 1) {
 		return _graph->CreateTexture(RenderGraph::TextureDesc{
@@ -486,10 +490,34 @@ public:
 			.wrapU = wrap, .wrapV = wrap,
 			.maxLevel = std::max(1u,maxLevel) }, name);
 	}
-	// 3D 体积纹理（depth > 1）—— 进 TexturePool 的 3D 分支，pass 里用 GetVolumeXxx 取
+
+	RenderGraph::RenderGraphResource CreateTexture(
+		glm::u32vec2 size,
+		vk::Format format,
+		vk::Filter minFilter, vk::Filter magFilter,
+		vk::SamplerAddressMode wrapU, vk::SamplerAddressMode wrapV,
+		const RenderGraph::ResourceName& name,
+		uint32_t maxLevel = 1)
+	{
+		return CreateTexture(size.x, size.y, format, minFilter, magFilter, wrapU, wrapV, name, maxLevel);
+	}
+	RenderGraph::RenderGraphResource CreateTexture(
+		glm::u32vec2 size,
+		vk::Format format,
+		vk::Filter filter,
+		vk::SamplerAddressMode wrap,
+		const RenderGraph::ResourceName& name,
+		uint32_t maxLevel = 1)
+	{
+		return CreateTexture(size.x, size.y, format, filter, wrap, name, maxLevel);
+	}
+
+	// 3D 体积纹理（depth > 1）
 	RenderGraph::RenderGraphResource CreateVolume(
 		uint32_t width, uint32_t height, uint32_t depth,
-		vk::Format format, vk::Filter filter, vk::SamplerAddressMode wrap,
+		vk::Format format,
+		vk::Filter filter,
+		vk::SamplerAddressMode wrap,
 		const RenderGraph::ResourceName& name,
 		uint32_t maxLevel = 1) {
 		return _graph->CreateTexture(RenderGraph::TextureDesc{
@@ -498,6 +526,18 @@ public:
 			.wrapU = wrap, .wrapV = wrap, .wrapW = wrap,
 			.maxLevel = std::max(1u,maxLevel) }, name);
 	}
+
+	RenderGraph::RenderGraphResource CreateVolume(
+		glm::u32vec3 size,
+		vk::Format format,
+		vk::Filter filter,
+		vk::SamplerAddressMode wrap,
+		const RenderGraph::ResourceName& name,
+		uint32_t maxLevel = 1)
+	{
+		return CreateVolume(size.x, size.y, size.z, format, filter, wrap, name, maxLevel);
+	}
+
 	RenderGraph::RenderGraphResource CreateTexture(const RenderGraph::RenderGraphResource& other, const RenderGraph::ResourceName& name) {
 		return _graph->CreateTexture(std::get<RenderGraph::TextureDesc>(other.desc), name);
 	}
@@ -964,8 +1004,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
 	{
-		auto scatterColorRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
-		auto tramsmittanceRes = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
+		auto volumeResolution = glm::u32vec2(width, height);
+		auto scatterColorRes = resbuilder.CreateTexture(volumeResolution, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
+		auto tramsmittanceRes = resbuilder.CreateTexture(volumeResolution, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
 		volumeCalculateNode->SetRenderPass(std::move(volumeCalculatePass))
 			.Input(
 				ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout },
@@ -979,7 +1020,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TempTramsmittance"), computeWriteLayout },
 				ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempSceneColor"), computeWriteLayout },
 				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAScatterColorTexture"), computeReadLayout },
-				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TAAGaussScatterColorTexture"),computeReadLayout }
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAGaussScatterColorTexture"),computeReadLayout }
 			)
 			.Persistent(
 				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout }
@@ -1004,7 +1045,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
 		.After(opaqueFence, volumeCalculateNode, transparentNode)
 		.Before(transprantFence)
-		// OIT 的两张离屏目标：accum(RGBA16F) 与 reveal(R16F)，只在 EffectPass 内部使用
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitAccum"), graphicsWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitReveal"), graphicsWriteLayout }
