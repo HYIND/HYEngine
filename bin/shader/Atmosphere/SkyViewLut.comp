@@ -151,15 +151,13 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
     return color;
 }
 
-vec3 GetViewDir(vec2 uv, float aspect)
-{    
+vec3 GetViewDir(vec2 uv)
+{
     vec2 ndc = uv * 2.0 - 1.0;
-    ndc.x *= aspect;
-    ndc.y = -ndc.y;
-    float tanHalfFov = tan(radians(camera.fov) * 0.5);
-    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
-    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
-    return worldRayDir;
+    vec4 clipPos = vec4(ndc, 1.0, 1.0);
+    vec4 viewPos = camera.invProjection * clipPos;
+    viewPos /= viewPos.w;
+    return normalize((camera.invView * vec4(viewPos.xyz, 0.0)).xyz);
 }
 
 const float MAX_DISTANCE = 1e5;
@@ -191,7 +189,7 @@ void main()
         float tStart;
         float tEnd;
 
-        vec3 viewDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
+        vec3 viewDir = GetViewDir(TexCoords);
         bool validSegment = GetAtmosphereRaySegment(
             cameraPosInPlanet,
             viewDir,
