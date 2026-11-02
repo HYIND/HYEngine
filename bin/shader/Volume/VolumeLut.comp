@@ -19,6 +19,7 @@ layout (binding = 2) uniform Params
     bool ExponentialHeightFogEnable;
     bool JitterEnable;
     uint JitterSeed;
+    bool CloudEnable;
 };
 
 layout (binding = 3, rgba16f) uniform image2D outputScatterColor;
@@ -27,6 +28,30 @@ layout (binding = 5) uniform sampler2D depthMap;
 layout (binding = 6) uniform sampler2D transmittanceLut;
 layout (binding = 7) uniform sampler2D atlasShadowMap;
 layout (binding = 8) uniform sampler2D gPosition;
+
+// 体积云参数。用命名实例，避免 coverage / density / powder 这类名字污染全局
+layout (binding = 9) uniform CloudParams
+{
+    vec3 cloudAlbedo;
+    float cloudBottomHeight;
+    vec3 cloudAmbientColor;
+    float cloudTopHeight;
+    float coverage;
+    float density;
+    float shapeScale;
+    float detailScale;
+    float detailStrength;
+    float phaseG;
+    float phaseBlend;
+    float powder;
+    float maxTraceDistance;
+    float erosionDepth;
+    uint viewStepCount;
+    uint lightStepCount;
+} cloudParams;
+
+layout (binding = 10) uniform sampler3D cloudShapeNoise; 
+layout (binding = 11) uniform sampler2D blueNoise;       
 
 bool InDirShadow(DirLight light, vec3 fragPos)
 {
@@ -65,6 +90,7 @@ bool InSpotShadow(SpotLight light, vec3 fragPos)
 
 #include "shader/Volume/AtmoVolume.comp"
 #include "shader/Volume/FogVolume.comp"
+#include "shader/Volume/CloudVolume.comp"
 
 uint GetJetterValue(uint sampleIndex)
 {
@@ -96,15 +122,22 @@ void CalculateLightVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmit
     scatterColor +=sc;
 }
 
-vec3 GetViewDir(vec2 uv, float aspect)
+void CalculateCloudVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmittanceFragToCam, inout vec3 scatterColor)
+{
+    vec3 T = vec3(1);
+    vec3 sc = vec3(0);
+    CloudSingleScatterToFrag(startPos, targetPos, T, sc, JitterEnable, JitterEnable ? GetJetterValue(2) : 0);
+    atomTramsmittanceFragToCam *= T;
+    scatterColor += sc;
+}
+
+vec3 GetViewDir(vec2 uv)
 {    
     vec2 ndc = uv * 2.0 - 1.0;
-    ndc.x *= aspect;
-    ndc.y = -ndc.y;
-    float tanHalfFov = tan(radians(camera.fov) * 0.5);
-    vec3 localRayDir = normalize(vec3(ndc * tanHalfFov, -1.0));
-    vec3 worldRayDir = mat3(camera.invView) * localRayDir;
-    return worldRayDir;
+    vec4 clipPos = vec4(ndc, 1.0, 1.0);
+    vec4 viewPos = camera.invProjection * clipPos;
+    viewPos /= viewPos.w;
+    return normalize((camera.invView * vec4(viewPos.xyz, 0.0)).xyz);
 }
 
 const float MAX_DISTANCE = 1e5;
@@ -117,7 +150,7 @@ void main()
     if (coord.x >= imageSize.x || coord.y >= imageSize.y)
         return;
 
-    if (!AtmoVolumeEnable && !ExponentialHeightFogEnable)
+    if (!AtmoVolumeEnable && !ExponentialHeightFogEnable && !CloudEnable)
         return;
 
     vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
@@ -138,12 +171,23 @@ void main()
             CalculateLightVolume(camera.position, worldPos, tramsmittance, scatterColor);
         if (ExponentialHeightFogEnable && !VolumeFogEnable)
             fogFactor = 1.0 - exp(-GetFogExtinction(camera.position, worldPos));
+        if (CloudEnable)
+            CalculateCloudVolume(camera.position, worldPos, tramsmittance, scatterColor);
     }
     else 
     {
+        vec3 vireDir = GetViewDir(TexCoords);
+
+        // 天空分支的 farPos 是 camera.farPlane，比云还近的话云会被整层切掉，
+        // 所以云单独用一个至少能覆盖最大追踪距离的远点
+        if (CloudEnable)
+        {
+            vec3 cloudFarPos = camera.position + vireDir * max(camera.farPlane, cloudParams.maxTraceDistance);
+            CalculateCloudVolume(camera.position, cloudFarPos, tramsmittance, scatterColor);
+        }
+
         if (ExponentialHeightFogEnable)
         {              
-            vec3 vireDir = GetViewDir(TexCoords, float(imageSize.x) / float(imageSize.y));
             vec3 farPos = camera.position + vireDir * camera.farPlane;
 
             float T_Total = 1.0;

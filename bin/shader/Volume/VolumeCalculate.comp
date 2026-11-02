@@ -41,6 +41,9 @@ layout (binding = 2) uniform Params
 {
     bool AtmoVolumeEnable;
     bool ExponentialHeightFogEnable;
+    bool JitterEnable;
+    uint JitterSeed;
+    bool CloudEnable;
 };
 
 layout (binding = 3, rgba16f) uniform image2D outputImage;
@@ -58,7 +61,7 @@ void main()
     if (coord.x >= imageSize.x || coord.y >= imageSize.y)
         return;
 
-    if (!AtmoVolumeEnable && !ExponentialHeightFogEnable)
+    if (!AtmoVolumeEnable && !ExponentialHeightFogEnable && !CloudEnable)
         return;
 
     vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);

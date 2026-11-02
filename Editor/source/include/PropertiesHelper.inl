@@ -1899,6 +1899,7 @@ inline bool PropertiesHelper::DrawData(Scene3DRenderOption& option)
 	anyChange |= PropertiesHelper::DrawWithTitle("AtmosphereParams", option.atmosphereParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSAOParams", option.ssaoParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("ExponentialHeightFog", option.exponentialHeightFogParams);
+	anyChange |= PropertiesHelper::DrawWithTitle("VolumetricCloudParams", option.volumetricCloudParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGeneralParams", option.rayTraceGeneralParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceReflectParams", option.rayTraceReflectParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);

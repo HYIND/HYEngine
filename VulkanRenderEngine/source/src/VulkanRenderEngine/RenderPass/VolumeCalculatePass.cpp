@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/AtmospherePreCalculatePass.h"
+#include "VulkanRenderEngine/General/RenderHelper.h"
 
 VolumeCalculatePass::VolumeCalculatePass(
 	const std::string& lutShaderPath,
@@ -9,6 +10,10 @@ VolumeCalculatePass::VolumeCalculatePass(
 	_firstDrawTemporal(true),
 	_taaEnable(false)
 {
+	// 云噪声：128^3 R8 体积纹理 + 64x64 蓝噪声，都是静态资源
+	_cloudShapeNoise = RenderHelper::GetPerlinNoise();
+	_blueNoise = RenderHelper::GetBlueNoise();
+
 	{
 		ComputePipelineConfig config;
 		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
@@ -26,7 +31,10 @@ VolumeCalculatePass::VolumeCalculatePass(
 			.AddUnifromTexture(5)
 			.AddUnifromTexture(6)
 			.AddUnifromTexture(7)
-			.AddUnifromTexture(8);
+			.AddUnifromTexture(8)
+			.AddUnifromBuffer(9)		// 云参数
+			.AddUnifromTexture(10)		// sampler3D 形状噪声
+			.AddUnifromTexture(11);		// sampler2D 蓝噪声
 
 		if (config.Validate())
 			_lutShader.Create(config);
@@ -57,16 +65,40 @@ VolumeCalculatePass::VolumeCalculatePass(
 bool VolumeCalculatePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	bool atmoEnable = state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
-	return atmoEnable || state.option.flags.exponentialHeightFogOn;
+	return atmoEnable || state.option.flags.exponentialHeightFogOn || state.option.flags.volumetricCloudOn;
 }
 
-struct VolumeParams
+struct alignas(16) VolumeParams
 {
 	uint32_t AtmoVolumeEnable = 0;
 	uint32_t ExponentialHeightFogEnable = 0;
 	uint32_t JitterEnable = 1;
 	uint32_t JitterSeed = 0;
+	uint32_t CloudEnable = 0;
 };
+
+struct alignas(16) VolumetricCloudShaderParams
+{
+	glm::vec3 cloudAlbedo;
+	float cloudBottomHeight;
+	glm::vec3 cloudAmbientColor;
+	float cloudTopHeight;
+
+	float coverage;
+	float density;
+	float shapeScale;
+	float detailScale;
+	float detailStrength;
+	float phaseG;
+	float phaseBlend;
+	float powder;
+	float maxTraceDistance;
+	float erosionDepth;
+	uint32_t viewStepCount;
+	uint32_t lightStepCount;
+};
+
+static_assert(sizeof(VolumetricCloudShaderParams) == 80);
 
 struct alignas(16) ExponentialHeightFogShaderParams
 {
@@ -95,6 +127,7 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 	bool hasLights = !state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty();
 	bool exponentialHeightFogEnable = state.option.flags.exponentialHeightFogOn;
 	bool volumeFogEnable = exponentialHeightFogEnable && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
+	bool cloudEnable = state.option.flags.volumetricCloudOn;
 
 	auto& lutBinding = registry.Get<ComputeBindingRecord>("lutBinding");
 	auto& combinBinding = registry.Get<ComputeBindingRecord>("combinBinding");
@@ -151,12 +184,39 @@ void VolumeCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry, R
 			.AtmoVolumeEnable = (uint32_t)atmoEnable,
 			.ExponentialHeightFogEnable = (uint32_t)exponentialHeightFogEnable,
 			.JitterEnable = (uint32_t)true,
-			.JitterSeed = state.renderRecord.frameIndex % 100000
+			.JitterSeed = state.renderRecord.frameIndex % 100000,
+			.CloudEnable = (uint32_t)cloudEnable
 		};
 		auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 		paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
 		lutBinding.SetUniformBlock(paramsUBO, 2);
 		combinBinding.SetUniformBlock(paramsUBO, 2);
+	}
+
+	{
+		const auto& cloudOptions = state.option.volumetricCloudParams;
+		VolumetricCloudShaderParams cloudParams
+		{
+			.cloudAlbedo = cloudOptions.cloudAlbedo,
+			.cloudBottomHeight = cloudOptions.cloudBottomHeight,
+			.cloudAmbientColor = cloudOptions.cloudAmbientColor,
+			.cloudTopHeight = cloudOptions.cloudTopHeight,
+			.coverage = std::clamp(cloudOptions.coverage, 0.0f, 0.999f),
+			.density = std::max(cloudOptions.density, 0.0f),
+			.shapeScale = cloudOptions.shapeScale,
+			.detailScale = cloudOptions.detailScale,
+			.detailStrength = std::clamp(cloudOptions.detailStrength, 0.0f, 1.0f),
+			.phaseG = cloudOptions.phaseG,
+			.phaseBlend = cloudOptions.phaseBlend,
+			.powder = cloudOptions.powder,
+			.maxTraceDistance = cloudOptions.maxTraceDistance,
+			.erosionDepth = cloudOptions.erosionDepth,
+			.viewStepCount = std::max(1u, cloudOptions.viewStepCount),
+			.lightStepCount = std::max(1u, cloudOptions.lightStepCount)
+		};
+		auto cloudParamsUBO = std::make_shared<UniformBlock>(sizeof(cloudParams));
+		cloudParamsUBO->WriteDataAsync(cmd, &cloudParams, sizeof(cloudParams));
+		lutBinding.SetUniformBlock(cloudParamsUBO, 9);
 	}
 
 	cmd->SubmitNowAndWait();
@@ -192,8 +252,9 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 		&& state.option.exponentialHeightFogParams.volumeFogOn
 		&& hasLights
 		&& hasVolumeFogLightSource(state);
+	bool cloudEnable = state.option.flags.volumetricCloudOn;
 
-	if (!atmoEnable && !exponentialHeightFogEnable)
+	if (!atmoEnable && !exponentialHeightFogEnable && !cloudEnable)
 		return;
 
 	FrameRenderData data;
@@ -219,13 +280,14 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	data.atmoEnable = atmoEnable;
 	data.exponentialHeightFogEnable = exponentialHeightFogEnable;
 	data.volumeFogEnable = volumeFogEnable;
+	data.cloudEnable = cloudEnable;
 
 	auto cmd = cmdCtx.GetCmd();
 
 	DrawLut(cmd, registry, state, data);
 
-	SetTAAEnable(atmoEnable || volumeFogEnable);
-	if (atmoEnable || volumeFogEnable)
+	SetTAAEnable(atmoEnable || volumeFogEnable || cloudEnable);
+	if (atmoEnable || volumeFogEnable || cloudEnable)
 	{
 		if (!DrawTAAFilter(cmd, state, data))
 			return;
@@ -272,6 +334,11 @@ void VolumeCalculatePass::DrawLut(
 	}
 	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
+
+	if (_cloudShapeNoise)
+		binding.SetUniformTexture3D(_cloudShapeNoise, vk::ImageAspectFlagBits::eColor, 10);
+	if (_blueNoise)
+		binding.SetUniformTexture(_blueNoise, vk::ImageAspectFlagBits::eColor, 11);
 
 	_lutShader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
