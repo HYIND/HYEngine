@@ -49,6 +49,23 @@ bool IsSky(float depth)
     return depth >= 0.99994;
 }
 
+vec2 ComputeSkyMotion(vec2 uv)
+{
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    vec4 viewPos = camera.invProjection * vec4(ndc, 1.0, 1.0);
+    viewPos /= viewPos.w;
+    vec3 worldDir = normalize((camera.invView * vec4(viewPos.xyz, 0.0)).xyz);
+
+    // w = 0：只旋转，不累积相机位移
+    vec4 prevClip = prevcamera.projView * vec4(worldDir, 0.0);
+    if (abs(prevClip.w) < 1e-5)
+        return vec2(0.0);
+
+    vec2 prevUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+    return uv - prevUV;
+}
+
 void main() 
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
@@ -60,7 +77,13 @@ void main()
     vec2 currentUV = (vec2(coord) + vec2(0.5f)) / imageSize;
     vec4 currentColor = texture(rawTexture, currentUV).rgba;
 
-    vec2 motionVector = clamp(texture(motionMap, currentUV).xy, -1, 1);
+    float currentDepth = texture(depthMap, currentUV).r;
+    bool currentIsSky = IsSky(currentDepth);
+
+    // 天空/云走解析重投影；几何走 GBuffer 的 motion vector
+    vec2 motionVector = currentIsSky
+        ? ComputeSkyMotion(currentUV)
+        : clamp(texture(motionMap, currentUV).xy, -1, 1);
     vec2 historyUV = currentUV - motionVector;
 
     // 边界检查（如果上一帧没这个像素，直接返回当前帧）
@@ -70,10 +93,7 @@ void main()
         return;
     }
 
-    float currentDepth = texture(depthMap, currentUV).r;
     float historyDepth = texture(prevDepthMap, historyUV).r;
-
-    bool currentIsSky = IsSky(currentDepth);
     bool historyIsSky = IsSky(historyDepth);
 
     if (currentIsSky != historyIsSky)
@@ -138,7 +158,7 @@ void main()
     }
     historyColor = clamp(historyColor, minColor * 0.8, maxColor * 1.25);
 
-    float motionPixels = length(motionVector * vec2(imageSize));
+    float motionPixels = currentIsSky ? 0.0 : length(motionVector * vec2(imageSize));
     float historyBlendFactor = clamp(historyWeight, 0.0, 0.99) * exp(-max(motionWeightScale, 0.0) * motionPixels);
 
     vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
