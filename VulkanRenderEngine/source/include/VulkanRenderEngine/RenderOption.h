@@ -151,7 +151,7 @@ struct Scene3DRenderOption
 		float maxTraceDistance = 30000.0f;	// 视线追踪最远距离（米）
 		float erosionDepth = 400.0f;		// 云顶、云底的软收边深度（米）
 
-		uint32_t viewStepCount = 25;		// 视线步数
+		uint32_t viewStepCount = 32;		// 视线步数
 		uint32_t lightStepCount = 6;		// 光步步数
 	} volumetricCloudParams;
 
