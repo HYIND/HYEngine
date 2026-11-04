@@ -72,33 +72,15 @@ void PropertiesHelper::RegisterComponent()
 
 			if constexpr (sizeof(T) > sizeof(IComponent))
 			{
-				struct EditorBuffer
-				{
-					EntityID entityId = 0;
-					const void* source = nullptr;
-					T* buffer = nullptr;
-				};
-				static EditorBuffer cache;
-
+				auto temp = new T();
 				auto& component = *(static_cast<T*>(comp));
-				if (cache.buffer == nullptr)
-					cache.buffer = new T();
-
-				if (cache.entityId != entity.getId() || cache.source != comp)
-				{
-					EditorSnapshot<T>::Make(component, *cache.buffer);
-					cache.entityId = entity.getId();
-					cache.source = comp;
-				}
-
-				bool changed = DrawComponent(*cache.buffer, assetManager);
+				EditorSnapshot<T>::Make(component, *temp);
+				bool changed = DrawComponent(*temp, assetManager);
 				if (changed)
 				{
 					auto world = entity.getWorld();
-					T* buffer = cache.buffer;
-					world->SubmitCommand([entity, buffer, &component] mutable ->void {
-						T value = *buffer;
-						EditorSnapshot<T>::Apply(std::move(value), component);
+					world->SubmitCommand([entity, temp, &component] mutable ->void {
+						EditorSnapshot<T>::Apply(std::move(*temp), component);
 						OnComponentChange(entity, component);
 						});
 				}
