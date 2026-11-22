@@ -187,6 +187,14 @@ struct RenderState
 		VKRenderObjectData::SceneSkinnedRenderData sceneSkinnedRenderData;
 	} objects;
 
+	// 场景世界空间包围盒：本帧所有静态网格 AABB 的并集，由 PreCalculatePass 在
+	// 图执行前填好。DDGI 探针体积自动拟合就吃这份数据（见 DDGIDef.h 的 DDGIResolveVolume）。
+	struct SceneBounds {
+		glm::vec3 min = glm::vec3(0.0f);
+		glm::vec3 max = glm::vec3(0.0f);
+		uint32_t valid = 0;			// 0 = 本帧没有可用的静态网格，包围盒无意义
+	} sceneBounds;
+
 	struct IndirectCommands {
 		std::vector<IndirectDrawCommand> staticMesh_OneSideCommand;
 		std::vector<IndirectDrawCommand> staticMesh_TwoSideCommand;

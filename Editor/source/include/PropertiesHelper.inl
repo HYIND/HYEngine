@@ -310,6 +310,138 @@ bool PropertiesHelper::DrawComponent(T& comp)
 	return anyChanged;
 }
 
+// DDGI 参数面板。
+// 通用反射遍历做不到「按当前布置模式逐项置灰」，所以这里手写一份。
+// 置灰规则（优先级 autoFitVolume > followCamera > 手动）：
+//   autoFitVolume → center / counts 由场景包围盒决定，fitPadding 生效
+//   followCamera  → center 由相机决定；counts 是滑动窗口尺寸，仍然可编辑
+//   手动          → center / counts 生效，fitPadding 无效
+template<>
+inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
+{
+	bool changed = false;
+
+	// ── 布置方式 ──
+	if (ImGui::Checkbox("autoFitVolume", &p.autoFitVolume))
+		changed = true;
+
+	ImGui::SameLine();
+	// autoFitVolume 优先级更高，两者同时为 true 时跟随相机不生效，这里直接禁用避免误勾
+	if (p.autoFitVolume)
+		ImGui::BeginDisabled();
+	if (ImGui::Checkbox("followCamera", &p.followCamera))
+		changed = true;
+	if (p.autoFitVolume)
+		ImGui::EndDisabled();
+	if (p.autoFitVolume && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("autoFitVolume 打开时体积由场景包围盒决定，跟随相机不生效");
+
+	const bool manual = !p.autoFitVolume && !p.followCamera;
+
+	// ── 体积 ──
+	if (!manual)
+		ImGui::BeginDisabled();
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	if (ImGui::DragFloat3("center", glm::value_ptr(p.center), 0.1f))
+		changed = true;
+	if (!manual)
+		ImGui::EndDisabled();
+	if (!manual && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip(p.autoFitVolume ? "由场景包围盒算出" : "由相机位置算出");
+
+	// counts 在 followCamera 下是滑动窗口尺寸，仍要能改
+	if (p.autoFitVolume)
+		ImGui::BeginDisabled();
+	glm::vec3 countsF(p.counts);
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	if (ImGui::DragFloat3("counts", glm::value_ptr(countsF), 0.1f))
+	{
+		p.counts = glm::uvec3(glm::clamp(glm::round(countsF), glm::vec3(1.0f), glm::vec3(255.0f)));
+		changed = true;
+	}
+	if (p.autoFitVolume)
+		ImGui::EndDisabled();
+
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	if (ImGui::DragFloat3("spacing", glm::value_ptr(p.spacing), 0.05f))
+	{
+		p.spacing = glm::max(p.spacing, glm::vec3(0.25f));
+		changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("间接光按这个尺度做三线性插值。\n间距太大 = 看得见格子（块状），建议 0.75~1.25m。\n开销与 1/spacing^3 成正比，用 updateSliceCount 分摊。");
+
+	if (!p.autoFitVolume)
+		ImGui::BeginDisabled();
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("fitPadding", &p.fitPadding, 0.1f, 0.0f, 64.0f))
+		changed = true;
+	if (!p.autoFitVolume)
+		ImGui::EndDisabled();
+
+	// 只读反馈：面板宽度有限，这里只用短句，避免文字溢出面板
+	const unsigned long long total =
+		static_cast<unsigned long long>(p.counts.x) * p.counts.y * p.counts.z;
+	const glm::vec3 extent = glm::vec3(p.counts) * p.spacing;
+	ImGui::TextDisabled("%.1f x %.1f x %.1f m / %llu probes",
+		static_cast<double>(extent.x), static_cast<double>(extent.y),
+		static_cast<double>(extent.z), total);
+
+	if (total > 16384)
+		ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "> 16384 probes, spacing grows");
+
+	if (p.autoFitVolume)
+		ImGui::TextDisabled("volume fitted to scene bounds");
+	else if (p.followCamera)
+		ImGui::TextDisabled("window follows camera");
+	else
+		ImGui::TextDisabled("manual volume");
+
+	// ── 探针发线 ──
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("normalBias", &p.normalBias, 0.01f, 0.0f, 5.0f))
+		changed = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("采样点沿法线外推（米），抑制自遮挡与薄墙漏光。\n建议 spacing 的 0.1~0.3 倍。");
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("viewBias", &p.viewBias, 0.01f, 0.0f, 2.0f))
+		changed = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("采样点朝观察者方向外推（米），与 normalBias 配合抑制掠射角漏光。\n建议 spacing 的 0.1~0.3 倍。");
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("maxRayDistance", &p.maxRayDistance, 0.5f, 0.5f, 200.0f))
+		changed = true;
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("backfaceThreshold", &p.backfaceThreshold, 0.05f, 0.001f, 8.0f))
+		changed = true;
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("skyIntensity", &p.skyIntensity, 0.02f, 0.0f, 8.0f))
+		changed = true;
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("energy", &p.energy, 0.02f, 0.0f, 8.0f))
+		changed = true;
+
+	// ── 质量与时域 ──
+	int slice = static_cast<int>(p.updateSliceCount);
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragInt("updateSliceCount", &slice, 0.2f, 1, 32))
+	{
+		p.updateSliceCount = static_cast<uint32_t>(slice);
+		changed = true;
+	}
+
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("hysteresis", &p.hysteresis, 0.005f, 0.0f, 0.98f))
+		changed = true;
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("lightChangeThreshold", &p.lightChangeThreshold, 0.01f, 0.0f, 2.0f))
+		changed = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("探针平均亮度的相对变化超过该值（且超出跨帧噪声）时临时降低 hysteresis，\n开关灯时快速跟上。0 = 关闭。");
+
+	return changed;
+}
+
 template<>
 inline bool PropertiesHelper::DrawComponent(Physics& physics)
 {
@@ -1887,6 +2019,14 @@ inline bool PropertiesHelper::DrawData(Scene3DRenderOption& option)
 	anyChange |= PropertiesHelper::DrawWithTitle("RayTraceGIParams", option.rayTraceGIParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSReflectParams", option.ssrTraceParams);
 	anyChange |= PropertiesHelper::DrawWithTitle("SSGIParams", option.ssgiTraceParams);
+
+	if (ImGui::CollapsingHeader("DDGIParams"))
+	{
+		ImGui::PushID("DDGIParams");
+		// 逐项置灰与模式提示都在 DDGIParams 的 DrawComponent 特化里处理
+		anyChange |= PropertiesHelper::DrawData(option.ddgiParams);
+		ImGui::PopID();
+	}
 
 	return anyChange;
 }

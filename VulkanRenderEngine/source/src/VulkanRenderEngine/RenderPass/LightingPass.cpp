@@ -60,11 +60,16 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	std::shared_ptr<TextureCube> IBLPrefilter;
 	std::shared_ptr<Texture2D> IBLBrdfLUT;
 
+	auto& flags = state.option.flags;
+	bool anyIndirectOn =
+		flags.rayTraceReflectOn
+		|| flags.rayTraceGIOn
+		|| flags.ssrOn
+		|| flags.ssgiOn
+		|| flags.ddgiOn;
+
 	// 如果没有开启间接光照相关的Pass，则在这里直接进行sky反射捕获
-	if (!state.option.flags.rayTraceReflectOn 
-		&& !state.option.flags.rayTraceGIOn 
-		&& !state.option.flags.ssrOn 
-		&& !state.option.flags.ssgiOn)
+	if (!anyIndirectOn)
 	{
 		if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
 		{

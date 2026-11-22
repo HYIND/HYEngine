@@ -536,7 +536,7 @@ RTCoreRayTraceGeneralPass::~RTCoreRayTraceGeneralPass()
 
 bool RTCoreRayTraceGeneralPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn;
+	return state.option.flags.rayTraceGIOn || state.option.flags.rayTraceReflectOn || state.option.flags.ddgiOn;
 }
 
 void RTCoreRayTraceGeneralPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)

@@ -1,0 +1,79 @@
+#ifndef DDGI_UNIFORMS_COMP
+#define DDGI_UNIFORMS_COMP
+
+// DDGI 共享 UBO 与槽位映射（C++ 镜像：DDGIDef.h 的 DDGIUniforms，std140，144 字节）。
+// 包含前需先定义 DDGI_UBO_BINDING，并先包含 DDGICore.comp。
+// 注意：注释里不要写完整的 include 指令。
+
+layout(set = 0, binding = DDGI_UBO_BINDING) uniform DDGIParamsUBO
+{
+    vec4  volumeOrigin;     // xyz 体积最小角
+    vec4  volumeSpacing;    // xyz 探针间距，w maxRayDistance
+    uvec4 volumeCounts;     // xyz 每轴探针数，w 总数
+    vec4  shadingParams;    // x normalBias，y viewBias，z energy，w skyIntensity
+    vec4  filterParams;     // x 背面权重指数，y 时域混合系数，z 深度截断距离，w 光照突变阈值
+    uvec4 runParams;        // x sliceCount，y frameIndex，z history 可读，w 天空 cubemap 可用
+    uvec4 scrollOffset;     // xyz 槽位偏移，w 本帧整格平移
+    ivec4 scrollDelta;      // xyz 本帧平移格数，w 本帧全量重置
+    vec4  cameraPos;        // xyz 相机位置
+} ddgi;
+
+uint ddgiProbeCount() { return ddgi.volumeCounts.w; }
+bool ddgiFullReset()  { return ddgi.scrollDelta.w != 0; }
+bool ddgiScrolled()   { return ddgi.scrollOffset.w != 0u; }
+
+// 槽位下标 -> 逻辑坐标（决定世界位置）
+ivec3 ddgiLogicalCoord(uint physicalIndex)
+{
+    uvec3 c = ddgi.volumeCounts.xyz;
+    uvec3 pc = ddgiProbeCoord(physicalIndex, c);
+    return ivec3((pc + c - ddgi.scrollOffset.xyz) % c);
+}
+
+// 逻辑坐标 -> 槽位下标（图集位置）
+uint ddgiPhysicalIndex(ivec3 logical)
+{
+    uvec3 c = ddgi.volumeCounts.xyz;
+    uvec3 pc = (uvec3(logical) + ddgi.scrollOffset.xyz) % c;
+    return pc.z * c.x * c.y + pc.y * c.x + pc.x;
+}
+
+vec3 ddgiProbeWorldPos(ivec3 logical)
+{
+    return ddgi.volumeOrigin.xyz + (vec3(logical) + 0.5) * ddgi.volumeSpacing.xyz;
+}
+
+// 本帧平移后新进入窗口的探针：槽位里是离开窗口那层的旧数据，
+// 本帧必须重新追踪并直接覆盖，多次反弹采样时也要跳过
+bool ddgiProbeIsFresh(ivec3 logical)
+{
+    if (!ddgiScrolled())
+        return false;
+    ivec3 c = ivec3(ddgi.volumeCounts.xyz);
+    ivec3 d = ddgi.scrollDelta.xyz;
+    bvec3 fresh = bvec3(
+        (d.x > 0 && logical.x >= c.x - d.x) || (d.x < 0 && logical.x < -d.x),
+        (d.y > 0 && logical.y >= c.y - d.y) || (d.y < 0 && logical.y < -d.y),
+        (d.z > 0 && logical.z >= c.z - d.z) || (d.z < 0 && logical.z < -d.z));
+    return any(fresh);
+}
+
+uint ddgiSlicePhase()
+{
+    return ddgi.runParams.y % max(ddgi.runParams.x, 1u);
+}
+
+// 本帧是否更新该探针（光追与混合共用同一判定）
+bool ddgiProbeUpdatedThisFrame(uint physicalIndex, ivec3 logical)
+{
+    return ddgiFullReset()
+        || (physicalIndex % max(ddgi.runParams.x, 1u)) == ddgiSlicePhase()
+        || ddgiProbeIsFresh(logical);
+}
+
+vec3 ddgiProbeRayDirection(uint rayIndex, mat3 rotation)
+{
+    return normalize(rotation * ddgiSphericalFibonacci(float(rayIndex), float(DDGI_RAY_COUNT)));
+}
+
+#endif

@@ -4,6 +4,7 @@
 #include "VulkanRenderEngine/VKContext.h"
 #include <map>
 #include <regex>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -32,74 +33,150 @@ static std::tuple<std::string, bool> ReadFromFile(const std::string& path)
 
 	return { std::string(), false };
 }
-static std::string RemoveComments(std::string code)
+// 去掉 // 与 /* */ 注释。手写状态机而不用 std::regex：
+//   * 原先的块注释正则 /\*.*?\*/ 里 '.' 不匹配换行，跨行块注释根本删不掉；
+//   * MSVC 的 std::regex 是递归实现，[\s\S]*? 匹配长注释时可能爆栈。
+// 块注释里的换行原样保留，shaderc 报错的行号不会因此整体错位。
+static std::string RemoveComments(const std::string& code)
 {
-	// 1. 删除多行注释
-	std::regex blockComment(R"(/\*.*?\*/)");
-	code = std::regex_replace(code, blockComment, "");
+	std::string out;
+	out.reserve(code.size());
 
-	// 2. 删除单行注释
-	std::regex lineComment(R"(//[^\n]*)");
-	code = std::regex_replace(code, lineComment, "");
-
-	//std::cout << code << '\n';
-	return code;
-}
-static std::string preProcessInclude(std::string shaderSource)
-{
-	struct matchData
+	const size_t n = code.size();
+	size_t i = 0;
+	while (i < n)
 	{
-		size_t pos;
-		size_t length;
-		std::filesystem::path filepath;
-	};
-
-	while (true)
-	{
-		bool IsRepleaceAnyStr = false;
-		std::vector<matchData> matches;  // 存储位置和文件名
-
-		// 查找 #include
-		std::regex includePattern(R"(#include\s*[<\"]([^>\"]*)[>\"])");
-		std::sregex_iterator it(shaderSource.begin(), shaderSource.end(), includePattern);
-		std::sregex_iterator end;
-
-		// 先收集所有匹配的位置
-		for (; it != end; ++it)
+		if (code[i] == '/' && i + 1 < n && code[i + 1] == '/')
 		{
-			std::smatch match = *it;
-			std::string includeStr = match.str(0);
-
-			size_t pos = match.position(0);
-			size_t length = includeStr.length();
-			std::string filepath = match.str(1);
-
-			matches.push_back({ pos,length,filepath });
+			i += 2;
+			while (i < n && code[i] != '\n')
+				++i;
 		}
-
-		for (auto it = matches.rbegin(); it != matches.rend(); ++it)
+		else if (code[i] == '/' && i + 1 < n && code[i + 1] == '*')
 		{
-			auto& matchdata = *it;
-			for (auto& path : { matchdata.filepath.string(), matchdata.filepath.filename().string() })
+			i += 2;
+			while (i < n && !(code[i] == '*' && i + 1 < n && code[i + 1] == '/'))
 			{
-				auto [code, readResult] = ReadFromFile(path);
-				if (!code.empty() || !readResult)
-				{
-					shaderSource.replace(matchdata.pos, matchdata.length, code);
-					IsRepleaceAnyStr = true;
-					break;
-				}
+				if (code[i] == '\n')
+					out += '\n';
+				++i;
+			}
+			i = std::min(n, i + 2);
+			out += ' ';		// 防止 a/**/b 被拼成 ab
+		}
+		else
+		{
+			out += code[i++];
+		}
+	}
+	return out;
+}
+
+// 解析 include 路径：先按原路径找，找不到再按文件名找（与原实现的查找顺序一致）。
+// outKey 是规范化后的绝对路径，用于检测循环包含。
+static bool ResolveIncludeFile(const std::filesystem::path& includePath, std::string& outCode, std::string& outKey)
+{
+	for (const auto& candidate : { includePath, includePath.filename() })
+	{
+		std::error_code ec;
+		if (!std::filesystem::is_regular_file(candidate, ec))
+			continue;
+
+		auto [code, readResult] = ReadFromFile(candidate.string());
+		if (!readResult)
+			continue;
+
+		auto canonical = std::filesystem::weakly_canonical(candidate, ec);
+		outKey = ec ? candidate.lexically_normal().string() : canonical.string();
+		outCode = std::move(code);
+		return true;
+	}
+	return false;
+}
+
+// 递归展开 #include。和原先「整段循环替换」的实现相比：
+//   1) 被包含文件的内容先去注释再展开 —— 原实现只对顶层文件去注释，
+//      被包含文件注释里写的 #include 也会被当真展开（DDGIUniforms.comp 曾因此无限自包含）；
+//   2) 只认行首（可有空白）的 #include 指令，不会误伤行内的同名字符串；
+//   3) 维护包含栈：A -> B -> A 这类循环直接跳过并报错，不再死循环；另有深度上限兜底；
+//   4) 不做 #pragma once 语义：同一文件被多处包含时照常展开，去重交给文件自己的 #ifndef 守卫，
+//      这样依赖「包含前先 #define 不同宏」的头文件（如 lightingHelper 的 OnlyIBLHelper）行为不变。
+static std::string ExpandIncludes(const std::string& source, std::vector<std::string>& includeStack, uint32_t depth)
+{
+	static const std::regex includeLine(R"(^\s*#\s*include\s*[<"]([^>"]*)[>"].*$)");
+	constexpr uint32_t MaxIncludeDepth = 32;
+
+	std::string result;
+	result.reserve(source.size());
+
+	size_t lineStart = 0;
+	while (lineStart <= source.size())
+	{
+		size_t lineEnd = source.find('\n', lineStart);
+		const bool lastLine = (lineEnd == std::string::npos);
+		if (lastLine)
+			lineEnd = source.size();
+
+		std::string line = source.substr(lineStart, lineEnd - lineStart);
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+
+		std::smatch match;
+		if (std::regex_match(line, match, includeLine))
+		{
+			const std::string includeName = match.str(1);
+			std::string code;
+			std::string key;
+
+			if (!ResolveIncludeFile(std::filesystem::path(includeName), code, key))
+			{
+				std::cerr << "[Shader] include 文件找不到: " << includeName << std::endl;
+			}
+			else if (std::find(includeStack.begin(), includeStack.end(), key) != includeStack.end())
+			{
+				std::cerr << "[Shader] 检测到循环 include，已跳过: " << includeName << std::endl;
+			}
+			else if (depth >= MaxIncludeDepth)
+			{
+				std::cerr << "[Shader] include 嵌套超过 " << MaxIncludeDepth << " 层，已跳过: " << includeName << std::endl;
+			}
+			else
+			{
+				includeStack.push_back(key);
+				result += ExpandIncludes(RemoveComments(code), includeStack, depth + 1);
+				includeStack.pop_back();
 			}
 		}
+		else
+		{
+			result += line;
+		}
 
-		if (!IsRepleaceAnyStr)
+		if (lastLine)
 			break;
+		result += '\n';
+		lineStart = lineEnd + 1;
 	}
 
-	//std::cout << shaderSource << '\n';
-	return shaderSource;
+	return result;
 }
-static std::string insertDefinesAfterVersionAdvanced(const std::string& shaderSource, const std::map<std::string, std::string>& defines) {
+
+// rootPath：顶层 shader 文件路径。它必须作为包含栈的第一个元素，
+// 否则 A -> B -> A 要晚一层才被识别（会多展开一份 A）。
+// 从内存源码编译时没有路径，传空即可，此时只能检测被包含文件之间的循环。
+static std::string PreProcessInclude(const std::string& shaderSource, const std::string& rootPath = {})
+{
+	std::vector<std::string> includeStack;
+	if (!rootPath.empty())
+	{
+		std::error_code ec;
+		auto canonical = std::filesystem::weakly_canonical(rootPath, ec);
+		includeStack.push_back(ec ? std::filesystem::path(rootPath).lexically_normal().string() : canonical.string());
+	}
+	return ExpandIncludes(shaderSource, includeStack, 0);
+}
+
+static std::string InsertDefinesAfterVersionAdvanced(const std::string& shaderSource, const std::map<std::string, std::string>& defines) {
 	if (defines.empty()) {
 		return shaderSource;
 	}
@@ -179,8 +256,8 @@ static bool ProcessFileToSPIRV(const std::string& path, std::vector<uint32_t>& c
 		return false;
 
 	sourceCode = RemoveComments(sourceCode);
-	sourceCode = preProcessInclude(sourceCode);
-	sourceCode = insertDefinesAfterVersionAdvanced(sourceCode, defines);
+	sourceCode = PreProcessInclude(sourceCode, path);
+	sourceCode = InsertDefinesAfterVersionAdvanced(sourceCode, defines);
 
 	auto result = CompileSourceCodeToSPIRV(sourceCode, type, path);
 
@@ -200,8 +277,8 @@ static bool ProcessCodeToSPIRV(const std::string& source, std::vector<uint32_t>&
 {
 	std::string sourceCode = source;
 	sourceCode = RemoveComments(sourceCode);
-	sourceCode = preProcessInclude(sourceCode);
-	sourceCode = insertDefinesAfterVersionAdvanced(sourceCode, defines);
+	sourceCode = PreProcessInclude(sourceCode);
+	sourceCode = InsertDefinesAfterVersionAdvanced(sourceCode, defines);
 
 
 	static const std::string path = "DefaultPath";

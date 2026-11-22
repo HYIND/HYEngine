@@ -1,0 +1,57 @@
+#version 460
+
+// DDGI 全屏采样：输出已乘 albedo 的漫反射间接光，由 combinIndirectLightingNode 加法合成。
+// diffuseIndirect = albedo × Lbar × AO × energy（图集存的是 Lbar = E/π，不再乘除 π）
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#define DDGI_UBO_BINDING 8
+#include "shader/DDGI/DDGICore.comp"
+#include "shader/DDGI/DDGIUniforms.comp"
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D outImage;
+layout(set = 0, binding = 1) uniform sampler2D gPosition;
+layout(set = 0, binding = 2) uniform sampler2D gNormal;
+layout(set = 0, binding = 3) uniform sampler2D gAlbedoOpacity;
+layout(set = 0, binding = 4) uniform sampler2D SSAOMap;
+layout(set = 0, binding = 5) uniform sampler2D depthMap;
+layout(set = 0, binding = 6) uniform sampler2D irradianceAtlas;
+layout(set = 0, binding = 7) uniform sampler2D depthAtlas;
+
+#include "shader/DDGI/DDGISample.comp"
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outImage);
+    if (any(greaterThanEqual(coord, size)))
+        return;
+
+    vec2 uv = (vec2(coord) + 0.5) / vec2(size);
+    vec3 indirect = vec3(0.0);
+
+    if (texture(depthMap, uv).r < 0.99994)
+    {
+        vec3 worldPos = texture(gPosition, uv).xyz;
+        vec3 normal = normalize(texture(gNormal, uv).rgb);
+        vec3 albedo = texture(gAlbedoOpacity, uv).rgb;
+        float ao = clamp(texture(SSAOMap, uv).r, 0.0, 1.0);
+
+        vec3 toCamera = ddgi.cameraPos.xyz - worldPos;
+        float camDist = length(toCamera);
+        toCamera = camDist > 1e-4 ? toCamera / camDist : normal;
+
+        // 读的是本帧混合后的图集，新进入窗口的探针已写好，不需要跳过
+        vec3 Lbar = ddgiSampleIrradiance(worldPos, normal, toCamera, false);
+        indirect = albedo * Lbar * ao * ddgi.shadingParams.z;
+    }
+
+    imageStore(outImage, coord, vec4(indirect, 1.0));
+}

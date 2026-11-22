@@ -1,8 +1,8 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
-//#include "VulkanRenderEngine/General/GPUTimer.h"
 #include "SpinLock.h"
+#include <limits>
 
 
 PreCalculatePass::PreCalculatePass()
@@ -25,6 +25,27 @@ void PreCalculatePass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer>
 	std::vector<TransAndMaterialIndex> staticMesh_TransformAndMaterialIndices;
 	std::vector<AABB> staticMesh_AABB;
 	AnlysisIndirectCommands(state, staticMesh_TransformAndMaterialIndices, staticMesh_AABB);
+
+	// 汇总场景包围盒。DDGI 探针体积自动拟合要用，一帧一次、纯 CPU 线性扫，开销可忽略。
+	state.sceneBounds.valid = 0;
+	if (!staticMesh_AABB.empty())
+	{
+		glm::vec3 boundsMin(std::numeric_limits<float>::max());
+		glm::vec3 boundsMax(-std::numeric_limits<float>::max());
+		for (const auto& aabb : staticMesh_AABB)
+		{
+			if (!aabb.isValid())
+				continue;
+			boundsMin = glm::min(boundsMin, aabb.min);
+			boundsMax = glm::max(boundsMax, aabb.max);
+		}
+		if (boundsMin.x <= boundsMax.x)
+		{
+			state.sceneBounds.min = boundsMin;
+			state.sceneBounds.max = boundsMax;
+			state.sceneBounds.valid = 1;
+		}
+	}
 
 	if (!state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices)
 		state.indirectCommands.ssbo_StaticMesh_TransformAndMaterialIndices = std::make_shared<StorageBlock>();

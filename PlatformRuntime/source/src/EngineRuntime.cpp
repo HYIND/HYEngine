@@ -80,6 +80,69 @@ namespace
 				out[static_cast<int>(index)] = component.get<float>();
 		}
 	}
+
+	void ReadOptionUVec3(const nlohmann::json& json, const char* key, glm::uvec3& out)
+	{
+		const auto value = json.find(key);
+		if (value == json.end() || !value->is_array() || value->size() < 3)
+			return;
+		for (nlohmann::json::size_type index = 0; index < 3; ++index)
+		{
+			const auto& component = (*value)[index];
+			if (component.is_number_unsigned() || component.is_number_integer())
+				out[static_cast<int>(index)] = component.get<uint32_t>();
+		}
+	}
+}
+
+// DDGI 参数。旧场景里的 raysPerTexel 已废弃，读取时直接忽略；
+// 旧版存的 origin（体积最小角）会换算成 center。
+void to_json(nlohmann::json& json, const Scene3DRenderOption::DDGIParams& params)
+{
+	json = nlohmann::json{
+		{"autoFitVolume", params.autoFitVolume},
+		{"followCamera", params.followCamera},
+		{"fitPadding", params.fitPadding},
+		{"center", {params.center.x, params.center.y, params.center.z}},
+		{"spacing", {params.spacing.x, params.spacing.y, params.spacing.z}},
+		{"counts", {params.counts.x, params.counts.y, params.counts.z}},
+		{"normalBias", params.normalBias},
+		{"viewBias", params.viewBias},
+		{"maxRayDistance", params.maxRayDistance},
+		{"backfaceThreshold", params.backfaceThreshold},
+		{"skyIntensity", params.skyIntensity},
+		{"energy", params.energy},
+		{"updateSliceCount", params.updateSliceCount},
+		{"hysteresis", params.hysteresis},
+		{"lightChangeThreshold", params.lightChangeThreshold}
+	};
+}
+
+void from_json(const nlohmann::json& json, Scene3DRenderOption::DDGIParams& params)
+{
+	ReadOptionField(json, "autoFitVolume", params.autoFitVolume);
+	ReadOptionField(json, "followCamera", params.followCamera);
+	ReadOptionField(json, "fitPadding", params.fitPadding);
+	ReadOptionVec3(json, "spacing", params.spacing);
+	ReadOptionUVec3(json, "counts", params.counts);
+
+	ReadOptionVec3(json, "center", params.center);
+	if (json.find("center") == json.end() && json.find("origin") != json.end())
+	{
+		glm::vec3 legacyOrigin(0.0f);
+		ReadOptionVec3(json, "origin", legacyOrigin);
+		params.center = legacyOrigin + glm::vec3(params.counts) * params.spacing * 0.5f;
+	}
+
+	ReadOptionField(json, "normalBias", params.normalBias);
+	ReadOptionField(json, "viewBias", params.viewBias);
+	ReadOptionField(json, "maxRayDistance", params.maxRayDistance);
+	ReadOptionField(json, "backfaceThreshold", params.backfaceThreshold);
+	ReadOptionField(json, "skyIntensity", params.skyIntensity);
+	ReadOptionField(json, "energy", params.energy);
+	ReadOptionField(json, "updateSliceCount", params.updateSliceCount);
+	ReadOptionField(json, "hysteresis", params.hysteresis);
+	ReadOptionField(json, "lightChangeThreshold", params.lightChangeThreshold);
 }
 
 void to_json(nlohmann::json& json, const Scene3DRenderOption::ExponentialHeightFogParams& params)
@@ -215,12 +278,12 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::Transparent
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessFlags,
 	bloomOn, gammaOn, lightDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
 	exponentialHeightFogOn, atmosphereOn, volumetricCloudOn, rayTraceReflectOn, rayTraceGIOn,
-	autoExposureOn, calculateOcclusionCulling)
+	ddgiOn, autoExposureOn, calculateOcclusionCulling)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption,
 	rayTraceGeneralParams, rayTraceReflectParams, rayTraceGIParams, ssrTraceParams,
 	ssgiTraceParams, exponentialHeightFogParams, atmosphereParams, volumetricCloudParams,
-	ssaoParams, postProcessParams, transparentParams, flags)
+	ssaoParams, postProcessParams, transparentParams, ddgiParams, flags)
 
 EngineRuntime::EngineRuntime() = default;
 

@@ -1,0 +1,162 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+
+// DDGI 探针光线追踪。launch = (RayGrid, RayGrid, N)：xy 为光线下标，z 为本帧要更新的探针。
+// 每个线程追踪一条光线，结果原样写进 rayData：rgb = 命中点出射辐亮度，a = 命中距离（负值 = 背面命中）。
+// 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹）。
+
+#include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/Helper/lightingHelper.comp"
+#include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
+
+#define DDGI_UBO_BINDING 5
+#include "shader/DDGI/DDGICore.comp"
+#include "shader/DDGI/DDGIUniforms.comp"
+
+layout(set = 0, binding = 7, rgba16f) uniform image2D rayData;
+layout(set = 0, binding = 8) uniform sampler2D irradianceAtlas;    // 上一帧 history
+layout(set = 0, binding = 9) uniform sampler2D depthAtlas;         // 上一帧 history
+layout(set = 0, binding = 15) uniform samplerCube cubeMap;
+
+#include "shader/DDGI/DDGISample.comp"
+
+bool ddgiShadowed(vec3 origin, vec3 dir, float tMax)
+{
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = dir;
+    ray.tMin = 0.001;
+    ray.tMax = tMax;
+    payload.isHit = true;
+    ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
+    return payload.isHit;
+}
+
+float ddgiLightAttenuation(float dist, float radius)
+{
+    float linearRadius = radius * linera_radius_factor;
+    return dist <= linearRadius
+        ? 1.0 / (dist * dist + 1)
+        : mix(1.0 / (linera_radius_factor2 * radius * radius + 1), 0.0,
+              (dist - linearRadius) / (one_minus_linera_radius_factor * radius));
+}
+
+// 直接光的漫反射部分。衰减与锥角公式同 lightingHelper 的 Calc*LightWithoutShadow，只去掉高光项
+vec3 ddgiDiffuseDirectLighting(vec3 fragPos, vec3 N, vec3 diffuseColor)
+{
+    vec3 brdf = diffuseColor / PI;
+    vec3 origin = fragPos + N * 0.001;
+    vec3 result = vec3(0.0);
+
+    for (uint i = 0; i < dirLightMetaData.dirLightCount; i++)
+    {
+        DirLight light = dirLightMetaData.info[i];
+        vec3 L = normalize(-light.direction);
+        float NdotL = max(dot(N, L), 0.0);
+        if (NdotL <= 0.0 || (light.castShadow && ddgiShadowed(origin, L, 10000.0)))
+            continue;
+        result += brdf * light.color * light.luxIntensity * NdotL;
+    }
+
+    for (uint i = 0; i < pointLightMetaData.pointLightCount; i++)
+    {
+        PointLight light = pointLightMetaData.info[i];
+        float dist = length(light.position - fragPos);
+        if (dist >= light.radius)
+            continue;
+        float NdotL = max(dot(N, (light.position - fragPos) / max(dist, 1e-4)), 0.0);
+        if (NdotL <= 0.0)
+            continue;
+        if (light.castShadow && ddgiShadowed(origin, normalize(light.position - origin), distance(origin, light.position)))
+            continue;
+        result += brdf * light.color * light.cdIntensity * ddgiLightAttenuation(dist, light.radius) * NdotL;
+    }
+
+    for (uint i = 0; i < spotLightMetaData.spotLightCount; i++)
+    {
+        SpotLight light = spotLightMetaData.info[i];
+        float dist = length(light.position - fragPos);
+        if (dist >= light.radius)
+            continue;
+
+        float outerCutOff = min(light.cutOff, light.outerCutOff);
+        vec3 lightToFrag = normalize(fragPos - light.position);
+        float theta = dot(lightToFrag, normalize(light.direction));
+        if (theta < outerCutOff)
+            continue;
+        float cone = theta < light.cutOff
+            ? clamp((theta - outerCutOff) / (light.cutOff - outerCutOff), 0.0, 1.0)
+            : 1.0;
+
+        float NdotL = max(dot(N, -lightToFrag), 0.0);
+        if (NdotL <= 0.0)
+            continue;
+        if (light.castShadow && ddgiShadowed(origin, normalize(light.position - origin), distance(origin, light.position)))
+            continue;
+        result += brdf * light.color * light.cdIntensity * ddgiLightAttenuation(dist, light.radius) * NdotL * cone;
+    }
+
+    return result;
+}
+
+void main()
+{
+    uint total = ddgiProbeCount();
+    uint slice = max(ddgi.runParams.x, 1u);
+
+    // 平常帧 launch.z = ceil(total / slice)，只派发本帧相位上的探针；
+    // 平移帧 launch.z = total，新进入窗口的探针不一定在本帧相位上，由下面的判定过滤
+    uint probeIndex = ddgiScrolled() ? gl_LaunchIDEXT.z : gl_LaunchIDEXT.z * slice + ddgiSlicePhase();
+    if (probeIndex >= total)
+        return;
+
+    ivec3 logical = ddgiLogicalCoord(probeIndex);
+    if (!ddgiProbeUpdatedThisFrame(probeIndex, logical))
+        return;
+
+    uint rayIndex = gl_LaunchIDEXT.y * uint(DDGI_RAY_GRID) + gl_LaunchIDEXT.x;
+    vec3 dir = ddgiProbeRayDirection(rayIndex, ddgiRandomRotation(ddgi.runParams.y));
+
+    Ray ray;
+    ray.origin = ddgiProbeWorldPos(logical);
+    ray.direction = dir;
+    ray.tMin = 0.0;
+    ray.tMax = ddgi.volumeSpacing.w;
+
+    vec3 radiance = vec3(0.0);
+    float hitDistance = ray.tMax;
+
+    HitInfo hit;
+    if (traceScene(ray, hit))
+    {
+        if (hit.t < 0.0)
+        {
+            // 背面命中：不着色；距离缩短到 0.2 倍，让可见性把这个方向视为很近就被挡住
+            hitDistance = hit.t * 0.2;
+        }
+        else
+        {
+            hitDistance = hit.t;
+
+            PBRProperties prop;
+            getPBRProperties(hit.materialdata, hit.texCoords, prop);
+            vec3 hitNormal = calculateNormal(hit.materialdata, hit.normal,
+                                             mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
+            vec3 diffuseColor = prop.albedo * (1.0 - prop.metallic);
+
+            radiance = ddgiDiffuseDirectLighting(hit.position, hitNormal, diffuseColor)
+                     + calculateEmission(hit.materialdata, hit.texCoords);
+
+            // 多次反弹：Lbar × 漫反射反照率 = 出射辐亮度。全量重置帧 history 不可读
+            if (ddgi.runParams.z != 0u)
+                radiance += diffuseColor * ddgiSampleIrradiance(hit.position, hitNormal, -dir, true);
+        }
+    }
+    else if (ddgi.runParams.w != 0u && ddgi.shadingParams.w > 0.0)
+    {
+        radiance = textureLod(cubeMap, dir, 0.0).rgb * ddgi.shadingParams.w;
+    }
+
+    ivec2 tile = ddgiTileOrigin(probeIndex, uint(DDGI_RAY_GRID));
+    imageStore(rayData, tile + ivec2(gl_LaunchIDEXT.xy), vec4(radiance, hitDistance));
+}
