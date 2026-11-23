@@ -79,6 +79,7 @@ namespace RenderGraph
 		std::vector<TextureSlot> outputs;
 		std::vector<TextureSlot> temps;
 		std::vector<TextureSlot> persistents;
+		std::vector<TextureSlot> optionPersistents;
 		std::vector<TextureSlot> externals;
 		std::vector<TextureSlot> frameLocals;
 
@@ -89,6 +90,7 @@ namespace RenderGraph
 		std::shared_ptr<Texture2D> GetOutput(uint32_t idx) const { return GetOutputAs<Texture2D>(idx); };
 		std::shared_ptr<Texture2D> GetTemp(uint32_t idx) const { return GetTempAs<Texture2D>(idx); };
 		std::shared_ptr<Texture2D> GetPersitent(uint32_t idx) const { return GetPersitentAs<Texture2D>(idx); };
+		std::shared_ptr<Texture2D> GetOptionalPersitent(uint32_t idx) const { return GetOptionalPersitentAs<Texture2D>(idx); };
 		std::shared_ptr<Texture2D> GetExternal(uint32_t idx) const { return GetExternalAs<Texture2D>(idx); };
 		std::shared_ptr<Texture2D> GetFrameLocal(uint32_t idx) const { return GetFrameLocalAs<Texture2D>(idx); };
 
@@ -105,6 +107,7 @@ namespace RenderGraph
 		template<typename T> std::shared_ptr<T> GetOutputAs(uint32_t idx) const { return GetAt<T>(outputs, idx); }
 		template<typename T> std::shared_ptr<T> GetTempAs(uint32_t idx) const { return GetAt<T>(temps, idx); }
 		template<typename T> std::shared_ptr<T> GetPersitentAs(uint32_t idx) const { return GetAt<T>(persistents, idx); }
+		template<typename T> std::shared_ptr<T> GetOptionalPersitentAs(uint32_t idx) const { return GetAt<T>(optionPersistents, idx); }
 		template<typename T> std::shared_ptr<T> GetExternalAs(uint32_t idx) const { return GetAt<T>(externals, idx); }
 		template<typename T> std::shared_ptr<T> GetFrameLocalAs(uint32_t idx) const { return GetAt<T>(frameLocals, idx); }
 
@@ -284,9 +287,13 @@ namespace RenderGraph
 		void Start();
 		void End();
 
+		// 渲染性能统计：串行执行时，等前面的 Pass 在 GPU 上执行完、轮到自己提交的累计时间（不统计时为空）
+		void SetExecuteWaitRecord(int64_t* waitUs) { _executeWaitUs = waitUs; }
+
 	private:
 		void StartupCmd();
 		void Need();
+		void LockForExecute();
 
 	private:
 		struct PassFrameSubmitCMDData
@@ -304,6 +311,7 @@ namespace RenderGraph
 		std::shared_ptr<VKWrapper::VKTimelineSemaphore> _timeLine;
 		std::shared_ptr<CriticalSectionLock> _mutex;
 		std::vector<TexLayoutData> _texDatas;
+		int64_t* _executeWaitUs = nullptr;
 	};
 }
 

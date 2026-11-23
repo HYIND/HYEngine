@@ -1287,7 +1287,7 @@ void BindingRecord::BindUniformTexture(const std::shared_ptr<VKWrapper::VKComman
 		return;
 
 	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Sample);
 
 	vk::DescriptorImageInfo imageInfo;
 	imageInfo.setImageView(imageView->GetHandle())
@@ -1316,11 +1316,8 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 	std::vector<vk::DescriptorImageInfo> imageInfos;
 	for (auto& desc : entry.descEntrys)
 	{
-		auto imageFormat = desc.image->GetFormat();
-		vk::ImageLayout imageLayout;
-		vk::PipelineStageFlags dstStageMask;
-		ImageLayout::GetImageLayoutAndStageFlag(&imageLayout, &dstStageMask, imageFormat, bindStage, ImageLayout::BindUsage::Read);
-		desc.image->TransitionLayout(cmdBuffer, imageLayout, dstStageMask);
+		// 采样读：光追 / 计算 Pass 绑 bindless 时不再把整组纹理切到 GENERAL、下一个图形 Pass 再切回只读
+		vk::ImageLayout imageLayout = desc.image->TransitionLayoutForSample(cmdBuffer, bindStage);
 
 		vk::DescriptorImageInfo imageInfo;
 		imageInfo.setImageView(desc.imageView->GetHandle())
@@ -1363,7 +1360,7 @@ void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCo
 		return;
 
 	vk::ImageLayout imageLayout;
-	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+	texrure->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Sample);
 
 	vk::DescriptorImageInfo imageInfo;
 	imageInfo.setImageView(imageView->GetHandle())
@@ -1567,7 +1564,7 @@ void BindingRecord::BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKComm
 		return;
 
 	vk::ImageLayout imageLayout;
-	texture->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Read);
+	texture->TransitionLayout(cmdBuffer, &imageLayout, bindStage, ImageLayout::BindUsage::Sample);
 
 	vk::DescriptorImageInfo imageInfo;
 	imageInfo.setImageView(imageView->GetHandle())

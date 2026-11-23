@@ -2,12 +2,15 @@
 #define DDGI_UNIFORMS_COMP
 
 // DDGI 共享 UBO、体积表与槽位映射（C++ 镜像：DDGIDef.h 的 DDGIUniforms / DDGIVolumeGPU）。
+// 槽位按世界格子滚动寻址：体积内局部格子 c 的槽位 = base + 线性下标((originCell + c) mod counts)。
+// 同一个世界格子的探针在体积平移时不换槽位，图集原地更新，不需要 history；
+// 新进入体积的格子占用刚离开的格子的槽位，由 DDGIReset.comp 在探针更新前清零。
 // 包含前需先定义 DDGI_UBO_BINDING、DDGI_VOLUME_BINDING（可选 DDGI_PROBE_INFO_BINDING），并先包含 DDGICore.comp。
 // 注意：注释里不要写完整的 include 指令。
 
 const uint DDGI_VOLUME_CASCADE        = 1u;
 const uint DDGI_VOLUME_AUTO_RELOCATE  = 2u;
-const uint DDGI_VOLUME_HISTORY        = 4u;
+const uint DDGI_VOLUME_HISTORY        = 4u;     // 本帧没有整体重置（只用于调试）
 
 const uint DDGI_PROBE_DISABLED = 1u;
 const uint DDGI_PROBE_LOCKED   = 2u;
@@ -19,7 +22,7 @@ layout(set = 0, binding = DDGI_UBO_BINDING) uniform DDGIParamsUBO
     vec4  shadingParams;    // x normalBias，y viewBias，z energy，w skyIntensity
     vec4  filterParams;     // x 背面权重指数，y 时域混合系数，z 光照突变阈值，w maxRayDistance
     vec4  drawParams;       // x 探针球半径（相对最小间距）
-    uvec4 counts;           // x 体积数，y 已用槽位数，z 本帧更新数，w frameIndex
+    uvec4 counts;           // x 体积数，y 已用槽位上界（槽位可能不连续），z 本帧更新数，w frameIndex
     uvec4 flags;            // x 历史可用，y 天空 cubemap 可用，z 烘焙体积下标，w 漏光调试开关
     uvec4 debug;            // xy 漏光调试像素，z 可视化模式，w 只显示的体积下标
     vec4  cameraPos;
@@ -27,13 +30,13 @@ layout(set = 0, binding = DDGI_UBO_BINDING) uniform DDGIParamsUBO
 
 struct DDGIVolume
 {
-    vec4  origin;       // xyz 最小角，w 边缘过渡宽度（格）
+    vec4  origin;       // xyz 最小角（世界），w 边缘过渡宽度（格）
     vec4  spacing;      // xyz 间距，w 优先级
-    uvec4 counts;       // xyz 每轴探针数，w base
-    ivec4 prevShift;    // xyz 本帧最小角格子 - 上一帧，w 上一帧 base
-    uvec4 prevCounts;   // xyz 上一帧每轴探针数，w 标志
-    uvec4 info;         // x ID，y 轮转周期，z 相位
-    vec4  prevOrigin;   // xyz 上一帧最小角
+    uvec4 counts;       // xyz 每轴探针数，w base（常驻，体积存在期间不变）
+    ivec4 originCell;   // xyz 最小角格子（世界格子坐标），w 保留
+    uvec4 state;        // x 标志（DDGI_VOLUME_*），yzw 保留
+    uvec4 info;         // x ID，y 轮转周期，z 相位，w 级联层
+    vec4  reserved;
 };
 
 layout(std430, set = 0, binding = DDGI_VOLUME_BINDING) readonly buffer DDGIVolumeTable
@@ -57,7 +60,7 @@ uint ddgiUpdateCount()   { return ddgi.counts.z; }
 uint ddgiFrameIndex()    { return ddgi.counts.w; }
 bool ddgiHistoryValid()  { return ddgi.flags.x != 0u; }
 
-uint  ddgiVolumeFlags(uint v)      { return ddgiVolumes[v].prevCounts.w; }
+uint  ddgiVolumeFlags(uint v)      { return ddgiVolumes[v].state.x; }
 uint  ddgiVolumeBase(uint v)       { return ddgiVolumes[v].counts.w; }
 uvec3 ddgiVolumeCounts(uint v)     { return ddgiVolumes[v].counts.xyz; }
 vec3  ddgiVolumeSpacing(uint v)    { return ddgiVolumes[v].spacing.xyz; }
@@ -67,7 +70,29 @@ float ddgiMinSpacing(uint v)       { vec3 s = ddgiVolumes[v].spacing.xyz; return
 // 深度只关心一格之内的遮挡：截断到 1.5 倍格子对角线，提高 16F 精度，也避免未命中光线把均值和方差拉飞
 float ddgiDepthClamp(uint v)       { return min(ddgi.filterParams.w, length(ddgiVolumes[v].spacing.xyz) * 1.5); }
 
-// 槽位 -> 所属体积（体积数很少，线性扫）
+// 非负取模（GLSL 的 % 对负数结果未定义；世界格子坐标可以是负的）
+ivec3 ddgiWrapCell(ivec3 a, ivec3 m)
+{
+    return a - m * ivec3(floor(vec3(a) / vec3(m)));
+}
+
+// 体积 v 的局部格子 c（0..counts-1）-> 槽位
+uint ddgiProbeSlot(uint v, ivec3 c)
+{
+    ivec3 counts = ivec3(ddgiVolumeCounts(v));
+    ivec3 phys = ddgiWrapCell(ddgiVolumes[v].originCell.xyz + c, counts);
+    return ddgiVolumeBase(v) + ddgiLocalIndex(phys, uvec3(counts));
+}
+
+// 槽位 -> 体积 v 的局部格子（ddgiProbeSlot 的逆）
+ivec3 ddgiSlotLocal(uint v, uint slot)
+{
+    ivec3 counts = ivec3(ddgiVolumeCounts(v));
+    ivec3 phys = ddgiLocalCoord(slot - ddgiVolumeBase(v), uvec3(counts));
+    return ddgiWrapCell(phys - ddgiVolumes[v].originCell.xyz, counts);
+}
+
+// 槽位 -> 所属体积（体积数很少，线性扫；槽位区间之间可能有空隙，落在空隙里返回 DDGI_INVALID）
 uint ddgiFindVolume(uint slot)
 {
     for (uint v = 0u; v < ddgiVolumeCount(); ++v)
@@ -110,19 +135,7 @@ bool ddgiProbeCovered(uint v, ivec3 c)
 
 ivec3 ddgiWorldCell(uint v, ivec3 c)
 {
-    return ivec3(round(ddgiVolumes[v].origin.xyz / ddgiVolumes[v].spacing.xyz)) + c;
-}
-
-// 同一探针（同体积、同世界格子）在上一帧的槽位，也就是它在 history 里的位置；没有则 DDGI_INVALID
-uint ddgiPrevSlot(uint v, ivec3 c)
-{
-    if (!ddgiHistoryValid() || (ddgiVolumeFlags(v) & DDGI_VOLUME_HISTORY) == 0u)
-        return DDGI_INVALID;
-    ivec3 p = c + ddgiVolumes[v].prevShift.xyz;
-    ivec3 pc = ivec3(ddgiVolumes[v].prevCounts.xyz);
-    if (any(lessThan(p, ivec3(0))) || any(greaterThanEqual(p, pc)))
-        return DDGI_INVALID;
-    return uint(ddgiVolumes[v].prevShift.w) + ddgiLocalIndex(p, uvec3(pc));
+    return ddgiVolumes[v].originCell.xyz + c;
 }
 
 vec3 ddgiProbeRayDirection(uint rayIndex, mat3 rotation)
@@ -132,7 +145,7 @@ vec3 ddgiProbeRayDirection(uint rayIndex, mat3 rotation)
 
 #ifdef DDGI_PROBE_INFO_BINDING
 // 本帧追踪时使用的探针偏移：锁定 = 手动偏移；开了自动重定位 = 上一帧算出的偏移；否则不偏移。
-// prevData 为该探针在 history 里的 probeData（没有历史时传 vec4(0)）。光追与混合必须得到同一个值
+// prevData 为该探针更新前的 probeData（新格子已被清零）。光追与混合必须得到同一个值
 vec3 ddgiCurrentOffset(uint v, uint slot, vec4 prevData)
 {
     vec3 limit = ddgiVolumes[v].spacing.xyz * 0.45;

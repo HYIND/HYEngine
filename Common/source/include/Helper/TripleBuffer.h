@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <vector>
 #include "Coroutine.h"
 
@@ -59,6 +60,11 @@ public:
 		clearData(_datas[_writeIndex]);
 	}
 
+
+	// 写端提交过、读端还没取走的新数据（只是快照，读端随后调用 acquireReadBuffer 才真正取走）
+	bool hasNewData() const {
+		return _dataReady.load(std::memory_order_acquire);
+	}
 
 	DataType& acquireReadBuffer() {// 获取可读的缓冲区
 		LockGuard guard(_mutex);

@@ -3,6 +3,8 @@
 #include "VulkanRenderEngine/General/RenderState.h"
 
 #include <cstring>
+#include <limits>
+#include <unordered_set>
 
 namespace
 {
@@ -35,16 +37,8 @@ namespace
 		return f;
 	}
 
-	uint32_t LocalIndex(const glm::ivec3& c, const glm::uvec3& counts)
-	{
-		return uint32_t(c.z) * counts.x * counts.y + uint32_t(c.y) * counts.x + uint32_t(c.x);
-	}
-
-	bool InsideCounts(const glm::ivec3& c, const glm::uvec3& counts)
-	{
-		return c.x >= 0 && c.y >= 0 && c.z >= 0
-			&& c.x < int(counts.x) && c.y < int(counts.y) && c.z < int(counts.z);
-	}
+	// Allocation::originCell 的特殊值：本帧新分配，还没有历史
+	const glm::ivec3 kNewAllocation(std::numeric_limits<int>::min());
 
 	std::shared_ptr<StorageBlock> MakeBuffer(const void* data, size_t size)
 	{
@@ -94,8 +88,8 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	AssignPeriods(state, *frame, budget);
 
 	// probeInfo 只装手动编辑与选中：槽位布局、编辑表、选择没变时复用上一份。
-	// 编辑和选择都按世界格子记，所以只有「有编辑或被选中」的体积才需要把位置算进签名；
-	// 级联没有编辑，相机跨格平移不再触发重建（被覆盖与否改为每帧按体积表现算，见 BuildCoveredRanges）
+	// 编辑和选择都按世界格子记，槽位又按世界格子滚动寻址，所以只有「有编辑或被选中」的体积才需要把位置算进签名；
+	// 级联没有编辑，相机跨格平移不触发重建（被覆盖与否每帧按体积表现算，见 BuildCoveredRanges）
 	std::vector<uint64_t> signature;
 	signature.reserve(frame->volumes.size() * 8 + 4);
 	for (const auto& v : frame->volumes)
@@ -117,16 +111,18 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	signature.push_back(frame->debug.selectionVersion);
 	signature.push_back(frame->totalProbes);
 
+	bool probeCacheRebuilt = false;
 	if (!_cache.valid || _cache.signature != signature)
 	{
 		RebuildProbeCache(*frame);
 		_cache.signature = std::move(signature);
 		_cache.valid = true;
+		probeCacheRebuilt = true;
 	}
 	frame->probeInfo = _cache.probeInfo;
 
 	BuildCoveredRanges(*frame);
-	BuildUpdateList(*frame, budget);
+	BuildResetAndUpdateLists(*frame, budget, probeCacheRebuilt);
 
 	// 烘焙请求：渲染器在这一帧把该体积的 probeData 拷到回读缓冲（见 DDGIBlendPass）
 	if (_channel)
@@ -159,9 +155,6 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	UploadGPUData(*frame, state);
 	PublishStats(*frame, budget, dropped);
 
-	_lastVolumes.clear();
-	for (const auto& v : frame->volumes)
-		_lastVolumes[v.id] = LastVolume{ v.originCell, v.counts, v.spacing, v.base };
 	_hasLast = true;
 	_lastFrame = frameIndex;
 
@@ -231,32 +224,121 @@ void DDGISharedState::BuildVolumes(const RenderState& state, DDGIFrame& frame, s
 		return a.id < b.id;
 		});
 
-	// 依次排进探针池；超出容量的按优先级从低到高停用
+	AllocateVolumes(frame, candidates, dropped);
+}
+
+// 常驻槽位分配。图集原地更新，所以体积的 base 不能像以前那样每帧按排序重排：
+//   * 体积还在、counts 与 spacing 没变 → 沿用原来的区间（历史保留）；
+//   * 新体积、或 counts / spacing 变了 → 首次适配（first-fit）找空位，整体重置；
+//   * 不再出现的体积释放区间；
+//   * 放不下时整理一次：全部按优先级从 0 开始重排（搬动的体积整体重置），仍放不下的按优先级从低到高停用。
+// candidates 已按采样优先级排好序，frame.volumes 保持这个顺序（与 base 无关）
+void DDGISharedState::AllocateVolumes(DDGIFrame& frame, std::vector<DDGIResolvedVolume>& candidates, std::vector<DDGIResolvedVolume>& dropped)
+{
 	const uint32_t capacity = DDGIAtlasLayout::Get().capacity;
-	uint32_t base = 0;
-	for (auto& v : candidates)
+
+	// 释放这一帧没出现的体积
 	{
-		if (frame.volumes.size() >= DDGIAtlasLayout::MaxVolumes || uint64_t(base) + v.probeCount > capacity)
+		std::unordered_set<uint32_t> present;
+		for (const auto& v : candidates)
+			present.insert(v.id);
+		for (auto it = _allocations.begin(); it != _allocations.end();)
+		{
+			if (!present.contains(it->first))
+				it = _allocations.erase(it);
+			else
+				++it;
+		}
+	}
+
+	auto sameLayout = [](const Allocation& a, const DDGIResolvedVolume& v) {
+		return a.counts == v.counts && a.spacing == v.spacing;
+		};
+
+	// counts / spacing 变了的体积先释放，再统一分配
+	for (const auto& v : candidates)
+	{
+		auto it = _allocations.find(v.id);
+		if (it != _allocations.end() && !sameLayout(it->second, v))
+			_allocations.erase(it);
+	}
+
+	auto firstFit = [&](uint32_t count, uint32_t& outBase) -> bool {
+		std::vector<std::pair<uint32_t, uint32_t>> used;
+		used.reserve(_allocations.size());
+		for (const auto& [id, a] : _allocations)
+			used.emplace_back(a.base, a.base + a.count);
+		std::sort(used.begin(), used.end());
+		uint32_t cursor = 0;
+		for (const auto& [b, e] : used)
+		{
+			if (uint64_t(cursor) + count <= b)
+				break;
+			cursor = std::max(cursor, e);
+		}
+		if (uint64_t(cursor) + count > capacity)
+			return false;
+		outBase = cursor;
+		return true;
+		};
+
+	const size_t maxVolumes = std::min<size_t>(candidates.size(), DDGIAtlasLayout::MaxVolumes);
+	for (size_t i = maxVolumes; i < candidates.size(); ++i)
+		_allocations.erase(candidates[i].id);		// 超出体积数上限的停用，不占槽位
+	bool fits = true;
+	for (size_t i = 0; i < candidates.size(); ++i)
+	{
+		auto& v = candidates[i];
+		if (i >= maxVolumes)
+			break;
+		if (_allocations.contains(v.id))
+			continue;
+		uint32_t base = 0;
+		if (!firstFit(v.probeCount, base))
+		{
+			fits = false;
+			break;
+		}
+		_allocations[v.id] = Allocation{ base, v.probeCount, v.counts, v.spacing, kNewAllocation };
+	}
+
+	if (!fits)
+	{
+		// 整理：全部按优先级从 0 开始重排，所有体积整体重置
+		_allocations.clear();
+		uint32_t cursor = 0;
+		for (size_t i = 0; i < maxVolumes; ++i)
+		{
+			auto& v = candidates[i];
+			if (uint64_t(cursor) + v.probeCount > capacity)
+				continue;
+			_allocations[v.id] = Allocation{ cursor, v.probeCount, v.counts, v.spacing, kNewAllocation };
+			cursor += v.probeCount;
+		}
+	}
+
+	frame.totalProbes = 0;
+	frame.usedProbes = 0;
+	for (size_t i = 0; i < candidates.size(); ++i)
+	{
+		auto& v = candidates[i];
+		auto it = (i < maxVolumes) ? _allocations.find(v.id) : _allocations.end();
+		if (it == _allocations.end())
 		{
 			dropped.push_back(std::move(v));
 			continue;
 		}
-		v.base = base;
-		base += v.probeCount;
-		frame.volumes.push_back(std::move(v));
-	}
-	frame.totalProbes = base;
 
-	// 历史：同一 ID、spacing 不变、帧号连续时，按世界格子从上一帧的槽位找回
-	for (auto& v : frame.volumes)
-	{
-		auto it = _lastVolumes.find(v.id);
-		if (!frame.historyValid || it == _lastVolumes.end() || it->second.spacing != v.spacing)
-			continue;
-		v.hasHistory = true;
-		v.prevOriginCell = it->second.originCell;
-		v.prevCounts = it->second.counts;
-		v.prevBase = it->second.base;
+		Allocation& a = it->second;
+		v.base = a.base;
+		const bool newlyAllocated = a.originCell == kNewAllocation;
+		v.hasHistory = frame.historyValid && !newlyAllocated;
+		v.prevOriginCell = a.originCell;
+		a.originCell = v.originCell;
+
+		frame.totalProbes = std::max(frame.totalProbes, a.base + a.count);
+		frame.usedProbes += v.probeCount;
+		frame.volumes.push_back(std::move(v));
 	}
 }
 
@@ -295,6 +377,7 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 	const uint32_t total = frame.totalProbes;
 	std::vector<glm::vec4> info(total, glm::vec4(0.0f));
 	_cache.disabled.assign(total, 0);
+	_cache.disabledSlots.clear();
 
 	std::unordered_set<int64_t> selected;
 	if (frame.debug.selectedVolumeId != 0 && frame.debug.selectedCells)
@@ -319,7 +402,7 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 		{
 			const glm::ivec3 local(x, y, z);
 			const glm::ivec3 cell = v.originCell + local;
-			const uint32_t slot = v.base + LocalIndex(local, v.counts);
+			const uint32_t slot = DDGISlotOf(v.base, v.originCell, v.counts, local);
 			const int64_t key = DDGIPackCell(cell);
 
 			uint32_t flags = 0;
@@ -344,7 +427,11 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 				flags |= DDGIAtlasLayout::ProbeFlagSelected;
 
 			info[slot] = glm::vec4(offset, BitsFloat(flags));
-			_cache.disabled[slot] = (flags & DDGIAtlasLayout::ProbeFlagDisabled) ? 1 : 0;
+			if (flags & DDGIAtlasLayout::ProbeFlagDisabled)
+			{
+				_cache.disabled[slot] = 1;
+				_cache.disabledSlots.push_back(slot);
+			}
 		}
 	}
 
@@ -417,56 +504,91 @@ bool DDGISharedState::IsCovered(size_t volumeIndex, const glm::ivec3& local) con
 	return false;
 }
 
-void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
+// 每帧两张表：
+//   重置表：要在探针更新之前清零的槽位（DDGIReset.comp）——整体重置的体积、平移后新进入的格子、
+//           以及编辑表变化时所有被禁用的探针（保证它们 n = 0，不参与采样）；
+//   更新表：本帧追踪 + 混合的探针。先放新出现（刚重置）的格子，再按轮转相位放，直到预算用完。
+// 两者都只遍历要处理的格子：新进入的格子按平移量逐行求出，轮转按「同一行里满足相位的 x 是等差数列」跳着取，
+// 不再逐个扫全部槽位。
+void DDGISharedState::BuildResetAndUpdateLists(DDGIFrame& frame, uint32_t budget, bool probeCacheRebuilt)
 {
 	const uint32_t total = frame.totalProbes;
-	auto& list = _scratchList;
-	auto& slotToRay = _scratchMask;
+	const uint32_t stamp = frame.frameIndex + 1u;
+	if (_updateStamp.size() < total)
+		_updateStamp.resize(total, 0u);
+
+	auto& resetList = _resetList;
+	auto& list = _updateList;
+	resetList.assign(1, 0u);
 	list.clear();
-	slotToRay.assign(total, kInvalid);
 
-	auto add = [&](uint32_t slot) -> bool {
+	bool full = false;
+	auto add = [&](uint32_t slot) {
 		if (list.size() >= budget)
-			return false;
-		if (slotToRay[slot] == kInvalid)
 		{
-			slotToRay[slot] = uint32_t(list.size());
-			list.push_back(slot);
+			full = true;
+			return;
 		}
-		return true;
+		if (_updateStamp[slot] == stamp)
+			return;
+		_updateStamp[slot] = stamp;
+		list.push_back(slot);
 		};
-
-	// 可更新 = 未手动禁用 + 未被更高优先级体积覆盖
-	auto eligible = [&](size_t volumeIndex, uint32_t slot, const glm::ivec3& local) -> bool {
+	auto eligible = [&](size_t vi, uint32_t slot, const glm::ivec3& local) {
 		if (slot < _cache.disabled.size() && _cache.disabled[slot])
 			return false;
-		return !IsCovered(volumeIndex, local);
+		return !IsCovered(vi, local);
 		};
 
-	auto localOf = [](uint32_t i, const glm::uvec3& counts) {
-		return glm::ivec3(i % counts.x, (i / counts.x) % counts.y, i / (counts.x * counts.y));
-		};
-
-	// 1) 新出现的探针优先：没有历史的体积整体，或者平移 / 扩大后新进入的格子
-	bool full = false;
-	for (size_t vi = 0; vi < frame.volumes.size() && !full; ++vi)
+	// 1) 重置 + 新格子优先更新
+	for (size_t vi = 0; vi < frame.volumes.size(); ++vi)
 	{
 		const auto& v = frame.volumes[vi];
-		if (v.hasHistory && v.originCell == v.prevOriginCell && v.counts == v.prevCounts)
-			continue;
+		const glm::ivec3 counts(v.counts);
+
+		auto visit = [&](const glm::ivec3& local) {
+			const uint32_t slot = DDGISlotOf(v.base, v.originCell, v.counts, local);
+			resetList.push_back(slot);
+			if (!full && eligible(vi, slot, local))
+				add(slot);
+			};
 
 		const glm::ivec3 shift = v.originCell - v.prevOriginCell;
-		for (uint32_t i = 0; i < v.probeCount && !full; ++i)
+		const bool whole = !v.hasHistory || glm::any(glm::greaterThanEqual(glm::abs(shift), counts));
+		if (whole)
 		{
-			const uint32_t slot = v.base + i;
-			const glm::ivec3 local = localOf(i, v.counts);
-			const bool fresh = !v.hasHistory || !InsideCounts(local + shift, v.prevCounts);
-			if (!fresh || !eligible(vi, slot, local))
-				continue;
-			if (!add(slot))
-				full = true;
+			for (int z = 0; z < counts.z; ++z)
+			for (int y = 0; y < counts.y; ++y)
+			for (int x = 0; x < counts.x; ++x)
+				visit(glm::ivec3(x, y, z));
+			continue;
+		}
+		if (shift == glm::ivec3(0))
+			continue;
+
+		// 局部格子 c 在上一帧的局部坐标是 c + shift；落在上一帧范围外的就是新进入的
+		auto entering = [&](int axis, int c) { const int p = c + shift[axis]; return p < 0 || p >= counts[axis]; };
+		const int xFirst = shift.x < 0 ? 0 : counts.x - shift.x;	// 一行里新进入的 x 是一段：[xFirst, xLast)
+		const int xLast = shift.x < 0 ? -shift.x : counts.x;
+		for (int z = 0; z < counts.z; ++z)
+		for (int y = 0; y < counts.y; ++y)
+		{
+			if (entering(1, y) || entering(2, z))
+			{
+				for (int x = 0; x < counts.x; ++x)
+					visit(glm::ivec3(x, y, z));
+			}
+			else if (shift.x != 0)
+			{
+				for (int x = xFirst; x < xLast; ++x)
+					visit(glm::ivec3(x, y, z));
+			}
 		}
 	}
+
+	// 编辑表变化：被禁用的探针统一清零（之后它们不再更新，一直保持 n = 0）
+	if (probeCacheRebuilt)
+		resetList.insert(resetList.end(), _cache.disabledSlots.begin(), _cache.disabledSlots.end());
 
 	// 2) 轮转：重要度高的体积先排；相位键 = 世界格子 x + 3y + 7z
 	if (!full)
@@ -480,30 +602,53 @@ void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
 
 		for (size_t idx : order)
 		{
-			const auto& v = frame.volumes[idx];
-			for (uint32_t i = 0; i < v.probeCount; ++i)
-			{
-				const uint32_t slot = v.base + i;
-				const glm::ivec3 local = localOf(i, v.counts);
-				const glm::ivec3 cell = v.originCell + local;
-				if (PhaseOf(cell.x + 3 * cell.y + 7 * cell.z, v.period) != v.phase)
-					continue;
-				if (!eligible(idx, slot, local))
-					continue;
-				if (!add(slot))
-				{
-					full = true;
-					break;
-				}
-			}
 			if (full)
 				break;
+			const auto& v = frame.volumes[idx];
+			const int period = int(std::max(1u, v.period));
+			const glm::ivec3 counts(v.counts);
+			for (int z = 0; z < counts.z && !full; ++z)
+			for (int y = 0; y < counts.y && !full; ++y)
+			{
+				// (oc.x + x) + 3·wy + 7·wz ≡ phase (mod period) → x ≡ phase - oc.x - 3·wy - 7·wz
+				const int wy = v.originCell.y + y;
+				const int wz = v.originCell.z + z;
+				const int x0 = int(PhaseOf(int32_t(v.phase) - v.originCell.x - 3 * wy - 7 * wz, uint32_t(period)));
+				for (int x = x0; x < counts.x; x += period)
+				{
+					const glm::ivec3 local(x, y, z);
+					const uint32_t slot = DDGISlotOf(v.base, v.originCell, v.counts, local);
+					if (!eligible(idx, slot, local))
+						continue;
+					add(slot);
+					if (full)
+						break;
+				}
+			}
 		}
 	}
 
+	resetList[0] = uint32_t(resetList.size() - 1);
+	frame.resetCount = resetList[0];
 	frame.updateCount = uint32_t(list.size());
-	frame.updateList = MakeBuffer(list.data(), list.size() * sizeof(uint32_t));
-	frame.slotToRay = MakeBuffer(slotToRay.data(), slotToRay.size() * sizeof(uint32_t));
+	frame.updateList = Upload(_ringUpdateList, list.data(), list.size() * sizeof(uint32_t));
+	frame.resetList = Upload(_ringResetList, resetList.data(), resetList.size() * sizeof(uint32_t));
+}
+
+std::shared_ptr<StorageBlock> DDGISharedState::Upload(UploadRing& ring, const void* data, size_t size)
+{
+	auto& block = ring.blocks[ring.next];
+	ring.next = (ring.next + 1) % uint32_t(ring.blocks.size());
+
+	const uint64_t need = std::max<uint64_t>(size, 16);
+	if (!block || block->GetSize() < need)
+	{
+		// 按 1.5 倍预留，避免每次涨一点就重建
+		block = DDGIMakeHostBlock<StorageBlock>(nullptr, size_t(need + need / 2));
+	}
+	if (data && size > 0)
+		block->WriteData(data, size);
+	return block;
 }
 
 void DDGISharedState::UploadGPUData(DDGIFrame& frame, const RenderState& state)
@@ -526,16 +671,16 @@ void DDGISharedState::UploadGPUData(DDGIFrame& frame, const RenderState& state)
 		g.origin = glm::vec4(v.Origin(), v.fadeCells);
 		g.spacing = glm::vec4(v.spacing, v.priority);
 		g.counts = glm::uvec4(v.counts, v.base);
-		g.prevShift = glm::ivec4(v.hasHistory ? v.originCell - v.prevOriginCell : glm::ivec3(0), v.hasHistory ? int(v.prevBase) : -1);
-		g.prevCounts = glm::uvec4(v.hasHistory ? v.prevCounts : glm::uvec3(0u), flags);
+		g.originCell = glm::ivec4(v.originCell, 0);
+		g.state = glm::uvec4(flags, 0u, 0u, 0u);
 		g.info = glm::uvec4(v.id, v.period, v.phase, v.level);
-		g.prevOrigin = glm::vec4(v.hasHistory ? glm::vec3(v.prevOriginCell) * v.spacing : glm::vec3(0.0f), 0.0f);
+		g.reserved = glm::vec4(0.0f);
 		table.push_back(g);
 
 		if (debug.onlySelectedVolume && v.id == debug.selectedVolumeId)
 			drawVolumeIndex = i;
 	}
-	frame.volumeTable = MakeBuffer(table.data(), table.size() * sizeof(DDGIVolumeGPU));
+	frame.volumeTable = Upload(_ringVolumeTable, table.data(), table.size() * sizeof(DDGIVolumeGPU));
 
 	const uint32_t width = std::max(1u, state.framebuffer.width);
 	const uint32_t height = std::max(1u, state.framebuffer.height);
@@ -571,7 +716,7 @@ void DDGISharedState::PublishStats(const DDGIFrame& frame, uint32_t budget, cons
 	stats.frameIndex = frame.frameIndex;
 	stats.capacity = DDGIAtlasLayout::Get().capacity;
 	stats.budget = budget;
-	stats.usedProbes = frame.totalProbes;
+	stats.usedProbes = frame.usedProbes;
 	stats.updatedProbes = frame.updateCount;
 
 	auto toInfo = [](const DDGIResolvedVolume& v, bool isDropped) {

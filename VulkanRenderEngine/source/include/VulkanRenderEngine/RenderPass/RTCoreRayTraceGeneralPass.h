@@ -36,7 +36,9 @@ public:
 
 	bool FindBlasData(std::shared_ptr<StaticMesh>& mesh, BlasHandleData& data);
 
-	bool UpdateBlasData(
+	// 只录制到 cmd，不提交；返回录进去的 BLAS 构建数（0 = 什么都没录）
+	uint32_t UpdateBlasData(
+		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		std::vector<std::shared_ptr<StaticMesh>>& meshs,
 		std::shared_ptr<VertexBufferBlock>& vertexBlock,
 		std::shared_ptr<IndexBufferBlock>& indexBlock,
@@ -45,7 +47,9 @@ public:
 	);
 
 	// 建立/更新蒙皮网格的 BLAS，outAddresses 与 requests 一一对应（失败项为 0）
+	// 只录制到 cmd，不提交；返回是否录了命令（录了就必须提交，TLAS 也要重建）
 	bool UpdateSkinnedBlas(
+		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 		std::vector<SkinnedBlasRequest>& requests,
 		std::vector<vk::DeviceAddress>& outAddresses,
 		std::shared_ptr<IndexBufferBlock>& indexBlock,
@@ -74,6 +78,7 @@ private:
 	std::unordered_map<StaticMesh*, BlasHandleData> _blasHandles;
 	vk::DeviceAddress _lastVertexAddress = 0;
 	vk::DeviceAddress _lastIndexAddress = 0;
+	vk::Buffer _lastBlasStorageBuffer = VK_NULL_HANDLE;	// BLAS 存储块上次构建时的 VkBuffer；变了说明扩容换了 buffer，已有 BLAS 全部失效
 
 	SegmentBufferManager<StorageSegmentBuffer, std::string> _skinnedBlasBufferManager;	//蒙皮网格的blas数据缓冲区
 	std::unordered_map<std::string, SkinnedBlasData> _skinnedBlasHandles;
@@ -123,5 +128,12 @@ private:
 
 private:
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> _buffers;
-	std::shared_ptr<StorageBlock> _scratchBlock;	//暂存临时缓冲区
+	std::shared_ptr<StorageBlock> _scratchBlock;			// TLAS 构建用的 scratch
+	std::shared_ptr<StorageBlock> _blasScratchBlock;		// 静态 BLAS 构建用的 scratch
+	std::shared_ptr<StorageBlock> _skinnedScratchBlock;		// 蒙皮 BLAS 构建 / refit 用的 scratch
+	// 三者录在同一个命令缓冲里，必须各用各的，不能共用一块
+
+	// 上一次成功构建 TLAS 时的输入（逐字节），本帧完全相同且没有 BLAS 变化就跳过整帧
+	std::vector<uint8_t> _lastTlasInstanceBytes;
+	std::vector<uint8_t> _lastInstanceInfoBytes;
 };

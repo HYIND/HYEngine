@@ -3,7 +3,8 @@
 
 // DDGI 探针光线追踪。launch = (RayGrid, RayGrid, 本帧更新数)：xy 为光线下标，z 为更新列表里的第几个探针。
 // 每个线程追踪一条光线，结果写进 rayData 的第 z 个 tile：rgb = 命中点出射辐亮度，a = 命中距离（负值 = 背面命中）。
-// 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹，按上一帧布局读 history，只采一个体积）。
+// 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹，只采一个体积）。
+// 图集原地更新：这里在混合之前执行，读到的正好是上一帧的结果；新进入体积的格子已被 DDGIReset.comp 清零（n = 0，采样时跳过）。
 // 探针位置 = 格子中心 + 偏移（手动锁定 / 上一帧自动重定位的结果）。
 
 #include "shader/dataDef/MaterialTextureDef.comp"
@@ -17,16 +18,15 @@
 #include "shader/DDGI/DDGIUniforms.comp"
 
 layout(set = 0, binding = 7, rgba16f) uniform image2D rayData;
-layout(set = 0, binding = 8) uniform sampler2D ddgiIrradianceTex;    // history（上一帧布局）
-layout(set = 0, binding = 9) uniform sampler2D ddgiDepthTex;         // history
-layout(set = 0, binding = 10) uniform sampler2D ddgiProbeDataTex;    // history
+layout(set = 0, binding = 8) uniform sampler2D ddgiIrradianceTex;    // 图集（上一帧混合的结果）
+layout(set = 0, binding = 9) uniform sampler2D ddgiDepthTex;
+layout(set = 0, binding = 10) uniform sampler2D ddgiProbeDataTex;
 layout(std430, set = 0, binding = 12) readonly buffer DDGIUpdateList
 {
     uint ddgiUpdateList[];
 };
 layout(set = 0, binding = 15) uniform samplerCube cubeMap;
 
-#define DDGI_SAMPLE_PREV
 #define DDGI_SAMPLE_SINGLE
 #include "shader/DDGI/DDGISample.comp"
 
@@ -120,9 +120,8 @@ void main()
     if (v == DDGI_INVALID)
         return;
 
-    ivec3 local = ddgiLocalCoord(slot - ddgiVolumeBase(v), ddgiVolumeCounts(v));
-    uint prevSlot = ddgiPrevSlot(v, local);
-    vec4 prevData = prevSlot != DDGI_INVALID ? texelFetch(ddgiProbeDataTex, ddgiTileOrigin(prevSlot, 1u), 0) : vec4(0.0);
+    ivec3 local = ddgiSlotLocal(v, slot);
+    vec4 prevData = texelFetch(ddgiProbeDataTex, ddgiTileOrigin(slot, 1u), 0);
 
     uint rayIndex = gl_LaunchIDEXT.y * uint(DDGI_RAY_GRID) + gl_LaunchIDEXT.x;
     vec3 dir = ddgiProbeRayDirection(rayIndex, ddgiRandomRotation(ddgiFrameIndex()));
@@ -158,7 +157,7 @@ void main()
             radiance = ddgiDiffuseDirectLighting(hit.position, hitNormal, diffuseColor)
                      + calculateEmission(hit.materialdata, hit.texCoords);
 
-            // 多次反弹：Lbar × 漫反射反照率 = 出射辐亮度。帧号不连续时 history 不可读
+            // 多次反弹：Lbar × 漫反射反照率 = 出射辐亮度。帧号不连续时整池已重置，不读
             if (ddgiHistoryValid())
                 radiance += diffuseColor * ddgiSampleIrradiance(hit.position, hitNormal, -dir);
         }

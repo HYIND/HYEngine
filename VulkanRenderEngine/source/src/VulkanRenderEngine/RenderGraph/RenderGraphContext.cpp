@@ -1,5 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderGraph/RenderGraphContext.h"
+#include "VulkanRenderEngine/General/RenderProfiler.h"
 
 using namespace RenderGraph;
 
@@ -63,11 +64,25 @@ void PassFrameCmdContext::SubmitToQueue(const std::shared_ptr<VKWrapper::VKComma
 		_submitcmds.push(PassFrameSubmitCMDData{ .cmd = cmd, .syncSeamphore = syncSeamphore ,.signalFence = signalFence });
 }
 
+// 各 Pass 的命令按各自录制时预设的纹理布局执行，同一张图里只能一组一组串行执行：
+// 拿到锁 = 前面的组已经在 GPU 上执行完，轮到自己
+void PassFrameCmdContext::LockForExecute()
+{
+	if (_executeWaitUs)
+	{
+		const int64_t start = RenderProfileNowUs();
+		_mutex->lock();
+		*_executeWaitUs += RenderProfileNowUs() - start;
+	}
+	else
+		_mutex->lock();
+}
+
 void PassFrameCmdContext::SubmitNow(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
 {
 	if (!_immediatelySubmit)
 	{
-		_mutex->lock();
+		LockForExecute();
 		_immediatelySubmit = true;
 	}
 	_submitcmds.push(PassFrameSubmitCMDData{ .cmd = cmd, .syncSeamphore = syncSeamphore ,.signalFence = signalFence });
@@ -78,7 +93,7 @@ void PassFrameCmdContext::SubmitNowAndWait(const std::shared_ptr<VKWrapper::VKCo
 {
 	if (!_immediatelySubmit)
 	{
-		_mutex->lock();
+		LockForExecute();
 		_immediatelySubmit = true;
 	}
 	_submitcmds.push(PassFrameSubmitCMDData{ .cmd = cmd, .syncSeamphore = syncSeamphore });
@@ -110,10 +125,11 @@ void RenderGraph::PassFrameCmdContext::End()
 	{
 		if (!_submitcmds.empty())
 		{
-			LockGuard gaurd(*_mutex);
+			LockForExecute();
 			StartupCmd();
 			if (_timeLine && cmdcount > 0)
 				_timeLine->Wait(cmdcount);
+			_mutex->unlock();
 		}
 	}
 	else

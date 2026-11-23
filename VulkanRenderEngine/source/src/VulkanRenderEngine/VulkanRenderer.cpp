@@ -884,6 +884,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
 
 	// DDGI 资源按探针池容量一次性分配（布局见 DDGIDef.h），rayData 只按每帧更新预算分配。
+	// 四张图集都是持久资源：按世界格子滚动寻址、原地更新（探针更新读上一帧结果 → 混合写本帧结果 → 采样方读），没有 history。
 	// 辐照度 / 深度图集必须 Linear 采样，Nearest 会让探针在方向上阶跃
 	const auto ddgiRayDataSize = DDGIAtlasLayout::RayDataSize();
 	const auto ddgiIrradianceSize = DDGIAtlasLayout::IrradianceAtlasSize();
@@ -895,11 +896,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 	// 每探针 1 texel：probeData = (偏移, 已更新次数 n + 背面比例)，probeStats = 突变检测统计量（只有 Blend 读写）
 	auto ddgiProbeData = resbuilder.CreateTexture(ddgiProbeTexelSize.x, ddgiProbeTexelSize.y, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiProbeData");
 	auto ddgiProbeStats = resbuilder.CreateTexture(ddgiProbeTexelSize.x, ddgiProbeTexelSize.y, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiProbeStats");
-	// 持久 history（上一帧布局）：混合 Pass 回拷写入，探针更新 Pass 读取（多次反弹、探针偏移）
-	auto ddgiIrradianceHistory = resbuilder.CreateTexture(ddgiIrradianceAtlas, "ddgiIrradianceHistory");
-	auto ddgiDepthHistory = resbuilder.CreateTexture(ddgiDepthAtlas, "ddgiDepthHistory");
-	auto ddgiProbeDataHistory = resbuilder.CreateTexture(ddgiProbeData, "ddgiProbeDataHistory");
-	auto ddgiProbeStatsHistory = resbuilder.CreateTexture(ddgiProbeStats, "ddgiProbeStatsHistory");
 	auto ddgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "ddgi_Output");
 	// 间接光分支合成结果（全分辨率，已乘材质）：
 	//   漫反射 = 纯漫反射方案（DDGI）；镜面 = 纯镜面方案（RTR + SSR）；路径追踪 = 漫反射 + 镜面都有的方案（RTGI + SSGI）
@@ -1056,8 +1052,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp3"), computeWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp4"), computeWriteLayout }
 		)
-		// 命中点的漫反射间接光采样 DDGI（可选：DDGI 本帧没执行时不分配）
-		.InputOption(
+		// 命中点的漫反射间接光采样 DDGI（可选持久资源：DDGI 从没执行过时为空，不会因此分配）
+		.PersistentOption(
 			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
 			ResourceData{ ddgiDepthAtlas, computeReadLayout },
 			ResourceData{ ddgiProbeData, computeReadLayout }
@@ -1101,8 +1097,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
 			ResourceData{ hzbMinDepthMap, computeReadLayout }
 		)
-		// 命中点的漫反射间接光采样 DDGI（可选：DDGI 本帧没执行时不分配）
-		.InputOption(
+		// 命中点的漫反射间接光采样 DDGI（可选持久资源：DDGI 从没执行过时为空，不会因此分配）
+		.PersistentOption(
 			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
 			ResourceData{ ddgiDepthAtlas, computeReadLayout },
 			ResourceData{ ddgiProbeData, computeReadLayout }
@@ -1148,29 +1144,26 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
+	// 先清零本帧的重置列表（probeData / probeStats），再光追；多次反弹读的是图集里上一帧的结果
 	ddgiUpdateNode->SetRenderPass(std::move(ddgiUpdatePass))
 		.Output(ResourceData{ ddgiRayData, computeWriteLayout })
 		.Persistent(
-			ResourceData{ ddgiIrradianceHistory, computeReadLayout },
-			ResourceData{ ddgiDepthHistory, computeReadLayout },
-			ResourceData{ ddgiProbeDataHistory, computeReadLayout }
+			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
+			ResourceData{ ddgiDepthAtlas, computeReadLayout },
+			ResourceData{ ddgiProbeData, computeWriteLayout },
+			ResourceData{ ddgiProbeStats, computeWriteLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, rayTraceGeneralNode)
 		.Before(ddgiBlendNode);
 
+	// 原地更新：只读写更新列表里的探针
 	ddgiBlendNode->SetRenderPass(std::move(ddgiBlendPass))
 		.Input(ResourceData{ ddgiRayData, computeReadLayout })
-		.Output(
+		.Persistent(
 			ResourceData{ ddgiIrradianceAtlas, computeWriteLayout },
 			ResourceData{ ddgiDepthAtlas, computeWriteLayout },
 			ResourceData{ ddgiProbeData, computeWriteLayout },
 			ResourceData{ ddgiProbeStats, computeWriteLayout }
-		)
-		.Persistent(
-			ResourceData{ ddgiIrradianceHistory, computeReadLayout },
-			ResourceData{ ddgiDepthHistory, computeReadLayout },
-			ResourceData{ ddgiProbeDataHistory, computeReadLayout },
-			ResourceData{ ddgiProbeStatsHistory, computeReadLayout }
 		)
 		.After(ddgiUpdateNode)
 		.Before(ddgiApplyNode);
@@ -1181,10 +1174,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gNormal, computeReadLayout },
 			ResourceData{ gAlbedoOpacity, computeReadLayout },
 			ResourceData{ ssaoOutPut, computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }
+		)
+		.Persistent(
 			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
 			ResourceData{ ddgiDepthAtlas, computeReadLayout },
-			ResourceData{ ddgiProbeData, computeReadLayout },
-			ResourceData{ gMetallicRoughness, computeReadLayout }
+			ResourceData{ ddgiProbeData, computeReadLayout }
 		)
 		.Output(ResourceData{ ddgi_Output, computeWriteLayout })
 		.After(geometryNode, ssaoNode, ddgiBlendNode)
@@ -1242,7 +1237,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
 	ddgiProbeDrawNode->SetRenderPass(std::move(ddgiProbeDrawPass))
-		.Input(
+		.Persistent(
 			ResourceData{ ddgiIrradianceAtlas, graphicsReadLayout },
 			ResourceData{ ddgiDepthAtlas, graphicsReadLayout },
 			ResourceData{ ddgiProbeData, graphicsReadLayout }
@@ -1318,18 +1313,25 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 	if (!state || !sync)
 		return;
 
+	// 渲染性能统计：各段先等上一帧放行（单独记在 WaitPrevFrame），计时从 guard 之后开始
+	RenderFrameProfile* profile = state->profile.get();
+	sync->waitAccumUs = profile ? &profile->steps[size_t(RenderProfileStep::WaitPrevFrame)] : nullptr;
+
 	{
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::ProcessRetire);
 		VKCONTEXT->ProcessRetireAndPushFrameIndex();
 	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::SetupRenderState);
 		SetupRenderState(data);
 	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::SetupIndirectDrawData);
 		SetupIndirectDrawData(state);
 	}
 
@@ -1337,23 +1339,27 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 
 		{
-			auto guard = sync->MakeProgressGuard();
+			RenderGraph::FlightSyncScope syncScope(*sync);
+			RenderProfileScope scope(profile, RenderProfileStep::PreCalculate);
 			_preCalculatePass->Execute(cmd, *state);
 		}
 
 		{
-			auto guard = sync->MakeProgressGuard();
+			RenderGraph::FlightSyncScope syncScope(*sync);
+			RenderProfileScope scope(profile, RenderProfileStep::Skinned);
 			_skinnedPass->Execute(cmd, *state);
 		}
 
 		{
-			auto guard = sync->MakeProgressGuard();
+			RenderGraph::FlightSyncScope syncScope(*sync);
+			RenderProfileScope scope(profile, RenderProfileStep::PreSubmit);
 			cmd->SubmitNowAndWait();
 		}
 	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::ClearTargets);
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 
 		auto clearColorTexture = [&](const std::shared_ptr<Texture2D>& texture, const vk::ClearColorValue& clearColor) {
@@ -1375,9 +1381,6 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 			};
 
 		clearColorTexture(data->renderTarget->sceneColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f });
-		// 第一人称层在 _combinPass 里按 alpha 叠在场景上面，但 FirstPersonPass 目前没有任何地方写它：
-		// 不清的话叠上去的是未初始化内存，而且每个渲染目标各有一份、按帧轮换（_maxFramesInFlight * 2 份），
-		// 画面会在几份内容之间来回闪。清成透明（alpha = 0）后合成结果就是场景本身。
 		clearColorTexture(data->renderTarget->firstPersonColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f });
 		cmd->SubmitNowAndWait();
 	}
@@ -1386,24 +1389,38 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 		std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
 			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer }
 		};
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::SceneGraph);
 		_sceneRenderGraph->Execute(state, sync, externalResources);
 	}
 
 	auto& renderTarget = data->renderTarget;
-	_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+	{
+		RenderProfileScope scope(profile, RenderProfileStep::Combin);
+		_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+	}
 	auto& option = state->option;
-	if (option.flags.bloomOn) _globalBloomPass->Draw(renderTarget->combinBrightColorBuffer, renderTarget->bloomMipBuffers);
-	_globalPostProcessPass->Draw(
-		renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
-		option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
-		pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
-	);
+	if (option.flags.bloomOn)
+	{
+		RenderProfileScope scope(profile, RenderProfileStep::Bloom);
+		_globalBloomPass->Draw(renderTarget->combinBrightColorBuffer, renderTarget->bloomMipBuffers);
+	}
+	{
+		RenderProfileScope scope(profile, RenderProfileStep::PostProcess);
+		_globalPostProcessPass->Draw(
+			renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
+			option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
+			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
+		);
+	}
 
 	{
-		auto guard = sync->MakeProgressGuard();
+		RenderGraph::FlightSyncScope syncScope(*sync);
+		RenderProfileScope scope(profile, RenderProfileStep::Finish);
 		FinishRendering(state);
 	}
+
+	sync->waitAccumUs = nullptr;
 
 }
 
@@ -1697,12 +1714,22 @@ void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
 	{
 		LockGuard guard(_candidateFrameStatesMutex);
 		if (_candidateFrameStates.size() >= _maxFramesInFlight)
+		{
+			if (_renderProfiler->IsEnabled())
+				_renderProfiler->AddDropped();
 			_candidateFrameStates.pop();
+		}
 		_candidateFrameStates.push(state);
 	}
 
 	LockGuard guard(_executeMutex);
 	_executeCV.NotifyOne();
+}
+
+bool VulkanRenderer::HasPendingFrameState()
+{
+	LockGuard guard(_candidateFrameStatesMutex);
+	return !_candidateFrameStates.empty();
 }
 
 void VulkanRenderer::WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
@@ -1800,6 +1827,21 @@ void VulkanRenderer::ExecuteLoop()
 				data->state = std::move(_candidateFrameStates.front());
 				data->state->renderRecord.frameIndex = _record.frameIndex++;
 				data->state->renderRecord.frameStartMicroTimeStamp = Tool::GetTimestampMircoseconds();
+
+				// 渲染性能统计：开着才给这一帧挂 profile（Renderer3D 那边开着时已经挂上并记了帧数据解析）
+				if (_renderProfiler->IsEnabled())
+				{
+					auto& profile = data->state->profile;
+					if (!profile)
+						profile = std::make_shared<RenderFrameProfile>();
+					const int64_t now = RenderProfileNowUs();
+					if (profile->pushTimeUs > 0)
+						profile->Add(RenderProfileStep::Queue, now - profile->pushTimeUs);
+					profile->startTimeUs = now;
+					profile->frameIndex = data->state->renderRecord.frameIndex;
+				}
+				else
+					data->state->profile.reset();
 				data->state->option = _option;
 				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
 
@@ -1826,8 +1868,17 @@ void VulkanRenderer::ExecuteLoop()
 		{
 			auto data = std::move(_runningFrames.front());
 			_runningFrames.pop();
+			RenderFrameProfile* profile = (data->state && data->state->profile) ? data->state->profile.get() : nullptr;
 			if (_mode == RenderMode::Present)
+			{
+				RenderProfileScope scope(profile, RenderProfileStep::Present);
 				PresentImage(data);
+			}
+			if (profile)
+			{
+				profile->endTimeUs = RenderProfileNowUs();
+				_renderProfiler->Publish(std::move(data->state->profile));
+			}
 
 			{
 				LockGuard guard(_doneFramesMutex);

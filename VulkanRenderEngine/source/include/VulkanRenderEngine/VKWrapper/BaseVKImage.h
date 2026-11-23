@@ -65,6 +65,17 @@ namespace VKWrapper {
 			bool force = false
 		);
 
+		// 采样读（combined image sampler）用的布局切换，返回描述符里要写的布局。
+		// 目标布局取 GetImageLayoutAndStageFlag(..., BindUsage::Sample)；Compute / RayTracing 下如果范围内各级 mip
+		// 已经全部是 GENERAL 就保持 GENERAL（GENERAL 也可以采样），这样 Graph 里预设为 computeReadLayout(GENERAL)
+		// 的输入不会在 Pass 里被切到只读、下一个 Pass 又切回来。
+		vk::ImageLayout TransitionLayoutForSample(
+			std::shared_ptr<VKCommandBuffer> cmd,
+			ImageLayout::BindStage stage,
+			uint32_t baseMipLevel = 0,
+			uint32_t levelCount = vk::RemainingMipLevels
+		);
+
 		bool UploadData(
 			const void* data,
 			uint32_t mipLevel = 0,

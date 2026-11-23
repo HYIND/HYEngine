@@ -16,7 +16,8 @@ DDGIProbeUpdatePass::DDGIProbeUpdatePass(
 	const std::string& closestHitPath,
 	const std::string& anyHitPath,
 	const std::string& intersectionPath,
-	const std::string& callablePath
+	const std::string& callablePath,
+	const std::string& resetPath
 )
 {
 	RayTracingPipelineConfig config;
@@ -39,15 +40,25 @@ DDGIProbeUpdatePass::DDGIProbeUpdatePass(
 		.AddUnifromBuffer(5)						// DDGIUniforms
 		.AddStorageBuffer(6)						// 体积表
 		.AddStorageImage(7)							// rayData
-		.AddUnifromTexture(8)						// 辐照度 history
-		.AddUnifromTexture(9)						// 深度 history
-		.AddUnifromTexture(10)						// probeData history
+		.AddUnifromTexture(8)						// 辐照度图集
+		.AddUnifromTexture(9)						// 深度图集
+		.AddUnifromTexture(10)						// probeData
 		.AddStorageBuffer(12)						// 更新列表
 		.AddStorageBuffer(13)						// probeInfo
 		.AddUnifromTexture(15);						// 天空 cubemap
 
 	if (config.Validate())
 		_rayTraceShader.Create(config);
+
+	ComputePipelineConfig resetConfig;
+	resetConfig.computePath = resetPath;
+	DDGIAddLayoutDefines(resetConfig);
+	resetConfig
+		.AddStorageImage(0)		// probeData
+		.AddStorageImage(1)		// probeStats
+		.AddStorageBuffer(2);	// 重置列表（[0] = 数量）
+	if (resetConfig.Validate())
+		_resetShader.Create(resetConfig);
 }
 
 DDGIProbeUpdatePass::~DDGIProbeUpdatePass()
@@ -68,21 +79,43 @@ void DDGIProbeUpdatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 		return;
 	const DDGIFrame& frame = **framePtr;
 	registry.Store(kFrameKey, DDGIFramePtr{});		// 一次性消费，防止同一帧重复派发
-	if (!frame.enabled || frame.updateCount == 0)
+	if (!frame.enabled || (frame.updateCount == 0 && frame.resetCount == 0))
 		return;
 
 	auto rayData = ctx.GetOutput(0);
-	auto irradianceHistory = ctx.GetPersitent(0);
-	auto depthHistory = ctx.GetPersitent(1);
-	auto probeDataHistory = ctx.GetPersitent(2);
+	auto irradianceAtlas = ctx.GetPersitent(0);
+	auto depthAtlas = ctx.GetPersitent(1);
+	auto probeData = ctx.GetPersitent(2);
+	auto probeStats = ctx.GetPersitent(3);
 
 	if (!rayData || rayData->IsEmpty()
-		|| !irradianceHistory || irradianceHistory->IsEmpty()
-		|| !depthHistory || depthHistory->IsEmpty()
-		|| !probeDataHistory || probeDataHistory->IsEmpty())
+		|| !irradianceAtlas || irradianceAtlas->IsEmpty()
+		|| !depthAtlas || depthAtlas->IsEmpty()
+		|| !probeData || probeData->IsEmpty()
+		|| !probeStats || probeStats->IsEmpty())
 		return;
 
 	auto cmd = cmdCtx.GetCmd();
+
+	// 重置：滚动寻址下新进入的格子占的是刚离开的格子的槽位，光追（多次反弹会读图集）之前先作废
+	if (frame.resetCount > 0 && frame.resetList)
+	{
+		probeData->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+		probeStats->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+		ComputeBindingRecord resetBinding;
+		resetBinding.SetStorageImage(probeData, vk::ImageAspectFlagBits::eColor, 0);
+		resetBinding.SetStorageImage(probeStats, vk::ImageAspectFlagBits::eColor, 1);
+		resetBinding.SetStorageBlock(frame.resetList, 2);
+		_resetShader.Bind(cmd, resetBinding);
+		cmd->dispatch((frame.resetCount + 63) / 64, 1, 1);
+	}
+
+	if (frame.updateCount == 0)
+	{
+		cmd->SubmitToQueue();
+		return;
+	}
 
 	// 天空回退：来源与优先级同 RTCoreRayTraceGIPass。天空预计算是图内节点，必须在 Execute 里取
 	std::shared_ptr<TextureCube> skyCube;
@@ -98,9 +131,17 @@ void DDGIProbeUpdatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	auto ubo = DDGIMakeHostBlock<UniformBlock>(&uniforms, sizeof(uniforms));
 
 	rayData->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-	irradianceHistory->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
-	depthHistory->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
-	probeDataHistory->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	irradianceAtlas->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	depthAtlas->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	probeData->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	if (frame.resetCount > 0)
+	{
+		// 上面的布局转换只同步到计算阶段，光追着色器读 probeData 还要再接一道
+		cmd->pipelineBarrier(
+			vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+			vk::MemoryBarrier(vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead));
+	}
 
 	auto& binding = registry.Get<RayTracingBindingRecord>("binding");
 	if (!BindAccelerationStructure(binding))
@@ -117,9 +158,9 @@ void DDGIProbeUpdatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	binding.SetUniformBlock(ubo, 5);
 	binding.SetStorageBlock(frame.volumeTable, 6);
 	binding.SetStorageImage(rayData, vk::ImageAspectFlagBits::eColor, 7);
-	binding.SetUniformTexture(irradianceHistory, vk::ImageAspectFlagBits::eColor, 8);
-	binding.SetUniformTexture(depthHistory, vk::ImageAspectFlagBits::eColor, 9);
-	binding.SetUniformTexture(probeDataHistory, vk::ImageAspectFlagBits::eColor, 10);
+	binding.SetUniformTexture(irradianceAtlas, vk::ImageAspectFlagBits::eColor, 8);
+	binding.SetUniformTexture(depthAtlas, vk::ImageAspectFlagBits::eColor, 9);
+	binding.SetUniformTexture(probeData, vk::ImageAspectFlagBits::eColor, 10);
 	binding.SetStorageBlock(frame.updateList, 12);
 	binding.SetStorageBlock(frame.probeInfo, 13);
 	if (cubeEnable)

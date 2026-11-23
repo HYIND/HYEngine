@@ -131,7 +131,7 @@ struct alignas(16) DDGIUniforms
 	glm::vec4  shadingParams;	// x normalBias，y viewBias，z energy，w skyIntensity
 	glm::vec4  filterParams;	// x 背面权重指数，y 时域混合系数 1-hysteresis，z 光照突变阈值，w maxRayDistance
 	glm::vec4  drawParams;		// x 探针球半径（相对最小间距）
-	glm::uvec4 counts;			// x 体积数，y 已用槽位数，z 本帧更新数，w frameIndex
+	glm::uvec4 counts;			// x 体积数，y 已用槽位上界（槽位区间之间可能有空隙），z 本帧更新数，w frameIndex
 	glm::uvec4 flags;			// x 历史可用（帧号连续），y 天空 cubemap 可用（Pass 各自填），z 烘焙体积下标，w 漏光调试开关
 	glm::uvec4 debug;			// xy 漏光调试像素，z 可视化模式，w 只显示的体积下标（0xFFFFFFFF = 全部）
 	glm::vec4  cameraPos;		// xyz 相机位置
@@ -143,11 +143,11 @@ struct alignas(16) DDGIVolumeGPU
 {
 	glm::vec4  origin;			// xyz 最小角（世界），w 边缘过渡宽度（格）
 	glm::vec4  spacing;			// xyz 间距，w 优先级（只用于调试显示）
-	glm::uvec4 counts;			// xyz 每轴探针数，w base（本帧起始槽位）
-	glm::ivec4 prevShift;		// xyz = 本帧最小角格子 - 上一帧最小角格子，w 上一帧 base
-	glm::uvec4 prevCounts;		// xyz 上一帧每轴探针数，w 标志（VolumeFlag*）
-	glm::uvec4 info;			// x ID，y 轮转周期，z 本帧相位
-	glm::vec4  prevOrigin;		// xyz 上一帧最小角（世界）
+	glm::uvec4 counts;			// xyz 每轴探针数，w base（常驻：体积存在且 counts / spacing 不变期间不变）
+	glm::ivec4 originCell;		// xyz 最小角格子（世界格子坐标），w 保留
+	glm::uvec4 state;			// x 标志（VolumeFlag*），yzw 保留
+	glm::uvec4 info;			// x ID，y 轮转周期，z 本帧相位，w 级联层
+	glm::vec4  reserved;
 };
 static_assert(sizeof(DDGIVolumeGPU) == 112, "DDGIVolumeGPU 与 GLSL 侧 std430 布局不一致");
 
@@ -195,6 +195,21 @@ inline std::shared_ptr<Base> DDGIMakeHostBlock(const void* data, size_t size)
 	return block;
 }
 
+// 滚动寻址（与 shader 的 ddgiProbeSlot 一致）：局部格子 c 的槽位 = base + 线性下标((originCell + c) mod counts)
+inline glm::ivec3 DDGIWrapCell(const glm::ivec3& a, const glm::ivec3& m)
+{
+	glm::ivec3 r = a % m;
+	r += glm::ivec3(glm::lessThan(r, glm::ivec3(0))) * m;
+	return r;
+}
+
+inline uint32_t DDGISlotOf(uint32_t base, const glm::ivec3& originCell, const glm::uvec3& counts, const glm::ivec3& local)
+{
+	const glm::ivec3 c(counts);
+	const glm::ivec3 phys = DDGIWrapCell(originCell + local, c);
+	return base + uint32_t(phys.z) * counts.x * counts.y + uint32_t(phys.y) * counts.x + uint32_t(phys.x);
+}
+
 // ───────────────────────────── 每帧解析结果 ─────────────────────────────
 
 struct DDGIResolvedVolume
@@ -211,11 +226,9 @@ struct DDGIResolvedVolume
 	bool autoRelocate = true;
 	std::shared_ptr<const DDGIProbeEditMap> edits;
 
-	uint32_t base = 0;
-	bool hasHistory = false;
-	glm::ivec3 prevOriginCell = glm::ivec3(0);
-	glm::uvec3 prevCounts = glm::uvec3(0u);
-	uint32_t prevBase = 0;
+	uint32_t base = 0;					// 常驻槽位区间的起点（见 DDGISharedState::AllocateVolumes）
+	bool hasHistory = false;			// false = 本帧整体重置（新分配 / 重新分配 / 历史失效）
+	glm::ivec3 prevOriginCell = glm::ivec3(0);	// hasHistory 时有效：上一帧最小角格子，用来找新进入的格子
 
 	float importance = 1.0f;
 	uint32_t period = 1;
@@ -232,14 +245,16 @@ struct DDGIFrame
 	bool enabled = false;				// 有可用体积
 	bool historyValid = false;
 	std::vector<DDGIResolvedVolume> volumes;
-	uint32_t totalProbes = 0;
+	uint32_t totalProbes = 0;			// 已用槽位上界（槽位区间之间可能有空隙）
+	uint32_t usedProbes = 0;			// 各体积探针数之和
 	uint32_t updateCount = 0;
+	uint32_t resetCount = 0;			// 本帧要在探针更新前清零的槽位数
 	DDGIUniforms uniforms{};			// 需要改字段的 Pass（探针更新）自己再上传一份
 	std::shared_ptr<UniformBlock> uniformBlock;		// uniforms 的上传结果，其余 Pass 直接绑定
 
 	std::shared_ptr<StorageBlock> volumeTable;
-	std::shared_ptr<StorageBlock> updateList;
-	std::shared_ptr<StorageBlock> slotToRay;		// 每槽位：本帧在 updateList 里的下标，没轮到 = 0xFFFFFFFF
+	std::shared_ptr<StorageBlock> updateList;		// 第 i 个 = 本帧更新的第 i 个探针的槽位（也是它在 rayData 里的 tile 下标）
+	std::shared_ptr<StorageBlock> resetList;		// [0] = 数量，之后是要清零的槽位（DDGIReset.comp）
 	std::shared_ptr<StorageBlock> probeInfo;
 
 	bool bakeActive = false;
@@ -260,12 +275,14 @@ public:
 	const std::shared_ptr<DDGIDebugChannel>& GetDebugChannel() const { return _channel; }
 
 private:
-	struct LastVolume
+	// 常驻槽位分配：体积存在且 counts / spacing 不变期间 base 不变，图集原地更新
+	struct Allocation
 	{
-		glm::ivec3 originCell;
-		glm::uvec3 counts;
-		glm::vec3 spacing;
-		uint32_t base;
+		uint32_t base = 0;
+		uint32_t count = 0;
+		glm::uvec3 counts = glm::uvec3(0u);
+		glm::vec3 spacing = glm::vec3(0.0f);
+		glm::ivec3 originCell = glm::ivec3(0);
 	};
 
 	// probeInfo 只装手动编辑（禁用 / 锁定 / 偏移）与选中，只在这些或手动体积的布局变化时重建；
@@ -276,6 +293,7 @@ private:
 		std::vector<uint64_t> signature;
 		std::shared_ptr<StorageBlock> probeInfo;
 		std::vector<uint8_t> disabled;		// 每槽位：被手动禁用
+		std::vector<uint32_t> disabledSlots;
 	};
 
 	// 体积 i 被更高优先级体积 j 完全覆盖的部分，换算成体积 i 的局部格子下标范围（闭区间）。
@@ -286,14 +304,24 @@ private:
 		glm::ivec3 hi;
 	};
 
+	// 每帧上传的 buffer 按种类轮换复用（主机可见，容量不够才重建）。
+	// 各帧的 RenderGraph 串行执行、每个 Pass 结束时等 GPU 做完，所以轮到复用时上一次的内容早已用完
+	struct UploadRing
+	{
+		std::array<std::shared_ptr<StorageBlock>, 3> blocks{};
+		uint32_t next = 0;
+	};
+
 	void BuildVolumes(const RenderState& state, DDGIFrame& frame, std::vector<DDGIResolvedVolume>& dropped);
+	void AllocateVolumes(DDGIFrame& frame, std::vector<DDGIResolvedVolume>& candidates, std::vector<DDGIResolvedVolume>& dropped);
 	void AssignPeriods(const RenderState& state, DDGIFrame& frame, uint32_t budget);
 	void RebuildProbeCache(const DDGIFrame& frame);
 	void BuildCoveredRanges(const DDGIFrame& frame);
 	bool IsCovered(size_t volumeIndex, const glm::ivec3& local) const;
-	void BuildUpdateList(DDGIFrame& frame, uint32_t budget);
+	void BuildResetAndUpdateLists(DDGIFrame& frame, uint32_t budget, bool probeCacheRebuilt);
 	void UploadGPUData(DDGIFrame& frame, const RenderState& state);
 	void PublishStats(const DDGIFrame& frame, uint32_t budget, const std::vector<DDGIResolvedVolume>& dropped);
+	std::shared_ptr<StorageBlock> Upload(UploadRing& ring, const void* data, size_t size);
 
 	std::shared_ptr<DDGIDebugChannel> _channel;
 	std::mutex _mutex;
@@ -303,12 +331,15 @@ private:
 
 	bool _hasLast = false;
 	uint32_t _lastFrame = 0;
-	std::unordered_map<uint32_t, LastVolume> _lastVolumes;
+	std::unordered_map<uint32_t, Allocation> _allocations;	// 体积 ID -> 常驻槽位
 
 	ProbeCache _cache;
 	std::vector<std::vector<CoveredRange>> _covered;	// 每体积一组，见 CoveredRange
-	std::vector<uint32_t> _scratchList;
-	std::vector<uint32_t> _scratchMask;
+	std::vector<uint32_t> _updateList;
+	std::vector<uint32_t> _resetList;				// [0] = 数量
+	std::vector<uint32_t> _updateStamp;				// 每槽位：本帧已进入更新列表时 = frameIndex + 1（去重，不用每帧清）
+
+	UploadRing _ringVolumeTable, _ringUpdateList, _ringResetList;
 };
 
 // 世界格子哈希（CPU 用来决定探针的轮转相位）

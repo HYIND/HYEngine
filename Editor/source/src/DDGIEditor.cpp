@@ -18,8 +18,8 @@
 
 namespace
 {
-	// 每探针常驻显存（图集 + history）：辐照度 10×10×4B、深度 18×18×4B、probeData / probeStats 各 16B，×2
-	constexpr double kBytesPerProbe = (10.0 * 10.0 * 4.0 + 18.0 * 18.0 * 4.0 + 32.0) * 2.0;
+	// 每探针常驻显存（图集原地更新，没有 history）：辐照度 10×10×4B、深度 18×18×4B、probeData / probeStats 各 16B
+	constexpr double kBytesPerProbe = 10.0 * 10.0 * 4.0 + 18.0 * 18.0 * 4.0 + 32.0;
 	constexpr uint32_t kCascadeIdBase = 0xFFFF0000u;
 	// 漏光调试记录最多的体积数（同 DDGIAtlasLayout::LeakMaxVolumes）
 	constexpr uint32_t DDGIAtlasLayout_LeakVolumes = 4;

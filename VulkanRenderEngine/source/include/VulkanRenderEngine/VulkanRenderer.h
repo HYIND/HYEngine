@@ -19,6 +19,7 @@
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
 #include "VulkanRenderEngine/General/DDGIDebug.h"
+#include "VulkanRenderEngine/General/RenderProfiler.h"
 
 struct alignas(16) camera_compData
 {
@@ -76,6 +77,8 @@ public:
     void Resize(uint32_t width, uint32_t height);
 
     void PushFrameState(std::shared_ptr<RenderState>& state);
+    // 候选队列里是否还有没被 ExecuteLoop 取走的帧；帧循环据此决定要不要重复提交旧数据
+    bool HasPendingFrameState();
 
     void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
     bool FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
@@ -94,6 +97,9 @@ public:
 
     // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
     std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
+
+    // 渲染性能统计通道（编辑器「调试 → 渲染性能」）：不开启时各打点处只多一次判空
+    const std::shared_ptr<RenderProfilerChannel>& GetRenderProfiler() const { return _renderProfiler; }
 
 private:
     void InitForWindow(uint32_t width, uint32_t height);
@@ -184,6 +190,7 @@ private:
     Scene3DRenderOption _option;
 
     std::shared_ptr<DDGIDebugChannel> _ddgiDebugChannel;
+    std::shared_ptr<RenderProfilerChannel> _renderProfiler = std::make_shared<RenderProfilerChannel>();
 
 
     uint32_t _maxFramesInFlight = 1;  // 最大在途帧数

@@ -5,6 +5,7 @@
 #include "CommonComponent.h"
 #include "PropertiesHelper.h"
 #include "DDGIEditor.h"
+#include "RenderProfilerPanel.h"
 #include "IconManager.h"
 #include "SceneCodec/ComponentCodec.h"
 #include <filesystem>
@@ -1479,6 +1480,12 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			ImGui::EndMenu();
 		}
 
+		if (ImGui::BeginMenu("调试"))
+		{
+			ImGui::MenuItem("渲染性能", nullptr, &RenderProfilerPanel::Visible());
+			ImGui::EndMenu();
+		}
+
 		ImGui::EndMainMenuBar();
 	}
 
@@ -2847,6 +2854,7 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 	ImGui::End();
 
 	DDGIEditor::DrawLeakWindow(editorApp);
+	RenderProfilerPanel::Draw(editorApp);	// 「调试 → 渲染性能」；关着时只负责关闭统计
 }
 
 void ImguiLayout::DrawStatusBar(EditorApp* editorApp)

@@ -91,9 +91,10 @@ void DDGIProbeDrawPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Render
 	if (!frame.enabled || frame.totalProbes == 0)
 		return;
 
-	auto irradianceAtlas = ctx.GetInput(0);
-	auto depthAtlas = ctx.GetInput(1);
-	auto probeData = ctx.GetInput(2);
+	// DDGI 图集是持久资源（原地更新），顺序由 .After(ddgiBlendNode) 保证
+	auto irradianceAtlas = ctx.GetPersitent(0);
+	auto depthAtlas = ctx.GetPersitent(1);
+	auto probeData = ctx.GetPersitent(2);
 	auto targetColorBuffer = ctx.GetExternal(0);
 	auto targetDepthBuffer = ctx.GetFrameLocal(0);
 
@@ -132,7 +133,7 @@ void DDGIProbeDrawPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Render
 	_shader.Bind(cmd, binding);
 	cmd->bindVertexBuffers(_vertexBuffer);
 	cmd->bindIndexBuffer(_indexBuffer);
-	cmd->drawIndexed(_indexCount, frame.totalProbes, 0, 0, 0);
+	cmd->drawIndexed(_indexCount, frame.totalProbes, 0, 0, 0);		// 槽位区间之间的空隙由顶点着色器丢掉
 
 	cmd->endRendering();
 	cmd->SubmitToQueue();

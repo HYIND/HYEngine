@@ -1,6 +1,8 @@
 #include "Helper/Tools.h"
 #include <chrono>
 #include <random>
+#include <atomic>
+#include <cstdio>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -120,34 +122,28 @@ std::string Tool::GetFormatSecondStr(int64_t timestamp_seconds)
 
 std::string Tool::GenerateSimpleUuid()
 {
-	// 获取当前时间戳（毫秒精度）
-	auto now = std::chrono::system_clock::now();
-	auto duration = now.time_since_epoch();
-	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+	// 格式：24 位十六进制 = [毫秒时间戳 12 位][序号 8 位][随机数 4 位]
+	//   时间戳：高位在前，字符串按字典序比较就是按创建时间排序；前 12 位转成十进制即毫秒时间戳。
+	//           （原来先写低 32 位再写高位，按字符串排序会乱；原来的 time_hi 对当前时间恒为 0，这里并进时间戳）
+	//   序号：  进程内全局原子计数，不按毫秒归零。只靠它保证进程内不重复
+	//           （原来同一毫秒内只靠 16 位随机数区分，一次加载上千个网格时必然撞，导致 BLAS / 顶点段被两个网格共用）；
+	//           同一毫秒内按序号即创建先后。32 位计数绕回需要 40 多亿次，绕回时时间戳早已不同。
+	//   随机数：保留原来的 16 位，区分不同进程 / 机器同一时刻生成的值。
+	//           每线程一个生成器（原来多线程共用一个 static mt19937，是数据竞争）。
+	static std::atomic<uint32_t> s_sequence{ 0 };
+	const uint32_t sequence = s_sequence.fetch_add(1, std::memory_order_relaxed);
 
-	// 初始化随机数生成器
-	static std::random_device rd;
-	static std::mt19937 gen(rd());
-	static std::uniform_int_distribution<uint16_t> dis(0, 0xFFFF);
+	const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count();
+	const uint64_t timestamp = static_cast<uint64_t>(millis) & 0xFFFFFFFFFFFFull;
 
-	// 分解时间戳
-	uint32_t time_low = static_cast<uint32_t>(millis & 0xFFFFFFFF);     // 低32位
-	uint16_t time_mid = static_cast<uint16_t>((millis >> 32) & 0xFFFF); // 中16位
-	uint16_t time_hi = static_cast<uint16_t>((millis >> 48) & 0x0FFF);  // 高12位
+	thread_local std::mt19937 gen{ std::random_device{}() };
+	const uint32_t rand_num = static_cast<uint32_t>(gen()) & 0xFFFFu;
 
-	// 生成4位随机数 (16位)
-	uint16_t rand_num = dis(gen) & 0xFFFF;
-
-	// 组合成UUID格式
-	std::stringstream ss;
-	ss << std::hex << std::setfill('0')
-		<< std::setw(8) << time_low                         /* << "-" */
-		<< std::setw(4) << time_mid                         /* << "-" */
-		<< std::setw(4) << time_hi                          /* << "-" */
-		<< std::setw(4) << (rand_num & 0x0FFF) /* << "-" */ // 使用12位随机数
-		<< std::setw(4) << (rand_num >> 4);                 // 使用剩余4位
-
-	return ss.str();
+	char buf[32];
+	std::snprintf(buf, sizeof(buf), "%012llx%08x%04x",
+		static_cast<unsigned long long>(timestamp), sequence, rand_num);
+	return std::string(buf, 24);
 }
 
 float Tool::RadianToAngle(float radian)

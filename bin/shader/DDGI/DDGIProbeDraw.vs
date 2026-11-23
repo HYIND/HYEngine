@@ -33,7 +33,7 @@ void main()
     if (visible && ddgi.debug.w != DDGI_INVALID && v != ddgi.debug.w)
         visible = false;
 
-    ivec3 local = visible ? ddgiLocalCoord(slot - ddgiVolumeBase(v), ddgiVolumeCounts(v)) : ivec3(0);
+    ivec3 local = visible ? ddgiSlotLocal(v, slot) : ivec3(0);
     // 被覆盖的探针不参与采样，只在「状态」模式下显示
     if (visible && ddgi.debug.z != 1u && ddgiProbeCovered(v, local))
         visible = false;

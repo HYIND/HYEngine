@@ -172,6 +172,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIVolumeDesc.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDebug.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderProfiler.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousGaussFilter.h" />

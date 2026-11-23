@@ -1,11 +1,66 @@
 ﻿#include "RenderEngine/Renderer3D.h"
 #include "RenderEngine/RenderFrameDataAnalysis.h"
 #include "CommonData/Camera.h"
+#include "VulkanRenderEngine/General/RenderProfiler.h"
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <iostream>
 #include <thread>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+#endif
+
+namespace
+{
+    // 帧循环没事做时的短睡眠。
+    // Windows 下 sleep_for 会按毫秒向上取整，进程没调 timeBeginPeriod 时还会被拉长到
+    // 一个系统时钟周期（常见 15.6ms），足以让后端断粮；所以优先用高精度可等待计时器
+    // （Win10 1803+），创建失败再退回 sleep_for。
+    void FrameLoopShortSleep(std::chrono::microseconds duration)
+    {
+#ifdef _WIN32
+        struct WaitableTimer
+        {
+            HANDLE handle = nullptr;
+            WaitableTimer()
+            {
+                handle = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+            }
+            ~WaitableTimer()
+            {
+                if (handle)
+                    CloseHandle(handle);
+            }
+        };
+        thread_local WaitableTimer timer;
+        if (timer.handle)
+        {
+            LARGE_INTEGER due{};
+            due.QuadPart = -static_cast<LONGLONG>(duration.count()) * 10; // 100ns 为单位，负数表示相对时间
+            if (SetWaitableTimerEx(timer.handle, &due, 0, nullptr, nullptr, nullptr, 0))
+            {
+                WaitForSingleObject(timer.handle, INFINITE);
+                return;
+            }
+        }
+#endif
+        std::this_thread::sleep_for(duration);
+    }
+
+    constexpr std::chrono::microseconds kFrameLoopIdleSleep{ 200 };
+}
 
 namespace Render
 {
@@ -248,8 +303,16 @@ namespace Render
                 frame->position, frame->direction, frame->directionUp, frame->directionRight,
                 frame->nearPlane, frame->farPlane, frame->fov)
             .Build();
+        // 渲染性能统计：窗口开着时才挂 profile，记帧数据解析与入队时刻
+        std::shared_ptr<RenderFrameProfile> profile;
+        if (const auto& profiler = renderer->GetRenderProfiler(); profiler && profiler->IsEnabled())
+            profile = std::make_shared<RenderFrameProfile>();
+
         auto mutableFrame = frame;
-        RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(mutableFrame, *state);
+        {
+            RenderProfileScope scope(profile.get(), RenderProfileStep::Analysis);
+            RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(mutableFrame, *state);
+        }
 
         Scene3DRenderOption option;
         bool optionDirty = false;
@@ -261,6 +324,11 @@ namespace Render
         }
         if (optionDirty)
             renderer->SetOption(option);
+        if (profile)
+        {
+            profile->pushTimeUs = RenderProfileNowUs();
+            state->profile = std::move(profile);
+        }
         renderer->PushFrameState(state);
     }
 
@@ -291,6 +359,19 @@ namespace Render
                 if (targetFps != 0)
                     m_fpsController.setCurTargetFps(targetFps);
                 m_appliedFps = targetFps;
+            }
+
+            // 只有两种情况才入队：
+            //   1. 场景线程提交了新数据——立即处理，候选队列里还没取走的旧帧会被它替换；
+            //   2. 没有新数据但候选队列已空——后端马上要断粮，把当前数据再交一次，保持后端满载
+            //      （TAA / DDGI 等跨帧累积的效果需要持续出帧才会收敛）。
+            // 其余时候（无新数据且候选队列里还有帧）短睡眠后再看，避免空转重复解析同一帧。
+            auto renderer = GetVulkanRenderer();
+            if (!renderer
+                || (!m_frames->hasNewData() && renderer->HasPendingFrameState()))
+            {
+                FrameLoopShortSleep(kFrameLoopIdleSleep);
+                continue;
             }
 
             ProcessFrame(m_frames->acquireReadBuffer());

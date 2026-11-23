@@ -6,7 +6,7 @@
 //   sampler2D ddgiIrradianceTex  // rgb = E/π
 //   sampler2D ddgiDepthTex       // rg  = (E[t], E[t²])
 //   sampler2D ddgiProbeDataTex   // xyz = 偏移，w = 已更新次数 n + 背面命中比例（小数部分）
-// 定义 DDGI_SAMPLE_PREV 时按上一帧的布局采样（读 history，多次反弹用）。
+// 图集原地更新、按世界格子滚动寻址：探针更新 Pass 在混合之前读，读到的就是上一帧的结果（多次反弹）。
 // 定义 DDGI_SAMPLE_SINGLE 时只取第一个（优先级最高）包含该点的体积，不做体积间过渡（多次反弹用，省一半采样）。
 // 定义 DDGI_LEAK_DEBUG 时，使用方需先提供 ddgiLeakVolume / ddgiLeakProbe / gDDGIDebug。
 //
@@ -17,28 +17,9 @@
 // 体积内部按 RTXGI 的权重：背面 wrap + 0.2 下限、Chebyshev³（下限 0.05）、小权重三次方压低、剔除埋在几何里的探针。
 // 未更新过的探针（n = 0）不参与；一个体积的有效角点太少时把权重让给下一个体积。
 
-bool ddgiSampleLayout(uint v, out vec3 origin, out uvec3 counts, out uint base)
-{
-#ifdef DDGI_SAMPLE_PREV
-    if (!ddgiHistoryValid() || (ddgiVolumeFlags(v) & DDGI_VOLUME_HISTORY) == 0u)
-    {
-        origin = vec3(0.0); counts = uvec3(1u); base = 0u;
-        return false;
-    }
-    origin = ddgiVolumes[v].prevOrigin.xyz;
-    counts = ddgiVolumes[v].prevCounts.xyz;
-    base = uint(ddgiVolumes[v].prevShift.w);
-#else
-    origin = ddgiVolumes[v].origin.xyz;
-    counts = ddgiVolumes[v].counts.xyz;
-    base = ddgiVolumes[v].counts.w;
-#endif
-    return true;
-}
-
 // 单个体积：返回有效角点归一化后的辐照度；coverage = 有效角点的三线性权重和（0~1）
 vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, vec3 normal,
-                      vec3 origin, uvec3 counts, uint base, out float coverage)
+                      vec3 origin, uvec3 counts, out float coverage)
 {
     coverage = 0.0;
     vec3 spacing = ddgiVolumes[v].spacing.xyz;
@@ -66,7 +47,7 @@ vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, ve
         if (wTri <= 0.0)
             continue;
 
-        uint slot = base + ddgiLocalIndex(coord, counts);
+        uint slot = ddgiProbeSlot(v, coord);
         vec4 data = texelFetch(ddgiProbeDataTex, ddgiTileOrigin(slot, 1u), 0);
         vec3 probePos = origin + (vec3(coord) + 0.5) * spacing + data.xyz;
 
@@ -74,7 +55,7 @@ vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, ve
         {
 #ifdef DDGI_LEAK_DEBUG
             if (gDDGIDebug)
-                ddgiLeakProbe(leakVolume, probePos, ivec3(round(origin / spacing)) + coord, slot,
+                ddgiLeakProbe(leakVolume, probePos, ddgiWorldCell(v, coord), slot,
                               vec4(wTri, 0.0, 0.0, 0.0), vec4(0.0, length(probePos - biasedPos), 0.0, 0.0));
 #endif
             continue;
@@ -116,7 +97,7 @@ vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, ve
 
 #ifdef DDGI_LEAK_DEBUG
         if (gDDGIDebug)
-            ddgiLeakProbe(leakVolume, probePos, ivec3(round(origin / spacing)) + coord, slot,
+            ddgiLeakProbe(leakVolume, probePos, ddgiWorldCell(v, coord), slot,
                           vec4(wTri, wBack, chebyshev, w), vec4(moments.x, dist, interior, 1.0));
 #endif
 
@@ -142,11 +123,8 @@ vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float
 
     for (uint v = 0u; v < ddgiVolumeCount(); ++v)
     {
-        vec3 origin;
-        uvec3 counts;
-        uint base;
-        if (!ddgiSampleLayout(v, origin, counts, base))
-            continue;
+        vec3 origin = ddgiVolumes[v].origin.xyz;
+        uvec3 counts = ddgiVolumeCounts(v);
 
         vec3 gridPos = (biasedPos - origin) / ddgiVolumes[v].spacing.xyz;
         vec3 edge = min(gridPos, vec3(counts) - gridPos);
@@ -169,7 +147,7 @@ vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float
             leakVolume = ddgiLeakVolume(ddgiVolumes[v].info.x);
 #endif
         float coverage;
-        vec3 irr = ddgiSampleVolume(v, leakVolume, worldPos, biasedPos, normal, origin, counts, base, coverage);
+        vec3 irr = ddgiSampleVolume(v, leakVolume, worldPos, biasedPos, normal, origin, counts, coverage);
 
         float w = fade * smoothstep(0.0, 0.25, coverage);
 #ifdef DDGI_LEAK_DEBUG

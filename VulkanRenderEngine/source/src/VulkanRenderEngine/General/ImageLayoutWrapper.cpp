@@ -1,5 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/General/ImageLayoutWrapper.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
 using namespace ImageLayout;
 
@@ -281,6 +282,15 @@ vk::AccessFlags ImageLayout::GetAccessMaskForLayout(vk::ImageLayout layout, vk::
 	}
 }
 
+// 着色器访问可能发生的全部阶段：图形 + 计算 (+ 光追，设备支持时才能出现在 stage mask 里)
+static vk::PipelineStageFlags AllShaderStages()
+{
+	vk::PipelineStageFlags stages = vk::PipelineStageFlagBits::eAllGraphics | vk::PipelineStageFlagBits::eComputeShader;
+	if (GlobalConfig::RTCoreEnable)
+		stages |= vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+	return stages;
+}
+
 // srcStageMask：从当前 AccessMask 推导
 vk::PipelineStageFlags ImageLayout::AccessMaskToStage(vk::AccessFlags mask) {
 	if (!mask) {
@@ -310,14 +320,15 @@ vk::PipelineStageFlags ImageLayout::AccessMaskToStage(vk::AccessFlags mask) {
 		return vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
 	}
 
-	// 着色器写入（通常是 Compute）
+	// 着色器写入：storage image 可能在计算或光追着色器里写（原来只等 eComputeShader，漏了光追）
 	if (mask & vk::AccessFlagBits::eShaderWrite) {
-		return vk::PipelineStageFlagBits::eComputeShader;
+		return AllShaderStages();
 	}
 
-	// 着色器读取（保守：等待所有图形阶段）
+	// 着色器读取：只读布局的图现在也会被计算 / 光追采样（BindUsage::Sample），
+	// 之后再转成可写布局时必须等这些读完（原来只等 eAllGraphics）
 	if (mask & vk::AccessFlagBits::eShaderRead) {
-		return vk::PipelineStageFlagBits::eAllGraphics;
+		return AllShaderStages();
 	}
 
 	// 索引/顶点/Uniform 读取（都属于顶点输入阶段）
@@ -445,6 +456,25 @@ void ImageLayout::GetImageLayoutAndStageFlag(vk::ImageLayout* outLayout, vk::Pip
 	bool isDepthStencilFormat = ImageLayout::IsDepthStencilFormat(format);
 	bool isDepthFormat = ImageLayout::IsDepthFormat(format);
 	bool isStencilFormat = ImageLayout::IsStencilFormat(format);
+
+	// 采样读：Compute / RayTracing 下颜色格式用 SHADER_READ_ONLY_OPTIMAL（与图形管线一致，不再和 GENERAL 来回切）；
+	// 深度 / 模板格式仍用 GENERAL —— 只读深度布局的访问掩码是深度附件访问（见 GetAccessMaskForLayout），
+	// 和计算 / 光追阶段对不上。Graphics / Transfer 下与 Read 完全相同。
+	if (usage == BindUsage::Sample)
+	{
+		if (stage == BindStage::Compute || stage == BindStage::RayTracing)
+		{
+			dstStageMask = (stage == BindStage::Compute) ? StageFlag::eComputeShader : StageFlag::eRayTracingShaderKHR;
+			newLayout = isColorFormat ? Layout::eShaderReadOnlyOptimal : Layout::eGeneral;
+
+			if (outLayout)
+				*outLayout = newLayout;
+			if (outDestStageFlag)
+				*outDestStageFlag = dstStageMask;
+			return;
+		}
+		usage = BindUsage::Read;
+	}
 
 	if (stage == BindStage::Compute)
 	{

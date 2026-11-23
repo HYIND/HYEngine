@@ -8,6 +8,8 @@
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/General/DDGIVolumeDesc.h"
 
+struct RenderFrameProfile;	// VulkanRenderEngine/General/RenderProfiler.h
+
 struct alignas(16) Plane {
 	glm::vec3 normal;
 	float distance;
@@ -238,6 +240,9 @@ struct RenderState
 		int64_t frameStartMicroTimeStamp = 0;		//帧启动时间
 		int64_t frameEndMicroTimeStamp = 0;			//帧完成时间
 	} renderRecord;
+
+	// 渲染性能统计：只有编辑器打开「渲染性能」窗口时才非空（见 RenderProfiler.h）
+	std::shared_ptr<RenderFrameProfile> profile;
 
 	Scene3DRenderOption option;
 };

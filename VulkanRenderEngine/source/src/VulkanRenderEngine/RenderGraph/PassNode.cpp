@@ -43,6 +43,11 @@ PassNode& PassNode::Persistent(const ResourceData& data) {
 	return *this;
 }
 
+PassNode& PassNode::PersistentOption(const ResourceData& data) {
+	_persistentOptions.push_back(data);
+	return *this;
+}
+
 PassNode& PassNode::External(const ExternalResourceData& resource)
 {
 	_externals.push_back(resource);
@@ -127,6 +132,7 @@ const std::vector<PassNode::ResourceData>& PassNode::GetOutputs() const { return
 const std::vector<PassNode::ResourceData>& PassNode::GetTemps() const { return _temps; }
 
 const std::vector<PassNode::ResourceData>& PassNode::GetPersistents() const { return _persistents; }
+const std::vector<PassNode::ResourceData>& PassNode::GetPersistentOptions() const { return _persistentOptions; }
 
 const std::vector<PassNode::ExternalResourceData>& PassNode::GetExternals() const { return _externals; }
 

@@ -77,10 +77,11 @@ void DDGIApplyPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGrap
 	auto gNormal = ctx.GetInput(1);
 	auto gAlbedoOpacity = ctx.GetInput(2);
 	auto ssaoMap = ctx.GetInput(3);
-	auto irradianceAtlas = ctx.GetInput(4);
-	auto depthAtlas = ctx.GetInput(5);
-	auto probeData = ctx.GetInput(6);
-	auto gMetallicRoughness = ctx.GetInput(7);
+	auto gMetallicRoughness = ctx.GetInput(4);
+	// DDGI 图集是持久资源（原地更新），顺序由 .After(ddgiBlendNode) 保证
+	auto irradianceAtlas = ctx.GetPersitent(0);
+	auto depthAtlas = ctx.GetPersitent(1);
+	auto probeData = ctx.GetPersitent(2);
 	auto gDepthStencil = ctx.GetFrameLocal(0);
 	auto outImage = ctx.GetOutput(0);
 

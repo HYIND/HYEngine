@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderGraph/RenderGraph.h"
 #include "CriticalSectionLock.h"
+#include <algorithm>
 
 using namespace RenderGraph;
 
@@ -102,6 +103,36 @@ void Graph::Compile() {
 
 	_needsCompile = false;
 	_compiledVersion++;
+	BuildProfileLayout();
+}
+
+void Graph::BuildProfileLayout()
+{
+	auto layout = std::make_shared<RenderGraphProfileLayout>();
+	layout->graphName = _name;
+	layout->version = _compiledVersion;
+
+	std::unordered_map<const PassNode*, uint32_t> indexOf;
+	for (uint32_t i = 0; i < uint32_t(_sortedPasses.size()); ++i)
+		indexOf[_sortedPasses[i]] = i;
+
+	layout->nodes.reserve(_sortedPasses.size());
+	for (auto* pass : _sortedPasses)
+	{
+		RenderGraphProfileLayout::Node node;
+		node.name = pass->GetName();
+		node.batch = pass->GetBatch();
+		node.fence = !pass->_render;
+		for (auto* prev : pass->_afters)
+		{
+			auto it = indexOf.find(prev);
+			if (it != indexOf.end())
+				node.afters.push_back(it->second);
+		}
+		std::sort(node.afters.begin(), node.afters.end());
+		layout->nodes.push_back(std::move(node));
+	}
+	_profileLayout = std::move(layout);
 }
 
 bool Graph::GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex)
@@ -149,10 +180,17 @@ void Graph::FindReadyNodeAndExcute(
 			if (handle->is_ready() && ctx.dependency.load() <= 0)
 			{
 				executeHandle = _executeParallelPool.submit(
-					[&, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
-						//auto start = Tool::GetTimestampMircoseconds();
-						ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, _cmdMutex);
-						//std::cout << std::format("ExecutePass {} ,cost {}ms\n", ctx.node->GetName(), Tool::GetTimestampMircoseconds() - start);
+					[&, idx, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
+						RenderFrameProfile* profile = state.profile.get();
+						RenderPassProfile* passProfile = (profile && size_t(idx) < profile->passes.size()) ? &profile->passes[idx] : nullptr;
+						const int64_t start = passProfile ? RenderProfileNowUs() : 0;
+						const bool executed = ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, _cmdMutex,
+							passProfile ? &passProfile->executeWaitUs : nullptr);
+						if (passProfile)
+						{
+							passProfile->executeUs = RenderProfileNowUs() - start;
+							passProfile->executed = executed;
+						}
 						for (auto& next : ctx.nextIndexs)
 							--passCtxs[next].dependency;
 						doneCounter++;
@@ -185,23 +223,25 @@ void Graph::FindReadyNodeAndExcute(
 
 }
 
-void Graph::ExecutePass(
+bool Graph::ExecutePass(
 	PassNode* node,
 	FrameDataRegistry& registry,
 	RenderState& state,
 	const std::string& resPrefix,
 	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
-	std::shared_ptr<CriticalSectionLock>& _cmdMutex
+	std::shared_ptr<CriticalSectionLock>& _cmdMutex,
+	int64_t* executeWaitUs
 )
 {
 	//auto start = Tool::GetTimestampMircoseconds();
 	//std::cout << std::format("ExecutePass {}, threadid = {}\n", node->GetName(), std::this_thread::get_id());
 
 	if (!node->ShouldExecute(registry, state))
-		return;
+		return false;
 
 	PassFrameCmdContext cmdCtx(_cmdMutex);
+	cmdCtx.SetExecuteWaitRecord(executeWaitUs);
 	PassFrameContext ctx;
 	ctx.passName = node->GetName();
 
@@ -245,6 +285,9 @@ void Graph::ExecutePass(
 	for (const auto& persitent : node->GetPersistents())
 		FetchTexture(persitent.resource, "", persitent.layout, false, ctx.persistents);
 
+	for (const auto& persitent : node->GetPersistentOptions())
+		FetchTexture(persitent.resource, "", persitent.layout, true, ctx.optionPersistents);
+
 	for (const auto& external : node->GetExternals()) {
 		if (external.resource.type == ResourceType::Texture)
 		{
@@ -266,6 +309,7 @@ void Graph::ExecutePass(
 	node->Execute(cmdCtx, registry, ctx, state);
 
 	//std::cout << std::format("ExecutePass {} ,cost {}ms\n", pass->GetName(), Tool::GetTimestampMircoseconds() - start);
+	return true;
 }
 
 
@@ -297,14 +341,26 @@ void Graph::Execute(
 		ctx.nextIndexs = node->_nextIndexs;
 	}
 
+	// 渲染性能统计：每个 Pass 一个槽位，按排序后的下标，各线程只写自己的槽位
+	RenderFrameProfile* profile = state->profile.get();
+	if (profile)
+	{
+		profile->graphLayout = _profileLayout;
+		profile->passes.assign(_sortedPasses.size(), RenderPassProfile{});
+	}
+
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
 	BeginHandles.reserve(passExeContext.size());
-	for (auto& passCtx : passExeContext)
+	for (size_t passIdx = 0; passIdx < passExeContext.size(); ++passIdx)
 	{
+		auto& passCtx = passExeContext[passIdx];
 		BeginHandles.push_back(std::move(_frameParallelPool.submit(
-			[&beginCounter, node = passCtx.node, registryPtr = &passCtx.registry, &state]()->void
+			[&beginCounter, node = passCtx.node, registryPtr = &passCtx.registry, &state, profile, passIdx]()->void
 			{
+				const int64_t start = profile ? RenderProfileNowUs() : 0;
 				node->FrameBegin(*registryPtr, *state);
+				if (profile)
+					profile->passes[passIdx].frameBeginUs = RenderProfileNowUs() - start;
 				beginCounter++;
 			})
 		));
@@ -446,6 +502,7 @@ void Graph::Execute(
 
 // 清空
 void Graph::Clear() {
+	_profileLayout.reset();
 	_passes.clear();
 	_sortedPasses.clear();
 	_ownedPasses.clear();

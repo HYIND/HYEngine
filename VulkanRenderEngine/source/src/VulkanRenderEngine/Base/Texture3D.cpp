@@ -267,6 +267,18 @@ void Texture3D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd
 {
 	if (!cmd || !_image) return;
 
+	// 采样读：布局取决于当前布局（Compute / RT 下已是 GENERAL 就保持），见 BaseVKImage::TransitionLayoutForSample
+	if (usage == ImageLayout::BindUsage::Sample)
+	{
+		if (!_image) return;
+		vk::ImageLayout sampleLayout = (level == UINT32_MAX)
+			? _image->TransitionLayoutForSample(cmd, stage)
+			: _image->TransitionLayoutForSample(cmd, stage, level, 1);
+		if (outLayout)
+			*outLayout = sampleLayout;
+		return;
+	}
+
 	vk::ImageLayout newLayout;
 	vk::PipelineStageFlags dstStageMask;
 

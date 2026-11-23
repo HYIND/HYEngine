@@ -38,6 +38,12 @@ namespace RenderGraph
 		(Persistent(std::forward<Resources>(resources)), ...);
 		return *this;
 	};
+	template<typename... Resources>
+	auto PassNode::PersistentOption(Resources&&... resources) ->
+		typename std::enable_if<(sizeof...(Resources) > 1), PassNode&>::type{
+		(PersistentOption(std::forward<Resources>(resources)), ...);
+		return *this;
+	};
 	template<typename... Passes>
 	auto PassNode::After(Passes&&... passes) ->
 		typename std::enable_if<(sizeof...(Passes) > 1), PassNode&>::type{

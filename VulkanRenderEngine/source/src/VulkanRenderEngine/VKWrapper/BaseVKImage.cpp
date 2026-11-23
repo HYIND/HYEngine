@@ -91,6 +91,34 @@ void BaseVKImage::TransitionLayout(
 	}
 }
 
+vk::ImageLayout BaseVKImage::TransitionLayoutForSample(
+	std::shared_ptr<VKCommandBuffer> cmd,
+	ImageLayout::BindStage stage,
+	uint32_t baseMipLevel,
+	uint32_t levelCount
+) {
+	vk::ImageLayout newLayout;
+	vk::PipelineStageFlags dstStageMask;
+	ImageLayout::GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, m_format, stage, ImageLayout::BindUsage::Sample);
+
+	if (!cmd || !m_image || baseMipLevel >= m_mipLevels)
+		return newLayout;
+
+	if (newLayout != vk::ImageLayout::eGeneral
+		&& (stage == ImageLayout::BindStage::Compute || stage == ImageLayout::BindStage::RayTracing))
+	{
+		const uint32_t endMipLevel = baseMipLevel + std::min(m_mipLevels - baseMipLevel, levelCount);
+		bool allGeneral = true;
+		for (uint32_t level = baseMipLevel; level < endMipLevel && allGeneral; ++level)
+			allGeneral = GetSubresourceState(level).layout == vk::ImageLayout::eGeneral;
+		if (allGeneral)
+			newLayout = vk::ImageLayout::eGeneral;
+	}
+
+	TransitionLayout(cmd, newLayout, dstStageMask, baseMipLevel, levelCount);
+	return newLayout;
+}
+
 bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer) {
 	if (!data || !m_image) {
 		return false;

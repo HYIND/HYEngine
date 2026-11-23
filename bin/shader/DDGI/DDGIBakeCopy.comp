@@ -1,0 +1,33 @@
+#version 460
+
+// DDGI 烘焙重定位：把体积 ddgi.flags.z 的每个探针的 probeData（xyz 偏移，w = n + 背面比例）
+// 按体积内线性下标（以本帧最小角为原点，x 最快）拷到回读缓冲。在混合之后执行，读到的是本帧结果。
+// dispatch = ceil(该体积探针数 / 64)。
+
+#define DDGI_UBO_BINDING 4
+#define DDGI_VOLUME_BINDING 10
+#include "shader/DDGI/DDGICore.comp"
+#include "shader/DDGI/DDGIUniforms.comp"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 8, rgba32f) uniform readonly image2D probeDataAtlas;
+layout(std430, set = 0, binding = 13) writeonly buffer DDGIBakeBuffer
+{
+    vec4 ddgiBake[];
+};
+
+void main()
+{
+    uint v = ddgi.flags.z;
+    if (v >= ddgiVolumeCount())
+        return;
+
+    uint i = gl_GlobalInvocationID.x;
+    uvec3 counts = ddgiVolumeCounts(v);
+    if (i >= counts.x * counts.y * counts.z)
+        return;
+
+    ivec3 local = ddgiLocalCoord(i, counts);
+    ddgiBake[i] = imageLoad(probeDataAtlas, ddgiTileOrigin(ddgiProbeSlot(v, local), 1u));
+}

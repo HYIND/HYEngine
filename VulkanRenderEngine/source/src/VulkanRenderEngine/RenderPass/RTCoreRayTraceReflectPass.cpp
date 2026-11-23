@@ -127,10 +127,10 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 
 	data.outPutTexture = ctx.GetOutput(0);
 
-	// DDGI 图集（可选：DDGI 本帧没执行时为空）
-	data.ddgiIrradianceAtlas = ctx.GetOptionalInput(0);
-	data.ddgiDepthAtlas = ctx.GetOptionalInput(1);
-	data.ddgiProbeData = ctx.GetOptionalInput(2);
+	// DDGI 图集（可选持久资源：DDGI 从没执行过时为空；是否使用由下面的 ddgiEnable 决定）
+	data.ddgiIrradianceAtlas = ctx.GetOptionalPersitent(0);
+	data.ddgiDepthAtlas = ctx.GetOptionalPersitent(1);
+	data.ddgiProbeData = ctx.GetOptionalPersitent(2);
 
 	auto cmd = cmdCtx.GetCmd();
 

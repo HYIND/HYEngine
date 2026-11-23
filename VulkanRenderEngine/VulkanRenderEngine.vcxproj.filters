@@ -317,6 +317,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\RenderProfiler.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
