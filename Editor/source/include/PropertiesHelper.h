@@ -30,6 +30,8 @@ public:
 	// 注册组件
 	template<typename T>
 	static void RegisterComponent();
+	// 直接注册自定义绘制函数（面板需要实体信息、不走快照 / 反射的组件用）
+	static void RegisterCustomDraw(ComponentTypeID typeID, DrawFunction draw) { GetCustomDrawRegistry()[typeID] = std::move(draw); }
 	static std::vector<ComponentData> GetAllComponents(Entity entity);// 获取实体的所有组件
 	static void DrawAllProperties(Entity entity, const std::vector<ComponentData>& components, ProjectManager* assetManager);
 

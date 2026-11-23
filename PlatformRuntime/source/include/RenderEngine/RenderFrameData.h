@@ -7,6 +7,7 @@
 #include "VulkanRenderEngine/General/VKRenderContext.h"
 #include "RenderEngine/D2DRenderContext.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
+#include "VulkanRenderEngine/General/DDGIVolumeDesc.h"
 #include "UI/UiTypes.h"
 
 namespace Render
@@ -17,12 +18,16 @@ namespace Render
 
 		std::shared_ptr<TextureCube> skybox;
 
-		glm::mat4 projection;
-		glm::mat4 view;
-		glm::vec3 position;
-		glm::vec3 direction;
-		glm::vec3 directionUp;
-		glm::vec3 directionRight;
+		// 场景里启用的 DDGIVolumeComponent
+		std::vector<DDGIVolumeDesc> ddgiVolumes;
+
+		// 全部给默认值：没有相机写入的帧也得是一台合法相机（glm 默认构造不初始化）
+		glm::mat4 projection = glm::mat4(1.0f);
+		glm::mat4 view = glm::mat4(1.0f);
+		glm::vec3 position = glm::vec3(0.0f);
+		glm::vec3 direction = glm::vec3(0.0f, 0.0f, -1.0f);
+		glm::vec3 directionUp = glm::vec3(0.0f, 1.0f, 0.0f);
+		glm::vec3 directionRight = glm::vec3(1.0f, 0.0f, 0.0f);
 		float nearPlane = 0.1f;
 		float farPlane = 500.f;
 		float fov = 80.f;

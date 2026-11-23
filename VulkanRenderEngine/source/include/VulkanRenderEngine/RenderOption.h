@@ -161,37 +161,36 @@ struct Scene3DRenderOption
 	} transparentParams;
 
 	// DDGI 探针全局光照，距离单位为米。
-	// 对外用体积中心 center 描述，渲染器内部以最小角 origin 为基准（origin = snap(center - counts * spacing / 2)）。
+	// 探针来源有两种，可以叠加：
+	//   1) 跟随相机的级联（cascadeEnable）：以相机为中心的 cascadeLevels 级体积，间距逐级翻倍；
+	//   2) 场景里的 DDGIVolumeComponent：手动摆放的体积，优先级高于所有级联。
+	// 下面的着色 / 时域参数对两者都生效。
 	struct DDGIParams {
-		// 布置方式，优先级 autoFitVolume > followCamera > 手动 center：
-		//   autoFitVolume  按场景包围盒 + fitPadding 自动拟合，忽略 center / counts
-		//   followCamera   counts 作为滑动窗口跟随相机，整格平移时只重置新进入的探针层
-		bool autoFitVolume = true;
-		bool followCamera = false;
-		float fitPadding = 1.0f;						// 自动拟合的外扩边距，实际至少一格 spacing
-
-		glm::vec3 center = glm::vec3(0.0f);				// 手动模式的体积中心
-		// 探针间距，画质的首要因素。建议 0.75~1.25m；探针数 ∝ 1/spacing³，用 updateSliceCount 分摊开销
-		glm::vec3 spacing = glm::vec3(2.0f);
-		glm::uvec3 counts = glm::uvec3(32, 32, 16);		// 每轴探针数，总数上限 DDGIAtlasLayout::MaxProbeCount
+		bool cascadeEnable = true;
+		uint32_t cascadeLevels = 4;							// 1~4
+		glm::vec3 cascadeBaseSpacing = glm::vec3(1.0f);		// 第 0 级间距，之后每级翻倍
+		glm::uvec3 cascadeCounts = glm::uvec3(24, 12, 24);	// 每级的探针数
+		float cascadeFadeCells = 2.0f;						// 级与级之间的过渡宽度（格）
+		bool cascadeAutoRelocate = true;					// 级联探针自动避开几何
 
 		// 采样偏移：沿法线 normalBias、朝观察者 viewBias（Apply 朝相机，多次反弹朝探针），
 		// 抑制自遮挡与掠射角漏光。建议均为 spacing 的 0.1~0.3 倍
-		float normalBias = 0.5f;
-		float viewBias = 0.5f;
-		float maxRayDistance = 24.0f;					// 探针光线最远距离，未命中视为看到天空
+		float normalBias = 0.1f;
+		float viewBias = 0.10f;
+		float maxRayDistance = 15.0f;					// 探针光线最远距离，未命中视为看到天空
 		// 背面权重指数：w = ((N·dirToProbe + 1) / 2)^k + 0.2。调大漏光更少但格子感更强
 		float backfaceThreshold = 2.0f;
-		float skyIntensity = 1.0f;						// 未命中光线的天空强度，0 = 没有天空光
+		float skyIntensity = 0.2f;						// 未命中光线的天空强度，0 = 没有天空光
 		float energy = 1.0f;							// 间接光整体强度
 
-		// 每帧更新 1/N 的探针，1 = 全量
-		uint32_t updateSliceCount = 3;
-		// 时域混合：new = mix(history, current, 1 - hysteresis)。调大更稳但动态光拖尾更长，
-		// 等效收敛时间约 sliceCount / (1 - hysteresis) 帧。重置后前几次更新按 1/n 平均，几帧内收敛
+		// 每帧最多更新的探针数（不超过 GlobalConfig::DDGIUpdateBudget）。
+		// 预算按距离分给各体积：近处更新勤、远处慢；新出现的探针优先
+		uint32_t updateBudget = 8192;
+		// 时域混合：new = mix(history, current, 1 - hysteresis)。调大更稳但动态光拖尾更长。
+		// 重置后前几次更新按 1/n 平均，几帧内收敛
 		float hysteresis = 0.92f;
 		// 光照突变阈值：探针平均亮度的相对变化超过它（且超出跨帧统计的噪声）时，
-		// 本次更新该探针的 hysteresis 降低 0.75，开关灯时快速跟上。调小响应更积极，调大更稳；0 = 关闭
+		// 本次更新该探针的 hysteresis 降低 0.75。0 = 关闭
 		float lightChangeThreshold = 0.0f;
 	} ddgiParams;
 
@@ -200,6 +199,7 @@ struct Scene3DRenderOption
 		bool bloomOn = true;
 		bool gammaOn = true;
 		bool lightDrawOn = false;
+		bool ddgiProbeDrawOn = false;		// DDGI 探针可视化（编辑器调试）
 		bool drawTransparent = true;
 		bool ssrOn = false;
 		bool ssgiOn = false;

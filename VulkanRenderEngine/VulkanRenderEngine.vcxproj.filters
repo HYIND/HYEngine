@@ -308,6 +308,18 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDef.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIVolumeDesc.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDebug.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeUpdatePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
@@ -591,6 +603,12 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIApplyPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\DDGISharedState.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>

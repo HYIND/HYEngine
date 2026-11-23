@@ -145,16 +145,23 @@ void RenderSystem::postUpdate(float deltaTime)
 	auto framebuffer3D = triBuffer3D ? triBuffer3D->acquireWriteBuffer() : nullptr;
 	if (framebuffer3D)
 	{
-		auto entities = m_world->getEntitiesWith<TagMainCamera, Transform, CameraComponent>();
-		if (!entities.empty())
+		// 主相机以 World 记录的为准（编辑器相机、SetMainCamera 设的都在这里）；
+		// 场景文件里的相机反序列化时会自带 TagMainCamera，同时可能有多台带 tag，按 tag 取只作后备。
+		Entity maincamera = m_world->GetMainCameraEntity();
+		if (!m_world->IsValidWorldEntity(maincamera) || !maincamera.hasComponents<Transform, CameraComponent>())
 		{
-			Entity& maincamera = entities[0];
+			auto entities = m_world->getEntitiesWith<TagMainCamera, Transform, CameraComponent>();
+			maincamera = entities.empty() ? Entity() : entities[0];
+		}
+		if (maincamera)
+		{
 
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessModel(framebuffer3D, maincamera); })));
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLight(framebuffer3D, maincamera); })));
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessParticle(framebuffer3D, maincamera); })));
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLaserBeam(framebuffer3D, maincamera); })));
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessSkybox(framebuffer3D, maincamera); })));
+			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessDDGIVolume(framebuffer3D, maincamera); })));
 			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {SyncGLCamera(framebuffer3D, maincamera); })));
 		}
 	}
@@ -626,6 +633,34 @@ void RenderSystem::ProcessSkybox(std::shared_ptr<Render::Render3DFrameData> fram
 		framebuffer->skybox = skybox.cube;
 		return;
 	}
+}
+
+void RenderSystem::ProcessDDGIVolume(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)
+{
+	auto view = m_world->getViewWith<Transform, DDGIVolumeComponent>();
+
+	std::vector<DDGIVolumeDesc> temp;
+	for (auto [entity, transform, volume] : view)
+	{
+		if (!volume.visible)
+			continue;
+
+		DDGIVolumeDesc desc;
+		desc.id = DDGIVolumeIdFromEntity(entity.getId());
+		desc.center = transform.position;
+		desc.spacing = volume.spacing;
+		// Gizmo 缩放拖动期间 scale != 1：按缩放实时预览，松开时编辑器把它折算进 counts
+		desc.counts = glm::uvec3(glm::clamp(glm::round(glm::vec3(volume.counts) * glm::abs(transform.scale)),
+			glm::vec3(1.0f), glm::vec3(255.0f)));
+		desc.priority = volume.priority;
+		desc.fadeCells = volume.fadeCells;
+		desc.autoRelocate = volume.autoRelocate;
+		desc.edits = volume.edits;
+		temp.push_back(std::move(desc));
+	}
+
+	LockGuard guard(_Scene3D_SpinLock);
+	framebuffer->ddgiVolumes = std::move(temp);
 }
 
 void RenderSystem::SyncGLCamera(std::shared_ptr<Render3DFrameData> framebuffer, Entity maincamera)

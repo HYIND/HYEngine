@@ -27,8 +27,13 @@ static vk::Result SubmitCommandBuffer(
 
 	auto fenceHandle = signalFence ? signalFence->GetHandle() : VK_NULL_HANDLE;
 
+	// 只提交本次真正录过命令的句柄。
+	// Pass 没东西可画时（比如场景里最后一个 mesh 被删了）也会照常 SubmitToQueue，
+	// 这时句柄是从池子复用来的、没 Begin 过，里面还是上一次的旧命令，提交就会重放旧命令，
+	// 引用到已经 Retire 销毁的 buffer。跳过它，信号量/fence 仍然照常提交，同步不受影响。
 	for (auto& cmd : commandBuffers)
-		cmdHandles.push_back(cmd->GetHandle());
+		if (cmd && cmd->GetHandle() && cmd->HasCommands())
+			cmdHandles.push_back(cmd->GetHandle());
 
 	bool hasTimeLine = false;
 
@@ -82,6 +87,10 @@ static vk::Result SubmitCommandBuffer(
 			.setSignalSemaphoreValues(signalValues);
 		submitInfo.setPNext(&timelineInfo);
 	}
+
+	// 什么都没有（无命令、无信号量、无 fence）就不必进队列
+	if (cmdHandles.empty() && waitHandles.empty() && signalHandles.empty() && !fenceHandle)
+		return vk::Result::eSuccess;
 
 	LockGuard guard(queuemutex);
 	auto result = queue.submit(submitInfo, fenceHandle);

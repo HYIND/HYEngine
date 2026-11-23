@@ -573,13 +573,12 @@ bool SceneEditor::PlayWorld()
     m_runtime.CaptureSceneRenderOption(*snapshot);
     _playSnapshot = std::move(snapshot);
 
+    // 和 Game 打开场景用同一个选法：带 TagMainCamera 的场景相机优先，其次第一台场景相机；
+    // 场景里没有相机就继续用编辑器的自由相机。
     bool findSceneCamera = false;
-    auto cameraEntities = _world->getEntitiesWith<Transform, CameraComponent>();
-    for (auto& entity : cameraEntities)
+    if (Entity sceneCamera = EngineRuntime::FindSceneMainCamera(*_world, IsEditorEntity))
     {
-        if (IsEditorEntity(entity))
-            continue;
-        _world->SetMainCamera(entity);
+        _world->SetMainCamera(sceneCamera);
         findSceneCamera = true;
     }
 
@@ -878,6 +877,22 @@ void SceneEditor::AddEmptyEntity(const glm::vec3& position, const std::string& n
         AddPickProxy(entity);
         if (!name.empty())
             SetNameTag(entity, name);
+        });
+}
+
+void SceneEditor::AddDDGIVolume(const glm::vec3& position, const std::string& name)
+{
+    _world->SubmitCommand([&, position = position, name = name](World& world)-> void {
+        Entity entity = world.createEntity();
+        auto& volume = entity.addComponent<DDGIVolumeComponent>();
+
+        // 中心吸附到网格：最小角落在 spacing 的世界网格上
+        const glm::ivec3 origin = DDGIVolumeOriginCell(position, volume.spacing, volume.counts);
+        auto& trans = entity.addComponent<Transform>();
+        trans.position = glm::vec3(origin) * volume.spacing + volume.Extent() * 0.5f;
+
+        AddPickProxy(entity);
+        SetNameTag(entity, name.empty() ? std::format("DDGIVolume_{}", entity.getId()) : name);
         });
 }
 

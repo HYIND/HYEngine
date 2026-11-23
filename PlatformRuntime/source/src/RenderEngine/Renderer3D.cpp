@@ -3,6 +3,8 @@
 #include "CommonData/Camera.h"
 
 #include <algorithm>
+#include <atomic>
+#include <iostream>
 #include <thread>
 
 namespace Render
@@ -210,7 +212,24 @@ namespace Render
 
         const float width = static_cast<float>(renderer->GetWidth());
         const float height = static_cast<float>(renderer->GetHeight());
-        const float aspect = (height > 0.f) ? (width / height) : 1.f;
+        float aspect = (height > 0.f) ? (width / height) : 1.f;
+
+        // NaN 防护：相机参数先整理干净再用。RenderState 里的 direction/up/right 会直接进 shader，
+        // 所以修正后的值要写回 frame，不能只在算矩阵时修。
+        bool cameraFixed = CameraHelper::SanitizeProjection(aspect, frame->fov, frame->nearPlane, frame->farPlane);
+        if (!CameraHelper::IsFinite(frame->position))
+        {
+            frame->position = glm::vec3(0.f);
+            cameraFixed = true;
+        }
+        cameraFixed |= CameraHelper::SanitizeBasis(frame->direction, frame->directionUp, frame->directionRight);
+        if (cameraFixed)
+        {
+            static std::atomic<bool> warned{ false };
+            if (!warned.exchange(true))
+                std::cerr << "[ Renderer3D ] WARNING: 3D 帧的相机参数非法（零向量/NaN/近远平面错误），已替换为安全默认值；检查场景主相机。\n";
+        }
+
         frame->projection = CameraHelper::GetPerspectiveProjectionMatrix(aspect, frame->fov, frame->nearPlane, frame->farPlane);
         frame->view = CameraHelper::GetViewMatrix(frame->position, frame->direction, frame->directionUp);
 

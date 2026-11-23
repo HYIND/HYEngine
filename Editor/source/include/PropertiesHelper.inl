@@ -2,6 +2,7 @@
 #include "ImguiLayout.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "Render/Components/ParticleEmitter.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -310,94 +311,72 @@ bool PropertiesHelper::DrawComponent(T& comp)
 	return anyChanged;
 }
 
-// DDGI 参数面板。
-// 通用反射遍历做不到「按当前布置模式逐项置灰」，所以这里手写一份。
-// 置灰规则（优先级 autoFitVolume > followCamera > 手动）：
-//   autoFitVolume → center / counts 由场景包围盒决定，fitPadding 生效
-//   followCamera  → center 由相机决定；counts 是滑动窗口尺寸，仍然可编辑
-//   手动          → center / counts 生效，fitPadding 无效
+// DDGI 参数面板。手写是为了在级联关闭时把级联参数置灰，并给出提示。
+// 探针来源：跟随相机的级联（这里）+ 场景里的 DDGIVolumeComponent（实体组件），两者可以叠加。
 template<>
 inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 {
 	bool changed = false;
 
-	// ── 布置方式 ──
-	if (ImGui::Checkbox("autoFitVolume", &p.autoFitVolume))
-		changed = true;
+	// ── 跟随相机的级联 ──
+	changed |= ImGui::Checkbox("cascadeEnable（跟随相机）", &p.cascadeEnable);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("以相机为中心的多级探针体积，间距逐级翻倍。\n关闭后只有场景里的 DDGI 体积生效；两者都没有时 DDGI 不输出");
 
-	ImGui::SameLine();
-	// autoFitVolume 优先级更高，两者同时为 true 时跟随相机不生效，这里直接禁用避免误勾
-	if (p.autoFitVolume)
+	if (!p.cascadeEnable)
 		ImGui::BeginDisabled();
-	if (ImGui::Checkbox("followCamera", &p.followCamera))
-		changed = true;
-	if (p.autoFitVolume)
-		ImGui::EndDisabled();
-	if (p.autoFitVolume && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-		ImGui::SetTooltip("autoFitVolume 打开时体积由场景包围盒决定，跟随相机不生效");
 
-	const bool manual = !p.autoFitVolume && !p.followCamera;
-
-	// ── 体积 ──
-	if (!manual)
-		ImGui::BeginDisabled();
-	SetNextPropertyFieldWidth(250.0f, 0.6f);
-	if (ImGui::DragFloat3("center", glm::value_ptr(p.center), 0.1f))
-		changed = true;
-	if (!manual)
-		ImGui::EndDisabled();
-	if (!manual && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-		ImGui::SetTooltip(p.autoFitVolume ? "由场景包围盒算出" : "由相机位置算出");
-
-	// counts 在 followCamera 下是滑动窗口尺寸，仍要能改
-	if (p.autoFitVolume)
-		ImGui::BeginDisabled();
-	glm::vec3 countsF(p.counts);
-	SetNextPropertyFieldWidth(250.0f, 0.6f);
-	if (ImGui::DragFloat3("counts", glm::value_ptr(countsF), 0.1f))
+	int levels = static_cast<int>(p.cascadeLevels);
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::SliderInt("cascadeLevels", &levels, 1, 4))
 	{
-		p.counts = glm::uvec3(glm::clamp(glm::round(countsF), glm::vec3(1.0f), glm::vec3(255.0f)));
+		p.cascadeLevels = static_cast<uint32_t>(levels);
 		changed = true;
 	}
-	if (p.autoFitVolume)
-		ImGui::EndDisabled();
 
 	SetNextPropertyFieldWidth(250.0f, 0.6f);
-	if (ImGui::DragFloat3("spacing", glm::value_ptr(p.spacing), 0.05f))
+	if (ImGui::DragFloat3("cascadeBaseSpacing", glm::value_ptr(p.cascadeBaseSpacing), 0.05f, 0.25f, 16.0f))
 	{
-		p.spacing = glm::max(p.spacing, glm::vec3(0.25f));
+		p.cascadeBaseSpacing = glm::max(p.cascadeBaseSpacing, glm::vec3(0.25f));
 		changed = true;
 	}
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("间接光按这个尺度做三线性插值。\n间距太大 = 看得见格子（块状），建议 0.75~1.25m。\n开销与 1/spacing^3 成正比，用 updateSliceCount 分摊。");
+		ImGui::SetTooltip("第 0 级的探针间距，之后每级翻倍");
 
-	if (!p.autoFitVolume)
-		ImGui::BeginDisabled();
-	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::DragFloat("fitPadding", &p.fitPadding, 0.1f, 0.0f, 64.0f))
+	int counts[3] = { int(p.cascadeCounts.x), int(p.cascadeCounts.y), int(p.cascadeCounts.z) };
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	if (ImGui::DragInt3("cascadeCounts", counts, 0.2f, 1, 255))
+	{
+		p.cascadeCounts = glm::uvec3(glm::clamp(glm::ivec3(counts[0], counts[1], counts[2]), glm::ivec3(1), glm::ivec3(255)));
 		changed = true;
-	if (!p.autoFitVolume)
+	}
+
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	if (ImGui::DragFloat("cascadeFadeCells", &p.cascadeFadeCells, 0.05f, 0.01f, 8.0f))
+	{
+		p.cascadeFadeCells = std::max(0.01f, p.cascadeFadeCells);
+		changed = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("级与级之间（以及级联外沿）的过渡宽度，单位：格");
+	changed |= ImGui::Checkbox("cascadeAutoRelocate", &p.cascadeAutoRelocate);
+
+	{
+		const unsigned long long perLevel =
+			static_cast<unsigned long long>(p.cascadeCounts.x) * p.cascadeCounts.y * p.cascadeCounts.z;
+		const glm::vec3 extent = glm::vec3(p.cascadeCounts) * p.cascadeBaseSpacing * float(1u << (std::max(1u, p.cascadeLevels) - 1u));
+		ImGui::TextDisabled("%llu probes x %u 级，最外层 %.0f x %.0f x %.0f m",
+			perLevel, p.cascadeLevels, static_cast<double>(extent.x), static_cast<double>(extent.y), static_cast<double>(extent.z));
+		if (perLevel * p.cascadeLevels > GlobalConfig::DDGIProbeCapacity)
+			ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "超过探针总容量 %u，外层级联会被停用", GlobalConfig::DDGIProbeCapacity);
+	}
+
+	if (!p.cascadeEnable)
 		ImGui::EndDisabled();
 
-	// 只读反馈：面板宽度有限，这里只用短句，避免文字溢出面板
-	const unsigned long long total =
-		static_cast<unsigned long long>(p.counts.x) * p.counts.y * p.counts.z;
-	const glm::vec3 extent = glm::vec3(p.counts) * p.spacing;
-	ImGui::TextDisabled("%.1f x %.1f x %.1f m / %llu probes",
-		static_cast<double>(extent.x), static_cast<double>(extent.y),
-		static_cast<double>(extent.z), total);
+	ImGui::Separator();
 
-	if (total > 16384)
-		ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "> 16384 probes, spacing grows");
-
-	if (p.autoFitVolume)
-		ImGui::TextDisabled("volume fitted to scene bounds");
-	else if (p.followCamera)
-		ImGui::TextDisabled("window follows camera");
-	else
-		ImGui::TextDisabled("manual volume");
-
-	// ── 探针发线 ──
+	// ── 着色 ──
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("normalBias", &p.normalBias, 0.01f, 0.0f, 5.0f))
 		changed = true;
@@ -409,8 +388,10 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("采样点朝观察者方向外推（米），与 normalBias 配合抑制掠射角漏光。\n建议 spacing 的 0.1~0.3 倍。");
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::DragFloat("maxRayDistance", &p.maxRayDistance, 0.5f, 0.5f, 200.0f))
+	if (ImGui::DragFloat("maxRayDistance", &p.maxRayDistance, 0.5f, 0.5f, 500.0f))
 		changed = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("探针光线最远距离，超过视为看到天空。室外场景要调大");
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("backfaceThreshold", &p.backfaceThreshold, 0.05f, 0.001f, 8.0f))
 		changed = true;
@@ -421,14 +402,16 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 	if (ImGui::DragFloat("energy", &p.energy, 0.02f, 0.0f, 8.0f))
 		changed = true;
 
-	// ── 质量与时域 ──
-	int slice = static_cast<int>(p.updateSliceCount);
+	// ── 更新与时域 ──
+	int budget = static_cast<int>(p.updateBudget);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::DragInt("updateSliceCount", &slice, 0.2f, 1, 32))
+	if (ImGui::DragInt("updateBudget", &budget, 16.0f, 64, static_cast<int>(GlobalConfig::DDGIUpdateBudget)))
 	{
-		p.updateSliceCount = static_cast<uint32_t>(slice);
+		p.updateBudget = static_cast<uint32_t>(std::clamp(budget, 64, static_cast<int>(GlobalConfig::DDGIUpdateBudget)));
 		changed = true;
 	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("每帧最多更新的探针数（上限 GlobalConfig::DDGIUpdateBudget = %u）。\n按距离分给各体积：近处更新勤、远处慢；新出现的探针优先", GlobalConfig::DDGIUpdateBudget);
 
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("hysteresis", &p.hysteresis, 0.005f, 0.0f, 0.98f))

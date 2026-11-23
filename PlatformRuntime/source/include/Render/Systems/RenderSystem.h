@@ -61,6 +61,7 @@ private:
 
 private:
     void ProcessSkybox(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
+    void ProcessDDGIVolume(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);
 
 private:
 	void SyncGLCamera(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera);

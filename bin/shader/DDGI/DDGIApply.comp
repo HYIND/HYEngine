@@ -1,7 +1,14 @@
 #version 460
 
 // DDGI 全屏采样：输出已乘 albedo 的漫反射间接光，由 combinIndirectLightingNode 加法合成。
-// diffuseIndirect = albedo × Lbar × AO × energy（图集存的是 Lbar = E/π，不再乘除 π）
+// diffuseIndirect = albedo × (1 - metallic) × Lbar × AO × energy（图集存的是 Lbar = E/π）
+// (1 - metallic) 与直接光 CalcBDRFDiffuse 的 kD 一致：金属的 albedo 是 F0，没有漫反射。
+// AO = min(SSAO, 材质 AO)，与 lightingpass.comp 一致。
+// DDGI 没覆盖到的权重 remaining（体积外、过渡带、探针覆盖率低处）回退到 IBL 漫反射：
+//   + remaining × albedo × (1 - metallic) / π × IBLDiffuse(n) × AO
+// 与 CalculateIBLLightingSplit 的漫反射项相同（不乘 DDGI 的 energy），体积外的结果和不开 DDGI 时一致。
+// 漏光调试：单独编译一个定义了 DDGI_LEAK_ENABLE 的变体，只在调试打开时使用，平常的变体不带任何调试分支。
+// 调试变体里像素 ddgi.debug.xy 把本次采样用到的每个体积、每个探针及各项权重写进 leakRecord，编辑器读回后画连线、列权重。
 
 #ifndef work_size_x
 #define work_size_x 16
@@ -13,6 +20,7 @@
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
 
 #define DDGI_UBO_BINDING 8
+#define DDGI_VOLUME_BINDING 11
 #include "shader/DDGI/DDGICore.comp"
 #include "shader/DDGI/DDGIUniforms.comp"
 
@@ -22,8 +30,76 @@ layout(set = 0, binding = 2) uniform sampler2D gNormal;
 layout(set = 0, binding = 3) uniform sampler2D gAlbedoOpacity;
 layout(set = 0, binding = 4) uniform sampler2D SSAOMap;
 layout(set = 0, binding = 5) uniform sampler2D depthMap;
-layout(set = 0, binding = 6) uniform sampler2D irradianceAtlas;
-layout(set = 0, binding = 7) uniform sampler2D depthAtlas;
+layout(set = 0, binding = 6) uniform sampler2D ddgiIrradianceTex;
+layout(set = 0, binding = 7) uniform sampler2D ddgiDepthTex;
+layout(set = 0, binding = 9) uniform sampler2D ddgiProbeDataTex;
+layout(set = 0, binding = 10) uniform sampler2D gMetallicRoughness;    // r = metallic，g = roughness，b = 材质 AO
+layout(set = 0, binding = 13) uniform samplerCube iblDiffuseCube;     // IBL 漫反射（同 LightingPass 的 IBLDiffuse）
+layout(set = 0, binding = 14) uniform DDGIApplyParams
+{
+    uvec4 applyFlags;   // x = IBL 漫反射回退开关（没有可用的 IBL cube 时为 0，此时 iblDiffuseCube 未绑定）
+};
+
+const float DDGI_APPLY_PI = 3.14159265359;
+
+#ifdef DDGI_LEAK_ENABLE
+struct DDGILeakProbe
+{
+    vec4 position;      // xyz 探针位置，w 记录里的体积下标
+    vec4 weights;       // x 三线性，y 背面，z 可见性，w 最终
+    vec4 extra;         // x 平均命中距离，y 距离，z 1 - 背面剔除，w 是否有效
+    ivec4 cell;         // xyz 世界格子，w 槽位
+};
+
+layout(std430, set = 0, binding = 12) buffer DDGILeakRecord
+{
+    uvec4 header;       // x 有效，y 探针记录数，z 体积记录数，w frameIndex
+    vec4 worldPos;
+    vec4 normal;
+    vec4 biasedPos;
+    vec4 result;
+    vec4 volumeWeights;
+    uvec4 volumeIds;
+    DDGILeakProbe probes[DDGI_MAX_LEAK_PROBES];
+} leak;
+
+bool gDDGIDebug = false;
+
+// 返回该体积在记录里的下标（每次采样按顺序新开一条）
+uint ddgiLeakVolume(uint volumeId)
+{
+    uint i = leak.header.z;
+    if (i < 4u)
+    {
+        leak.volumeIds[i] = volumeId;
+        leak.volumeWeights[i] = 0.0;
+        leak.header.z = i + 1u;
+    }
+    return min(i, 3u);
+}
+
+void ddgiLeakVolumeWeight(uint index, float w)
+{
+    if (index < 4u)
+        leak.volumeWeights[index] = w;
+}
+
+void ddgiLeakProbe(uint volumeIndex, vec3 pos, ivec3 cell, uint slot, vec4 weights, vec4 extra)
+{
+    uint i = leak.header.y;
+    if (i >= uint(DDGI_MAX_LEAK_PROBES))
+        return;
+    leak.probes[i].position = vec4(pos, float(volumeIndex));
+    leak.probes[i].weights = weights;
+    leak.probes[i].extra = extra;
+    leak.probes[i].cell = ivec4(cell, int(slot));
+    leak.header.y = i + 1u;
+}
+
+#define DDGI_LEAK_DEBUG
+#else
+const bool gDDGIDebug = false;
+#endif
 
 #include "shader/DDGI/DDGISample.comp"
 
@@ -34,6 +110,16 @@ void main()
     if (any(greaterThanEqual(coord, size)))
         return;
 
+#ifdef DDGI_LEAK_ENABLE
+    gDDGIDebug = ddgi.flags.w != 0u && uvec2(coord) == ddgi.debug.xy;
+    if (gDDGIDebug)
+    {
+        leak.header = uvec4(0u, 0u, 0u, ddgiFrameIndex());
+        leak.volumeWeights = vec4(0.0);
+        leak.volumeIds = uvec4(0u);
+    }
+#endif
+
     vec2 uv = (vec2(coord) + 0.5) / vec2(size);
     vec3 indirect = vec3(0.0);
 
@@ -42,15 +128,32 @@ void main()
         vec3 worldPos = texture(gPosition, uv).xyz;
         vec3 normal = normalize(texture(gNormal, uv).rgb);
         vec3 albedo = texture(gAlbedoOpacity, uv).rgb;
-        float ao = clamp(texture(SSAOMap, uv).r, 0.0, 1.0);
+        vec4 metallicRoughness = texture(gMetallicRoughness, uv);
+        float metallic = clamp(metallicRoughness.r, 0.0, 1.0);
+        float ao = clamp(min(texture(SSAOMap, uv).r, metallicRoughness.b), 0.0, 1.0);
 
         vec3 toCamera = ddgi.cameraPos.xyz - worldPos;
         float camDist = length(toCamera);
         toCamera = camDist > 1e-4 ? toCamera / camDist : normal;
 
-        // 读的是本帧混合后的图集，新进入窗口的探针已写好，不需要跳过
-        vec3 Lbar = ddgiSampleIrradiance(worldPos, normal, toCamera, false);
-        indirect = albedo * Lbar * ao * ddgi.shadingParams.z;
+        float remaining;
+        vec3 Lbar = ddgiSampleIrradianceEx(worldPos, normal, toCamera, remaining);
+        vec3 kdAlbedo = albedo * (1.0 - metallic);
+        indirect = kdAlbedo * Lbar * ao * ddgi.shadingParams.z;
+
+        if (applyFlags.x != 0u && remaining > 1e-3)
+            indirect += remaining * kdAlbedo / DDGI_APPLY_PI * texture(iblDiffuseCube, normal).rgb * ao;
+
+#ifdef DDGI_LEAK_ENABLE
+        if (gDDGIDebug)
+        {
+            leak.header.x = 1u;
+            leak.worldPos = vec4(worldPos, 1.0);
+            leak.normal = vec4(normal, 0.0);
+            leak.biasedPos = vec4(worldPos + normal * ddgi.shadingParams.x + toCamera * ddgi.shadingParams.y, 1.0);
+            leak.result = vec4(Lbar, 1.0);
+        }
+#endif
     }
 
     imageStore(outImage, coord, vec4(indirect, 1.0));

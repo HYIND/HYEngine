@@ -394,13 +394,9 @@ LightShadowDepthPass::~LightShadowDepthPass()
 
 void LightShadowDepthPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	if (state.lights.dirLightInfos.empty()
-		&& state.lights.spotLightInfos.empty()
-		&& state.lights.pointLightInfos.empty()
-		&& !state.indirectCommands.staticMesh_OneSideCommand.empty()
-		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
-		return;
-
+	// 不做提前返回：没有灯光时也要把灯光数量 0 上传，并把 state.lights.ssbo_* 交出去。
+	// LightingPass、RTR / RTGI、DDGI 都会绑定这些 SSBO 读 dirLightCount 等，指针为空时描述符不会被设置。
+	// 没有灯光时下面的 PreRecord* 会直接返回，开销只有几次小的上传。
 	auto& selfctx = registry.Get<SelfContext>("context");
 	state.lights.shadowAtlas = selfctx.atlas;
 
@@ -443,13 +439,6 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	if (!shadowAtlas)
 		return;
 
-	if (state.lights.dirLightInfos.empty()
-		&& state.lights.spotLightInfos.empty()
-		&& state.lights.pointLightInfos.empty()
-		&& !state.indirectCommands.staticMesh_OneSideCommand.empty()
-		&& !state.indirectCommands.staticMesh_TwoSideCommand.empty())
-		return;
-
 	auto& selfctx = registry.Get<SelfContext>("context");
 
 	auto cmd = cmdCtx.GetCmd();
@@ -460,6 +449,11 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
+
+	// 图集的尺寸和布局每帧都要设置（后面的 Pass 会把它当输入读），之后没有要画的阴影视口（没有灯光）就结束
+	auto& datas = *registry.GetShared<std::vector<PreRecordData>>("PreRecordData");
+	if (datas.empty())
+		return;
 
 	DynamicRenderInfo renderInfo;
 	renderInfo
@@ -484,7 +478,6 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	pointLightShadowDepthSkinnedBinding.SetStorageBlock(state.indirectCommands.ssbo_SkinnedMesh_TransformAndMaterialIndices, 5);
 	pointLightShadowDepthSkinnedBinding.SetShadowBindlessMaterialTexture(IndirectDrawManager::Instance()->GetShadowMaterialSSBO(), BindlessTextureManager::Instance());
 
-	auto& datas = *registry.GetShared<std::vector<PreRecordData>>("PreRecordData");
 	for (auto& data : datas)
 	{
 		if (data.type == PreRecordLightType::Dir)
@@ -1064,5 +1057,13 @@ void LightShadowDepthPass::PreRecordRenderScene(
 	if (ctx.skinnedTwoSideCommandSize > 0)
 		renderSkinnedCommands(ctx.skinnedTwoSideCommandSize, data.skinnedTwoSideIndirectCommands, vk::CullModeFlagBits::eNone);
 
+	// 场景里没有可投影的网格时也要清掉这些阴影视口（loadOp = eLoad），
+	// 否则阴影图集保留上一帧的内容，体积光 / 透明物体会采到已删除物体的残影
+	if (!hasClear && !clearRects.empty())
+	{
+		cmd->beginRendering(renderInfo);
+		cmd->clearAttachments(clearAttachment, clearRects);
+		cmd->endRendering();
+	}
 }
 

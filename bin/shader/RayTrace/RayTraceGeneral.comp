@@ -315,6 +315,10 @@ bool findHitPointOnMeshData(int index, inout Ray worldRay, inout HitInfo hit)
 {
     bool isHit = false;
 
+    // 没有三角形的网格没有 BVH：根节点下标会是 -1，越界读
+    if (meshmatDataBuffer.meshmatdata[index].mesh.bvhNodeCount <= 0)
+        return false;
+
     // MeshMatData meshmatdata = meshmatDataBuffer.meshmatdata[index];
     MeshData meshdata = meshmatDataBuffer.meshmatdata[index].mesh;
     MaterialData materialdata = meshmatDataBuffer.meshmatdata[index].mat;
@@ -418,6 +422,10 @@ bool findHitPointOnMeshData(int index, inout Ray worldRay, inout HitInfo hit)
 bool traceScene(Ray ray, inout HitInfo hit) 
 {
     bool isHit = false;
+
+    // 场景里没有网格时世界 BVH 为空：根节点下标会是 -1，越界读（可能导致 GPU 挂起）
+    if (worldBVHNodeBuffer.nodeCount <= 0)
+        return false;
 
     vec3 invDir = 1.0 / ray.direction;
 

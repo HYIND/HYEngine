@@ -2,6 +2,8 @@
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/VKContext.h"
+#include <algorithm>
+#include <limits>
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #include <stb\stb_image.h>   
@@ -105,6 +107,18 @@ bool Texture2D::BlitImage(const std::shared_ptr<Texture2D>& src, const std::shar
 
 bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t srcLevel, uint32_t destLevel)
 {
+	return CopyTextureRegionAsync(cmd, src, dest, std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max(), srcLevel, destLevel);
+}
+
+bool Texture2D::CopyTextureRegionAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t width, uint32_t height, uint32_t srcLevel, uint32_t destLevel)
+{
+	if (!src || !dest)
+		return false;
+	return CopyTextureRegionAsync(cmd, *src, *dest, width, height, srcLevel, destLevel);
+}
+
+bool Texture2D::CopyTextureRegionAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t width, uint32_t height, uint32_t srcLevel, uint32_t destLevel)
+{
 	using namespace VKWrapper;
 
 	if (&src == &dest && srcLevel == destLevel)
@@ -130,6 +144,12 @@ bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffe
 
 	if (!cmd)
 		return false;
+
+	// 区域拷贝：只拷左上角 width × height
+	const uint32_t copyWidth = std::min(width, srcWidth);
+	const uint32_t copyHeight = std::min(height, srcHeight);
+	if (copyWidth == 0 || copyHeight == 0)
+		return true;
 
 	// 获取源和目标图像
 	vk::Image srcImage = src._image->GetHandle();
@@ -183,7 +203,7 @@ bool Texture2D::CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffe
 		.setSrcOffset({ 0, 0, 0 })
 		.setDstSubresource(dstSubresourceLayers)
 		.setDstOffset({ 0, 0, 0 })
-		.setExtent({ srcWidth, srcHeight, 1 });
+		.setExtent({ copyWidth, copyHeight, 1 });
 
 	// 执行拷贝
 	cmd->copyImage(srcImage, vk::ImageLayout::eTransferSrcOptimal,

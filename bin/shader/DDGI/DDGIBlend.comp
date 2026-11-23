@@ -1,28 +1,30 @@
 #version 460
 
-// DDGI 光线 -> 探针：余弦卷积、深度矩、时域混合、边框。
-// dispatch = (1, 1, probeCount)，一个 workgroup（RayGrid² = 256 线程）负责一个探针：
-//   1) 每个线程读一条光线及其方向进 shared memory；线程 0 更新该探针的时域状态并算出混合系数；
-//   2) 辐照度内层每个 texel：Σ max(0, n·d)·L / Σ max(0, n·d)，即 E/π；alpha 存背面命中比例；
-//   3) 深度内层每个 texel：权重 max(0, n·d)^50，累积 (t, t²)，t 截断到 1.5 倍格子对角线；
-//      存矩而不是方差，时域混合是线性的，方差由采样端现算；
-//   4) 与 history 指数混合（全量重置或新进入窗口的探针直接覆盖），混合系数见下；
-//   5) 整 texel 拷贝回填边框。
-// 本帧没轮到的探针整块拷贝 history（output 每帧是新纹理，必须写满）。
+// DDGI 光线 -> 探针：余弦卷积、深度矩、时域混合、边框、自动重定位。
+// dispatch = (probesPerRow, ceil(已用槽位 / probesPerRow), 1)，一个 workgroup（RayGrid² = 256 线程）负责一个槽位。
+// 槽位每帧重新分配，history 是上一帧布局：同一探针（同体积、同世界格子）在 history 里的位置由 ddgiPrevSlot 给出。
+//   * 本帧在更新列表里：
+//     1) 读光线进 shared memory；线程 0 更新时域状态、算混合系数、做自动重定位；
+//     2) 辐照度内层每个 texel：Σ max(0, n·d)·L / Σ max(0, n·d)，即 E/π；
+//     3) 深度内层每个 texel：权重 max(0, n·d)^50，累积 (t, t²)，t 截断到 1.5 倍格子对角线；
+//     4) 与 history 指数混合（没有历史时直接覆盖）；
+//     5) 整 texel 拷贝回填边框。
+//   * 没轮到：从 history 的旧位置整块搬过来（输出每帧是新纹理，必须写满）；
+//     被禁用 / 被更高优先级体积完全覆盖的探针写成无效（n = 0），重新露出来后按新探针处理。
 //
 // 混合系数 α（new = mix(history, current, α)）：
-//   * 基础值 1 - hysteresis；
-//   * 1/n 递增：α = max(1/n, 基础值)，n 为该探针已累积的更新次数。重置后前几次更新是算术平均，
-//     几帧内收敛，之后退化为固定系数的指数平均；
-//   * 光照突变（探针级）：用探针所有光线的平均亮度 pm 维护两条指数平均——慢线 slow（同时统计
-//     pm 的时间方差 var）与快线 fast（系数 0.5，平滑掉单帧尖峰）。|fast - slow| 同时超过
-//     「阈值 × slow」和「3 倍 fast 的噪声标准差」时判定为突变，本次更新整个探针的辐照度
-//     hysteresis 降低 0.75。噪声用跨帧统计的时间方差，而不是单帧样本方差：
-//     小而亮的光源（门外的阳光、小自发光）每帧只被一两条光线命中，单帧样本方差会严重低估噪声，
-//     逐 texel 用它做判定会把噪声当成突变，画面持续闪烁（早先的实现就是这样）。
-//     深度不受突变加速影响。
+//   * 基础值 1 - hysteresis；1/n 递增：α = max(1/n, 基础值)，重置后前几次是算术平均；
+//   * 光照突变（探针级）：用所有光线的平均亮度 pm 维护慢线 slow（及其时间方差 var）与快线 fast，
+//     |fast - slow| 同时超过「阈值 × slow」与「3 倍快线噪声标准差」时，本次辐照度 hysteresis 降低 0.75。
+//     深度不加速。
+//
+// 自动重定位（RTXGI 做法，只对开了 autoRelocate 且未锁定的探针）：
+//   背面命中超过 25%（探针埋在几何里）→ 朝最近的背面命中方向移出去；
+//   否则最近的正面命中太近 → 朝最远的正面命中方向挪一点。偏移超出 ±0.45 格时保持原值。
 
 #define DDGI_UBO_BINDING 4
+#define DDGI_VOLUME_BINDING 10
+#define DDGI_PROBE_INFO_BINDING 11
 #include "shader/DDGI/DDGICore.comp"
 #include "shader/DDGI/DDGIUniforms.comp"
 
@@ -31,28 +33,45 @@ layout(local_size_x = DDGI_RAY_GRID, local_size_y = DDGI_RAY_GRID, local_size_z 
 layout(set = 0, binding = 0) uniform sampler2D rayData;
 layout(set = 0, binding = 1) uniform sampler2D irradianceHistory;
 layout(set = 0, binding = 2) uniform sampler2D depthHistory;
-layout(set = 0, binding = 3, rgba16f) uniform image2D irradianceOut;
-layout(set = 0, binding = 5, rg16f) uniform image2D depthOut;
-// 每探针时域状态（持久，原地读写）：r = 累积次数 n，g = slow，b = var，a = fast
-layout(set = 0, binding = 6, rgba32f) uniform image2D probeState;
+layout(set = 0, binding = 3, DDGI_IRR_FORMAT) uniform writeonly image2D irradianceOut;
+layout(set = 0, binding = 5, rg16f) uniform writeonly image2D depthOut;
+layout(set = 0, binding = 6) uniform sampler2D probeDataHistory;
+layout(set = 0, binding = 7) uniform sampler2D probeStatsHistory;
+// xyz 偏移，w = 已更新次数 n（整数部分，0 = 无效）+ 背面命中比例（小数部分，上限 0.999）。
+// 背面比例和有效位合在一张图里，采样时每个角点少读一次纹理
+layout(set = 0, binding = 8, rgba32f) uniform writeonly image2D probeDataOut;
+// x 未用，y slow，z var，w fast
+layout(set = 0, binding = 9, rgba32f) uniform writeonly image2D probeStatsOut;
+layout(std430, set = 0, binding = 12) readonly buffer DDGISlotToRay
+{
+    uint ddgiSlotToRay[];
+};
+// 烘焙：被请求体积的每个探针写一条 (偏移, n)，按体积内线性下标
+layout(std430, set = 0, binding = 13) writeonly buffer DDGIBakeBuffer
+{
+    vec4 ddgiBake[];
+};
 
 const float DDGI_MAX_ACCUMULATE = 1024.0;   // 只要大于 1/(1-hysteresis) 即可
-const float DDGI_STAT_MIN_RATE = 0.05;      // 慢线与方差的最小更新率（约 20 次更新的记忆）
-const float DDGI_FAST_RATE = 0.5;           // 快线更新率
-const float DDGI_CHANGE_SIGMA = 3.0;        // 突变检测的噪声容限（快线标准差倍数）
-const float DDGI_CHANGE_WARMUP = 8.0;       // 重置后前几次更新统计量不可靠，不做突变检测（1/n 本身已经很快）
+const float DDGI_STAT_MIN_RATE = 0.05;
+const float DDGI_FAST_RATE = 0.5;
+const float DDGI_CHANGE_SIGMA = 3.0;
+const float DDGI_CHANGE_WARMUP = 8.0;
 const float DDGI_CHANGE_HYSTERESIS_DROP = 0.75;
 const vec3  DDGI_LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 shared vec4 sRay[DDGI_RAY_COUNT];       // rgb 辐亮度，a 命中距离（负 = 背面）
 shared vec3 sDir[DDGI_RAY_COUNT];
-shared float sLum[DDGI_RAY_COUNT];
-shared vec4 sIrr[DDGI_IRR_INNER * DDGI_IRR_INNER];
+shared vec3 sIrr[DDGI_IRR_INNER * DDGI_IRR_INNER];
 shared vec2 sDepth[DDGI_DEPTH_INNER * DDGI_DEPTH_INNER];
+// 并行归约（256 线程树形归约，代替线程 0 串行扫 256 条光线）
+shared vec2 sRedSum[DDGI_RAY_COUNT];    // x 亮度和，y 背面命中数
+shared vec4 sRedMin[DDGI_RAY_COUNT];    // x 最近背面距离，y 其光线下标，z 最近正面距离，w 其光线下标
+shared vec2 sRedMax[DDGI_RAY_COUNT];    // x 最远正面距离，y 其光线下标
 shared float sAlpha;                    // 深度用
 shared float sAlphaIrr;                 // 辐照度用（含突变加速）
+shared float sOverwrite;
 
-// x^50 = x^32 · x^16 · x^2，反复平方代替 pow
 float ddgiPow50(float x)
 {
     float x2 = x * x;
@@ -63,45 +82,75 @@ float ddgiPow50(float x)
     return x32 * x16 * x2;
 }
 
-// 线程 0 调用：更新探针时域状态，写出本次更新的混合系数
-void ddgiUpdateProbeState(uint probeIndex, bool overwrite)
+bool ddgiFinite(vec4 v) { return !any(isnan(v)) && !any(isinf(v)); }
+
+float ddgiEncodeData(float n, float backface) { return n + clamp(backface, 0.0, 0.999); }
+
+// 线程 0：时域状态 + 自动重定位，写 probeData / probeStats。统计量已由归约算好
+void ddgiUpdateProbe(uint v, uint slot, ivec3 local, vec4 prevData, vec4 prevStats, bool hasPrev, vec3 curOffset)
 {
-    // 探针平均亮度：球面 Fibonacci 等立体角，直接算术平均
-    float pm = 0.0;
-    for (int k = 0; k < DDGI_RAY_COUNT; ++k)
-        pm += sLum[k];
-    pm /= float(DDGI_RAY_COUNT);
+    float pm = sRedSum[0].x / float(DDGI_RAY_COUNT);
+    float backfaceRatio = sRedSum[0].y / float(DDGI_RAY_COUNT);
 
+    // ── 自动重定位 ──
+    vec3 newOffset = curOffset;
+    uint flags = ddgiProbeFlags(slot);
+    if ((ddgiVolumeFlags(v) & DDGI_VOLUME_AUTO_RELOCATE) != 0u && (flags & DDGI_PROBE_LOCKED) == 0u)
+    {
+        float minSpacing = ddgiMinSpacing(v);
+        float minFrontface = 0.2 * minSpacing;
+        float closestBack = sRedMin[0].x;
+        vec3 closestBackDir = sDir[int(sRedMin[0].y)];
+        float closestFront = sRedMin[0].z;
+        vec3 closestFrontDir = sDir[int(sRedMin[0].w)];
+        float farthestFront = sRedMax[0].x;
+        vec3 farthestFrontDir = sDir[int(sRedMax[0].y)];
+
+        vec3 full = curOffset;
+        if (backfaceRatio > 0.25)
+            full += closestBackDir * (closestBack + minFrontface * 0.5);
+        else if (closestFront < minFrontface && farthestFront > 0.0)
+        {
+            vec3 move = min(0.2 * minSpacing, farthestFront) * farthestFrontDir;
+            if (dot(farthestFrontDir, closestFrontDir) < 0.5)
+                full += move;
+        }
+        if (all(lessThanEqual(abs(full), ddgiVolumes[v].spacing.xyz * 0.45)))
+            newOffset = full;
+    }
+
+    // ── 时域状态 ──
     float base = clamp(ddgi.filterParams.y, 0.0, 1.0);
-    ivec2 statePos = ddgiTileOrigin(probeIndex, 1u);
-    vec4 prev = imageLoad(probeState, statePos);
-
-    // 初始内容未定义：n 不是 >= 1 的有限值（含 NaN）时按重置处理
-    bool valid = !overwrite && prev.r >= 1.0 && !any(isnan(prev)) && !any(isinf(prev));
+    bool valid = hasPrev && prevData.w >= 1.0 && ddgiFinite(prevData) && ddgiFinite(prevStats);
     if (!valid)
     {
-        imageStore(probeState, statePos, vec4(1.0, pm, 0.0, pm));
+        vec4 data = vec4(newOffset, ddgiEncodeData(1.0, backfaceRatio));
+        imageStore(probeDataOut, ddgiTileOrigin(slot, 1u), data);
+        imageStore(probeStatsOut, ddgiTileOrigin(slot, 1u), vec4(0.0, pm, 0.0, pm));
         sAlpha = 1.0;
         sAlphaIrr = 1.0;
+        sOverwrite = 1.0;
+        if (ddgi.flags.z == v)
+            ddgiBake[ddgiLocalIndex(local, ddgiVolumeCounts(v))] = data;
         return;
     }
 
-    float n = min(prev.r + 1.0, DDGI_MAX_ACCUMULATE);
-    float slow = prev.g;
-    float var = prev.b;
-    float fast = mix(prev.a, pm, DDGI_FAST_RATE);
+    float n = min(floor(prevData.w) + 1.0, DDGI_MAX_ACCUMULATE);
+    float slow = prevStats.y;
+    float var = prevStats.z;
+    float fast = mix(prevStats.w, pm, DDGI_FAST_RATE);
 
     float alpha = max(1.0 / n, base);
     float alphaIrr = alpha;
 
-    float threshold = ddgi.filterParams.w;
+    float threshold = ddgi.filterParams.z;
     float diff = abs(fast - slow);
-    float fastSigma = sqrt(var * DDGI_FAST_RATE / (2.0 - DDGI_FAST_RATE));   // EMA 的稳态标准差
+    float fastSigma = sqrt(var * DDGI_FAST_RATE / (2.0 - DDGI_FAST_RATE));
     if (threshold > 0.0 && n > DDGI_CHANGE_WARMUP
         && diff > threshold * max(slow, 1e-6) && diff > DDGI_CHANGE_SIGMA * fastSigma)
     {
         alphaIrr = max(alpha, min(1.0, base + DDGI_CHANGE_HYSTERESIS_DROP));
-        slow = fast;                        // 慢线直接跳到新水平，方差保留
+        slow = fast;
     }
     else
     {
@@ -111,88 +160,142 @@ void ddgiUpdateProbeState(uint probeIndex, bool overwrite)
         slow += rate * dev;
     }
 
-    imageStore(probeState, statePos, vec4(n, slow, var, fast));
+    float backface = mix(fract(prevData.w), backfaceRatio, alpha);
+    vec4 data = vec4(newOffset, ddgiEncodeData(n, backface));
+    imageStore(probeDataOut, ddgiTileOrigin(slot, 1u), data);
+    imageStore(probeStatsOut, ddgiTileOrigin(slot, 1u), vec4(0.0, slow, var, fast));
     sAlpha = alpha;
     sAlphaIrr = alphaIrr;
+    sOverwrite = 0.0;
+    if (ddgi.flags.z == v)
+        ddgiBake[ddgiLocalIndex(local, ddgiVolumeCounts(v))] = data;
 }
 
 void main()
 {
-    uint probeIndex = gl_WorkGroupID.z;
-    if (probeIndex >= ddgiProbeCount())
+    uint slot = gl_WorkGroupID.y * uint(DDGI_PROBES_PER_ROW) + gl_WorkGroupID.x;
+    if (slot >= ddgiTotalProbes())
         return;                                 // 整个 workgroup 一致，不影响 barrier
 
+    uint v = ddgiFindVolume(slot);
+    if (v == DDGI_INVALID)
+        return;
+
     uint t = gl_LocalInvocationIndex;
-    ivec2 irrTile = ddgiTileOrigin(probeIndex, uint(DDGI_IRR_TILE));
-    ivec2 depthTile = ddgiTileOrigin(probeIndex, uint(DDGI_DEPTH_TILE));
+    ivec2 irrTile = ddgiTileOrigin(slot, uint(DDGI_IRR_TILE));
+    ivec2 depthTile = ddgiTileOrigin(slot, uint(DDGI_DEPTH_TILE));
 
-    ivec3 logical = ddgiLogicalCoord(probeIndex);
-    bool overwrite = ddgiFullReset() || ddgiProbeIsFresh(logical);
+    ivec3 local = ddgiLocalCoord(slot - ddgiVolumeBase(v), ddgiVolumeCounts(v));
+    uint prevSlot = ddgiPrevSlot(v, local);
+    bool hasPrev = prevSlot != DDGI_INVALID;
+    vec4 prevData = hasPrev ? texelFetch(probeDataHistory, ddgiTileOrigin(prevSlot, 1u), 0) : vec4(0.0);
+    vec4 prevStats = hasPrev ? texelFetch(probeStatsHistory, ddgiTileOrigin(prevSlot, 1u), 0) : vec4(0.0);
+    vec3 curOffset = ddgiCurrentOffset(v, slot, prevData);
+    uint probeFlags = ddgiProbeFlags(slot);
 
-    if (!ddgiProbeUpdatedThisFrame(probeIndex, logical))
+    uint rayTileIndex = ddgiSlotToRay[slot];
+    if (rayTileIndex == DDGI_INVALID)
     {
+        bool keep = hasPrev && (probeFlags & (DDGI_PROBE_DISABLED | DDGI_PROBE_INACTIVE)) == 0u && prevData.w >= 1.0;
+        ivec2 prevIrrTile = ddgiTileOrigin(prevSlot, uint(DDGI_IRR_TILE));
+        ivec2 prevDepthTile = ddgiTileOrigin(prevSlot, uint(DDGI_DEPTH_TILE));
         for (uint i = t; i < uint(DDGI_IRR_TILE * DDGI_IRR_TILE); i += uint(DDGI_RAY_COUNT))
         {
-            ivec2 p = irrTile + ivec2(int(i) % DDGI_IRR_TILE, int(i) / DDGI_IRR_TILE);
-            imageStore(irradianceOut, p, texelFetch(irradianceHistory, p, 0));
+            ivec2 p = ivec2(int(i) % DDGI_IRR_TILE, int(i) / DDGI_IRR_TILE);
+            vec4 value = keep ? texelFetch(irradianceHistory, prevIrrTile + p, 0) : vec4(0.0);
+            imageStore(irradianceOut, irrTile + p, value);
         }
         for (uint i = t; i < uint(DDGI_DEPTH_TILE * DDGI_DEPTH_TILE); i += uint(DDGI_RAY_COUNT))
         {
-            ivec2 p = depthTile + ivec2(int(i) % DDGI_DEPTH_TILE, int(i) / DDGI_DEPTH_TILE);
-            imageStore(depthOut, p, vec4(texelFetch(depthHistory, p, 0).rg, 0.0, 0.0));
+            ivec2 p = ivec2(int(i) % DDGI_DEPTH_TILE, int(i) / DDGI_DEPTH_TILE);
+            vec2 value = keep ? texelFetch(depthHistory, prevDepthTile + p, 0).rg : vec2(0.0);
+            imageStore(depthOut, depthTile + p, vec4(value, 0.0, 0.0));
+        }
+        if (t == 0u)
+        {
+            vec4 data = keep ? vec4(curOffset, prevData.w) : vec4(curOffset, 0.0);   // w 原样保留 n 与背面比例
+            imageStore(probeDataOut, ddgiTileOrigin(slot, 1u), data);
+            imageStore(probeStatsOut, ddgiTileOrigin(slot, 1u), keep ? prevStats : vec4(0.0));
+            if (ddgi.flags.z == v)
+                ddgiBake[ddgiLocalIndex(local, ddgiVolumeCounts(v))] = data;
         }
         return;
     }
 
-    // 1) 读光线，更新时域状态
-    ivec2 rayTile = ddgiTileOrigin(probeIndex, uint(DDGI_RAY_GRID));
-    sRay[t] = texelFetch(rayData, rayTile + ivec2(gl_LocalInvocationID.xy), 0);
-    sDir[t] = ddgiProbeRayDirection(t, ddgiRandomRotation(ddgi.runParams.y));
-    sLum[t] = dot(sRay[t].rgb, DDGI_LUMA);
+    // 1) 读光线，更新时域状态与位置
+    ivec2 rayTile = ddgiTileOrigin(rayTileIndex, uint(DDGI_RAY_GRID));
+    vec4 ray = texelFetch(rayData, rayTile + ivec2(gl_LocalInvocationID.xy), 0);
+    sRay[t] = ray;
+    sDir[t] = ddgiProbeRayDirection(t, ddgiRandomRotation(ddgiFrameIndex()));
+
+    // 归约：亮度和、背面数、最近背面 / 最近正面 / 最远正面命中（重定位用）
+    {
+        float a = ray.a;
+        bool back = a < 0.0;
+        sRedSum[t] = vec2(dot(ray.rgb, DDGI_LUMA), back ? 1.0 : 0.0);
+        sRedMin[t] = vec4(back ? -a * 5.0 : 1e27, float(t), back ? 1e27 : a, float(t));   // 光追里背面距离乘了 0.2
+        sRedMax[t] = vec2(back ? -1.0 : a, float(t));
+    }
     barrier();
+    for (uint s = uint(DDGI_RAY_COUNT) / 2u; s > 0u; s >>= 1u)
+    {
+        if (t < s)
+        {
+            sRedSum[t] += sRedSum[t + s];
+            vec4 m = sRedMin[t];
+            vec4 o = sRedMin[t + s];
+            if (o.x < m.x) m.xy = o.xy;
+            if (o.z < m.z) m.zw = o.zw;
+            sRedMin[t] = m;
+            vec2 mx = sRedMax[t];
+            vec2 ox = sRedMax[t + s];
+            if (ox.x > mx.x) mx = ox;
+            sRedMax[t] = mx;
+        }
+        barrier();
+    }
 
     if (t == 0u)
-        ddgiUpdateProbeState(probeIndex, overwrite);
+        ddgiUpdateProbe(v, slot, local, prevData, prevStats, hasPrev, curOffset);
     barrier();
 
     float alpha = sAlpha;
     float alphaIrr = sAlphaIrr;
+    bool overwrite = sOverwrite > 0.5;
+    ivec2 prevIrrTile = ddgiTileOrigin(prevSlot, uint(DDGI_IRR_TILE));
+    ivec2 prevDepthTile = ddgiTileOrigin(prevSlot, uint(DDGI_DEPTH_TILE));
 
     // 2) 辐照度：余弦卷积
     if (t < uint(DDGI_IRR_INNER * DDGI_IRR_INNER))
     {
-        ivec2 local = ivec2(int(t) % DDGI_IRR_INNER, int(t) / DDGI_IRR_INNER);
-        vec3 n = ddgiOctDecode((vec2(local) + 0.5) / float(DDGI_IRR_INNER));
+        ivec2 local2 = ivec2(int(t) % DDGI_IRR_INNER, int(t) / DDGI_IRR_INNER);
+        vec3 n = ddgiOctDecode((vec2(local2) + 0.5) / float(DDGI_IRR_INNER));
 
         vec3 sum = vec3(0.0);
         float wsum = 0.0;
-        float backface = 0.0;
         for (int k = 0; k < DDGI_RAY_COUNT; ++k)
         {
-            vec4 r = sRay[k];
-            backface += r.a < 0.0 ? 1.0 : 0.0;
             float w = dot(n, sDir[k]);
             if (w <= 0.0)
                 continue;
-            sum += r.rgb * w;
+            sum += sRay[k].rgb * w;
             wsum += w;
         }
-        vec4 irr = vec4(wsum > 1e-6 ? sum / wsum : vec3(0.0), backface / float(DDGI_RAY_COUNT));
-
-        ivec2 dst = irrTile + ivec2(1) + local;
+        vec3 irr = wsum > 1e-6 ? sum / wsum : vec3(0.0);
         if (!overwrite)
-            irr = mix(texelFetch(irradianceHistory, dst, 0), irr, alphaIrr);
+            irr = mix(texelFetch(irradianceHistory, prevIrrTile + ivec2(1) + local2, 0).rgb, irr, alphaIrr);
+        irr = max(irr, vec3(0.0));      // R11G11B10 没有符号位
 
         sIrr[t] = irr;
-        imageStore(irradianceOut, dst, irr);
+        imageStore(irradianceOut, irrTile + ivec2(1) + local2, vec4(irr, 1.0));
     }
 
     // 3) 深度：cos^50 加权的一阶 / 二阶矩
     if (t < uint(DDGI_DEPTH_INNER * DDGI_DEPTH_INNER))
     {
-        ivec2 local = ivec2(int(t) % DDGI_DEPTH_INNER, int(t) / DDGI_DEPTH_INNER);
-        vec3 n = ddgiOctDecode((vec2(local) + 0.5) / float(DDGI_DEPTH_INNER));
-        float depthClamp = max(ddgi.filterParams.z, 0.01);
+        ivec2 local2 = ivec2(int(t) % DDGI_DEPTH_INNER, int(t) / DDGI_DEPTH_INNER);
+        vec3 n = ddgiOctDecode((vec2(local2) + 0.5) / float(DDGI_DEPTH_INNER));
+        float depthClamp = max(ddgiDepthClamp(v), 0.01);
 
         vec2 sum = vec2(0.0);
         float wsum = 0.0;
@@ -206,15 +309,12 @@ void main()
             sum += vec2(d, d * d) * w;
             wsum += w;
         }
-        // 权重和为 0（实际不会出现）时按无遮挡处理
         vec2 moments = wsum > 1e-6 ? sum / wsum : vec2(depthClamp, depthClamp * depthClamp);
-
-        ivec2 dst = depthTile + ivec2(1) + local;
         if (!overwrite)
-            moments = mix(texelFetch(depthHistory, dst, 0).rg, moments, alpha);
+            moments = mix(texelFetch(depthHistory, prevDepthTile + ivec2(1) + local2, 0).rg, moments, alpha);
 
         sDepth[t] = moments;
-        imageStore(depthOut, dst, vec4(moments, 0.0, 0.0));
+        imageStore(depthOut, depthTile + ivec2(1) + local2, vec4(moments, 0.0, 0.0));
     }
 
     barrier();
@@ -233,6 +333,6 @@ void main()
     {
         ivec2 p = ddgiBorderTexelCoord(b - depthBorderCount, DDGI_IRR_TILE);
         ivec2 src = ddgiBorderSourceTexel(p, DDGI_IRR_INNER);
-        imageStore(irradianceOut, irrTile + p, sIrr[src.y * DDGI_IRR_INNER + src.x]);
+        imageStore(irradianceOut, irrTile + p, vec4(sIrr[src.y * DDGI_IRR_INNER + src.x], 1.0));
     }
 }

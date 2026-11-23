@@ -2,21 +2,30 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceReflectPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
+#include "VulkanRenderEngine/General/DDGIDef.h"
+#include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
 
-
-struct CubeParams {
-	uint32_t CubeEnable = 0;
-	uint32_t IBLEnable = 0;
-};
-
-struct RayTraceParams
+namespace
 {
-	float tMin = 0.f;
-	float tMax = 0.f;
-	uint32_t maxBounce = 0;
-	uint32_t sampleRayCount = 0;
-	uint32_t frameIndex;
-};
+	// 与 RayTraceReflect.rgen 的 CubeParams 对应（std140 bool = 4 字节）
+	struct CubeParams {
+		uint32_t CubeEnable = 0;
+		uint32_t IBLEnable = 0;
+		uint32_t DDGIEnable = 0;	// 命中点的漫反射间接光取自 DDGI
+	};
+
+	struct RayTraceParams
+	{
+		float tMin = 0.f;
+		float tMax = 0.f;
+		uint32_t maxBounce = 0;
+		uint32_t sampleRayCount = 0;
+		uint32_t frameIndex;
+	};
+
+	using DDGIFramePtr = std::shared_ptr<const DDGIFrame>;
+	constexpr const char* kDDGIFrameKey = "rtReflectDDGIFrame";
+}
 
 
 RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
@@ -40,6 +49,7 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 		config.anyHitPath = anyHitPath;
 		config.intersectionPath = intersectionPath;
 		config.callablePath = callablePath;
+		DDGIAddLayoutDefines(config);		// 命中点采样 DDGI，图集布局宏与 DDGI Pass 一致
 
 		config
 			.AddCameraUnifromDataBinding()
@@ -63,7 +73,12 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 			.AddUnifromTexture(15)
 			.AddUnifromTexture(16)
 			.AddUnifromTexture(17)
-			.AddUnifromTexture(18);
+			.AddUnifromTexture(18)
+			.AddUnifromBuffer(19)		// DDGIUniforms
+			.AddStorageBuffer(20)		// DDGI 体积表
+			.AddUnifromTexture(21)		// DDGI 辐照度图集
+			.AddUnifromTexture(22)		// DDGI 深度图集
+			.AddUnifromTexture(23);		// DDGI probeData
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -112,6 +127,11 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 
 	data.outPutTexture = ctx.GetOutput(0);
 
+	// DDGI 图集（可选：DDGI 本帧没执行时为空）
+	data.ddgiIrradianceAtlas = ctx.GetOptionalInput(0);
+	data.ddgiDepthAtlas = ctx.GetOptionalInput(1);
+	data.ddgiProbeData = ctx.GetOptionalInput(2);
+
 	auto cmd = cmdCtx.GetCmd();
 
 	if (!DrawRayTraceReflect(cmd, data, registry, state)) return;
@@ -134,8 +154,13 @@ void RTCoreRayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& regis
 {
 	SetEnable(state.option.flags.rayTraceReflectOn);
 
+	registry.Store(kDDGIFrameKey, DDGIFramePtr{});
 	if (!ShouldExecute(registry, state))
 		return;
+
+	// 命中点的漫反射间接光取自 DDGI：与 DDGI 各 Pass 共用同一帧的解析结果（Resolve 按帧缓存、内部加锁）
+	if (_sharedState && GetIndirectLightingPolicy(state).ddgiOn)
+		registry.Store(kDDGIFrameKey, _sharedState->Resolve(state));
 
 	auto& binding = registry.Get<RayTracingBindingRecord>("binding");
 
@@ -156,6 +181,10 @@ void RTCoreRayTraceReflectPass::FrameBegin(RenderGraph::FrameDataRegistry& regis
 
 void RTCoreRayTraceReflectPass::SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGeneralBuffer> buffer) {
 	_buffers = buffer;
+}
+
+void RTCoreRayTraceReflectPass::SetSharedState(std::shared_ptr<DDGISharedState> sharedState) {
+	_sharedState = std::move(sharedState);
 }
 
 bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -232,6 +261,16 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 		}
 	}
 
+	// 命中点漫反射间接光取 DDGI：DDGI 开启、有可用体积、图集本帧已由 ddgiBlendNode 写好
+	std::shared_ptr<const DDGIFrame> ddgiFrame;
+	if (auto* framePtr = registry.TryLoad<DDGIFramePtr>(kDDGIFrameKey))
+		ddgiFrame = *framePtr;
+	registry.Store(kDDGIFrameKey, DDGIFramePtr{});
+	auto texReady = [](const std::shared_ptr<Texture2D>& tex) { return tex && !tex->IsEmpty(); };
+	const bool ddgiEnable = ddgiFrame && ddgiFrame->enabled && ddgiFrame->uniformBlock && ddgiFrame->volumeTable
+		&& texReady(data.ddgiIrradianceAtlas) && texReady(data.ddgiDepthAtlas) && texReady(data.ddgiProbeData);
+	cubeParams.DDGIEnable = ddgiEnable ? 1u : 0u;
+
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(cubeParams));
 	paramsUBO->WriteDataAsync(cmd, &cubeParams, sizeof(cubeParams));
 	paramsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
@@ -267,6 +306,15 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 		binding.SetUniformTextureCube(IBLDiffuse, vk::ImageAspectFlagBits::eColor, 16);
 		binding.SetUniformTextureCube(IBLPrefilter, vk::ImageAspectFlagBits::eColor, 17);
 		binding.SetUniformTexture(IBLBrdfLUT, vk::ImageAspectFlagBits::eColor, 18);
+	}
+
+	if (ddgiEnable)
+	{
+		binding.SetUniformBlock(ddgiFrame->uniformBlock, 19);
+		binding.SetStorageBlock(ddgiFrame->volumeTable, 20);
+		binding.SetUniformTexture(data.ddgiIrradianceAtlas, vk::ImageAspectFlagBits::eColor, 21);
+		binding.SetUniformTexture(data.ddgiDepthAtlas, vk::ImageAspectFlagBits::eColor, 22);
+		binding.SetUniformTexture(data.ddgiProbeData, vk::ImageAspectFlagBits::eColor, 23);
 	}
 
 	_rayTraceShader.Bind(cmd, binding);

@@ -345,47 +345,46 @@ namespace rfl {
         }
     };
 
-    // DDGI 探针全局光照参数。编辑器面板只能直接编辑「扁平标量 / vec3 / bool」，
-    // 所以 counts 的 uvec3 在反射层用 vec3 承载，写回时取整并夹到 [1, 255]。
+    // DDGI 探针全局光照参数。面板是手写的（PropertiesHelper.inl 的 DrawComponent 特化），
+    // 这里的反射只用于通用路径；uvec3 在反射层用 vec3 承载，写回时取整并夹到合法范围。
     template <>
     struct Reflector<Scene3DRenderOption::DDGIParams> {
 
         struct DDGIParamsRefl {
-            bool autoFitVolume = true;      // 按场景包围盒自动布置体积
-            bool followCamera = false;      // 体积跟随相机（滑动窗口）
-            float fitPadding = 1.0f;        // 自动拟合的外扩边距（米）
-
-            glm::vec3 center = glm::vec3(0.0f);             // 体积中心（手动模式）
-            glm::vec3 spacing = glm::vec3(1.0f);            // 探针间距（米），画质第一决定因素
-            glm::vec3 counts = glm::vec3(16.0f, 8.0f, 16.0f);  // 每轴探针数（写回时取整）
+            bool cascadeEnable = true;
+            uint32_t cascadeLevels = 4;
+            glm::vec3 cascadeBaseSpacing = glm::vec3(1.0f);
+            glm::vec3 cascadeCounts = glm::vec3(24.0f, 12.0f, 24.0f);
+            float cascadeFadeCells = 2.0f;
+            bool cascadeAutoRelocate = true;
 
             float normalBias = 0.1f;
             float viewBias = 0.10f;
-            float maxRayDistance = 60.0f;
+            float maxRayDistance = 15.0f;
             float backfaceThreshold = 2.0f;
             float skyIntensity = 1.0f;
             float energy = 1.0f;
 
-            uint32_t updateSliceCount = 4;
-            float hysteresis = 0.9f;        // 时域混合系数，越大越稳（越小越容易闪）
-            float lightChangeThreshold = 0.3f;  // 光照突变阈值，0 = 关闭
+            uint32_t updateBudget = 8192;
+            float hysteresis = 0.9f;
+            float lightChangeThreshold = 0.0f;
 
             static DDGIParamsRefl formSrc(const Scene3DRenderOption::DDGIParams& src)
             {
                 return DDGIParamsRefl{
-                    .autoFitVolume = src.autoFitVolume,
-                    .followCamera = src.followCamera,
-                    .fitPadding = src.fitPadding,
-                    .center = src.center,
-                    .spacing = src.spacing,
-                    .counts = glm::vec3(src.counts),
+                    .cascadeEnable = src.cascadeEnable,
+                    .cascadeLevels = src.cascadeLevels,
+                    .cascadeBaseSpacing = src.cascadeBaseSpacing,
+                    .cascadeCounts = glm::vec3(src.cascadeCounts),
+                    .cascadeFadeCells = src.cascadeFadeCells,
+                    .cascadeAutoRelocate = src.cascadeAutoRelocate,
                     .normalBias = src.normalBias,
                     .viewBias = src.viewBias,
                     .maxRayDistance = src.maxRayDistance,
                     .backfaceThreshold = src.backfaceThreshold,
                     .skyIntensity = src.skyIntensity,
                     .energy = src.energy,
-                    .updateSliceCount = src.updateSliceCount,
+                    .updateBudget = src.updateBudget,
                     .hysteresis = src.hysteresis,
                     .lightChangeThreshold = src.lightChangeThreshold
                 };
@@ -393,16 +392,12 @@ namespace rfl {
 
             void modify(Scene3DRenderOption::DDGIParams& src) const
             {
-                src.autoFitVolume = autoFitVolume;
-                src.followCamera = followCamera;
-                src.fitPadding = std::max(0.0f, fitPadding);
-
-                src.center = center;
-                src.spacing = glm::max(spacing, glm::vec3(0.25f));
-
-                // uvec3 不能直接进 ImGui 的 DragFloat3，这里取整并夹到合法范围
-                const glm::vec3 rounded = glm::clamp(glm::round(counts), glm::vec3(1.0f), glm::vec3(255.0f));
-                src.counts = glm::uvec3(rounded);
+                src.cascadeEnable = cascadeEnable;
+                src.cascadeLevels = std::clamp<uint32_t>(cascadeLevels, 1u, 4u);
+                src.cascadeBaseSpacing = glm::max(cascadeBaseSpacing, glm::vec3(0.25f));
+                src.cascadeCounts = glm::uvec3(glm::clamp(glm::round(cascadeCounts), glm::vec3(1.0f), glm::vec3(255.0f)));
+                src.cascadeFadeCells = std::max(0.01f, cascadeFadeCells);
+                src.cascadeAutoRelocate = cascadeAutoRelocate;
 
                 src.normalBias = std::max(0.0f, normalBias);
                 src.viewBias = std::max(0.0f, viewBias);
@@ -411,7 +406,7 @@ namespace rfl {
                 src.skyIntensity = std::max(0.0f, skyIntensity);
                 src.energy = std::max(0.0f, energy);
 
-                src.updateSliceCount = std::clamp<uint32_t>(updateSliceCount, 1u, 32u);
+                src.updateBudget = std::max(1u, updateBudget);
                 src.hysteresis = std::clamp(hysteresis, 0.0f, 0.98f);
                 src.lightChangeThreshold = std::max(0.0f, lightChangeThreshold);
             }

@@ -255,11 +255,23 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 	auto& indirectCommands = state.indirectCommands;
 	bool hasStaticMeshes = !opaqueMeshes.empty() || !renderIndex.oneSideIndex.empty() || !renderIndex.twoSideIndex.empty();
 	bool hasSkinnedMeshes = !indirectCommands.skinnedMesh_OneSideCommand.empty() || !indirectCommands.skinnedMesh_TwoSideCommand.empty();
+
+	// 没有可绘制的网格时也要走一遍 beginRendering：GBuffer / 深度只靠 loadOp = eClear 清空，
+	// 直接返回的话它们保留上一帧（或纹理池里别的资源）的内容，光照 / SSAO / 天空 / 间接光都会读到残影
+	auto clearOnly = [&]() {
+		cmd->setDynamicViewport(viewPort);
+		cmd->beginRendering(renderInfo);
+		cmd->endRendering();
+		};
+
 	if (!hasStaticMeshes && (!hasSkinnedMeshes
 		|| !state.curFrameSkinnedData
 		|| !state.curFrameSkinnedData->skinnedMesh_VertexBuffer
 		|| !state.curFrameSkinnedData->skinnedMesh_VertexBuffer->buffer))
+	{
+		clearOnly();
 		return;
+	}
 
 	auto& shader = _staticShader;
 	GraphicsBindingRecord binding;
@@ -270,7 +282,10 @@ void GeometryPass::RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry&
 		auto renderdata_ssbo = registry.GetStorageBlock("renderdata_ssbo");
 		binding.SetStorageBlock(renderdata_ssbo, 2);
 		if (!SetupStaticBufferData(cmd, binding, opaqueMeshes, renderIndex, oneSideCommands, twoSideCommands))
+		{
+			clearOnly();
 			return;
+		}
 	}
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);

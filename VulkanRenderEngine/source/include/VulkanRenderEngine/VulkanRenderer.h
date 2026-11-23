@@ -18,6 +18,7 @@
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
+#include "VulkanRenderEngine/General/DDGIDebug.h"
 
 struct alignas(16) camera_compData
 {
@@ -90,6 +91,9 @@ public:
     std::shared_ptr<VKCore::VulkanSurface> GetVulkanSurface() const;
     std::shared_ptr<VKCore::VulkanDevice> GetVulkanDevice() const;
     std::shared_ptr<VKCore::VulkanSwapchain> GetVulkanSwapchain() const;
+
+    // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
+    std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
 
 private:
     void InitForWindow(uint32_t width, uint32_t height);
@@ -178,6 +182,8 @@ private:
     std::unique_ptr<RenderGraph::Graph> _sceneRenderGraph;
 
     Scene3DRenderOption _option;
+
+    std::shared_ptr<DDGIDebugChannel> _ddgiDebugChannel;
 
 
     uint32_t _maxFramesInFlight = 1;  // 最大在途帧数

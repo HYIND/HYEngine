@@ -51,6 +51,14 @@ layout (binding = 18) uniform sampler2D IBLBrdfLUT;
 
 const float RussianRouletteFactor = 0.8f;
 
+// 反射路径命中点自身的漫反射间接光：没有硬件光追时 DDGI 不执行，直接用 IBL 漫反射
+vec3 reflectHitDiffuseIndirect(vec3 normal, PBRProperties prop)
+{
+    if (!IBLEnable)
+        return vec3(0.0);
+    return prop.albedo * (1.0 - prop.metallic) / PI * textureLod(IBLDiffuse, normal, 0.0).rgb * prop.ambientOcclusion;
+}
+
 vec3 traceRay(
     vec3 viewPos, 
     vec3 fragPos, vec3 fragNormal,
@@ -114,7 +122,17 @@ vec3 traceRay(
                     hit.position, normal,
                     prop
                     );
-            colors[hitCount] = lightingColor + emission;
+            // 命中点出射辐亮度 = 直接光 + 自发光 + 漫反射间接光（IBL）
+            colors[hitCount] = lightingColor + emission + reflectHitDiffuseIndirect(normal, prop);
+
+            // 路径在这个命中点停下（材质不再追踪 / 达到最大次数）时，补上命中点自身的 IBL 镜面；
+            // 俄罗斯轮盘终止的不补（已由 throughput 补偿）
+            if (IBLEnable && (prop.metallic < 0.15 || prop.roughness > 0.8 || depth + 1u >= maxBounce))
+            {
+                vec3 unusedDiffuse, hitSpecular;
+                CalculateIBLLightingSplit(ray.direction, normal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, hitSpecular);
+                colors[hitCount] += hitSpecular;
+            }
 
             viewPos = ray.origin;
             fragPos = hit.position;
@@ -205,7 +223,9 @@ void main()
             vec3 fragNormal = normalize(texture(gNormal, uv).rgb);
 
             vec3 viewDir = normalize(fragPos - camera.position);
-            vec3 color = CalculateIBLLighting(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT);
+            // 镜面合成只收镜面：不追踪的像素只回退 IBL 镜面，漫反射由漫反射合成 / LightingPass 负责
+            vec3 unusedDiffuse, color;
+            CalculateIBLLightingSplit(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, color);
             color = clamp(color, vec3(0.f), vec3(1000.f));
             imageStore(outputImage, pixelCoord, vec4(color, 1.0));
         }

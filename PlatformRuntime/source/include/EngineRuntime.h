@@ -153,8 +153,15 @@ public:
 	};
 
 	// sceneAsset 既可以是场景资源的 GUID，也可以是工程内的资源路径。
+	// 打开后如果宿主（在 prepare 里）没设主相机，就用场景里的相机；场景里一台都没有，
+	// 按 settings.editorFreeCamera 记下的视角建一台静止的兜底相机，保证 3D 一定有相机可用。
 	bool OpenScene(const std::string& sceneAsset, const SceneOpenHooks& hooks = {}, std::string* error = nullptr);
 	bool OpenScene(const std::shared_ptr<SceneCodec>& scene, const SceneOpenHooks& hooks = {}, std::string* error = nullptr);
+
+	// 场景主相机的统一选法（Game 打开场景、Editor 进 Play 都用它）：
+	// 带 TagMainCamera 的优先，其次第一台 Transform + CameraComponent；exclude 返回 true 的实体跳过（编辑器用来排除自己的相机）。
+	// 找不到返回无效 Entity。
+	static Entity FindSceneMainCamera(World& world, const std::function<bool(Entity)>& exclude = {});
 
 	void CloseScene();
 	World* GetWorld() const noexcept { return m_world.get(); }

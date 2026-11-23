@@ -243,6 +243,9 @@
     <ClInclude Include="source\include\Render\Components\RenderSkinnedModel.h">
       <Filter>头文件\Render\Components</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Render\Components\DDGIVolume.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\include\imconfig.h">

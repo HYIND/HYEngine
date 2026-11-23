@@ -23,6 +23,9 @@ public:
 	static bool CopyTextureAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 	static bool CopyTexture(Texture2D& src, Texture2D& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 	static bool CopyTexture(const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t srcLevel = 0, uint32_t destLevel = 0);
+	// 只拷左上角 width × height 的区域（超出 mip 尺寸的部分自动截断）；两张图同一 mip 的尺寸必须一致
+	static bool CopyTextureRegionAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Texture2D& src, Texture2D& dest, uint32_t width, uint32_t height, uint32_t srcLevel = 0, uint32_t destLevel = 0);
+	static bool CopyTextureRegionAsync(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& src, const std::shared_ptr<Texture2D>& dest, uint32_t width, uint32_t height, uint32_t srcLevel = 0, uint32_t destLevel = 0);
 
 public:
 	Texture2D(const std::string& filepath, const TextureConfig& config = {}, bool autoMipMaps = false);																				// 从文件加载纹理

@@ -86,6 +86,8 @@ namespace Render
 
 		if (framedata->skybox)
 			state.skyboxParams.skyCube = framedata->skybox;
+
+		state.ddgi.volumes = framedata->ddgiVolumes;
 	}
 
 	void RenderFrameDataAnalysisHelp::ProcessStaticModel(

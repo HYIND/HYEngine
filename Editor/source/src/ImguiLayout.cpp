@@ -4,6 +4,7 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "CommonComponent.h"
 #include "PropertiesHelper.h"
+#include "DDGIEditor.h"
 #include "IconManager.h"
 #include "SceneCodec/ComponentCodec.h"
 #include <filesystem>
@@ -434,6 +435,7 @@ static bool WantToAddSpotLight = false;
 static bool WantToAddCube = false;
 static bool WantToAddSphere = false;
 static bool WantToAddEmptyEntity = false;
+static bool WantToAddDDGIVolume = false;
 
 extern VkDevice g_Device;
 
@@ -1470,6 +1472,10 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			{
 				WantToAddEmptyEntity = true;
 			}
+			if (ImGui::MenuItem("DDGI 体积"))
+			{
+				WantToAddDDGIVolume = true;
+			}
 			ImGui::EndMenu();
 		}
 
@@ -2267,7 +2273,19 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 	ImGuizmo::SetRect(viewportPos.x, viewportPos.y,
 		viewportSize.x, viewportSize.y);
 
-	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere || WantToAddEmptyEntity)
+	// DDGI：推送调试设置（可视化、选中体积 / 探针、漏光像素）、处理烘焙结果
+	DDGIEditor::UpdateFrame(editorApp, selectedEntity);
+	{
+		const ImVec2 mouse = ImGui::GetMousePos();
+		const bool inside = viewportSize.x > 0 && viewportSize.y > 0
+			&& mouse.x >= viewportPos.x && mouse.y >= viewportPos.y
+			&& mouse.x < viewportPos.x + viewportSize.x && mouse.y < viewportPos.y + viewportSize.y
+			&& ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+		DDGIEditor::SetViewportHover(inside, glm::vec2((mouse.x - viewportPos.x) / std::max(1.0f, viewportSize.x),
+			(mouse.y - viewportPos.y) / std::max(1.0f, viewportSize.y)));
+	}
+
+	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere || WantToAddEmptyEntity || WantToAddDDGIVolume)
 	{
 		glm::mat4 addView(1.f), addProjection(1.f);
 		glm::vec3 rayOrigin(0.f), rayDirection(0.f, 0.f, -1.f);
@@ -2306,6 +2324,11 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 		{
 			editorApp->Scene().AddEmptyEntity(position);
 			WantToAddEmptyEntity = false;
+		}
+		if (WantToAddDDGIVolume)
+		{
+			editorApp->Scene().AddDDGIVolume(position);
+			WantToAddDDGIVolume = false;
 		}
 	}
 
@@ -2601,6 +2624,13 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 					useSnap ? snap : nullptr
 				);
 
+				// DDGI 体积：松开 Gizmo 时把缩放折算成探针数、中心吸附到网格
+				static bool s_gizmoWasUsing = false;
+				const bool gizmoUsing = ImGuizmo::IsUsing();
+				if (s_gizmoWasUsing && !gizmoUsing && DDGIEditor::IsVolume(selectedEntity))
+					DDGIEditor::FinalizeVolumeTransform(selectedEntity);
+				s_gizmoWasUsing = gizmoUsing;
+
 				if (ImGuizmo::IsUsing())
 				{
 					editorApp->GetWorld()->SubmitCommand(
@@ -2650,6 +2680,14 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 				if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
 					ImGui::OpenPopup("EntityContextMenu");
 			}
+		}
+
+		if (hasCamera)
+		{
+			glm::mat4 projGL = projection;
+			projGL[1][1] *= -1;
+			DDGIEditor::DrawViewportOverlay(editorApp, selectedEntity, view, projGL,
+				glm::vec2(viewportPos.x, viewportPos.y), glm::vec2(viewportSize.x, viewportSize.y));
 		}
 
 		if (ImGui::BeginPopup("EntityContextMenu"))
@@ -2706,8 +2744,9 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 						(float*)&rayDirection
 					);
 
-					// 拾取
-					selectedEntity = editorApp->Scene().PickObject(rayOrigin, rayDirection);
+					// 拾取（DDGI 探针编辑模式下先点选探针）
+					if (!DDGIEditor::HandleViewportClick(selectedEntity, rayOrigin, rayDirection, io.KeyShift))
+						selectedEntity = editorApp->Scene().PickObject(rayOrigin, rayDirection);
 
 					//if (selectedEntity)
 					//	editorApp->SelectObject(selectedEntity);
@@ -2803,7 +2842,11 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 	if (change)
 		editorApp->SetOption(option);
 
+	DDGIEditor::DrawDebugOptions(editorApp);
+
 	ImGui::End();
+
+	DDGIEditor::DrawLeakWindow(editorApp);
 }
 
 void ImguiLayout::DrawStatusBar(EditorApp* editorApp)

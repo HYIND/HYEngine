@@ -1,23 +1,32 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/SSRPass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
+#include "VulkanRenderEngine/General/DDGIDef.h"
+#include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
 
-
-struct CubeParams {
-	uint32_t CubeEnable = 0;
-	uint32_t IBLEnable = 0;
-};
-
-struct SSRParams
+namespace
 {
-	float tMin;
-	float tMax;
-	uint32_t maxBounce = 0;
-	uint32_t SampleRayCount;
-	uint32_t RayMarchingMaxStep;
-	float DistanceFactor;
-	uint32_t frameIndex;
-};
+	// 与 SSReflect.comp 的 CubeParams 对应（std140 bool = 4 字节）
+	struct CubeParams {
+		uint32_t CubeEnable = 0;
+		uint32_t IBLEnable = 0;
+		uint32_t HitDiffuseMode = 0;	// 命中点漫反射间接光：0 = 场景颜色里已有，1 = IBL，2 = DDGI（没覆盖到的回退 IBL）
+	};
+
+	struct SSRParams
+	{
+		float tMin;
+		float tMax;
+		uint32_t maxBounce = 0;
+		uint32_t SampleRayCount;
+		uint32_t RayMarchingMaxStep;
+		float DistanceFactor;
+		uint32_t frameIndex;
+	};
+
+	using DDGIFramePtr = std::shared_ptr<const DDGIFrame>;
+	constexpr const char* kDDGIFrameKey = "ssrDDGIFrame";
+}
 
 
 SSRPass::SSRPass(const std::string& computerShaderPath)
@@ -32,6 +41,7 @@ SSRPass::SSRPass(const std::string& computerShaderPath)
 		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.AddDefineMacro("Max_Bounce_limit", GlobalConfig::SSTrace_Max_Bounce_limit);
 		config.computePath = computerShaderPath;
+		DDGIAddLayoutDefines(config);		// 命中点采样 DDGI，图集布局宏与 DDGI Pass 一致
 
 		config
 			.AddCameraUnifromDataBinding()
@@ -49,7 +59,12 @@ SSRPass::SSRPass(const std::string& computerShaderPath)
 			.AddUnifromTexture(11)
 			.AddUnifromTexture(12)
 			.AddUnifromTexture(13)
-			.AddUnifromTexture(14);
+			.AddUnifromTexture(14)
+			.AddUnifromBuffer(15)		// DDGIUniforms
+			.AddStorageBuffer(16)		// DDGI 体积表
+			.AddUnifromTexture(17)		// DDGI 辐照度图集
+			.AddUnifromTexture(18)		// DDGI 深度图集
+			.AddUnifromTexture(19);		// DDGI probeData
 
 		if (config.Validate())
 			_ssrShader.Create(config);
@@ -84,6 +99,11 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	data.gPrevNormal = ctx.GetInput(8);
 	data.gPrevDepthStencil = ctx.GetInput(9);
 	data.hzbDepthMap = ctx.GetInput(10);
+
+	// DDGI 图集（可选：DDGI 本帧没执行时为空）
+	data.ddgiIrradianceAtlas = ctx.GetOptionalInput(0);
+	data.ddgiDepthAtlas = ctx.GetOptionalInput(1);
+	data.ddgiProbeData = ctx.GetOptionalInput(2);
 
 	data.gDepthStencil = ctx.GetFrameLocal(0);
 
@@ -120,8 +140,13 @@ void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 {
 	SetEnable(state.option.flags.ssrOn);
 
+	registry.Store(kDDGIFrameKey, DDGIFramePtr{});
 	if (!ShouldExecute(registry, state))
 		return;
+
+	// 命中点的漫反射间接光取自 DDGI：与 DDGI 各 Pass 共用同一帧的解析结果（Resolve 按帧缓存、内部加锁）
+	if (_sharedState && GetIndirectLightingPolicy(state).ddgiOn)
+		registry.Store(kDDGIFrameKey, _sharedState->Resolve(state));
 
 
 	auto& binding = registry.Get<ComputeBindingRecord>("binding");
@@ -140,6 +165,11 @@ void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 		binding.SetUniformBlock(_SSRParamsUBO, 0);
 	}
 
+}
+
+void SSRPass::SetSharedState(std::shared_ptr<DDGISharedState> sharedState)
+{
+	_sharedState = std::move(sharedState);
 }
 
 void SSRPass::SetEnable(bool enable) const
@@ -224,6 +254,21 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 		}
 	}
 
+	// 命中点漫反射间接光（与 RTR 相同，按命中点的世界位置 / 法线采样，不读屏幕空间的间接光合成结果）：
+	//   LightingPass 已经把 IBL 漫反射加进场景颜色 → 0（不重复加）
+	//   DDGI 开启、有可用体积、图集本帧已由 ddgiBlendNode 写好 → 2（DDGI，没覆盖到的回退 IBL）
+	//   其余（DDGI 没开或没体积、路径追踪开启时 LightingPass 不补漫反射）→ 1（IBL）
+	std::shared_ptr<const DDGIFrame> ddgiFrame;
+	if (auto* framePtr = registry.TryLoad<DDGIFramePtr>(kDDGIFrameKey))
+		ddgiFrame = *framePtr;
+	registry.Store(kDDGIFrameKey, DDGIFramePtr{});
+	auto texReady = [](const std::shared_ptr<Texture2D>& tex) { return tex && !tex->IsEmpty(); };
+	const bool ddgiEnable = ddgiFrame && ddgiFrame->enabled && ddgiFrame->uniformBlock && ddgiFrame->volumeTable
+		&& texReady(data.ddgiIrradianceAtlas) && texReady(data.ddgiDepthAtlas) && texReady(data.ddgiProbeData);
+	const IndirectLightingPolicy policy = GetIndirectLightingPolicy(state);
+	const bool sceneColorHasIBLDiffuse = policy.lightingIBLDiffuse && SelectIBLResources(state).IBLReady();
+	cubeParams.HitDiffuseMode = sceneColorHasIBLDiffuse ? 0u : (ddgiEnable ? 2u : 1u);
+
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(cubeParams));
 	paramsUBO->WriteDataAsync(cmd, &cubeParams, sizeof(cubeParams));
 	paramsUBO->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
@@ -249,6 +294,15 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 		binding.SetUniformTextureCube(IBLDiffuse, vk::ImageAspectFlagBits::eColor, 12);
 		binding.SetUniformTextureCube(IBLPrefilter, vk::ImageAspectFlagBits::eColor, 13);
 		binding.SetUniformTexture(IBLBrdfLUT, vk::ImageAspectFlagBits::eColor, 14);
+	}
+
+	if (cubeParams.HitDiffuseMode == 2u)
+	{
+		binding.SetUniformBlock(ddgiFrame->uniformBlock, 15);
+		binding.SetStorageBlock(ddgiFrame->volumeTable, 16);
+		binding.SetUniformTexture(data.ddgiIrradianceAtlas, vk::ImageAspectFlagBits::eColor, 17);
+		binding.SetUniformTexture(data.ddgiDepthAtlas, vk::ImageAspectFlagBits::eColor, 18);
+		binding.SetUniformTexture(data.ddgiProbeData, vk::ImageAspectFlagBits::eColor, 19);
 	}
 
 	_ssrShader.Bind(cmd, binding);

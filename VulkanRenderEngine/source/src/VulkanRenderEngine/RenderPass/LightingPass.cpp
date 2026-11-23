@@ -3,11 +3,17 @@
 #include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/Base/AtlasMap.h"
+#include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
 
-struct IBLParams
+namespace
 {
-	uint32_t IBLEnable = 0;
-};
+	// 与 lightingpass.comp 的 IBLParams 对应（std140 bool = 4 字节）
+	struct IBLParams
+	{
+		uint32_t IBLDiffuseEnable = 0;
+		uint32_t IBLSpecularEnable = 0;
+	};
+}
 
 LightingPass::LightingPass(const std::string& computeShaderPath)
 {
@@ -55,57 +61,17 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	auto target = ctx.GetExternal(0);
 
 
+	// IBL 按漫反射 / 镜面两个维度分别补：哪个维度已经有间接光 Pass 负责，这里就不加（分工见 IndirectLightingPolicy.h）
+	//   SSR / RTR 开启   → 不补镜面
+	//   DDGI 开启        → 不补漫反射（体积没覆盖到的部分由 DDGIApply 回退到 IBL 漫反射）
+	//   SSGI / RTGI 开启 → 路径追踪同时含漫反射与镜面，两项都不补
+	const IndirectLightingPolicy policy = GetIndirectLightingPolicy(state);
+	const IBLResources ibl = SelectIBLResources(state);
+	const bool iblReady = (policy.lightingIBLDiffuse || policy.lightingIBLSpecular) && ibl.IBLReady();
+
 	IBLParams params;
-	std::shared_ptr<TextureCube> IBLDiffuse;
-	std::shared_ptr<TextureCube> IBLPrefilter;
-	std::shared_ptr<Texture2D> IBLBrdfLUT;
-
-	auto& flags = state.option.flags;
-	bool anyIndirectOn =
-		flags.rayTraceReflectOn
-		|| flags.rayTraceGIOn
-		|| flags.ssrOn
-		|| flags.ssgiOn
-		|| flags.ddgiOn;
-
-	// 如果没有开启间接光照相关的Pass，则在这里直接进行sky反射捕获
-	if (!anyIndirectOn)
-	{
-		if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
-		{
-			if (
-				state.skyAtmosphereParams.skyCubeDiffuse
-				&& !state.skyAtmosphereParams.skyCubeDiffuse->IsEmpty()
-				&& state.skyAtmosphereParams.skyCubePrefilter
-				&& !state.skyAtmosphereParams.skyCubePrefilter->IsEmpty()
-				&& state.skyAtmosphereParams.brdfLUT
-				&& !state.skyAtmosphereParams.brdfLUT->IsEmpty()
-				)
-			{
-				params.IBLEnable = true;
-				IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
-				IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
-				IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
-			}
-		}
-		else if (state.skyboxParams.hasSkyBoxPreData)
-		{
-			if (
-				state.skyboxParams.skyCubeDiffuse
-				&& !state.skyboxParams.skyCubeDiffuse->IsEmpty()
-				&& state.skyboxParams.skyCubePrefilter
-				&& !state.skyboxParams.skyCubePrefilter->IsEmpty()
-				&& state.skyboxParams.brdfLUT
-				&& !state.skyboxParams.brdfLUT->IsEmpty()
-				)
-			{
-				params.IBLEnable = true;
-				IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
-				IBLPrefilter = state.skyboxParams.skyCubePrefilter;
-				IBLBrdfLUT = state.skyboxParams.brdfLUT;
-			}
-		}
-	}
+	params.IBLDiffuseEnable = iblReady && policy.lightingIBLDiffuse;
+	params.IBLSpecularEnable = iblReady && policy.lightingIBLSpecular;
 
 	auto cmd = cmdCtx.GetCmd();
 
@@ -128,11 +94,11 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	binding.SetUniformTexture(atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 8);
 	binding.SetUniformTexture(gDepthStencilMap, vk::ImageAspectFlagBits::eDepth, 9);
 
-	if (params.IBLEnable)
+	if (iblReady)
 	{
-		binding.SetUniformTextureCube(IBLDiffuse, vk::ImageAspectFlagBits::eColor, 10);
-		binding.SetUniformTextureCube(IBLPrefilter, vk::ImageAspectFlagBits::eColor, 11);
-		binding.SetUniformTexture(IBLBrdfLUT, vk::ImageAspectFlagBits::eColor, 12);
+		binding.SetUniformTextureCube(ibl.diffuse, vk::ImageAspectFlagBits::eColor, 10);
+		binding.SetUniformTextureCube(ibl.prefilter, vk::ImageAspectFlagBits::eColor, 11);
+		binding.SetUniformTexture(ibl.brdfLUT, vk::ImageAspectFlagBits::eColor, 12);
 	}
 
 	binding.SetLightStorageData(

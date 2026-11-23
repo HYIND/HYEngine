@@ -63,6 +63,7 @@ public:
 	void AddLight(LightType type, const glm::vec3& position, const std::string& name = "");
 	void AddGeometry(GeometryType type, const glm::vec3& position, const std::string& name = "");
 	void AddEmptyEntity(const glm::vec3& position, const std::string& name = "");
+	void AddDDGIVolume(const glm::vec3& position, const std::string& name = "");
 
 	void ReloadScriptAssets(const std::vector<std::shared_ptr<ScriptSourceData>>& changed);
 	void ReloadUIAssets();

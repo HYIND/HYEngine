@@ -167,6 +167,7 @@
     <ClInclude Include="source\include\IconManager.h" />
     <ClInclude Include="source\include\ImguiLayout.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />
+    <ClInclude Include="source\include\DDGIEditor.h" />
     <ClInclude Include="source\include\Reflect.h" />
     <ClInclude Include="source\include\stdafx.h" />
     <ClInclude Include="source\include\EditorApp.h" />
@@ -188,6 +189,7 @@
     <ClCompile Include="source\src\IconManager.cpp" />
     <ClCompile Include="source\src\ImguiLayout.cpp" />
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
+    <ClCompile Include="source\src\DDGIEditor.cpp" />
     <ClCompile Include="source\src\EditorApp.cpp" />
     <ClCompile Include="source\src\SceneEditor.cpp" />
     <ClCompile Include="source\src\ViewportCamera.cpp" />

@@ -5,9 +5,9 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 
-// DDGI 探针光线追踪：每个线程一条光线，结果写进 rayData，卷积与混合交给 DDGIBlendPass。
-// 加速结构等来自 RTCoreRayTraceGeneralPass；命中着色器用 shader/DDGI/DDGIClosestHit.rchit（负 t = 背面）。
-// 多次反弹读上一帧的 history 图集（与 DDGIBlendPass 共享同一份持久资源）。
+// DDGI 探针光线追踪：只追踪本帧更新列表里的探针，第 i 个探针的光线写进 rayData 的第 i 个 tile，
+// 卷积与混合交给 DDGIBlendPass。命中着色器用 shader/DDGI/DDGIClosestHit.rchit（负 t = 背面）。
+// 多次反弹与探针偏移读上一帧的 history（与 DDGIBlendPass 共享同一份持久资源，按上一帧布局寻址）。
 class DDGIProbeUpdatePass :public RenderPassBase
 {
 public:
@@ -36,13 +36,4 @@ private:
 
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> _buffers;
 	std::shared_ptr<DDGISharedState> _sharedState;
-	std::shared_ptr<UniformBlock> _paramsUBO;
-
-	// FrameBegin 解析体积、定 launch 维度；UBO 与天空 cubemap 在 Execute 里处理：
-	// 天空预计算是图内节点，FrameBegin 时 hasSkyAtmospherePreData 还是上一帧的值
-	DDGIFrameState _frame{};
-	glm::uvec3 _launchSize{ 0u };
-	bool _framePrepared = false;
-
-	bool _enable = false;
 };

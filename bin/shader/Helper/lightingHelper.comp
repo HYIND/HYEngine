@@ -515,7 +515,9 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 }
 #endif 
 
-vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, samplerCube IBLDiffuse, samplerCube IBLPrefilter, sampler2D IBLBrdfLUT)
+// IBL 拆成漫反射 / 镜面两项（都已乘 AO），供只需要其中一项的调用方使用（如 DDGI 接管漫反射时）
+void CalculateIBLLightingSplit(vec3 viewDir, vec3 normal, PBRProperties prop, samplerCube IBLDiffuse, samplerCube IBLPrefilter, sampler2D IBLBrdfLUT,
+    out vec3 outDiffuse, out vec3 outSpecular)
 {
     vec3 diffuse;
  	CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
@@ -536,7 +538,14 @@ vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, sampler
     vec3 brdf = F0 * A + B;
 
     vec3 specColor = prefilteredColor * brdf;
-	vec3 color = diffuseColor + specColor;
 
-    return color * prop.ambientOcclusion;
+    outDiffuse = diffuseColor * prop.ambientOcclusion;
+    outSpecular = specColor * prop.ambientOcclusion;
+}
+
+vec3 CalculateIBLLighting(vec3 viewDir, vec3 normal, PBRProperties prop, samplerCube IBLDiffuse, samplerCube IBLPrefilter, sampler2D IBLBrdfLUT)
+{
+    vec3 diffuseColor, specColor;
+    CalculateIBLLightingSplit(viewDir, normal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, diffuseColor, specColor);
+    return diffuseColor + specColor;
 }

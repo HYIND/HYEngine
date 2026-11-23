@@ -7,6 +7,8 @@
 #include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
 #include "VulkanRenderEngine/General/TemporalAccumulate.h"
 
+class DDGISharedState;
+
 class RTCoreRayTraceReflectPass :public RenderPassBase
 {
 public:
@@ -25,6 +27,7 @@ public:
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 
 	void SetGeneralBuffer(std::shared_ptr<RTCoreRayTraceGeneralBuffer> buffer);
+	void SetSharedState(std::shared_ptr<DDGISharedState> sharedState);	// 命中点采样 DDGI 用
 
 private:
 	struct FrameRenderData
@@ -52,6 +55,10 @@ private:
 
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
+
+		std::shared_ptr<Texture2D> ddgiIrradianceAtlas;
+		std::shared_ptr<Texture2D> ddgiDepthAtlas;
+		std::shared_ptr<Texture2D> ddgiProbeData;
 	};
 
 	bool DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
@@ -73,6 +80,7 @@ private:
 	mutable bool _enable;
 
 	std::shared_ptr<RTCoreRayTraceGeneralBuffer> _buffers;
+	std::shared_ptr<DDGISharedState> _sharedState;
 	std::shared_ptr<UniformBlock> _RayTraceParamsUBO;
 
 	TemporalAccumulate _temporalAccumulate;

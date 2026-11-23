@@ -71,6 +71,9 @@ SpinLock& VKWrapper::VKCommandPool::GetCommandPoolMutex() { return _commandPoolM
 vk::Result VKCommandPool::AllocateBuffers(std::shared_ptr<VKCommandBuffer>& buffer)
 {
 	buffer->_pool = shared_from_this();
+	// 新拿到的句柄：不管是复用的还是新分配的，都还没录过本次的命令
+	buffer->_isRecording = false;
+	buffer->_hasCommands = false;
 
 	{
 		LockGuard guard(_commandPoolMutex);

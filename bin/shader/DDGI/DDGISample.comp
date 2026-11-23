@@ -1,37 +1,58 @@
 #ifndef DDGI_SAMPLE_COMP
 #define DDGI_SAMPLE_COMP
 
-// DDGI 采样，全屏 Apply 与探针多次反弹共用。
+// DDGI 采样，全屏 Apply、探针多次反弹、可视化共用。
 // 包含前需要：DDGICore.comp、DDGIUniforms.comp，以及
-//   sampler2D irradianceAtlas  // rgb = E/π，a = 背面命中比例
-//   sampler2D depthAtlas       // rg  = (E[t], E[t²])
+//   sampler2D ddgiIrradianceTex  // rgb = E/π
+//   sampler2D ddgiDepthTex       // rg  = (E[t], E[t²])
+//   sampler2D ddgiProbeDataTex   // xyz = 偏移，w = 已更新次数 n + 背面命中比例（小数部分）
+// 定义 DDGI_SAMPLE_PREV 时按上一帧的布局采样（读 history，多次反弹用）。
+// 定义 DDGI_SAMPLE_SINGLE 时只取第一个（优先级最高）包含该点的体积，不做体积间过渡（多次反弹用，省一半采样）。
+// 定义 DDGI_LEAK_DEBUG 时，使用方需先提供 ddgiLeakVolume / ddgiLeakProbe / gDDGIDebug。
 //
 // 返回 Lbar = E/π，乘漫反射反照率即出射辐亮度。
-// 权重（与 RTXGI 一致）：背面 wrap + 0.2 下限、Chebyshev³（下限 0.05）、小权重三次方压低、剔除埋在几何里的探针。
-// toViewer：viewBias 的方向，Apply 指向相机，多次反弹指向发射光线的探针。
-// skipFresh：多次反弹读的是上一帧 history，需跳过本帧新进入窗口的探针。
-vec3 ddgiSampleIrradiance(vec3 worldPos, vec3 normal, vec3 toViewer, bool skipFresh)
+// 多体积：按表顺序（优先级从高到低）累加，每个体积按边缘过渡拿走权重 w，剩下的 1 - w 交给下一个；
+// ddgiSampleIrradianceEx 额外输出最后剩下的权重 remaining（0 = 完全被 DDGI 覆盖，1 = 不在任何体积里），
+// 屏幕端 Apply 用它回退到 IBL 漫反射；ddgiSampleIrradiance 直接丢弃 remaining（体积外为 0，多次反弹用）。
+// 体积内部按 RTXGI 的权重：背面 wrap + 0.2 下限、Chebyshev³（下限 0.05）、小权重三次方压低、剔除埋在几何里的探针。
+// 未更新过的探针（n = 0）不参与；一个体积的有效角点太少时把权重让给下一个体积。
+
+bool ddgiSampleLayout(uint v, out vec3 origin, out uvec3 counts, out uint base)
 {
-    vec3 biasedPos = worldPos + normal * ddgi.shadingParams.x + toViewer * ddgi.shadingParams.y;
-    vec3 gridPos = (biasedPos - ddgi.volumeOrigin.xyz) / ddgi.volumeSpacing.xyz;
+#ifdef DDGI_SAMPLE_PREV
+    if (!ddgiHistoryValid() || (ddgiVolumeFlags(v) & DDGI_VOLUME_HISTORY) == 0u)
+    {
+        origin = vec3(0.0); counts = uvec3(1u); base = 0u;
+        return false;
+    }
+    origin = ddgiVolumes[v].prevOrigin.xyz;
+    counts = ddgiVolumes[v].prevCounts.xyz;
+    base = uint(ddgiVolumes[v].prevShift.w);
+#else
+    origin = ddgiVolumes[v].origin.xyz;
+    counts = ddgiVolumes[v].counts.xyz;
+    base = ddgiVolumes[v].counts.w;
+#endif
+    return true;
+}
 
-    // 体积边缘向内一格淡出（autoFit 每边至少外扩一格，场景表面不会落进淡出区）
-    vec3 countsF = vec3(ddgi.volumeCounts.xyz);
-    vec3 fadeAxis = smoothstep(vec3(0.0), vec3(1.0), min(gridPos, countsF - gridPos));
-    float fade = fadeAxis.x * fadeAxis.y * fadeAxis.z;
-    if (fade <= 0.0)
-        return vec3(0.0);
+// 单个体积：返回有效角点归一化后的辐照度；coverage = 有效角点的三线性权重和（0~1）
+vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, vec3 normal,
+                      vec3 origin, uvec3 counts, uint base, out float coverage)
+{
+    coverage = 0.0;
+    vec3 spacing = ddgiVolumes[v].spacing.xyz;
 
-    vec3 q = gridPos - 0.5;     // 探针中心在 i + 0.5
-    ivec3 base = ivec3(floor(q));
-    vec3 alpha = clamp(q - vec3(base), 0.0, 1.0);
-    alpha = alpha * alpha * (3.0 - 2.0 * alpha);    // 格子边界处梯度连续
+    vec3 q = (biasedPos - origin) / spacing - 0.5;    // 探针中心在 i + 0.5
+    ivec3 base3 = ivec3(floor(q));
+    vec3 alpha = clamp(q - vec3(base3), 0.0, 1.0);
+    alpha = alpha * alpha * (3.0 - 2.0 * alpha);       // 格子边界处梯度连续
 
-    ivec3 maxCoord = ivec3(ddgi.volumeCounts.xyz) - ivec3(1);
-    vec2 irrAtlasSize = vec2(textureSize(irradianceAtlas, 0));
-    vec2 depthAtlasSize = vec2(textureSize(depthAtlas, 0));
+    ivec3 maxCoord = ivec3(counts) - ivec3(1);
+    vec2 irrAtlasSize = vec2(textureSize(ddgiIrradianceTex, 0));
+    vec2 depthAtlasSize = vec2(textureSize(ddgiDepthTex, 0));
     float backfaceExp = max(ddgi.filterParams.x, 0.001);
-    const float minVariance = 1e-4;     // 防止 Chebyshev 除零
+    const float minVariance = 1e-4;
 
     vec3 sum = vec3(0.0);
     float weightSum = 0.0;
@@ -39,28 +60,37 @@ vec3 ddgiSampleIrradiance(vec3 worldPos, vec3 normal, vec3 toViewer, bool skipFr
     for (int c = 0; c < 8; ++c)
     {
         ivec3 offset = ivec3(c & 1, (c >> 1) & 1, (c >> 2) & 1);
-        ivec3 coord = clamp(base + offset, ivec3(0), maxCoord);
-        if (skipFresh && ddgiProbeIsFresh(coord))
-            continue;
-
+        ivec3 coord = clamp(base3 + offset, ivec3(0), maxCoord);
         vec3 tri = mix(1.0 - alpha, alpha, vec3(offset));
         float wTri = tri.x * tri.y * tri.z;
         if (wTri <= 0.0)
             continue;
 
-        vec3 probePos = ddgiProbeWorldPos(coord);
-        uint idx = ddgiPhysicalIndex(coord);
+        uint slot = base + ddgiLocalIndex(coord, counts);
+        vec4 data = texelFetch(ddgiProbeDataTex, ddgiTileOrigin(slot, 1u), 0);
+        vec3 probePos = origin + (vec3(coord) + 0.5) * spacing + data.xyz;
+
+        if (data.w < 1.0)
+        {
+#ifdef DDGI_LEAK_DEBUG
+            if (gDDGIDebug)
+                ddgiLeakProbe(leakVolume, probePos, ivec3(round(origin / spacing)) + coord, slot,
+                              vec4(wTri, 0.0, 0.0, 0.0), vec4(0.0, length(probePos - biasedPos), 0.0, 0.0));
+#endif
+            continue;
+        }
+        coverage += wTri;
 
         // 背面 wrap：用未偏移的位置
         float wrap = (dot(normalize(probePos - worldPos), normal) + 1.0) * 0.5;
-        float w = pow(wrap, backfaceExp) + 0.2;
+        float wBack = pow(wrap, backfaceExp) + 0.2;
 
         // Chebyshev：用偏移后的位置
         vec3 toProbe = probePos - biasedPos;
         float dist = length(toProbe);
-        ivec2 depthTile = ddgiTileOrigin(idx, uint(DDGI_DEPTH_TILE));
+        ivec2 depthTile = ddgiTileOrigin(slot, uint(DDGI_DEPTH_TILE));
         vec2 depthUV = ddgiProbeSampleUV(depthTile, -toProbe / max(dist, 1e-4), uint(DDGI_DEPTH_INNER), depthAtlasSize);
-        vec2 moments = textureLod(depthAtlas, depthUV, 0.0).rg;
+        vec2 moments = textureLod(ddgiDepthTex, depthUV, 0.0).rg;
 
         float chebyshev = 1.0;
         if (dist > moments.x)
@@ -70,25 +100,98 @@ vec3 ddgiSampleIrradiance(vec3 worldPos, vec3 normal, vec3 toViewer, bool skipFr
             chebyshev = variance / (variance + d * d);
             chebyshev = chebyshev * chebyshev * chebyshev;
         }
-        w *= max(chebyshev, 0.05);
+        chebyshev = max(chebyshev, 0.05);
 
-        // 小权重三次方压低
-        w = max(w, 1e-6);
+        float w = max(wBack * chebyshev, 1e-6);
         const float crushThreshold = 0.2;
         if (w < crushThreshold)
             w *= (w * w) / (crushThreshold * crushThreshold);
 
-        // 辐照度；背面命中比例高（探针埋在实心几何里）时剔除
-        ivec2 irrTile = ddgiTileOrigin(idx, uint(DDGI_IRR_TILE));
-        vec4 irr = textureLod(irradianceAtlas, ddgiProbeSampleUV(irrTile, normal, uint(DDGI_IRR_INNER), irrAtlasSize), 0.0);
-        w *= 1.0 - smoothstep(0.55, 0.9, clamp(irr.a, 0.0, 1.0));
+        // 背面命中比例高（探针埋在实心几何里）时剔除；比例存在 probeData.w 的小数部分
+        float interior = 1.0 - smoothstep(0.55, 0.9, fract(data.w));
+        w *= interior * wTri;
 
-        w *= wTri;
-        sum += irr.rgb * w;
+        ivec2 irrTile = ddgiTileOrigin(slot, uint(DDGI_IRR_TILE));
+        vec3 irr = textureLod(ddgiIrradianceTex, ddgiProbeSampleUV(irrTile, normal, uint(DDGI_IRR_INNER), irrAtlasSize), 0.0).rgb;
+
+#ifdef DDGI_LEAK_DEBUG
+        if (gDDGIDebug)
+            ddgiLeakProbe(leakVolume, probePos, ivec3(round(origin / spacing)) + coord, slot,
+                          vec4(wTri, wBack, chebyshev, w), vec4(moments.x, dist, interior, 1.0));
+#endif
+
+        sum += irr * w;
         weightSum += w;
     }
 
-    return weightSum > 1e-5 ? sum / weightSum * fade : vec3(0.0);
+    if (weightSum <= 1e-5)
+    {
+        coverage = 0.0;
+        return vec3(0.0);
+    }
+    return sum / weightSum;
+}
+
+vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float remaining)
+{
+    vec3 biasedPos = worldPos + normal * ddgi.shadingParams.x + toViewer * ddgi.shadingParams.y;
+
+    vec3 result = vec3(0.0);
+    remaining = 1.0;
+    uint leakVolume = 0u;
+
+    for (uint v = 0u; v < ddgiVolumeCount(); ++v)
+    {
+        vec3 origin;
+        uvec3 counts;
+        uint base;
+        if (!ddgiSampleLayout(v, origin, counts, base))
+            continue;
+
+        vec3 gridPos = (biasedPos - origin) / ddgiVolumes[v].spacing.xyz;
+        vec3 edge = min(gridPos, vec3(counts) - gridPos);
+        if (any(lessThanEqual(edge, vec3(0.0))))
+            continue;
+
+#ifdef DDGI_SAMPLE_SINGLE
+        float fade = 1.0;
+#else
+        // 边缘过渡：从体积边界向内 fadeCells 格做 smoothstep
+        float fadeCells = max(ddgiVolumes[v].origin.w, 0.01);
+        vec3 fadeAxis = smoothstep(vec3(0.0), vec3(fadeCells), edge);
+        float fade = fadeAxis.x * fadeAxis.y * fadeAxis.z;
+        if (fade <= 0.0)
+            continue;
+#endif
+
+#ifdef DDGI_LEAK_DEBUG
+        if (gDDGIDebug)
+            leakVolume = ddgiLeakVolume(ddgiVolumes[v].info.x);
+#endif
+        float coverage;
+        vec3 irr = ddgiSampleVolume(v, leakVolume, worldPos, biasedPos, normal, origin, counts, base, coverage);
+
+        float w = fade * smoothstep(0.0, 0.25, coverage);
+#ifdef DDGI_LEAK_DEBUG
+        if (gDDGIDebug)
+            ddgiLeakVolumeWeight(leakVolume, remaining * w);
+#endif
+        if (w <= 0.0)
+            continue;
+
+        result += remaining * w * irr;
+        remaining *= 1.0 - w;
+        if (remaining < 1e-3)
+            break;
+    }
+
+    return result;
+}
+
+vec3 ddgiSampleIrradiance(vec3 worldPos, vec3 normal, vec3 toViewer)
+{
+    float remaining;
+    return ddgiSampleIrradianceEx(worldPos, normal, toViewer, remaining);
 }
 
 #endif

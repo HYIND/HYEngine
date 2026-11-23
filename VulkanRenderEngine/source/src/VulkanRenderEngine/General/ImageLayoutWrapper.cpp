@@ -131,6 +131,7 @@ bool ImageLayout::IsColorFormat(vk::Format format)
 	case vk::Format::eA2B10G10R10UintPack32:
 	case vk::Format::eG8B8G8R8422Unorm:
 	case vk::Format::eB8G8R8G8422Unorm:
+	case vk::Format::eB10G11R11UfloatPack32:
 		return true;
 	}
 	return false;
@@ -390,6 +391,10 @@ uint32_t ImageLayout::GetFormatSize(vk::Format format) {
 	case vk::Format::eR16G16B16A16Sint:
 	case vk::Format::eR16G16B16A16Sfloat:
 		return 8;
+
+		// 打包格式
+	case vk::Format::eB10G11R11UfloatPack32:
+		return 4;
 
 		// 32-bit 单通道
 	case vk::Format::eR32Uint:

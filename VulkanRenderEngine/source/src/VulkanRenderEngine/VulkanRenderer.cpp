@@ -32,6 +32,7 @@
 #include "VulkanRenderEngine/RenderPass/DDGIProbeUpdatePass.h"
 #include "VulkanRenderEngine/RenderPass/DDGIBlendPass.h"
 #include "VulkanRenderEngine/RenderPass/DDGIApplyPass.h"
+#include "VulkanRenderEngine/RenderPass/DDGIProbeDrawPass.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 
 const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
@@ -401,6 +402,13 @@ std::shared_ptr<VKCore::VulkanSwapchain> VulkanRenderer::GetVulkanSwapchain() co
 	return _vulkanSwapchain;
 }
 
+std::shared_ptr<DDGIDebugChannel> VulkanRenderer::GetDDGIDebugChannel()
+{
+	if (!_ddgiDebugChannel)
+		_ddgiDebugChannel = std::make_shared<DDGIDebugChannel>();
+	return _ddgiDebugChannel;
+}
+
 glm::u32vec2 VulkanRenderer::GetSize() const {
 	return glm::u32vec2{ scr_width,scr_height };
 }
@@ -641,6 +649,76 @@ void VulkanRenderer::InitSceneRenderGraph()
 		};
 
 
+	// 间接光分支合成：把同一维度（漫反射 / 镜面）里本帧执行了的 Pass 输出加法合成到该分支的输出。
+	// 可选输入只会拿到本帧真正执行过的 Pass 的输出（没执行的 Pass 不会分配输出纹理）；
+	// 一个都没有时把输出清零（瞬态纹理来自纹理池，内容未定义）。
+	static auto MakeIndirectBranchCombinPass = []()-> auto {
+
+		auto shader = std::make_shared<ComputePipeline>();
+		{
+			ComputePipelineConfig config;
+			config.AddDefineMacro("COMBIN_MODE", 1);
+			config.AddDefineMacro("SkipBrightOutput", "");
+			config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+			config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
+			config.computePath = "shader/postprocess/combin.comp";
+
+			config
+				.AddStorageImage(0)
+				.AddStorageImage(1)
+				.AddUnifromVariableTextureArray(2, 20)
+				.AddPushConstant(sizeof(uint32_t));
+
+			if (config.Validate())
+				shader->Create(config);
+		}
+
+		return MakeLambdaPass(
+			[_shader = shader]
+			(RenderGraph::PassFrameCmdContext& cmdCtx, const RenderGraph::PassFrameContext& ctx, RenderState& state) mutable -> void
+			{
+				auto outImage = ctx.GetOutput(0);
+				if (!_shader || !outImage || outImage->IsEmpty())
+					return;
+
+				std::vector<std::shared_ptr<Texture2D>> all_tex;
+				for (auto& slot : ctx.optionInputs) {
+					if (auto tex = slot.As<Texture2D>()) all_tex.push_back(tex);
+				}
+
+				auto cmd = cmdCtx.GetCmd();
+				outImage->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+				if (all_tex.empty())
+				{
+					vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+					vk::ImageSubresourceRange range;
+					range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+						.setBaseArrayLayer(0)
+						.setLayerCount(1)
+						.setBaseMipLevel(0)
+						.setLevelCount(1);
+					cmd->clearColorImage(outImage->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+					outImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+					cmd->SubmitToQueue();
+					return;
+				}
+
+				ComputeBindingRecord binding;
+				binding.SetStorageImage(outImage, vk::ImageAspectFlagBits::eColor, 0);
+				binding.SetUniformTextureArray(all_tex, vk::ImageAspectFlagBits::eColor, 2);
+
+				uint32_t count = (uint32_t)all_tex.size();
+				_shader->Bind(cmd, binding);
+				_shader->SetPushConstants(cmd, &count, sizeof(count));
+
+				auto size = outImage->GetSize();
+				cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+
+				cmd->SubmitToQueue();
+			});
+		};
+
 	uint32_t width = scr_width;
 	uint32_t height = scr_height;
 
@@ -684,6 +762,23 @@ void VulkanRenderer::InitSceneRenderGraph()
 	std::unique_ptr<RenderPassBase> reflectPass;
 	std::unique_ptr<RenderPassBase> giPass;
 
+	// DDGI 图集布局取决于设备的纹理尺寸上限，必须在创建 DDGI 管线（注入布局宏）之前确定
+	{
+		auto device = VKCONTEXT->GetDevice();
+		const auto& limits = device->GetPhysicalDeviceProperties().properties.limits;
+		const auto physicalDevice = device->GetPhysicalDevice();
+		const auto r11Props = physicalDevice.getFormatProperties(vk::Format::eB10G11R11UfloatPack32);
+		const bool r11Storage = physicalDevice.getFeatures().shaderStorageImageExtendedFormats
+			&& (r11Props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage)
+			&& (r11Props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
+		DDGIAtlasLayout::Configure(limits.maxImageDimension2D, r11Storage);
+		const auto& layout = DDGIAtlasLayout::Get();
+		std::cout << std::format("[ DDGI ] capacity={} budget={} probesPerRow={} rows={} irradiance={}\n",
+			layout.capacity, layout.budget, layout.probesPerRow, layout.rows, layout.irradianceR11 ? "R11G11B10" : "RGBA16F");
+	}
+	if (!_ddgiDebugChannel)
+		_ddgiDebugChannel = std::make_shared<DDGIDebugChannel>();
+
 	auto ddgiUpdatePass = std::make_unique<DDGIProbeUpdatePass>(
 		"shader/DDGI/DDGIProbeUpdate.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/DDGI/DDGIClosestHit.rchit",
 		"", "", ""
@@ -691,11 +786,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto ddgiBlendPass = std::make_unique<DDGIBlendPass>("shader/DDGI/DDGIBlend.comp");
 	auto ddgiApplyPass = std::make_unique<DDGIApplyPass>("shader/DDGI/DDGIApply.comp");
 
-	// 三个 DDGI Pass 共享跨帧状态，保证同一帧的体积、轮转与滚动偏移一致
-	auto ddgiSharedState = std::make_shared<DDGISharedState>();
+	auto ddgiProbeDrawPass = std::make_unique<DDGIProbeDrawPass>("shader/DDGI/DDGIProbeDraw.vs", "shader/DDGI/DDGIProbeDraw.fs");
+
+	// DDGI Pass 共享跨帧状态，保证同一帧的体积布局、更新列表逐位一致
+	auto ddgiSharedState = std::make_shared<DDGISharedState>(_ddgiDebugChannel);
 	ddgiUpdatePass->SetSharedState(ddgiSharedState);
 	ddgiBlendPass->SetSharedState(ddgiSharedState);
 	ddgiApplyPass->SetSharedState(ddgiSharedState);
+	ddgiProbeDrawPass->SetSharedState(ddgiSharedState);
 
 	if (GlobalConfig::RTCoreEnable)
 	{
@@ -711,6 +809,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		);
 
 		t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+		t_reflectPass->SetSharedState(ddgiSharedState);		// 反射命中点采样 DDGI
 		t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 		ddgiUpdatePass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
 
@@ -737,9 +836,14 @@ void VulkanRenderer::InitSceneRenderGraph()
 	}
 
 	auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp");
+	ssrPass->SetSharedState(ddgiSharedState);		// 反射命中点采样 DDGI
 
 	auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp");
 
+	// 间接光合成：漫反射 / 镜面 / 路径追踪三路分别合成，最后加到场景颜色（分工见 IndirectLightingPolicy.h）
+	auto indirectDiffuseCombinPass = MakeIndirectBranchCombinPass();
+	auto indirectSpecularCombinPass = MakeIndirectBranchCombinPass();
+	auto indirectPathTracingCombinPass = MakeIndirectBranchCombinPass();
 	auto combinIndirectLightingPass = MakeConbinIndirectLightingPass();
 
 	auto lightDrawPass = std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs");
@@ -779,21 +883,29 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto ssr_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
 
-	// DDGI 资源按探针数上限一次性分配（布局见 DDGIDef.h）。
-	// 两张图集必须 Linear 采样，Nearest 会让探针在方向上阶跃，地面出现以 spacing 为周期的条带
+	// DDGI 资源按探针池容量一次性分配（布局见 DDGIDef.h），rayData 只按每帧更新预算分配。
+	// 辐照度 / 深度图集必须 Linear 采样，Nearest 会让探针在方向上阶跃
 	const auto ddgiRayDataSize = DDGIAtlasLayout::RayDataSize();
 	const auto ddgiIrradianceSize = DDGIAtlasLayout::IrradianceAtlasSize();
 	const auto ddgiDepthSize = DDGIAtlasLayout::DepthAtlasSize();
+	const auto ddgiProbeTexelSize = DDGIAtlasLayout::ProbeTexelSize();
 	auto ddgiRayData = resbuilder.CreateTexture(ddgiRayDataSize.x, ddgiRayDataSize.y, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiRayData");
-	auto ddgiIrradianceAtlas = resbuilder.CreateTexture(ddgiIrradianceSize.x, ddgiIrradianceSize.y, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "ddgiIrradianceAtlas");
+	auto ddgiIrradianceAtlas = resbuilder.CreateTexture(ddgiIrradianceSize.x, ddgiIrradianceSize.y, DDGIAtlasLayout::IrradianceFormat(), vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "ddgiIrradianceAtlas");
 	auto ddgiDepthAtlas = resbuilder.CreateTexture(ddgiDepthSize.x, ddgiDepthSize.y, vk::Format::eR16G16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "ddgiDepthAtlas");
-	// 持久 history：混合 Pass 回拷写入，探针更新 Pass 读取（多次反弹）
+	// 每探针 1 texel：probeData = (偏移, 已更新次数 n + 背面比例)，probeStats = 突变检测统计量（只有 Blend 读写）
+	auto ddgiProbeData = resbuilder.CreateTexture(ddgiProbeTexelSize.x, ddgiProbeTexelSize.y, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiProbeData");
+	auto ddgiProbeStats = resbuilder.CreateTexture(ddgiProbeTexelSize.x, ddgiProbeTexelSize.y, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiProbeStats");
+	// 持久 history（上一帧布局）：混合 Pass 回拷写入，探针更新 Pass 读取（多次反弹、探针偏移）
 	auto ddgiIrradianceHistory = resbuilder.CreateTexture(ddgiIrradianceAtlas, "ddgiIrradianceHistory");
 	auto ddgiDepthHistory = resbuilder.CreateTexture(ddgiDepthAtlas, "ddgiDepthHistory");
-	// 每探针时域状态（累积次数、突变检测统计量），混合 Pass 原地读写
-	const auto ddgiProbeStateSize = DDGIAtlasLayout::ProbeStateSize();
-	auto ddgiProbeState = resbuilder.CreateTexture(ddgiProbeStateSize.x, ddgiProbeStateSize.y, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ddgiProbeState");
+	auto ddgiProbeDataHistory = resbuilder.CreateTexture(ddgiProbeData, "ddgiProbeDataHistory");
+	auto ddgiProbeStatsHistory = resbuilder.CreateTexture(ddgiProbeStats, "ddgiProbeStatsHistory");
 	auto ddgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "ddgi_Output");
+	// 间接光分支合成结果（全分辨率，已乘材质）：
+	//   漫反射 = 纯漫反射方案（DDGI）；镜面 = 纯镜面方案（RTR + SSR）；路径追踪 = 漫反射 + 镜面都有的方案（RTGI + SSGI）
+	auto indirectDiffuse_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectDiffuse_Output");
+	auto indirectSpecular_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectSpecular_Output");
+	auto indirectPathTracing_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectPathTracing_Output");
 	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");
 
 	auto gPrevPosition = resbuilder.CreateTexture(gPosition, "gPrevPosition");
@@ -823,6 +935,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto ddgiUpdateNode = _sceneRenderGraph->AddNode("ddgiUpdateNode");
 	auto ddgiBlendNode = _sceneRenderGraph->AddNode("ddgiBlendNode");
 	auto ddgiApplyNode = _sceneRenderGraph->AddNode("ddgiApplyNode");
+	auto ddgiProbeDrawNode = _sceneRenderGraph->AddNode("ddgiProbeDrawNode");
+	auto indirectDiffuseCombinNode = _sceneRenderGraph->AddNode("indirectDiffuseCombinNode");
+	auto indirectSpecularCombinNode = _sceneRenderGraph->AddNode("indirectSpecularCombinNode");
+	auto indirectPathTracingCombinNode = _sceneRenderGraph->AddNode("indirectPathTracingCombinNode");
 	auto combinIndirectLightingNode = _sceneRenderGraph->AddNode("combinIndirectLightingNode");
 	auto lightDrawNode = _sceneRenderGraph->AddNode("lightDrawNode");
 	auto opaqueFence = _sceneRenderGraph->AddFence("opaqueFence");
@@ -917,10 +1033,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
+	// 天空在间接光合成之后画：天空像素没有间接光，合成会把场景颜色整张拷出再写回，
+	// 和天空并行执行时会把天空覆盖掉；场景颜色是外部资源，图里不会自动推出这条依赖
 	skyBoxNode->SetRenderPass(std::move(skyBoxPass))
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.After(geometryNode)
-		.Before(opaqueFence)
+		.After(geometryNode, combinIndirectLightingNode)
+		.Before(lightDrawNode, opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil ,computeReadLayout });
 
 	rayTraceGeneralNode->SetRenderPass(std::move(generalPass));
@@ -938,12 +1056,18 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp3"), computeWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp4"), computeWriteLayout }
 		)
+		// 命中点的漫反射间接光采样 DDGI（可选：DDGI 本帧没执行时不分配）
+		.InputOption(
+			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
+			ResourceData{ ddgiDepthAtlas, computeReadLayout },
+			ResourceData{ ddgiProbeData, computeReadLayout }
+		)
 		.Output(ResourceData{ rayTraceReflect_Output, computeWriteLayout })
 		.Persistent(
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyMomentTexture"), computeReadLayout }
 		)
-		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode, ddgiBlendNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -977,6 +1101,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
 			ResourceData{ hzbMinDepthMap, computeReadLayout }
 		)
+		// 命中点的漫反射间接光采样 DDGI（可选：DDGI 本帧没执行时不分配）
+		.InputOption(
+			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
+			ResourceData{ ddgiDepthAtlas, computeReadLayout },
+			ResourceData{ ddgiProbeData, computeReadLayout }
+		)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp1"), computeWriteLayout },
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_temp2"), computeWriteLayout },
@@ -989,7 +1119,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyMomentTexture"), computeReadLayout }
 		)
-		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode, ddgiBlendNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -1022,7 +1152,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Output(ResourceData{ ddgiRayData, computeWriteLayout })
 		.Persistent(
 			ResourceData{ ddgiIrradianceHistory, computeReadLayout },
-			ResourceData{ ddgiDepthHistory, computeReadLayout }
+			ResourceData{ ddgiDepthHistory, computeReadLayout },
+			ResourceData{ ddgiProbeDataHistory, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, rayTraceGeneralNode)
 		.Before(ddgiBlendNode);
@@ -1031,12 +1162,15 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Input(ResourceData{ ddgiRayData, computeReadLayout })
 		.Output(
 			ResourceData{ ddgiIrradianceAtlas, computeWriteLayout },
-			ResourceData{ ddgiDepthAtlas, computeWriteLayout }
+			ResourceData{ ddgiDepthAtlas, computeWriteLayout },
+			ResourceData{ ddgiProbeData, computeWriteLayout },
+			ResourceData{ ddgiProbeStats, computeWriteLayout }
 		)
 		.Persistent(
 			ResourceData{ ddgiIrradianceHistory, computeReadLayout },
 			ResourceData{ ddgiDepthHistory, computeReadLayout },
-			ResourceData{ ddgiProbeState, computeWriteLayout }
+			ResourceData{ ddgiProbeDataHistory, computeReadLayout },
+			ResourceData{ ddgiProbeStatsHistory, computeReadLayout }
 		)
 		.After(ddgiUpdateNode)
 		.Before(ddgiApplyNode);
@@ -1048,7 +1182,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gAlbedoOpacity, computeReadLayout },
 			ResourceData{ ssaoOutPut, computeReadLayout },
 			ResourceData{ ddgiIrradianceAtlas, computeReadLayout },
-			ResourceData{ ddgiDepthAtlas, computeReadLayout }
+			ResourceData{ ddgiDepthAtlas, computeReadLayout },
+			ResourceData{ ddgiProbeData, computeReadLayout },
+			ResourceData{ gMetallicRoughness, computeReadLayout }
 		)
 		.Output(ResourceData{ ddgi_Output, computeWriteLayout })
 		.After(geometryNode, ssaoNode, ddgiBlendNode)
@@ -1057,21 +1193,62 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	{
 
-		combinIndirectLightingNode->SetRenderPass(std::move(combinIndirectLightingPass))
+		// 漫反射合成
+		indirectDiffuseCombinNode->SetRenderPass(std::move(indirectDiffuseCombinPass))
 			.InputOption(
-				ResourceData{ rayTraceReflect_Output, computeReadLayout }, ResourceData{ rayTraceGI_Output, computeReadLayout },
-				ResourceData{ ssr_Output, computeReadLayout }, ResourceData{ ssgi_Output, computeReadLayout },
 				ResourceData{ ddgi_Output, computeReadLayout }
+			)
+			.Output(ResourceData{ indirectDiffuse_Output, computeWriteLayout })
+			.After(ddgiApplyNode)
+			.Before(opaqueFence);
+
+		// 镜面合成
+		indirectSpecularCombinNode->SetRenderPass(std::move(indirectSpecularCombinPass))
+			.InputOption(
+				ResourceData{ rayTraceReflect_Output, computeReadLayout },
+				ResourceData{ ssr_Output, computeReadLayout }
+			)
+			.Output(ResourceData{ indirectSpecular_Output, computeWriteLayout })
+			.After(rayTraceReflectNode, ssrNode)
+			.Before(opaqueFence);
+
+		// 路径追踪合成：漫反射 + 镜面两个波瓣都有的方案（RTGI + SSGI）
+		indirectPathTracingCombinNode->SetRenderPass(std::move(indirectPathTracingCombinPass))
+			.InputOption(
+				ResourceData{ rayTraceGI_Output, computeReadLayout },
+				ResourceData{ ssgi_Output, computeReadLayout }
+			)
+			.Output(ResourceData{ indirectPathTracing_Output, computeWriteLayout })
+			.After(rayTraceGINode, ssgiNode)
+			.Before(opaqueFence);
+
+		// 最终合成：场景颜色（直接光 + 自发光 + LightingPass 补的 IBL）+ 漫反射 + 镜面 + 路径追踪
+		combinIndirectLightingNode->SetRenderPass(std::move(combinIndirectLightingPass))
+			.Input(
+				ResourceData{ indirectDiffuse_Output, computeReadLayout },
+				ResourceData{ indirectSpecular_Output, computeReadLayout },
+				ResourceData{ indirectPathTracing_Output, computeReadLayout }
 			)
 			.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, transferReadLayout })
 			.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "combinIndirectLightingPass_temp1"), transferWriteLayout })
-			.After(rayTraceReflectNode, rayTraceGINode, ssrNode, ssgiNode, ddgiApplyNode)
+			.After(indirectDiffuseCombinNode, indirectSpecularCombinNode, indirectPathTracingCombinNode)
 			.Before(opaqueFence);
 	}
 
 	lightDrawNode->SetRenderPass(std::move(lightDrawPass))
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
 		.After(combinIndirectLightingNode)
+		.Before(opaqueFence)
+		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
+
+	ddgiProbeDrawNode->SetRenderPass(std::move(ddgiProbeDrawPass))
+		.Input(
+			ResourceData{ ddgiIrradianceAtlas, graphicsReadLayout },
+			ResourceData{ ddgiDepthAtlas, graphicsReadLayout },
+			ResourceData{ ddgiProbeData, graphicsReadLayout }
+		)
+		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
+		.After(combinIndirectLightingNode, lightDrawNode, ddgiBlendNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
 
@@ -1179,21 +1356,29 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 		auto guard = sync->MakeProgressGuard();
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 
-		auto sceneColorBuffer = data->renderTarget->sceneColorBuffer;
-		auto image = sceneColorBuffer->GetImage();
-		auto layout = sceneColorBuffer->GetLayout(0);
+		auto clearColorTexture = [&](const std::shared_ptr<Texture2D>& texture, const vk::ClearColorValue& clearColor) {
+			if (!texture || texture->IsEmpty())
+				return;
+			auto image = texture->GetImage();
+			auto layout = texture->GetLayout(0);
 
-		if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
-			sceneColorBuffer->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+			if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
+				texture->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
-		vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-		vk::ImageSubresourceRange range;
-		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1)
-			.setBaseMipLevel(0)
-			.setLevelCount(1);
-		cmd->clearColorImage(image, layout, clearColor, range);
+			vk::ImageSubresourceRange range;
+			range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1)
+				.setBaseMipLevel(0)
+				.setLevelCount(1);
+			cmd->clearColorImage(image, layout, clearColor, range);
+			};
+
+		clearColorTexture(data->renderTarget->sceneColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f });
+		// 第一人称层在 _combinPass 里按 alpha 叠在场景上面，但 FirstPersonPass 目前没有任何地方写它：
+		// 不清的话叠上去的是未初始化内存，而且每个渲染目标各有一份、按帧轮换（_maxFramesInFlight * 2 份），
+		// 画面会在几份内容之间来回闪。清成透明（alpha = 0）后合成结果就是场景本身。
+		clearColorTexture(data->renderTarget->firstPersonColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f });
 		cmd->SubmitNowAndWait();
 	}
 

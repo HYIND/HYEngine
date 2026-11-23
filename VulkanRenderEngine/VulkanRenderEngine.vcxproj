@@ -169,6 +169,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\CmdSyncData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDSLoader.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDef.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIVolumeDesc.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDebug.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GPUTimer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousGaussFilter.h" />
@@ -216,6 +219,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeUpdatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIBlendPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIApplyPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkinnedPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkyBoxPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSAOPass.h" />
@@ -317,6 +321,8 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeUpdatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIBlendPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIApplyPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\DDGISharedState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkinnedPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyBoxPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />

@@ -30,9 +30,11 @@ VKWrapper::VKCommandBuffer::VKCommandBuffer(VKCommandBuffer&& other) noexcept
 	_pool = other._pool;
 	_handle = other._handle;
 	_isRecording = other._isRecording;
+	_hasCommands = other._hasCommands;
 	other._pool.reset();
 	other._handle = VK_NULL_HANDLE;
 	other._isRecording = false;
+	other._hasCommands = false;
 }
 
 VKCommandBuffer::VKCommandBuffer(VKCommandPool* pool)
@@ -55,11 +57,14 @@ void VKCommandBuffer::Release()
 	_pool.reset();
 	_handle = VK_NULL_HANDLE;
 	_isRecording = false;
+	_hasCommands = false;
 }
 
 vk::CommandBuffer VKCommandBuffer::GetHandle() const { return _handle; }
 
 bool VKWrapper::VKCommandBuffer::IsRecording() const { return _isRecording; }
+
+bool VKWrapper::VKCommandBuffer::HasCommands() const { return _hasCommands; }
 
 void VKWrapper::VKCommandBuffer::Need() const {
 	if (!_isRecording)
@@ -78,6 +83,7 @@ vk::Result VKCommandBuffer::Begin(vk::CommandBufferUsageFlags usageFlags, vk::Co
 		return result;
 	}
 	_isRecording = true;
+	_hasCommands = true;
 	return vk::Result::eSuccess;
 }
 
@@ -92,6 +98,7 @@ vk::Result VKCommandBuffer::Begin(vk::CommandBufferUsageFlags usageFlags) const
 		return result;
 	}
 	_isRecording = true;
+	_hasCommands = true;
 	return vk::Result::eSuccess;
 }
 
@@ -109,6 +116,7 @@ vk::Result VKCommandBuffer::End() const
 vk::Result VKCommandBuffer::Reset() const
 {
 	_isRecording = false;
+	_hasCommands = false;
 	if (auto result = _handle.reset(); result != vk::Result::eSuccess)
 	{
 		outStream << std::format("[ commandBuffer ] ERROR\nFailed to reset a command buffer!\nError code: {}\n", to_string(result));

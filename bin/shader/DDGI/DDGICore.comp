@@ -13,6 +13,7 @@
 #define DDGI_DEPTH_TILE (DDGI_DEPTH_INNER + 2)
 
 const float DDGI_TWO_PI = 6.28318530718;
+const uint DDGI_INVALID = 0xFFFFFFFFu;
 
 // ───────────── 八面体编码 ─────────────
 
@@ -40,19 +41,25 @@ vec3 ddgiOctDecode(vec2 uv)
 
 // ───────────── 图集寻址 ─────────────
 
-ivec2 ddgiTileOrigin(uint probeIndex, uint tileSize)
+// 槽位 -> tile 左上角像素（所有 DDGI 资源共用同一套编号规则）
+ivec2 ddgiTileOrigin(uint slot, uint tileSize)
 {
-    return ivec2((probeIndex % uint(DDGI_PROBES_PER_ROW)) * tileSize,
-                 (probeIndex / uint(DDGI_PROBES_PER_ROW)) * tileSize);
+    return ivec2((slot % uint(DDGI_PROBES_PER_ROW)) * tileSize,
+                 (slot / uint(DDGI_PROBES_PER_ROW)) * tileSize);
 }
 
-// 线性下标 -> 三维槽位坐标
-uvec3 ddgiProbeCoord(uint probeIndex, uvec3 counts)
+// 体积内线性下标 <-> 三维坐标（x 最快）
+ivec3 ddgiLocalCoord(uint index, uvec3 counts)
 {
-    uint k = probeIndex / (counts.x * counts.y);
-    uint j = (probeIndex % (counts.x * counts.y)) / counts.x;
-    uint i = probeIndex % counts.x;
-    return uvec3(i, j, k);
+    uint k = index / (counts.x * counts.y);
+    uint j = (index % (counts.x * counts.y)) / counts.x;
+    uint i = index % counts.x;
+    return ivec3(i, j, k);
+}
+
+uint ddgiLocalIndex(ivec3 c, uvec3 counts)
+{
+    return uint(c.z) * counts.x * counts.y + uint(c.y) * counts.x + uint(c.x);
 }
 
 // 方向在 tile 内的采样 UV。内层 texel i 对应方向 (i + 0.5) / inner，

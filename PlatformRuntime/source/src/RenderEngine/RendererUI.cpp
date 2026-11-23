@@ -93,7 +93,12 @@ void RendererUI::ShutdownBackend()
 	{
 		ImGuiContext* previous = ImGui::GetCurrentContext();
 		ImGui::SetCurrentContext(m_context);
-		ImGui_ImplVulkan_Shutdown();
+		{
+			// ImGui 后端用的是引擎的图形队列，内部会直接 vkQueueSubmit / vkQueueWaitIdle，必须和引擎的提交互斥
+			LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+			LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+			ImGui_ImplVulkan_Shutdown();
+		}
 		ImGui::SetCurrentContext(previous);
 	}
 
@@ -135,7 +140,13 @@ bool RendererUI::EnsureBackend(vk::Format format)
 	info.UseDynamicRendering = true;		// 动态渲染路径
 	info.PipelineInfoMain.PipelineRenderingCreateInfo = pipelineRenderingInfo;
 
-	const bool ok = ImGui_ImplVulkan_Init(&info);
+	bool ok = false;
+	{
+		// 与 Editor main.cpp 初始化编辑器 ImGui 时一致：先队列锁，再描述符池锁
+		LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+		ok = ImGui_ImplVulkan_Init(&info);
+	}
 	ImGui::SetCurrentContext(previous);
 
 	if (!ok)
@@ -890,7 +901,15 @@ void RendererUI::Render(const std::shared_ptr<Texture2D>& target)
 				vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } });
 
 			cmd->beginRendering(renderInfo);
-			ImGui_ImplVulkan_RenderDrawData(drawData, cmd->GetHandle());
+			{
+				// RenderDrawData 里遇到字体/纹理需要更新时（ImGui_ImplVulkan_UpdateTexture），
+				// 会在这个线程（EditorMainThread）上直接 vkQueueSubmit + vkQueueWaitIdle 图形队列。
+				// 不加锁就会和渲染图各 Pass 线程的 vkQueueSubmit 撞上（验证层 THREADING ERROR）。
+				// 加锁顺序与 Editor main.cpp 一致：先队列锁，再描述符池锁。
+				LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
+				LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+				ImGui_ImplVulkan_RenderDrawData(drawData, cmd->GetHandle());
+			}
 			cmd->endRendering();
 
 			// 收尾成可采样状态

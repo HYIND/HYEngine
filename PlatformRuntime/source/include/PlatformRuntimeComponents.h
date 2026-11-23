@@ -16,3 +16,4 @@
 #include "Render\Components\RenderBase.h"
 #include "Render\Components\Sprite.h"
 #include "Render\Components\GIFAnimator.h"
+#include "Render\Components\DDGIVolume.h"

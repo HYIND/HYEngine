@@ -5,6 +5,7 @@
 #include "Input/Components/PlayerInput.h"
 #include "Input/ControllerInput.h"
 #include "Components/Controller.h"
+#include "Components/CameraComponent.h"
 #include "CommonTags.h"
 #include "Helper/DynamicFpsController.h"
 #include "ECSCore/World.h"
@@ -95,24 +96,23 @@ namespace
 	}
 }
 
-// DDGI 参数。旧场景里的 raysPerTexel 已废弃，读取时直接忽略；
-// 旧版存的 origin（体积最小角）会换算成 center。
+// DDGI 参数。旧场景里的体积字段（autoFitVolume / followCamera / center / counts / spacing 等）已废弃，读取时直接忽略。
 void to_json(nlohmann::json& json, const Scene3DRenderOption::DDGIParams& params)
 {
 	json = nlohmann::json{
-		{"autoFitVolume", params.autoFitVolume},
-		{"followCamera", params.followCamera},
-		{"fitPadding", params.fitPadding},
-		{"center", {params.center.x, params.center.y, params.center.z}},
-		{"spacing", {params.spacing.x, params.spacing.y, params.spacing.z}},
-		{"counts", {params.counts.x, params.counts.y, params.counts.z}},
+		{"cascadeEnable", params.cascadeEnable},
+		{"cascadeLevels", params.cascadeLevels},
+		{"cascadeBaseSpacing", {params.cascadeBaseSpacing.x, params.cascadeBaseSpacing.y, params.cascadeBaseSpacing.z}},
+		{"cascadeCounts", {params.cascadeCounts.x, params.cascadeCounts.y, params.cascadeCounts.z}},
+		{"cascadeFadeCells", params.cascadeFadeCells},
+		{"cascadeAutoRelocate", params.cascadeAutoRelocate},
 		{"normalBias", params.normalBias},
 		{"viewBias", params.viewBias},
 		{"maxRayDistance", params.maxRayDistance},
 		{"backfaceThreshold", params.backfaceThreshold},
 		{"skyIntensity", params.skyIntensity},
 		{"energy", params.energy},
-		{"updateSliceCount", params.updateSliceCount},
+		{"updateBudget", params.updateBudget},
 		{"hysteresis", params.hysteresis},
 		{"lightChangeThreshold", params.lightChangeThreshold}
 	};
@@ -120,27 +120,19 @@ void to_json(nlohmann::json& json, const Scene3DRenderOption::DDGIParams& params
 
 void from_json(const nlohmann::json& json, Scene3DRenderOption::DDGIParams& params)
 {
-	ReadOptionField(json, "autoFitVolume", params.autoFitVolume);
-	ReadOptionField(json, "followCamera", params.followCamera);
-	ReadOptionField(json, "fitPadding", params.fitPadding);
-	ReadOptionVec3(json, "spacing", params.spacing);
-	ReadOptionUVec3(json, "counts", params.counts);
-
-	ReadOptionVec3(json, "center", params.center);
-	if (json.find("center") == json.end() && json.find("origin") != json.end())
-	{
-		glm::vec3 legacyOrigin(0.0f);
-		ReadOptionVec3(json, "origin", legacyOrigin);
-		params.center = legacyOrigin + glm::vec3(params.counts) * params.spacing * 0.5f;
-	}
-
+	ReadOptionField(json, "cascadeEnable", params.cascadeEnable);
+	ReadOptionField(json, "cascadeLevels", params.cascadeLevels);
+	ReadOptionVec3(json, "cascadeBaseSpacing", params.cascadeBaseSpacing);
+	ReadOptionUVec3(json, "cascadeCounts", params.cascadeCounts);
+	ReadOptionField(json, "cascadeFadeCells", params.cascadeFadeCells);
+	ReadOptionField(json, "cascadeAutoRelocate", params.cascadeAutoRelocate);
 	ReadOptionField(json, "normalBias", params.normalBias);
 	ReadOptionField(json, "viewBias", params.viewBias);
 	ReadOptionField(json, "maxRayDistance", params.maxRayDistance);
 	ReadOptionField(json, "backfaceThreshold", params.backfaceThreshold);
 	ReadOptionField(json, "skyIntensity", params.skyIntensity);
 	ReadOptionField(json, "energy", params.energy);
-	ReadOptionField(json, "updateSliceCount", params.updateSliceCount);
+	ReadOptionField(json, "updateBudget", params.updateBudget);
 	ReadOptionField(json, "hysteresis", params.hysteresis);
 	ReadOptionField(json, "lightChangeThreshold", params.lightChangeThreshold);
 }
@@ -276,7 +268,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcess
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::TransparentParams, mode)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::PostProcessFlags,
-	bloomOn, gammaOn, lightDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
+	bloomOn, gammaOn, lightDrawOn, ddgiProbeDrawOn, drawTransparent, ssrOn, ssgiOn, skyboxOn,
 	exponentialHeightFogOn, atmosphereOn, volumetricCloudOn, rayTraceReflectOn, rayTraceGIOn,
 	ddgiOn, autoExposureOn, calculateOcclusionCulling)
 
@@ -500,6 +492,131 @@ void EngineRuntime::ApplySceneRenderOption(const SceneCodec& scene)
 	SetSceneRenderOption(option);
 }
 
+namespace
+{
+	// settings.editorFreeCamera：编辑器保存场景时记下的视角。读出可用的相机位姿返回 true；
+	// fov/near/far 单独校验，合法才覆盖。
+	bool ReadSavedViewCamera(const nlohmann::json* settings, Transform& transform, CameraComponent& camera)
+	{
+		if (!settings || !settings->is_object())
+			return false;
+		const auto it = settings->find("editorFreeCamera");
+		if (it == settings->end() || !it->is_object())
+			return false;
+		const auto& data = *it;
+
+		const auto readFloats = [](const nlohmann::json& value, size_t count, float* out) {
+			if (!value.is_array() || value.size() != count)
+				return false;
+			for (size_t i = 0; i < count; ++i)
+			{
+				if (!value[i].is_number())
+					return false;
+				out[i] = value[i].get<float>();
+				if (!std::isfinite(out[i]))
+					return false;
+			}
+			return true;
+			};
+		const auto readFloat = [](const nlohmann::json& object, const char* key, float& out) {
+			const auto value = object.find(key);
+			if (value == object.end() || !value->is_number())
+				return false;
+			out = value->get<float>();
+			return std::isfinite(out);
+			};
+
+		try
+		{
+			float fov = 0.f, nearPlane = 0.f, farPlane = 0.f;
+			if (readFloat(data, "fov", fov) && readFloat(data, "nearPlane", nearPlane) && readFloat(data, "farPlane", farPlane)
+				&& fov > 0.f && fov < 180.f && nearPlane > 0.f && farPlane > nearPlane)
+			{
+				camera.fov = fov;
+				camera.nearPlane = nearPlane;
+				camera.farPlane = farPlane;
+			}
+
+			const auto cameraTransform = data.find("cameraTransform");
+			if (cameraTransform == data.end() || !cameraTransform->is_object()
+				|| !cameraTransform->contains("position") || !cameraTransform->contains("rotation"))
+				return false;
+
+			float position[3];
+			float rotation[4];
+			if (!readFloats(cameraTransform->at("position"), 3, position) || !readFloats(cameraTransform->at("rotation"), 4, rotation))
+				return false;
+
+			glm::quat quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);	// 存的顺序是 w, x, y, z
+			const float length = glm::length(quaternion);
+			if (!std::isfinite(length) || length <= 1e-6f)
+				return false;
+
+			transform.position = glm::vec3(position[0], position[1], position[2]);
+			transform.rotation = glm::normalize(quaternion);
+			return true;
+		}
+		catch (const nlohmann::json::exception&)
+		{
+			return false;
+		}
+	}
+
+	// 静止的兜底相机：位姿优先取场景里存的编辑器视角，否则用和编辑器默认一样的视角（(0,10,10)，yaw -90，pitch -45）。
+	Entity CreateFallbackCamera(World& world, const nlohmann::json* settings)
+	{
+		Transform transform(glm::vec3(0.f, 10.f, 10.f));
+		CameraComponent camera;
+		camera.fov = 80.f;
+		camera.nearPlane = 0.1f;
+		camera.farPlane = 800.f;
+
+		if (!ReadSavedViewCamera(settings, transform, camera))
+		{
+			// 与 CameraFollowSystem 的约定一致：Transform::GetDirection() = rotation * (0,0,1) = 相机朝向
+			CameraFrontData front(-90.f, -45.f, camera.worldUp);
+			transform.rotation = glm::quatLookAt(-glm::normalize(front.cameraFront), glm::vec3(0.f, 1.f, 0.f));
+		}
+
+		Entity entity = world.createEntity();
+		entity.addComponent<Transform>() = transform;
+		auto& cameraComponent = entity.addComponent<CameraComponent>();
+		cameraComponent.worldUp = camera.worldUp;
+		cameraComponent.fov = camera.fov;
+		cameraComponent.nearPlane = camera.nearPlane;
+		cameraComponent.farPlane = camera.farPlane;
+		return entity;
+	}
+
+	// 宿主已经设了主相机（编辑器的自由相机）就不动；否则选场景相机，再没有就建兜底相机。
+	// 走 SetMainCamera，World 的主相机记录和 TagMainCamera 才一致（Audio 等按 GetMainCameraEntity 取）。
+	void EnsureMainCamera(World& world, const nlohmann::json* settings)
+	{
+		if (world.HasMainCameraEntity())
+			return;
+
+		Entity camera = EngineRuntime::FindSceneMainCamera(world);
+		if (!camera)
+			camera = CreateFallbackCamera(world, settings);
+		world.SetMainCamera(camera);
+	}
+}
+
+Entity EngineRuntime::FindSceneMainCamera(World& world, const std::function<bool(Entity)>& exclude)
+{
+	Entity firstCamera;
+	for (Entity entity : world.getEntitiesWith<Transform, CameraComponent>())
+	{
+		if (exclude && exclude(entity))
+			continue;
+		if (entity.hasComponent<TagMainCamera>())
+			return entity;
+		if (!firstCamera)
+			firstCamera = entity;
+	}
+	return firstCamera;
+}
+
 bool EngineRuntime::OpenScene(const std::string& sceneAsset, const SceneOpenHooks& hooks, std::string* error)
 {
 	if (!m_initialized)
@@ -670,6 +787,9 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 
 		if (hooks.finish)
 			hooks.finish(world, *scene);
+
+		// 宿主没给相机就用场景的；场景里也没有就按场景存的视角建兜底相机（否则 3D 帧没有相机，视图矩阵全是 NaN）
+		EnsureMainCamera(world, &scene->GetSettings());
 
 		// 宿主在 prepare 里塞进来的实体和场景内容一起走一帧更新，首帧才是对的。
 		world.update(16);
@@ -939,6 +1059,9 @@ bool EngineRuntime::OpenEmptyScene(const std::function<bool(World&)>& initialize
 		m_moduleManager->RegisterSystems(*candidate);
 	if (initializeScene && !initializeScene(*candidate))
 		return false;
+
+	// 完全空的场景（比如工程没设默认场景）也给一台兜底相机；OpenScene 走到这里时已经有主相机了，不会重复建
+	EnsureMainCamera(*candidate, nullptr);
 
 	CloseScene();
 	m_world = std::move(candidate);

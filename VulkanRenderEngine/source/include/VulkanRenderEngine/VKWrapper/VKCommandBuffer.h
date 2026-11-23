@@ -82,6 +82,10 @@ namespace VKWrapper
 
 		vk::CommandBuffer GetHandle() const;
 		bool IsRecording() const;
+		// 拿到这个句柄之后有没有 Begin 过（录过命令）。
+		// 句柄来自池子复用，没 Begin 过的句柄里还留着上一次用它时录的旧命令，
+		// 提交它等于重放旧命令（引用的 buffer 可能早已销毁），所以提交时要跳过。
+		bool HasCommands() const;
 
 		vk::Result Begin(vk::CommandBufferUsageFlags usageFlags, vk::CommandBufferInheritanceInfo& inheritanceInfo) const;
 		vk::Result Begin(vk::CommandBufferUsageFlags usageFlags = {}) const;
@@ -99,6 +103,7 @@ namespace VKWrapper
 		std::weak_ptr<VKCommandPool> _pool;
 		vk::CommandBuffer _handle = VK_NULL_HANDLE;
 		mutable bool _isRecording = false;
+		mutable bool _hasCommands = false;
 
 		friend class VKCommandPool;
 

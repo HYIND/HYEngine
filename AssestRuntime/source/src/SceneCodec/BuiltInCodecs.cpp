@@ -1823,6 +1823,85 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
             return true;
         }));
 
+    result.push_back(GenerateComponentCodec<DDGIVolumeComponent>(
+        "engine.ddgi_volume",
+        "DDGI Volume",
+        // Encode
+        [](const DDGIVolumeComponent& volume) -> Json {
+            Json edits = Json::array();
+            if (volume.edits)
+            {
+                for (const auto& [key, edit] : *volume.edits)
+                {
+                    if (!edit.disabled && !edit.locked)
+                        continue;
+                    const glm::ivec3 cell = DDGIUnpackCell(key);
+                    edits.push_back({
+                        { "cell", Json{ cell.x, cell.y, cell.z } },
+                        { "offset", EncodeVec3(edit.offset) },
+                        { "disabled", edit.disabled },
+                        { "locked", edit.locked }
+                    });
+                }
+            }
+            return {
+                { "enable", volume.visible },
+                { "spacing", EncodeVec3(volume.spacing) },
+                { "counts", Json{ volume.counts.x, volume.counts.y, volume.counts.z } },
+                { "priority", volume.priority },
+                { "fadeCells", volume.fadeCells },
+                { "autoRelocate", volume.autoRelocate },
+                { "edits", std::move(edits) }
+            };
+        },
+        // Decode
+        [](DDGIVolumeComponent& volume, const Json& json) -> bool {
+            if (!json.is_object())
+                return false;
+            try
+            {
+                volume.visible = json.value("enable", true);
+                if (json.contains("spacing") && !DecodeVec3(json["spacing"], volume.spacing))
+                    return false;
+                volume.spacing = glm::max(volume.spacing, glm::vec3(0.25f));
+                if (json.contains("counts"))
+                {
+                    const auto& counts = json["counts"];
+                    if (!counts.is_array() || counts.size() != 3)
+                        return false;
+                    volume.counts = glm::clamp(
+                        glm::uvec3(counts[0].get<uint32_t>(), counts[1].get<uint32_t>(), counts[2].get<uint32_t>()),
+                        glm::uvec3(1u), glm::uvec3(255u));
+                }
+                volume.priority = json.value("priority", 10);
+                volume.fadeCells = std::max(0.01f, json.value("fadeCells", 1.0f));
+                volume.autoRelocate = json.value("autoRelocate", true);
+
+                auto edits = std::make_shared<DDGIProbeEditMap>();
+                if (json.contains("edits") && json["edits"].is_array())
+                {
+                    for (const auto& record : json["edits"])
+                    {
+                        if (!record.is_object() || !record.contains("cell") || !record["cell"].is_array() || record["cell"].size() != 3)
+                            continue;
+                        const glm::ivec3 cell(record["cell"][0].get<int>(), record["cell"][1].get<int>(), record["cell"][2].get<int>());
+                        DDGIProbeEdit edit;
+                        if (record.contains("offset"))
+                            DecodeVec3(record["offset"], edit.offset);
+                        edit.disabled = record.value("disabled", false);
+                        edit.locked = record.value("locked", false);
+                        (*edits)[DDGIPackCell(cell)] = edit;
+                    }
+                }
+                volume.edits = edits->empty() ? nullptr : std::shared_ptr<const DDGIProbeEditMap>(std::move(edits));
+                return true;
+            }
+            catch (const Json::exception&)
+            {
+                return false;
+            }
+        }));
+
     result.push_back(GenerateComponentCodec<ParticleEmitter>(
         "engine.particle_emitter",
         "Particle Emitter",

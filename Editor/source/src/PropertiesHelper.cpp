@@ -3,6 +3,7 @@
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
+#include "DDGIEditor.h"
 #include <rfl.hpp>
 #include <rfl/json.hpp>
 #include <format>
@@ -182,6 +183,7 @@ static void RegisterAllComponents()
     PropertiesHelper::RegisterComponent<UIView>();
     PropertiesHelper::RegisterComponent<TagCurrentControl>();
     PropertiesHelper::RegisterComponent<CameraFollow>();
+    PropertiesHelper::RegisterCustomDraw(ComponentType<DDGIVolumeComponent>::getId(), &DDGIEditor::DrawVolumeComponent);
 }
 
 std::once_flag init_flag;

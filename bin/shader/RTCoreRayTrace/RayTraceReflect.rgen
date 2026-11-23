@@ -25,6 +25,7 @@ layout (binding = 6) uniform CubeParams
 {
     bool CubeEnable;
     bool IBLEnable;
+    bool DDGIEnable;    // 命中点的漫反射间接光取自 DDGI（DDGI 开启且有可用体积时）
 };
 
 layout(binding = 7, rgba16f) uniform image2D outputImage;
@@ -40,7 +41,31 @@ layout (binding = 16) uniform samplerCube IBLDiffuse;
 layout (binding = 17) uniform samplerCube IBLPrefilter;
 layout (binding = 18) uniform sampler2D IBLBrdfLUT;
 
+// DDGI（与 DDGIApply 同一份图集 / UBO / 体积表），DDGIEnable 为 0 时不绑定
+#define DDGI_UBO_BINDING 19
+#define DDGI_VOLUME_BINDING 20
+#include "shader/DDGI/DDGICore.comp"
+#include "shader/DDGI/DDGIUniforms.comp"
+layout (binding = 21) uniform sampler2D ddgiIrradianceTex;
+layout (binding = 22) uniform sampler2D ddgiDepthTex;
+layout (binding = 23) uniform sampler2D ddgiProbeDataTex;
+#include "shader/DDGI/DDGISample.comp"
+
 const float RussianRouletteFactor = 0.8f;
+
+// 反射路径命中点自身的漫反射间接光（命中点多在屏幕外，取不到屏幕空间的结果）：
+// DDGI 的 Lbar × kD·albedo × energy（与 DDGIApply 相同的约定），DDGI 没覆盖到的权重回退到 IBL 漫反射。
+vec3 reflectHitDiffuseIndirect(vec3 pos, vec3 normal, vec3 toViewer, PBRProperties prop)
+{
+    vec3 kdAlbedo = prop.albedo * (1.0 - prop.metallic);
+    vec3 result = vec3(0.0);
+    float remaining = 1.0;
+    if (DDGIEnable)
+        result = kdAlbedo * ddgiSampleIrradianceEx(pos, normal, toViewer, remaining) * ddgi.shadingParams.z;
+    if (IBLEnable && remaining > 1e-3)
+        result += remaining * kdAlbedo / PI * textureLod(IBLDiffuse, normal, 0.0).rgb;
+    return result * prop.ambientOcclusion;
+}
 
 vec3 traceRay(
     vec3 viewPos, 
@@ -101,7 +126,18 @@ vec3 traceRay(
 
             vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
             vec3 lightingColor = CalcLightingWithShadowRay(ray.origin, hit.position, normal, prop);
-            colors[hitCount] = lightingColor + emission;
+            // 命中点出射辐亮度 = 直接光 + 自发光 + 漫反射间接光（DDGI / IBL）
+            vec3 indirectDiffuse = reflectHitDiffuseIndirect(hit.position, normal, -ray.direction, prop);
+            colors[hitCount] = lightingColor + emission + indirectDiffuse;
+
+            // 路径在这个命中点停下（材质不再追踪 / 达到最大次数）时，补上命中点自身的 IBL 镜面；
+            // 俄罗斯轮盘终止的不补（已由 throughput 补偿）
+            if (IBLEnable && (prop.metallic < 0.15 || prop.roughness > 0.8 || depth + 1u >= maxBounce))
+            {
+                vec3 unusedDiffuse, hitSpecular;
+                CalculateIBLLightingSplit(ray.direction, normal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, hitSpecular);
+                colors[hitCount] += hitSpecular;
+            }
 
             viewPos = ray.origin;
             fragPos = hit.position;
@@ -192,7 +228,9 @@ void main()
             vec3 fragNormal = normalize(texture(gNormal, uv).rgb);
 
             vec3 viewDir = normalize(fragPos - camera.position);
-            vec3 color = CalculateIBLLighting(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT);
+            // 镜面合成只收镜面：不追踪的像素只回退 IBL 镜面，漫反射由漫反射合成 / LightingPass 负责
+            vec3 unusedDiffuse, color;
+            CalculateIBLLightingSplit(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, color);
             color = clamp(color, vec3(0.f), vec3(1000.f));
             imageStore(outputImage, pixelCoord, vec4(color, 1.0));
         }
