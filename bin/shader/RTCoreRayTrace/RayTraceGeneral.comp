@@ -252,6 +252,28 @@ void ExecuteTraceRayPayload0(
     // );
 }
 
+// ---------------- 阴影光线 ----------------
+// 专用 4 字节 payload（location 1），不再借用 68 字节的 HitPayLoad。
+// 发射前置 1（被挡）；TerminateOnFirstHit | SkipClosestHit 下命中时不调用任何着色器，payload 保持 1；
+// 未命中时由阴影 miss（shader/RTCoreRayTrace/ShadowMiss.rmiss）清 0。
+// 阴影 miss 必须挂在 SBT 的第 SHADOW_MISS_INDEX 号 miss 上：管线配置 extraMissPaths 的第一项（见 RayTracingPipelineConfig）。
+#define SHADOW_MISS_INDEX 1
+layout(location = 1) rayPayloadEXT uint shadowPayload;
+
+bool TraceShadowRay(vec3 origin, vec3 direction, float tMin, float tMax)
+{
+    shadowPayload = 1u;
+    traceRayEXT(
+        topLevelAS,
+        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT | gl_RayFlagsOpaqueEXT,
+        0xFF,
+        0, 0,
+        SHADOW_MISS_INDEX,
+        origin, tMin, direction, tMax,
+        1);
+    return shadowPayload != 0u;
+}
+
 bool traceScene(Ray ray, inout HitInfo hit) 
 {
     ExecuteTraceRayPayload0(ray, gl_RayFlagsNoneEXT, 0xFF, 0, 0, 0);
@@ -284,9 +306,13 @@ vec3 CalcLightingWithShadowRay(
 	PBRProperties prop
 )
 {
-    Ray ray;
-    ray.tMin = 0.001;
-    ray.origin = fragPos + fragNormal * 0.001;
+    // 先做和 Calc*LightWithoutShadow 相同的剔除，照不到这个点的灯不发阴影光线：
+    //   * 点光 / 聚光超出半径、聚光在外锥角外：WithoutShadow 在虚拟环境光之前就返回 0，剔除与原结果完全一致；
+    //   * 背光（N·L <= 0）：BRDF 里 NdotL 被截到 0，结果为 0。开了 Virtual_Ambient_Enable 时背光面仍有环境光项
+    //     （且原来被挡时整盏灯为 0），所以只在没开时剔除。
+    const float shadowTMin = 0.001;
+    vec3 origin = fragPos + fragNormal * 0.001;
+    vec3 N = normalize(fragNormal);
 
 	vec3 viewDir = normalize(fragPos - viewPos);		
 
@@ -294,43 +320,46 @@ vec3 CalcLightingWithShadowRay(
 	for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
     {
         DirLight light = dirLightMetaData.info[i];
-        if (light.castShadow)
-        {
-            ray.direction = -light.direction;
-            ray.tMax = 10000.f;
-            payload.isHit = true;
-            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-            if (payload.isHit)
-                continue;
-        }
+        vec3 L = normalize(-light.direction);
+#ifndef Virtual_Ambient_Enable
+        if (dot(N, L) <= 0.0)
+            continue;
+#endif
+        if (light.castShadow && TraceShadowRay(origin, L, shadowTMin, 10000.f))
+            continue;
 		lightColor += CalcDirLightWithoutShadow(light, fragNormal, viewDir, prop);
     }
 	for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
     {
         PointLight light = pointLightMetaData.info[i];
-        if (light.castShadow)
-        {
-            ray.direction = normalize(light.position - ray.origin);
-            ray.tMax = distance(ray.origin, light.position);
-            payload.isHit = true;
-            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-            if (payload.isHit)
-                continue;
-        }
+        vec3 toLight = light.position - fragPos;
+        float dist = length(toLight);
+        if (dist >= light.radius)
+            continue;
+#ifndef Virtual_Ambient_Enable
+        if (dot(N, toLight / max(dist, 1e-4)) <= 0.0)
+            continue;
+#endif
+        if (light.castShadow && TraceShadowRay(origin, normalize(light.position - origin), shadowTMin, distance(origin, light.position)))
+            continue;
 		lightColor += CalcPointLightWithoutShadow(light, fragNormal, fragPos, viewDir, prop);
     }
 	for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
     {
         SpotLight light = spotLightMetaData.info[i];
-        if (light.castShadow)
-        {
-            ray.direction = normalize(light.position - ray.origin);
-            ray.tMax = distance(ray.origin, light.position);
-            payload.isHit = true;
-            ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-            if (payload.isHit)
-                continue;
-        }
+        vec3 toLight = light.position - fragPos;
+        float dist = length(toLight);
+        if (dist >= light.radius)
+            continue;
+        float outerCutOff = min(light.cutOff, light.outerCutOff);
+        if (dot(normalize(fragPos - light.position), normalize(light.direction)) < outerCutOff)
+            continue;
+#ifndef Virtual_Ambient_Enable
+        if (dot(N, toLight / max(dist, 1e-4)) <= 0.0)
+            continue;
+#endif
+        if (light.castShadow && TraceShadowRay(origin, normalize(light.position - origin), shadowTMin, distance(origin, light.position)))
+            continue;
 		lightColor += CalcSpotLightWithoutShadow(light, fragNormal, fragPos, viewDir, prop);
     }
 

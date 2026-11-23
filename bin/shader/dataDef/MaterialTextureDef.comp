@@ -73,7 +73,7 @@ void getPBRProperties(MaterialData material, vec2 uv, inout vec3 albedo, inout f
 
 	if (material.texture_metallicroughness_count > 0)
 	{
-        vec2 values = texture(materialTextures[nonuniformEXT(material.texture_metallicroughness)], uv).gb;
+        vec2 values = texture(materialTextures[nonuniformEXT(material.texture_metallicroughness)], uv).bg;
         metallic = values.x;
         roughness = values.y;
 	}

@@ -3,7 +3,7 @@
 
 // DDGI 探针光线追踪。launch = (RayGrid, RayGrid, 本帧更新数)：xy 为光线下标，z 为更新列表里的第几个探针。
 // 每个线程追踪一条光线，结果写进 rayData 的第 z 个 tile：rgb = 命中点出射辐亮度，a = 命中距离（负值 = 背面命中）。
-// 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹，只采一个体积）。
+// 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹，只采一个体积）。材质按简化路径读（见 ddgiHitMaterial）。
 // 图集原地更新：这里在混合之前执行，读到的正好是上一帧的结果；新进入体积的格子已被 DDGIReset.comp 清零（n = 0，采样时跳过）。
 // 探针位置 = 格子中心 + 偏移（手动锁定 / 上一帧自动重定位的结果）。
 
@@ -32,14 +32,38 @@ layout(set = 0, binding = 15) uniform samplerCube cubeMap;
 
 bool ddgiShadowed(vec3 origin, vec3 dir, float tMax)
 {
-    Ray ray;
-    ray.origin = origin;
-    ray.direction = dir;
-    ray.tMin = 0.001;
-    ray.tMax = tMax;
-    payload.isHit = true;
-    ExecuteTraceRayPayload0(ray, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 0);
-    return payload.isHit;
+    return TraceShadowRay(origin, dir, 0.001, tMax);
+}
+
+// 命中点的简化材质：探针只存 8×8 的辐照度，命中点只需要漫反射相关的量。
+//   * 只读 albedo、metallic（算 kD）、自发光；不读法线贴图（用插值的顶点法线）、AO、粗糙度；
+//   * 固定读第 DDGI_HIT_TEXTURE_LOD 级 mip（光追里没有导数，texture() 等于读 mip 0，发散光线的缓存命中很差）。
+//     textureLod 会把超出的级数截到纹理的最后一级，没有 mip 的纹理就是 mip 0。
+// metallic 的通道与 MaterialTextureDef.comp 的 getPBRProperties 保持一致（metallicroughness 取 .g），
+// 否则探针看到的金属度和光栅化 / 反射不一样。
+#ifndef DDGI_HIT_TEXTURE_LOD
+#define DDGI_HIT_TEXTURE_LOD 3.0
+#endif
+
+void ddgiHitMaterial(MaterialData material, vec2 uv, out vec3 diffuseColor, out vec3 emission)
+{
+    vec3 albedo = material.texture_albedo_count > 0
+        ? textureLod(materialTextures[nonuniformEXT(material.texture_albedo)], uv, DDGI_HIT_TEXTURE_LOD).rgb * material.albedo
+        : material.albedo;
+
+    float metallic;
+    if (material.texture_metallicroughness_count > 0)
+        metallic = textureLod(materialTextures[nonuniformEXT(material.texture_metallicroughness)], uv, DDGI_HIT_TEXTURE_LOD).g;
+    else if (material.texture_metallic_count > 0)
+        metallic = textureLod(materialTextures[nonuniformEXT(material.texture_metallic)], uv, DDGI_HIT_TEXTURE_LOD).b;
+    else
+        metallic = material.metallic;
+
+    diffuseColor = albedo * (1.0 - metallic);
+
+    emission = material.texture_emissive_count > 0
+        ? textureLod(materialTextures[nonuniformEXT(material.texture_emissive)], uv, DDGI_HIT_TEXTURE_LOD).rgb * material.emissionStrength
+        : material.emissionColor * material.emissionStrength;
 }
 
 float ddgiLightAttenuation(float dist, float radius)
@@ -148,14 +172,11 @@ void main()
         {
             hitDistance = hit.t;
 
-            PBRProperties prop;
-            getPBRProperties(hit.materialdata, hit.texCoords, prop);
-            vec3 hitNormal = calculateNormal(hit.materialdata, hit.normal,
-                                             mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
-            vec3 diffuseColor = prop.albedo * (1.0 - prop.metallic);
+            vec3 diffuseColor, emission;
+            ddgiHitMaterial(hit.materialdata, hit.texCoords, diffuseColor, emission);
+            vec3 hitNormal = normalize(hit.normal);
 
-            radiance = ddgiDiffuseDirectLighting(hit.position, hitNormal, diffuseColor)
-                     + calculateEmission(hit.materialdata, hit.texCoords);
+            radiance = ddgiDiffuseDirectLighting(hit.position, hitNormal, diffuseColor) + emission;
 
             // 多次反弹：Lbar × 漫反射反照率 = 出射辐亮度。帧号不连续时整池已重置，不读
             if (ddgiHistoryValid())

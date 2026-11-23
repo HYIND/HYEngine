@@ -23,6 +23,7 @@ DDGIProbeUpdatePass::DDGIProbeUpdatePass(
 	RayTracingPipelineConfig config;
 	config.raygenPath = raygenPath;
 	config.missPath = missPath;
+	config.extraMissPaths = { "shader/RTCoreRayTrace/ShadowMiss.rmiss" };	// miss 1：阴影光线（RayTraceGeneral.comp 的 TraceShadowRay）
 	config.closestHitPath = closestHitPath;
 	config.anyHitPath = anyHitPath;
 	config.intersectionPath = intersectionPath;

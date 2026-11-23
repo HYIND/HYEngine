@@ -4,7 +4,8 @@
 struct RayTracingPipelineConfig :public PipelineConfig
 {
 	std::string raygenPath;      // .rgen  - 光线生成
-	std::string missPath;        // .rmiss - 未命中
+	std::string missPath;        // .rmiss - 未命中（miss 索引 0）
+	std::vector<std::string> extraMissPaths;	// 额外的 miss，依次占 miss 索引 1、2…（traceRayEXT 的 missIndex），例如阴影光线的 miss
 	std::string closestHitPath;  // .rchit - 最近命中
 	std::string anyHitPath;      // .rahit - 任意命中（可选）
 	std::string intersectionPath;// .rint  - 自定义相交（可选）
@@ -76,6 +77,7 @@ private:
 private:
 	vk::ShaderModule m_raygenModule = VK_NULL_HANDLE;
 	vk::ShaderModule m_missModule = VK_NULL_HANDLE;
+	std::vector<vk::ShaderModule> m_extraMissModules;
 	vk::ShaderModule m_closestHitModule = VK_NULL_HANDLE;
 	vk::ShaderModule m_anyHitModule = VK_NULL_HANDLE;
 	vk::ShaderModule m_intersectionPath = VK_NULL_HANDLE;

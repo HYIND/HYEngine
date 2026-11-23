@@ -136,6 +136,25 @@ bool RayTracingPipeline::CreateShaderStages(const RayTracingPipelineConfig& conf
 		m_groupInfos.push_back(group);
 	}
 
+	// 额外的 miss：紧跟在主 miss 后面，SBT 的 miss 区域连续，索引依次为 1、2…
+	for (const auto& path : config.extraMissPaths)
+	{
+		auto [code, res] = ProcessSPIRV(path, ShaderType::Miss, config.defines);
+		vk::ShaderModule module = VK_NULL_HANDLE;
+		if (!res || CreateShaderModule(code, module) != vk::Result::eSuccess) return false;
+		m_extraMissModules.push_back(module);
+		m_shaderStages.push_back(GetStageCreateInfo(module, vk::ShaderStageFlagBits::eMissKHR));
+
+		vk::RayTracingShaderGroupCreateInfoKHR group{};
+		group
+			.setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+			.setGeneralShader(index++)
+			.setClosestHitShader(VK_SHADER_UNUSED_KHR)
+			.setAnyHitShader(VK_SHADER_UNUSED_KHR)
+			.setIntersectionShader(VK_SHADER_UNUSED_KHR);
+		m_groupInfos.push_back(group);
+	}
+
 	if (!config.closestHitPath.empty()) {
 		auto [code, res] = ProcessSPIRV(config.closestHitPath, ShaderType::ClosestHit, config.defines);
 		if (!res || CreateShaderModule(code, m_closestHitModule) != vk::Result::eSuccess) return false;
@@ -256,17 +275,21 @@ bool RayTracingPipeline::CreatePipeline(const RayTracingPipelineConfig& config)
 	_regions.raygenRegion.stride = groupSize;
 	_regions.raygenRegion.size = groupSize;
 
+	// 组的顺序：raygen、miss（主 miss + extraMissPaths）、hit、callable
+	const uint32_t missCount = 1 + static_cast<uint32_t>(m_extraMissModules.size());
+	const uint32_t hitGroupIndex = 1 + missCount;
+
 	_regions.missRegion.deviceAddress = sbtAddress + 1 * groupSize;
 	_regions.missRegion.stride = groupSize;
-	_regions.missRegion.size = groupSize;
+	_regions.missRegion.size = missCount * groupSize;
 
-	_regions.hitRegion.deviceAddress = sbtAddress + 2 * groupSize;
+	_regions.hitRegion.deviceAddress = sbtAddress + hitGroupIndex * groupSize;
 	_regions.hitRegion.stride = groupSize;
 	_regions.hitRegion.size = groupSize;
 
-	if (m_groupInfos.size() >= 4)
+	if (m_groupInfos.size() > hitGroupIndex + 1)
 	{
-		_regions.callableRegion.deviceAddress = sbtAddress + 3 * groupSize;
+		_regions.callableRegion.deviceAddress = sbtAddress + (hitGroupIndex + 1) * groupSize;
 		_regions.callableRegion.stride = groupSize;
 		_regions.callableRegion.size = groupSize;
 	}
@@ -286,6 +309,8 @@ void RayTracingPipeline::Release()
 	{
 		if (m_raygenModule) m_device->GetHandle().destroyShaderModule(m_raygenModule);
 		if (m_missModule) m_device->GetHandle().destroyShaderModule(m_missModule);
+		for (auto module : m_extraMissModules)
+			if (module) m_device->GetHandle().destroyShaderModule(module);
 		if (m_closestHitModule) m_device->GetHandle().destroyShaderModule(m_closestHitModule);
 		if (m_anyHitModule) m_device->GetHandle().destroyShaderModule(m_anyHitModule);
 		if (m_intersectionPath) m_device->GetHandle().destroyShaderModule(m_intersectionPath);
@@ -295,6 +320,7 @@ void RayTracingPipeline::Release()
 
 	m_raygenModule = VK_NULL_HANDLE;
 	m_missModule = VK_NULL_HANDLE;
+	m_extraMissModules.clear();
 	m_closestHitModule = VK_NULL_HANDLE;
 	m_anyHitModule = VK_NULL_HANDLE;
 	m_intersectionPath = VK_NULL_HANDLE;
