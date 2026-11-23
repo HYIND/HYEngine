@@ -133,20 +133,6 @@ TransparentPass::TransparentPass(
 
 bool TransparentPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	// ---- 临时调试：确认节点是否被跳过 ----
-	{
-		static uint64_t frameIndex = 0;
-		if (++frameIndex % 30 == 1)
-		{
-			std::ofstream out("transparent_debug.txt", std::ios::app);
-			out << "ShouldExecute frame=" << frameIndex
-				<< " flag=" << state.option.flags.drawTransparent
-				<< " items=" << state.objects.sceneStaticRenderData.transparentItems.size()
-				<< " skinned=" << state.indirectCommands.transparentMesh_Command.size()
-				<< "\n";
-		}
-	}
-
 	if (!state.option.flags.drawTransparent)
 		return false;
 
@@ -293,17 +279,7 @@ void TransparentPass::ExecuteSorted(RenderGraph::PassFrameCmdContext& cmdCtx, Re
 	auto targetDepthBuffer = ctx.GetFrameLocal(0);
 	auto atlasShadowMap = ctx.GetInput(0);
 	if (!targetColorBuffer || !targetDepthBuffer || !atlasShadowMap)
-	{
-		static uint64_t nullLog = 0;
-		if (++nullLog % 30 == 1)
-		{
-			std::ofstream out("transparent_debug.txt", std::ios::app);
-			out << "ExecuteSorted SKIP-NULL color=" << (targetColorBuffer ? 1 : 0)
-				<< " depth=" << (targetDepthBuffer ? 1 : 0)
-				<< " atlas=" << (atlasShadowMap ? 1 : 0) << "\n";
-		}
 		return;
-	}
 
 	auto cmd = cmdCtx.GetCmd();
 	auto indirectManager = IndirectDrawManager::Instance();

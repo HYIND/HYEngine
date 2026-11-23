@@ -186,7 +186,7 @@ glm::mat4 DirLight::GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& camer
 	glm::vec3 aabbHalfSize = (aabb.max - aabb.min) * 0.5f;
 	aabbHalfSize *= expand;
 	aabb.min = aabbCenter - aabbHalfSize;
-	aabb.max = aabbHalfSize + aabbHalfSize;
+	aabb.max = aabbCenter + aabbHalfSize;
 
 	constexpr float zScale = 10.0f;
 	float delta = aabb.max.z - aabb.min.z;
