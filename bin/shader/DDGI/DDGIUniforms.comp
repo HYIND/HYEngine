@@ -11,7 +11,7 @@ const uint DDGI_VOLUME_HISTORY        = 4u;
 
 const uint DDGI_PROBE_DISABLED = 1u;
 const uint DDGI_PROBE_LOCKED   = 2u;
-const uint DDGI_PROBE_INACTIVE = 4u;
+const uint DDGI_PROBE_INACTIVE = 4u;     // 已弃用：被覆盖改为 ddgiProbeCovered 现算，CPU 不再写这一位
 const uint DDGI_PROBE_SELECTED = 8u;
 
 layout(set = 0, binding = DDGI_UBO_BINDING) uniform DDGIParamsUBO
@@ -82,6 +82,30 @@ uint ddgiFindVolume(uint slot)
 vec3 ddgiCellCenter(uint v, ivec3 c)
 {
     return ddgiVolumes[v].origin.xyz + (vec3(c) + 0.5) * ddgiVolumes[v].spacing.xyz;
+}
+
+// 体积 v 的格子 c 是否被更高优先级（表里排在前面）的体积完全覆盖：该体积在这一带的权重恒为 1，
+// 本体积的探针用不到，不更新、不参与采样、可视化时只在「状态」模式下显示为灰色。
+// 与 CPU 的 DDGISharedState::BuildCoveredRanges 逐项一致（改一边必须改另一边）：
+//   margin = 对方过渡带 fadeCells·spacing_h + 本体积 1.5 格（三线性插值的一格 + 采样偏移）
+bool ddgiProbeCovered(uint v, ivec3 c)
+{
+    vec3 origin = ddgiVolumes[v].origin.xyz;
+    vec3 spacing = ddgiVolumes[v].spacing.xyz;
+    vec3 pos = vec3(origin.x + (float(c.x) + 0.5) * spacing.x,
+                    origin.y + (float(c.y) + 0.5) * spacing.y,
+                    origin.z + (float(c.z) + 0.5) * spacing.z);
+    for (uint h = 0u; h < v; ++h)
+    {
+        vec3 hOrigin = ddgiVolumes[h].origin.xyz;
+        vec3 hSpacing = ddgiVolumes[h].spacing.xyz;
+        vec3 margin = ddgiVolumes[h].origin.w * hSpacing + 1.5 * spacing;
+        vec3 mn = hOrigin + margin;
+        vec3 mx = hOrigin + vec3(ddgiVolumes[h].counts.xyz) * hSpacing - margin;
+        if (all(greaterThan(pos, mn)) && all(lessThan(pos, mx)))
+            return true;
+    }
+    return false;
 }
 
 ivec3 ddgiWorldCell(uint v, ivec3 c)

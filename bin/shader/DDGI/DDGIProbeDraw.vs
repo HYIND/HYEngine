@@ -32,8 +32,10 @@ void main()
     bool visible = v != DDGI_INVALID;
     if (visible && ddgi.debug.w != DDGI_INVALID && v != ddgi.debug.w)
         visible = false;
+
+    ivec3 local = visible ? ddgiLocalCoord(slot - ddgiVolumeBase(v), ddgiVolumeCounts(v)) : ivec3(0);
     // 被覆盖的探针不参与采样，只在「状态」模式下显示
-    if (visible && ddgi.debug.z != 1u && (ddgiProbeFlags(slot) & DDGI_PROBE_INACTIVE) != 0u)
+    if (visible && ddgi.debug.z != 1u && ddgiProbeCovered(v, local))
         visible = false;
 
     if (!visible)
@@ -41,8 +43,6 @@ void main()
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
     }
-
-    ivec3 local = ddgiLocalCoord(slot - ddgiVolumeBase(v), ddgiVolumeCounts(v));
     vec4 data = texelFetch(probeDataTex, ddgiTileOrigin(slot, 1u), 0);
     vec3 center = ddgiCellCenter(v, local) + (data.w >= 1.0 ? data.xyz : ddgiProbeManualOffset(slot));
 

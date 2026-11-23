@@ -54,7 +54,7 @@ struct DDGIAtlasLayout
 	// 探针标志（probeInfo.w）
 	static constexpr uint32_t ProbeFlagDisabled = 1u;
 	static constexpr uint32_t ProbeFlagLocked = 2u;
-	static constexpr uint32_t ProbeFlagInactive = 4u;		// 被更高优先级体积完全覆盖
+	static constexpr uint32_t ProbeFlagInactive = 4u;		// 已弃用：「被更高优先级体积完全覆盖」改为按体积表现算（shader 的 ddgiProbeCovered / CPU 的覆盖范围），CPU 不再写这一位
 	static constexpr uint32_t ProbeFlagSelected = 8u;
 
 	// 运行时布局：启动时按设备的纹理尺寸上限确定
@@ -268,18 +268,29 @@ private:
 		uint32_t base;
 	};
 
+	// probeInfo 只装手动编辑（禁用 / 锁定 / 偏移）与选中，只在这些或手动体积的布局变化时重建；
+	// 级联没有编辑，平移时不触发重建
 	struct ProbeCache
 	{
 		bool valid = false;
 		std::vector<uint64_t> signature;
 		std::shared_ptr<StorageBlock> probeInfo;
-		std::vector<uint8_t> eligible;		// 可更新（未禁用、未被覆盖）
-		std::vector<int32_t> phaseKey;		// 世界格子的规则相位键 x + 3y + 7z，决定轮转相位
+		std::vector<uint8_t> disabled;		// 每槽位：被手动禁用
+	};
+
+	// 体积 i 被更高优先级体积 j 完全覆盖的部分，换算成体积 i 的局部格子下标范围（闭区间）。
+	// 判定与 shader 的 ddgiProbeCovered 用同一个公式，每帧按体积表重算（只和体积数有关，与探针数无关）
+	struct CoveredRange
+	{
+		glm::ivec3 lo;
+		glm::ivec3 hi;
 	};
 
 	void BuildVolumes(const RenderState& state, DDGIFrame& frame, std::vector<DDGIResolvedVolume>& dropped);
 	void AssignPeriods(const RenderState& state, DDGIFrame& frame, uint32_t budget);
 	void RebuildProbeCache(const DDGIFrame& frame);
+	void BuildCoveredRanges(const DDGIFrame& frame);
+	bool IsCovered(size_t volumeIndex, const glm::ivec3& local) const;
 	void BuildUpdateList(DDGIFrame& frame, uint32_t budget);
 	void UploadGPUData(DDGIFrame& frame, const RenderState& state);
 	void PublishStats(const DDGIFrame& frame, uint32_t budget, const std::vector<DDGIResolvedVolume>& dropped);
@@ -295,6 +306,7 @@ private:
 	std::unordered_map<uint32_t, LastVolume> _lastVolumes;
 
 	ProbeCache _cache;
+	std::vector<std::vector<CoveredRange>> _covered;	// 每体积一组，见 CoveredRange
 	std::vector<uint32_t> _scratchList;
 	std::vector<uint32_t> _scratchMask;
 };

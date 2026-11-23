@@ -60,8 +60,10 @@ void main()
     else
     {
         float backface = fract(data.w);
+        bool covered = inVolume != DDGI_INVALID
+            && ddgiProbeCovered(inVolume, ddgiLocalCoord(inSlot - ddgiVolumeBase(inVolume), ddgiVolumeCounts(inVolume)));
         if ((flags & DDGI_PROBE_DISABLED) != 0u)        color = vec3(0.35, 0.0, 0.0);
-        else if ((flags & DDGI_PROBE_INACTIVE) != 0u)   color = vec3(0.25);
+        else if (covered)                               color = vec3(0.25);
         else if (!valid)                                color = vec3(0.1, 0.3, 1.0);
         else if ((flags & DDGI_PROBE_LOCKED) != 0u)     color = vec3(0.0, 0.9, 0.9);
         else if (backface > 0.55)                       color = vec3(1.0, 0.1, 0.1);

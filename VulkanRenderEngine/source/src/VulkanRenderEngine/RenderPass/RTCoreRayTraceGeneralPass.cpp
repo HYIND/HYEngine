@@ -825,8 +825,16 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		}
 	}
 
-	tlasInstancesInfosBlock->WriteData(tlasInstanceInfos.data(), tlasInstanceInfos.size() * sizeof(InstanceInfo));
-	tlasInstancesBlock->WriteData(tlasInstances.data(), tlasInstances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	// 实例数据和 TLAS 构建录进同一个命令缓冲，只在最后等一次。
+	// 原来两次 WriteData 各自走 staging + SubmitNowAndWait，每帧多两次 CPU 等 GPU 的往返。
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	tlasInstancesInfosBlock->WriteDataAsync(cmd, tlasInstanceInfos.data(), tlasInstanceInfos.size() * sizeof(InstanceInfo));
+	tlasInstancesBlock->WriteDataAsync(cmd, tlasInstances.data(), tlasInstances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	// 拷贝 → TLAS 构建读实例 / 光追与计算 shader 读实例信息
+	cmd->pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eAllCommands,
+		vk::MemoryBarrier(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eAccelerationStructureReadKHR | vk::AccessFlagBits::eShaderRead));
 
 	// 填充 TLAS 几何信息
 	vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
@@ -866,7 +874,12 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 
 	auto [tlasHandleResult, tlasHandle] = device->GetHandle().createAccelerationStructureKHR(tlasCreateInfo);
 	if (tlasHandleResult != vk::Result::eSuccess)
+	{
+		// 已经录了实例上传，照样提交，免得命令缓冲留在录制状态、实例信息也没更新
+		if (cmd->IsRecording())
+			VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 		return false;
+	}
 
 	// 存回构建信息
 	tlasBuildGeometryInfo.dstAccelerationStructure = tlasHandle;
@@ -877,7 +890,6 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 	tlasBuildRange.primitiveCount = instanceCount;
 
 	const vk::AccelerationStructureBuildRangeInfoKHR* pTlasBuildRange = &tlasBuildRange;
-	auto cmd = VKCONTEXT->GetCommandBuffer();
 	cmd->buildAccelerationStructuresKHR(tlasBuildGeometryInfo, pTlasBuildRange);
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 

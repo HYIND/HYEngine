@@ -196,7 +196,7 @@ void main()
     uint rayTileIndex = ddgiSlotToRay[slot];
     if (rayTileIndex == DDGI_INVALID)
     {
-        bool keep = hasPrev && (probeFlags & (DDGI_PROBE_DISABLED | DDGI_PROBE_INACTIVE)) == 0u && prevData.w >= 1.0;
+        bool keep = hasPrev && (probeFlags & DDGI_PROBE_DISABLED) == 0u && !ddgiProbeCovered(v, local) && prevData.w >= 1.0;
         ivec2 prevIrrTile = ddgiTileOrigin(prevSlot, uint(DDGI_IRR_TILE));
         ivec2 prevDepthTile = ddgiTileOrigin(prevSlot, uint(DDGI_DEPTH_TILE));
         for (uint i = t; i < uint(DDGI_IRR_TILE * DDGI_IRR_TILE); i += uint(DDGI_RAY_COUNT))

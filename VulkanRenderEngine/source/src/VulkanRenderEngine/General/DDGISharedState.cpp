@@ -93,17 +93,25 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	BuildVolumes(state, *frame, dropped);
 	AssignPeriods(state, *frame, budget);
 
-	// 布局 / 修改 / 选择没变时复用上一份 probeInfo 与可更新标记
+	// probeInfo 只装手动编辑与选中：槽位布局、编辑表、选择没变时复用上一份。
+	// 编辑和选择都按世界格子记，所以只有「有编辑或被选中」的体积才需要把位置算进签名；
+	// 级联没有编辑，相机跨格平移不再触发重建（被覆盖与否改为每帧按体积表现算，见 BuildCoveredRanges）
 	std::vector<uint64_t> signature;
-	signature.reserve(frame->volumes.size() * 16 + 4);
+	signature.reserve(frame->volumes.size() * 8 + 4);
 	for (const auto& v : frame->volumes)
 	{
+		const bool hasEdits = v.edits && !v.edits->empty();
+		const bool positionMatters = hasEdits || (frame->debug.selectedVolumeId != 0 && v.id == frame->debug.selectedVolumeId);
 		signature.insert(signature.end(), {
-			uint64_t(v.id), uint64_t(uint32_t(v.originCell.x)), uint64_t(uint32_t(v.originCell.y)), uint64_t(uint32_t(v.originCell.z)),
-			uint64_t(v.counts.x), uint64_t(v.counts.y), uint64_t(v.counts.z), uint64_t(v.base),
-			uint64_t(FloatBits(v.spacing.x)), uint64_t(FloatBits(v.spacing.y)), uint64_t(FloatBits(v.spacing.z)),
-			uint64_t(FloatBits(v.priority)), uint64_t(FloatBits(v.fadeCells)), uint64_t(v.autoRelocate ? 1 : 0),
+			uint64_t(v.id), uint64_t(v.base),
+			uint64_t(v.counts.x), uint64_t(v.counts.y), uint64_t(v.counts.z),
 			uint64_t(reinterpret_cast<uintptr_t>(v.edits.get())) });
+		if (positionMatters)
+		{
+			signature.insert(signature.end(), {
+				uint64_t(uint32_t(v.originCell.x)), uint64_t(uint32_t(v.originCell.y)), uint64_t(uint32_t(v.originCell.z)),
+				uint64_t(FloatBits(v.spacing.x)), uint64_t(FloatBits(v.spacing.y)), uint64_t(FloatBits(v.spacing.z)) });
+		}
 	}
 	signature.push_back(frame->debug.selectedVolumeId);
 	signature.push_back(frame->debug.selectionVersion);
@@ -117,6 +125,7 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	}
 	frame->probeInfo = _cache.probeInfo;
 
+	BuildCoveredRanges(*frame);
 	BuildUpdateList(*frame, budget);
 
 	// 烘焙请求：渲染器在这一帧把该体积的 probeData 拷到回读缓冲（见 DDGIBlendPass）
@@ -285,8 +294,7 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 {
 	const uint32_t total = frame.totalProbes;
 	std::vector<glm::vec4> info(total, glm::vec4(0.0f));
-	_cache.eligible.assign(total, 0);
-	_cache.phaseKey.assign(total, 0);
+	_cache.disabled.assign(total, 0);
 
 	std::unordered_set<int64_t> selected;
 	if (frame.debug.selectedVolumeId != 0 && frame.debug.selectedCells)
@@ -298,22 +306,11 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 	for (size_t i = 0; i < frame.volumes.size(); ++i)
 	{
 		const auto& v = frame.volumes[i];
-		const glm::vec3 origin = v.Origin();
-		const glm::vec3 extent = v.Extent();
-
-		// 只和包围盒相交的更高优先级体积比较
-		std::vector<size_t> higher;
-		for (size_t j = 0; j < i; ++j)
-		{
-			const auto& h = frame.volumes[j];
-			const glm::vec3 hmn = h.Origin();
-			const glm::vec3 hmx = hmn + h.Extent();
-			if (glm::all(glm::lessThan(origin, hmx)) && glm::all(glm::greaterThan(origin + extent, hmn)))
-				higher.push_back(j);
-		}
-
 		const bool hasEdits = v.edits && !v.edits->empty();
 		const bool isSelectedVolume = !selected.empty() && v.id == frame.debug.selectedVolumeId;
+		if (!hasEdits && !isSelectedVolume)
+			continue;							// 没有编辑也没被选中：整段保持 0（级联总是走这里）
+
 		const glm::vec3 offsetLimit = v.spacing * 0.45f;
 
 		for (uint32_t z = 0; z < v.counts.z; ++z)
@@ -346,32 +343,78 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 			if (isSelectedVolume && selected.contains(key))
 				flags |= DDGIAtlasLayout::ProbeFlagSelected;
 
-			// 被更高优先级体积完全覆盖：该体积在这一带的权重恒为 1，本体积的探针用不到。
-			// 余量 = 对方的过渡带 + 本体积 1.5 格（三线性插值的一格 + 采样偏移）
-			if (!higher.empty())
-			{
-				const glm::vec3 pos = (glm::vec3(cell) + 0.5f) * v.spacing;
-				for (size_t j : higher)
-				{
-					const auto& h = frame.volumes[j];
-					const glm::vec3 margin = h.fadeCells * h.spacing + 1.5f * v.spacing;
-					const glm::vec3 mn = h.Origin() + margin;
-					const glm::vec3 mx = h.Origin() + h.Extent() - margin;
-					if (glm::all(glm::greaterThan(pos, mn)) && glm::all(glm::lessThan(pos, mx)))
-					{
-						flags |= DDGIAtlasLayout::ProbeFlagInactive;
-						break;
-					}
-				}
-			}
-
 			info[slot] = glm::vec4(offset, BitsFloat(flags));
-			_cache.eligible[slot] = (flags & (DDGIAtlasLayout::ProbeFlagDisabled | DDGIAtlasLayout::ProbeFlagInactive)) ? 0 : 1;
-			_cache.phaseKey[slot] = cell.x + 3 * cell.y + 7 * cell.z;
+			_cache.disabled[slot] = (flags & DDGIAtlasLayout::ProbeFlagDisabled) ? 1 : 0;
 		}
 	}
 
 	_cache.probeInfo = MakeBuffer(info.data(), info.size() * sizeof(glm::vec4));
+}
+
+// 被更高优先级体积完全覆盖：该体积在这一带的权重恒为 1，本体积的探针用不到，不更新、不参与采样。
+// 判定（与 shader 的 ddgiProbeCovered 逐项一致，改一边必须改另一边）：
+//   探针格子中心 pos = origin_i + (local + 0.5) · spacing_i
+//   余量 margin = fadeCells_j · spacing_j + 1.5 · spacing_i（对方的过渡带 + 本体积三线性插值的一格与采样偏移）
+//   origin_j + margin < pos < origin_j + counts_j · spacing_j − margin（三个轴都满足）
+// 每个轴独立，满足条件的下标是一段连续区间，逐轴扫一遍即可（每轴最多 255 个）
+void DDGISharedState::BuildCoveredRanges(const DDGIFrame& frame)
+{
+	const size_t count = frame.volumes.size();
+	_covered.resize(count);
+	for (size_t i = 0; i < count; ++i)
+	{
+		auto& ranges = _covered[i];
+		ranges.clear();
+
+		const auto& v = frame.volumes[i];
+		const glm::vec3 origin = v.Origin();
+		for (size_t j = 0; j < i; ++j)
+		{
+			const auto& h = frame.volumes[j];
+			const glm::vec3 hOrigin = h.Origin();
+			const glm::vec3 margin = h.fadeCells * h.spacing + 1.5f * v.spacing;
+			const glm::vec3 mn = hOrigin + margin;
+			const glm::vec3 mx = hOrigin + glm::vec3(h.counts) * h.spacing - margin;
+
+			CoveredRange range{ glm::ivec3(0), glm::ivec3(-1) };
+			bool empty = false;
+			for (int axis = 0; axis < 3 && !empty; ++axis)
+			{
+				int lo = -1, hi = -2;
+				for (uint32_t k = 0; k < v.counts[axis]; ++k)
+				{
+					const float pos = origin[axis] + (float(k) + 0.5f) * v.spacing[axis];
+					if (pos > mn[axis] && pos < mx[axis])
+					{
+						if (lo < 0)
+							lo = int(k);
+						hi = int(k);
+					}
+				}
+				if (lo < 0)
+					empty = true;
+				else
+				{
+					range.lo[axis] = lo;
+					range.hi[axis] = hi;
+				}
+			}
+			if (!empty)
+				ranges.push_back(range);
+		}
+	}
+}
+
+bool DDGISharedState::IsCovered(size_t volumeIndex, const glm::ivec3& local) const
+{
+	if (volumeIndex >= _covered.size())
+		return false;
+	for (const auto& r : _covered[volumeIndex])
+	{
+		if (glm::all(glm::greaterThanEqual(local, r.lo)) && glm::all(glm::lessThanEqual(local, r.hi)))
+			return true;
+	}
+	return false;
 }
 
 void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
@@ -393,12 +436,22 @@ void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
 		return true;
 		};
 
+	// 可更新 = 未手动禁用 + 未被更高优先级体积覆盖
+	auto eligible = [&](size_t volumeIndex, uint32_t slot, const glm::ivec3& local) -> bool {
+		if (slot < _cache.disabled.size() && _cache.disabled[slot])
+			return false;
+		return !IsCovered(volumeIndex, local);
+		};
+
+	auto localOf = [](uint32_t i, const glm::uvec3& counts) {
+		return glm::ivec3(i % counts.x, (i / counts.x) % counts.y, i / (counts.x * counts.y));
+		};
+
 	// 1) 新出现的探针优先：没有历史的体积整体，或者平移 / 扩大后新进入的格子
 	bool full = false;
-	for (const auto& v : frame.volumes)
+	for (size_t vi = 0; vi < frame.volumes.size() && !full; ++vi)
 	{
-		if (full)
-			break;
+		const auto& v = frame.volumes[vi];
 		if (v.hasHistory && v.originCell == v.prevOriginCell && v.counts == v.prevCounts)
 			continue;
 
@@ -406,20 +459,16 @@ void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
 		for (uint32_t i = 0; i < v.probeCount && !full; ++i)
 		{
 			const uint32_t slot = v.base + i;
-			if (!_cache.eligible[slot])
+			const glm::ivec3 local = localOf(i, v.counts);
+			const bool fresh = !v.hasHistory || !InsideCounts(local + shift, v.prevCounts);
+			if (!fresh || !eligible(vi, slot, local))
 				continue;
-			bool fresh = !v.hasHistory;
-			if (!fresh)
-			{
-				const glm::ivec3 local(i % v.counts.x, (i / v.counts.x) % v.counts.y, i / (v.counts.x * v.counts.y));
-				fresh = !InsideCounts(local + shift, v.prevCounts);
-			}
-			if (fresh && !add(slot))
+			if (!add(slot))
 				full = true;
 		}
 	}
 
-	// 2) 轮转：重要度高的体积先排
+	// 2) 轮转：重要度高的体积先排；相位键 = 世界格子 x + 3y + 7z
 	if (!full)
 	{
 		std::vector<size_t> order(frame.volumes.size());
@@ -435,7 +484,13 @@ void DDGISharedState::BuildUpdateList(DDGIFrame& frame, uint32_t budget)
 			for (uint32_t i = 0; i < v.probeCount; ++i)
 			{
 				const uint32_t slot = v.base + i;
-				if (_cache.eligible[slot] && PhaseOf(_cache.phaseKey[slot], v.period) == v.phase && !add(slot))
+				const glm::ivec3 local = localOf(i, v.counts);
+				const glm::ivec3 cell = v.originCell + local;
+				if (PhaseOf(cell.x + 3 * cell.y + 7 * cell.z, v.period) != v.phase)
+					continue;
+				if (!eligible(idx, slot, local))
+					continue;
+				if (!add(slot))
 				{
 					full = true;
 					break;
