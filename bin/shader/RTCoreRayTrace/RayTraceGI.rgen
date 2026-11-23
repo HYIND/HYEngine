@@ -8,6 +8,7 @@
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Helper/lightingHelper.comp"
 #include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
+#include "shader/Filter/IndirectDemodulation.comp"
 
 
 //光追参数
@@ -207,6 +208,9 @@ void main()
 
     vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
     color *= GIIntensity;
+    // 去调制：除以接收面的反射率（漫反射 + 镜面），降噪只处理入射光照；全分辨率上采样时乘回（IndirectUpsample.comp）
+    vec3 viewToFrag = normalize(camera.position - texture(gPosition, uv).rgb);
+    color /= IndirectDemodulationPathTracing(prop.albedo, prop.metallic, prop.roughness, clamp(dot(firstHit.normal, viewToFrag), 0.0, 1.0));
     color = clamp(color, vec3(0.f), vec3(1000.f));
     imageStore(outputImage, pixelCoord, vec4(color, 1.0));
 }

@@ -1,0 +1,51 @@
+#ifndef INDIRECT_DEMODULATION_COMP
+#define INDIRECT_DEMODULATION_COMP
+
+// 间接光去调制 / 重新调制（RTGI、RTR 共用）。
+// 降噪前把接收面的材质反射率除掉，只滤「入射光照」；在全分辨率上采样时再乘回来：
+//   * 纹理细节不再被当成信号去滤（滤不动或被糊掉），时域历史也和纹理无关；
+//   * 乘回时用的是全分辨率 GBuffer 的材质，2/3 分辨率追踪丢掉的纹理细节在这里恢复。
+// 除数是估计量 f·cos/pdf 的期望（反射率），光追端与上采样端必须用同一个函数，否则亮度会整体偏：
+//   漫反射：(1 - metallic) · albedo（与 CalcBDRFDiffuse × π、余弦采样的贡献一致）
+//   镜面：  F0 · A + B，F0 = mix(0.02, albedo, metallic)（与 CalcContribute_GGXSample 一致），
+//           A/B 用 Karis 的解析近似（不需要绑定 BRDF LUT；两端用同一个近似，乘除抵消，不影响能量）
+// 反射率很低时除数取下限，避免把噪声放大到天上（两端用同一个下限，同样抵消）。
+
+const float kIndirectDemodulationEpsilon = 0.01;
+
+// Karis 2014, "Physically Based Shading on Mobile"
+vec2 IndirectEnvBRDFApprox(float roughness, float NdotV)
+{
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
+}
+
+vec3 IndirectSpecularReflectance(vec3 albedo, float metallic, float roughness, float NdotV)
+{
+    vec3 F0 = mix(vec3(0.02), albedo, metallic);
+    vec2 ab = IndirectEnvBRDFApprox(clamp(roughness, 0.0, 1.0), clamp(NdotV, 0.0, 1.0));
+    return F0 * ab.x + ab.y;
+}
+
+vec3 IndirectDiffuseReflectance(vec3 albedo, float metallic)
+{
+    return (1.0 - metallic) * albedo;
+}
+
+// RTGI：首次反弹按 p_spec 在镜面 / 漫反射之间选，期望是两者之和
+vec3 IndirectDemodulationPathTracing(vec3 albedo, float metallic, float roughness, float NdotV)
+{
+    vec3 d = IndirectDiffuseReflectance(albedo, metallic) + IndirectSpecularReflectance(albedo, metallic, roughness, NdotV);
+    return max(d, vec3(kIndirectDemodulationEpsilon));
+}
+
+// RTR：只有镜面
+vec3 IndirectDemodulationSpecular(vec3 albedo, float metallic, float roughness, float NdotV)
+{
+    return max(IndirectSpecularReflectance(albedo, metallic, roughness, NdotV), vec3(kIndirectDemodulationEpsilon));
+}
+
+#endif

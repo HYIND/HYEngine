@@ -11,6 +11,14 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 
 #include "shader/dataDef/camerauboDef.comp"
 
+// SVGF 的 À-trous 小波滤波（一轮）。C++ 端：先跑一次 SVGF-Variance.comp 得到初始方差，再迭代本 shader。
+// 与原实现的区别：
+//   * 亮度边缘用本轮输入颜色的亮度（原来每轮都用时域 M1，噪声已被前几轮滤掉，边缘判断仍按原始噪声做）；
+//   * σ_l = luminanceFactor × sqrt(3×3 高斯预滤波后的方差)，方差随颜色一起逐轮传递（权重取平方），
+//     越往后方差越小、亮度边缘越严，避免后面大步长的轮次把细节抹平；
+//   * B3 样条核权重 h 参与加权（原来算了 kernelWeight 却没乘进去，等于 5×5 盒式核）。
+// 方差图：R32F，>= 0 为方差，-1 为天空（预滤波时跳过）。
+
 const float h[5] = float[](
     1.0 / 16.0,
     1.0 / 4.0,
@@ -23,35 +31,35 @@ layout (binding = 0) uniform Params
 {
     float normalFactor;
     float depthFactor;
-    float luminanceFactor;
+    float luminanceFactor;     // σ_l，SVGF 推荐 4。是方差标准差的倍数，不是绝对亮度
 };
 
 layout (binding = 1, rgba16f) uniform image2D curPassImage;
 layout (binding = 2) uniform sampler2D lastPassImage;
 layout (binding = 3) uniform sampler2D gNormal;
 layout (binding = 4) uniform sampler2D depthMap;
-layout (binding = 5) uniform sampler2D momentTexture;
+layout (binding = 5) uniform sampler2D momentTexture;     // 不再使用（方差改由 binding 6 逐轮传递），保留绑定
+layout (binding = 6) uniform sampler2D varianceIn;
+layout (binding = 7, r32f) uniform image2D varianceOut;
 
 layout (push_constant) uniform Param{
     int curPassIndex;
 };
+
+const float kSkyDepth = 0.99994;
 
 float DepthBufferConvertToViewDepth(float depth)
 {
     return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
 }
 
-void GetDepthNormal(vec2 uv, inout float depth, inout float lineraDepth, inout vec3 normal)
-{    
-    depth = texture(depthMap, uv).r;
-    normal = normalize(texture(gNormal, uv).rgb);
-    lineraDepth = DepthBufferConvertToViewDepth(depth);
+float GetLuminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
-// 线性深度对「输出图像素」的梯度。
-// 原来拿输出图（RT 为 2/3 分辨率）的整数坐标直接 texelFetch 全分辨率深度图：取到的是画面上另一个位置
-// （坐标被缩到 2/3），梯度和当前点无关；单位又是全分辨率像素，和按输出像素算的 stepCoord 差 1.5 倍。
-// 改为在输出图的 UV 上前后各偏一个输出像素采样，梯度与 stepCoord 同一单位，深度图分辨率与输出图无关。
+// 线性深度对「输出图像素」的梯度：在输出图 UV 上前后各偏一个输出像素采样，
+// 与按输出像素计的偏移同一单位，深度图（全分辨率）与输出图（RT 为 2/3）分辨率无关。
 vec2 GetDepthGradient(vec2 uvCenter, vec2 outputTexel)
 {
     vec2 uvL = clamp(uvCenter - vec2(outputTexel.x, 0.0), vec2(0.0), vec2(1.0));
@@ -67,6 +75,35 @@ vec2 GetDepthGradient(vec2 uvCenter, vec2 outputTexel)
     return vec2(zR - zL, zB - zT) * 0.5;
 }
 
+// 法线 / 深度的边缘权重（方差估计与 À-trous 共用）
+float GeometryWeight(vec3 centerNormal, float centerZ, vec2 depthGradient, float depthEpsilon,
+                     vec3 sampleNormal, float sampleZ, vec2 offsetPixels)
+{
+    float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), normalFactor);
+    float depthWeight = exp(-abs(centerZ - sampleZ) / (depthFactor * abs(dot(depthGradient, offsetPixels)) + depthEpsilon));
+    return normalWeight * depthWeight;
+}
+
+float FilteredVariance(ivec2 coord, ivec2 size)
+{
+    // 3×3 高斯：中心 1/4，边 1/8，角 1/16
+    float sum = 0.0;
+    float wsum = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            float v = texelFetch(varianceIn, clamp(coord + ivec2(x, y), ivec2(0), size - 1), 0).r;
+            if (v < 0.0)
+                continue;
+            float k = (x == 0 ? 0.5 : 0.25) * (y == 0 ? 0.5 : 0.25);
+            sum += v * k;
+            wsum += k;
+        }
+    }
+    return wsum > 0.0 ? sum / wsum : 0.0;
+}
+
 void main() 
 {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
@@ -75,71 +112,72 @@ void main()
     if (coord.x >= imageSize.x || coord.y >= imageSize.y)
         return;
 
-    vec2 uvCenter = (vec2(coord) + vec2(0.5f)) / imageSize;
+    vec2 texel = 1.0 / vec2(imageSize);
+    vec2 uvCenter = (vec2(coord) + vec2(0.5f)) * texel;
 
-    vec3 centerNormal;
-    float centerDepth, centerLinearDepth;
-    GetDepthNormal(uvCenter, centerDepth, centerLinearDepth, centerNormal);
-    if (centerDepth >= 0.99994)
+    float centerDepth = textureLod(depthMap, uvCenter, 0.0).r;
+    if (centerDepth >= kSkyDepth)
+    {
+        imageStore(varianceOut, coord, vec4(-1.0));
         return;
-    
-    vec4 centerMoments = texture(momentTexture, uvCenter);
-    float centerM1 = centerMoments.x;
-    float centerM2 = centerMoments.y;
-    float centerVariance = centerMoments.z;
+    }
 
-    vec2 depthGradient = GetDepthGradient(uvCenter, 1.0 / vec2(imageSize));
-    // 正对相机的平面梯度≈0，原来分母只有 1e-6，深度缓冲的量化误差（远处毫米级）就足以把权重压成 0、整片不滤。
-    // 加一个随视深的小下限（0.1%）
-    float depthEpsilon = max(centerLinearDepth * 1e-3, 1e-4);
+    vec3 centerNormal = normalize(textureLod(gNormal, uvCenter, 0.0).rgb);
+    float centerZ = DepthBufferConvertToViewDepth(centerDepth);
+    vec2 depthGradient = GetDepthGradient(uvCenter, texel);
+    // 正对相机的平面梯度≈0，深度缓冲的量化误差就足以把权重压成 0，加一个随视深的小下限（0.1%）
+    float depthEpsilon = max(centerZ * 1e-3, 1e-4);
+
+    vec4 centerColor = textureLod(lastPassImage, uvCenter, 0.0);
+    float centerLuminance = GetLuminance(centerColor.rgb);
+    float centerVariance = max(texelFetch(varianceIn, coord, 0).r, 0.0);
+    float sigmaL = luminanceFactor * sqrt(FilteredVariance(coord, imageSize) + 1e-10) + 1e-6;
 
     vec4 total = vec4(0.0);
     float totalWeight = 0.0;
+    float totalVariance = 0.0;
 
     // Atrous 核心
     int curStep = 1 << curPassIndex;
 
-    for (int x = -2; x <= 2; x++) 
+    for (int y = -2; y <= 2; y++) 
     {
-        for (int y = -2; y <= 2; y++) 
+        for (int x = -2; x <= 2; x++) 
         {
             ivec2 stepCoord = ivec2(x, y) * curStep;
-            ivec2 sampleCoord = coord + stepCoord;
-            sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
+            ivec2 sampleCoord = clamp(coord + stepCoord, ivec2(0), imageSize - 1);
+            vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) * texel;
 
-            vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
-            
-            vec3 sampleNormal;
-            float sampleDepth, sampleLinearDepth;
-            GetDepthNormal(uv, sampleDepth, sampleLinearDepth, sampleNormal);
-            if (sampleDepth >= 0.99994) continue;
+            float sampleDepth = textureLod(depthMap, uv, 0.0).r;
+            if (sampleDepth >= kSkyDepth)
+                continue;
 
-            vec4 moments = texture(momentTexture, uv);
-            float sampleM1 = moments.x;
-            float sampleM2 = moments.y;
-            float sampleVariance = moments.z;
+            vec3 sampleNormal = normalize(textureLod(gNormal, uv, 0.0).rgb);
+            float sampleZ = DepthBufferConvertToViewDepth(sampleDepth);
+            vec4 sampleColor = textureLod(lastPassImage, uv, 0.0);
+            float sampleVariance = max(texelFetch(varianceIn, sampleCoord, 0).r, 0.0);
 
             float kernelWeight = h[x + 2] * h[y + 2];
+            float geometryWeight = GeometryWeight(centerNormal, centerZ, depthGradient, depthEpsilon,
+                                                  sampleNormal, sampleZ, vec2(stepCoord));
+            float luminanceWeight = exp(-abs(centerLuminance - GetLuminance(sampleColor.rgb)) / sigmaL);
 
-            float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), normalFactor);
-
-            float depthDiff = abs(centerLinearDepth - sampleLinearDepth);
-            // float depthWeight = exp(-blurDepthWeight * depthDiff * depthDiff);            
-            float depthWeight = exp(-depthDiff / (depthFactor * abs(dot(depthGradient, vec2(stepCoord))) + depthEpsilon));
-
-            float luminanceDiff = abs(centerM1 - sampleM1);
-            float sigmaL = max(sqrt(centerVariance), 1e-3);
-            float luminanceWeight = exp(-luminanceDiff / (luminanceFactor * sigmaL + 1e-6));
-
-            float weight = normalWeight * depthWeight * luminanceWeight;
-            vec4 sampleColor = texture(lastPassImage, uv);
+            float weight = kernelWeight * geometryWeight * luminanceWeight;
 
             total += sampleColor * weight;
+            totalVariance += sampleVariance * weight * weight;
             totalWeight += weight;
         }
     }
 
-    vec4 result = (totalWeight > 1e-5) ? total / totalWeight : texture(lastPassImage, uvCenter);
+    vec4 result = centerColor;
+    float resultVariance = centerVariance;
+    if (totalWeight > 1e-6)
+    {
+        result = total / totalWeight;
+        resultVariance = totalVariance / (totalWeight * totalWeight);
+    }
 
     imageStore(curPassImage, coord, result);
+    imageStore(varianceOut, coord, vec4(resultVariance));
 }

@@ -11,14 +11,27 @@
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
 #include "shader/dataDef/camerauboDef.comp"
+#include "shader/dataDef/GBufferPack.comp"
 
-// 几何一致性检测（判断重投影到的历史是不是同一个表面）：
+// 时域累积（RTR / RTGI / 软件 RT / SSR / SSGI 共用）。
+//
+// 重投影：历史按 2×2 双线性取，每个点单独做几何一致性检测，只用通过的点、按双线性权重重新归一化
+// （SVGF 的做法）。原来只在历史坐标上采一次、整体通过或整体丢弃：物体边缘处要么混进另一侧的历史，要么整片丢掉。
+// 历史长度也按同样的权重插值。
+//
+// 几何一致性检测（每个历史点）：
 //   depthThreshold        平面距离的相对阈值：|n·(P_cur − P_hist)| < depthThreshold × 视深 + 1 个像素的覆盖尺寸。
-//                         原来比的是两帧的视空间深度差（绝对 2 cm），相机前后移动 / 转动时视深每帧都在变，整屏历史被清掉。
-//   positiondistThreshold 世界距离的绝对下限（米）。实际阈值 = 它 + 2 个像素的覆盖尺寸 / max(N·V, 0.1)，
-//                         远处、斜看的地面一个像素就超过 5 cm，原来的纯绝对阈值让这些地方一直没有历史。
-//   normalThreshold       法线点积下限（不变）
+//   positiondistThreshold 世界距离的绝对下限（米）。实际阈值 = 它 + (1 + 2 × 历史图与 GBuffer 的分辨率比) 个像素的覆盖尺寸 / max(N·V, 0.1)
+//                         （双线性的四个点离重投影位置最远约一个历史像素）。
+//   normalThreshold       法线点积下限。比较的是几何法线（gPosition.w，不含法线贴图），平面距离 / N·V 也用它；
+//                         法线贴图的高频细节在重投影到相邻像素时会超过阈值，不能拿来判断是不是同一个表面。
+//                         normalMap / prevNormalMap 不再读取（保留绑定）。
 // 世界坐标比较的前提是表面不动；运动物体上同一点两帧的世界坐标本来就不同，仍会被拒（与原来一致）。
+//
+// 历史钳制：在 YCoCg 空间里按当前帧 3×3 邻域的均值 ± varianceClipGamma × 标准差做 AABB，
+// 沿「历史 → 均值」方向裁剪到盒子上（clip，不是逐通道 clamp，不会改变色相）。
+// 原来是 11×11 的逐通道 min/max（121 次采样）：单样本光追噪声下这个范围几乎是 [0, 最亮的 firefly]，拦不住拖影；alpha 也被一起钳了。
+// varianceClipGamma <= 0 时不裁剪（只靠几何检测）。γ 越小拖影越少、但噪声大的信号（GI）历史越容易被拉回当前帧、越不收敛。
 layout (binding = 0) uniform Params
 {
     uint maxAccumulateCount;
@@ -26,6 +39,8 @@ layout (binding = 0) uniform Params
     float positiondistThreshold;
     float normalThreshold;
     float motionWeightScale;
+    float varianceClipGamma;
+    uint debugMode;            // Scene3DRenderOption::DenoiseDebugMode，0 = 关闭
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -40,6 +55,15 @@ layout (binding = 9) uniform sampler2D motionMap;
 layout (binding = 10) uniform sampler2D prevPositionMap;
 layout (binding = 11) uniform sampler2D prevNormalMap;
 layout (binding = 12) uniform sampler2D prevDepthMap;
+// 调试热力图（debugMode != 0 时写；正常输出不受影响）。颜色含义见 RenderOption.h 的 DenoiseDebugMode
+layout (binding = 13, rgba16f) uniform image2D debugImage;
+
+const uint kDebugHistoryLength = 1u;
+const uint kDebugRejectReason = 2u;
+const uint kDebugClipAmount = 3u;
+const uint kDebugHistoryWeight = 4u;
+
+const float kSkyDepth = 0.99994;
 
 float GetLuminance(vec3 color)
 {
@@ -51,17 +75,58 @@ float GetVariance(float M1, float M2)
     return max(M2 - M1 * M1, 0.0);
 }
 
-float DepthBufferConvertToViewDepth(float depth)
+vec3 RGBToYCoCg(vec3 c)
 {
-    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+    return vec3(
+         0.25 * c.r + 0.5 * c.g + 0.25 * c.b,
+         0.5  * c.r             - 0.5  * c.b,
+        -0.25 * c.r + 0.5 * c.g - 0.25 * c.b);
 }
 
-void GetDepthNormal(vec2 uv, inout float depth, inout vec3 normal)
-{    
-    depth = texture(depthMap, uv).r;
-    normal = normalize(texture(normalMap, uv).rgb);
+vec3 YCoCgToRGB(vec3 c)
+{
+    float tmp = c.x - c.z;
+    return vec3(tmp + c.y, c.x + c.z, tmp - c.y);
 }
 
+// 沿 history → center 方向裁剪到以 center 为中心、半径 extent 的 AABB 上
+vec3 ClipToAABB(vec3 history, vec3 center, vec3 extent)
+{
+    vec3 d = history - center;
+    vec3 unit = abs(d) / max(extent, vec3(1e-5));
+    float m = max(unit.x, max(unit.y, unit.z));
+    return m > 1.0 ? center + d / m : history;
+}
+
+// 0 → 黑；(0, 1] → 蓝 → 青 → 绿 → 黄 → 红
+vec3 DebugHeat(float t)
+{
+    if (t <= 0.0)
+        return vec3(0.0);
+    t = clamp(t, 0.0, 1.0);
+    return clamp(vec3(1.5) - abs(4.0 * t - vec3(3.0, 2.0, 1.0)), 0.0, 1.0);
+}
+
+void StoreDebug(ivec2 coord, vec3 color)
+{
+    if (debugMode != 0u)
+        imageStore(debugImage, coord, vec4(color, 1.0));
+}
+
+// 没有历史时各调试模式的颜色；reason 只在拒绝原因模式下使用
+void StoreDebugWithoutHistory(ivec2 coord, vec3 reason)
+{
+    if (debugMode == kDebugRejectReason)
+        StoreDebug(coord, reason);
+    else
+        StoreDebug(coord, vec3(0.0));
+}
+
+void StoreWithoutHistory(ivec2 coord, vec4 color, float M1, float M2)
+{
+    imageStore(outputImage, coord, color);
+    imageStore(outputMoments, coord, vec4(M1, M2, GetVariance(M1, M2), 1));
+}
 
 void main() 
 {
@@ -72,22 +137,23 @@ void main()
         return;
 
     vec2 currentUV = (vec2(coord) + vec2(0.5f)) / imageSize;
-    vec4 currentColor = texture(rawTexture, currentUV).rgba;
+    vec4 currentColor = texelFetch(rawTexture, coord, 0).rgba;
 
     float L = GetLuminance(currentColor.rgb);
     float currentM1 = L;
     float currentM2 = L * L;
 
     float currentDepth = texture(depthMap, currentUV).r;
-    if (currentDepth >= 0.99994)
+    if (currentDepth >= kSkyDepth)
     {
-        imageStore(outputImage, coord, currentColor);
-        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        StoreWithoutHistory(coord, currentColor, currentM1, currentM2);
+        StoreDebug(coord, vec3(0.0));
         return;
     }
 
-    vec3 currentNormal = texture(normalMap, currentUV).xyz;
-    vec3 currentWorldPos = texture(positionMap, currentUV).xyz;
+    vec4 currentPosition = texture(positionMap, currentUV);
+    vec3 currentWorldPos = currentPosition.xyz;
+    vec3 currentNormal = UnpackGeometryNormal(currentPosition.w);
 
     vec2 motionVector = clamp(texture(motionMap, currentUV).xy, -1, 1);
     vec2 historyUV = currentUV - motionVector;
@@ -95,21 +161,10 @@ void main()
     // 边界检查（如果上一帧没这个像素，直接返回当前帧）
     if (any(lessThanEqual(historyUV, vec2(0.0))) || any(greaterThanEqual(historyUV, vec2(1.0))))
     {
-        imageStore(outputImage, coord, currentColor);
-        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        StoreWithoutHistory(coord, currentColor, currentM1, currentM2);
+        StoreDebugWithoutHistory(coord, vec3(1.0));     // 白 = 出屏幕
         return;
     }
-
-    float historyDepth = texture(prevDepthMap, historyUV).r;
-    if (historyDepth >= 0.99994)
-    {
-        imageStore(outputImage, coord, currentColor);
-        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
-        return;
-    }
-
-    vec3 historyNormal = texture(prevNormalMap, historyUV).xyz;
-    vec3 historyWorldPos = texture(prevPositionMap, historyUV).xyz;
 
     // 当前点的视深与一个全分辨率像素在该深度上的覆盖尺寸（GBuffer 是全分辨率、最近点采样，量化误差按全分辨率算）
     float viewDepth = max(abs((camera.view * vec4(currentWorldPos, 1.0)).z), camera.nearPlane);
@@ -119,66 +174,120 @@ void main()
     vec3 n = normalize(currentNormal);
     float NdotV = abs(dot(n, normalize(camera.position - currentWorldPos)));
 
-    float normalSimilarity = dot(currentNormal, historyNormal);
-    bool normalValid = normalSimilarity > normalThreshold;
+    ivec2 historySize = textureSize(historyColorTexture, 0);
+    float texelRatio = max(fullResHeight / float(historySize.y), 1.0);
 
-    // 平面距离：同一平面上的点无论相隔多远、视角多斜都是 0，只有换了表面（前后遮挡）才会大
-    vec3 d = currentWorldPos - historyWorldPos;
-    float planeDistance = abs(dot(n, d));
-    bool depthValid = planeDistance < depthThreshold * viewDepth + pixelWorld;
+    float planeTolerance = depthThreshold * viewDepth + pixelWorld;
+    float positionTolerance = positiondistThreshold + (1.0 + 2.0 * texelRatio) * pixelWorld / max(NdotV, 0.1);
 
-    // 世界距离：兜住同一平面上但重投影错位太远的情况（运动矢量误差），阈值随像素覆盖尺寸和掠射角放大
-    float positionTolerance = positiondistThreshold + 2.0 * pixelWorld / max(NdotV, 0.1);
-    bool positionValid = dot(d, d) < positionTolerance * positionTolerance;
+    // ---------------- 2×2 双线性重投影，逐点检测 ----------------
+    vec2 historyPos = historyUV * vec2(historySize) - 0.5;
+    ivec2 historyBase = ivec2(floor(historyPos));
+    vec2 historyFrac = historyPos - vec2(historyBase);
 
-    // {
-    //     vec4 color = vec4(0,0,0,1);
-    //     if (!normalValid) color.r = 1;
-    //     if (!depthValid) color.g = 1;
-    //     if (!positionValid) color.b = 1;
-    //     if (!normalValid || !depthValid || !positionValid)
-    //         imageStore(outputImage, coord, color);
-    //     return;
-    // }
+    vec4 historyColor = vec4(0.0);
+    vec3 historyMoments = vec3(0.0);     // M1, M2, 历史长度
+    float historyWeight = 0.0;
+    vec3 debugReason = vec3(0.0);        // 拒绝原因（按第一个不通过的检测记一次）
 
-    if (!normalValid || !depthValid || !positionValid)
+    for (int i = 0; i < 4; ++i)
     {
-        imageStore(outputImage, coord, currentColor);
-        imageStore(outputMoments, coord, vec4(currentM1, currentM2, GetVariance(currentM1, currentM2), 1));
+        ivec2 offset = ivec2(i & 1, i >> 1);
+        ivec2 tap = historyBase + offset;
+        vec2 bil = mix(1.0 - historyFrac, historyFrac, vec2(offset));
+        float w = bil.x * bil.y;
+        if (w <= 0.0)
+            continue;
+
+        if (any(lessThan(tap, ivec2(0))) || any(greaterThanEqual(tap, historySize)))
+        {
+            debugReason += vec3(1.0) * w;                   // 白 = 出屏幕
+            continue;
+        }
+
+        vec2 tapUV = (vec2(tap) + 0.5) / vec2(historySize);
+        if (textureLod(prevDepthMap, tapUV, 0.0).r >= kSkyDepth)
+        {
+            debugReason += vec3(1.0, 0.0, 1.0) * w;         // 品红 = 历史是天空
+            continue;
+        }
+
+        vec4 tapPosition = textureLod(prevPositionMap, tapUV, 0.0);
+        vec3 tapPos = tapPosition.xyz;
+        vec3 tapNormal = UnpackGeometryNormal(tapPosition.w);
+
+        // 平面距离：同一平面上的点无论相隔多远、视角多斜都是 0，只有换了表面（前后遮挡）才会大
+        vec3 d = currentWorldPos - tapPos;
+        bool normalValid = dot(currentNormal, tapNormal) > normalThreshold;
+        bool depthValid = abs(dot(n, d)) < planeTolerance;
+        // 世界距离：兜住同一平面上但重投影错位太远的情况（运动矢量误差）
+        bool positionValid = dot(d, d) < positionTolerance * positionTolerance;
+        if (!normalValid || !depthValid || !positionValid)
+        {
+            debugReason += (!normalValid ? vec3(1.0, 0.0, 0.0)      // 红 = 法线
+                         : !depthValid  ? vec3(0.0, 1.0, 0.0)       // 绿 = 平面距离
+                         :                vec3(0.0, 0.0, 1.0)) * w; // 蓝 = 世界距离
+            continue;
+        }
+
+        debugReason += vec3(0.12) * w;                      // 灰 = 通过
+        vec4 tapMoments = texelFetch(historyMomentTexture, tap, 0);
+        historyColor += texelFetch(historyColorTexture, tap, 0) * w;
+        historyMoments += vec3(tapMoments.xy, tapMoments.w) * w;
+        historyWeight += w;
+    }
+
+    // 通过的点权重太小（只剩一个边角点）时不可信，按没有历史处理
+    if (historyWeight < 0.01)
+    {
+        StoreWithoutHistory(coord, currentColor, currentM1, currentM2);
+        StoreDebugWithoutHistory(coord, debugReason);
         return;
     }
 
-    vec4 historyColor = texture(historyColorTexture, historyUV).rgba;
-    vec4 historyMoments = texture(historyMomentTexture, historyUV).rgba;
+    historyColor /= historyWeight;
+    historyMoments /= historyWeight;
     float historyM1 = historyMoments.x;
     float historyM2 = historyMoments.y;
-    uint accumulateLength = uint(historyMoments.w);
+    float historyLength = historyMoments.z;
 
-    // AABB 钳制（消除拖影）
-    vec4 minColor = currentColor;
-    vec4 maxColor = currentColor;
-
-    // 取周围 11x11 的最小最大值
-    for (int x = -5; x <= 5; x++) {
-        for (int y = -5; y <= 5; y++) {
-            ivec2 sampleCoord = coord + ivec2(x, y);
-            sampleCoord = clamp(sampleCoord, ivec2(0), imageSize - 1);
-            vec2 uv = (vec2(sampleCoord) + vec2(0.5f)) / imageSize;
-
-            vec4 neighbor = texture(rawTexture, uv).rgba;
-            minColor = min(minColor, neighbor);
-            maxColor = max(maxColor, neighbor);
+    // ---------------- 方差裁剪（YCoCg，3×3 邻域） ----------------
+    float debugClip = 0.0;      // 历史离盒子中心多少个半径（> 1 才会被裁剪）
+    if (varianceClipGamma > 0.0)
+    {
+        vec3 m1 = vec3(0.0);
+        vec3 m2 = vec3(0.0);
+        for (int y = -1; y <= 1; ++y)
+        {
+            for (int x = -1; x <= 1; ++x)
+            {
+                ivec2 sampleCoord = clamp(coord + ivec2(x, y), ivec2(0), imageSize - 1);
+                vec3 c = RGBToYCoCg(texelFetch(rawTexture, sampleCoord, 0).rgb);
+                m1 += c;
+                m2 += c * c;
+            }
         }
-    }
-    historyColor  = clamp(historyColor, minColor, maxColor);
+        m1 /= 9.0;
+        m2 /= 9.0;
+        vec3 sigma = sqrt(max(m2 - m1 * m1, vec3(0.0)));
 
-    uint blendlenth = min(accumulateLength + 1, maxAccumulateCount);
-    float historyBlendFactor = float(blendlenth - 1) / float(blendlenth);
+        vec3 historyYCoCg = RGBToYCoCg(historyColor.rgb);
+        vec3 extent = varianceClipGamma * sigma;
+        vec3 unit = abs(historyYCoCg - m1) / max(extent, vec3(1e-5));
+        debugClip = max(unit.x, max(unit.y, unit.z));
+
+        vec3 clipped = ClipToAABB(historyYCoCg, m1, extent);
+        historyColor.rgb = max(YCoCgToRGB(clipped), vec3(0.0));
+    }
+
+    // ---------------- 混合 ----------------
+    float blendLength = min(historyLength + 1.0, float(max(maxAccumulateCount, 1u)));
+    float historyBlendFactor = (blendLength - 1.0) / blendLength;
 
     float motionPixels = length(motionVector * vec2(imageSize));
     float motionAttenuation = exp(-max(motionWeightScale, 0.0) * motionPixels);
     historyBlendFactor *= motionAttenuation;
-    float finalAccumulateLength = min(float(accumulateLength) * motionAttenuation + 1.0, float(maxAccumulateCount));
+    float finalAccumulateLength = min(historyLength * motionAttenuation + 1.0, float(max(maxAccumulateCount, 1u)));
 
     vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
     float finalM1 = mix(currentM1, historyM1, historyBlendFactor);
@@ -186,4 +295,16 @@ void main()
 
     imageStore(outputImage, coord, finalColor);
     imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), finalAccumulateLength));
+
+    if (debugMode == kDebugHistoryLength)
+    {
+        float maxLength = float(max(maxAccumulateCount, 2u));
+        StoreDebug(coord, finalAccumulateLength <= 1.0 ? vec3(0.0) : DebugHeat((finalAccumulateLength - 1.0) / (maxLength - 1.0)));
+    }
+    else if (debugMode == kDebugRejectReason)
+        StoreDebug(coord, debugReason);
+    else if (debugMode == kDebugClipAmount)
+        StoreDebug(coord, debugClip <= 1.0 ? vec3(0.06) : DebugHeat((debugClip - 1.0) / 3.0));
+    else if (debugMode == kDebugHistoryWeight)
+        StoreDebug(coord, DebugHeat(historyWeight));
 }

@@ -24,7 +24,8 @@ TemporalAccumulate::TemporalAccumulate(const std::string& temporalAccumulateShad
 		.AddUnifromTexture(9)
 		.AddUnifromTexture(10)
 		.AddUnifromTexture(11)
-		.AddUnifromTexture(12);
+		.AddUnifromTexture(12)
+		.AddStorageImage(13);		// 调试热力图
 
 	if (config.Validate())
 		_pipeline.Create(config);
@@ -68,6 +69,23 @@ void TemporalAccumulate::Execute(
 	cmd->clearColorImage(outputColorImage->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	cmd->clearColorImage(outputMomentImage->GetImage(), vk::ImageLayout::eGeneral, clearMoments, range);
 
+	// 调试输出：开调试时写 _debugTexture，否则绑 1×1 占位（shader 在 debugMode 为 0 时不写）
+	std::shared_ptr<Texture2D> debugTarget;
+	if (params.debugMode != 0)
+	{
+		if (!_debugTexture || _debugTexture->IsEmpty() || _debugTexture->GetWidth() != size.x || _debugTexture->GetHeight() != size.y)
+			_debugTexture = std::make_shared<Texture2D>(size.x, size.y, vk::Format::eR16G16B16A16Sfloat);
+		debugTarget = _debugTexture;
+	}
+	else
+	{
+		if (!_dummyDebugTexture)
+			_dummyDebugTexture = std::make_shared<Texture2D>(1, 1, vk::Format::eR16G16B16A16Sfloat);
+		debugTarget = _dummyDebugTexture;
+	}
+	_debugWritten = params.debugMode != 0;
+	debugTarget->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
 	ComputeBindingRecord binding;
 	binding.SetCameraUnifromData(curCameraUBO, prevCameraUBO);
 	binding.SetUniformBlock(paramsUBO, 0);
@@ -83,8 +101,14 @@ void TemporalAccumulate::Execute(
 	binding.SetUniformTexture(prevPositionMap, vk::ImageAspectFlagBits::eColor, 10);
 	binding.SetUniformTexture(prevNormalMap, vk::ImageAspectFlagBits::eColor, 11);
 	binding.SetUniformTexture(prevDepthMap, vk::ImageAspectFlagBits::eDepth, 12);
+	binding.SetStorageImage(debugTarget, vk::ImageAspectFlagBits::eColor, 13);
 
 	_pipeline.Bind(cmd, binding);
 	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 
+}
+
+std::shared_ptr<Texture2D> TemporalAccumulate::GetDebugTexture() const
+{
+	return _debugWritten ? _debugTexture : nullptr;
 }

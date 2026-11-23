@@ -122,6 +122,7 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 	data.temporalAccumulateColorTexture = ctx.GetTemp(1);
 	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
 	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
+	data.denoisedTexture = ctx.GetTemp(4);
 
 	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
 	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
@@ -147,6 +148,8 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 		cmd->SubmitToQueue();
 
 	if (!DrawSpatialDenoising(cmd, data, state)) return;
+
+	if (!DrawUpsample(cmd, data, state)) return;
 
 	//if (!DrawScale(data, state)) return;
 }
@@ -362,7 +365,9 @@ bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKW
 		.depthThreshold = state.option.rayTraceReflectParams.depthThreshold,
 		.positiondistThreshold = state.option.rayTraceReflectParams.positiondistThreshold,
 		.normalThreshold = state.option.rayTraceReflectParams.normalThreshold,
-		.motionWeightScale = state.option.rayTraceReflectParams.motionWeightScale
+		.motionWeightScale = state.option.rayTraceReflectParams.motionWeightScale,
+		.varianceClipGamma = state.option.rayTraceReflectParams.varianceClipGamma,
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect)
 	};
 
 	_temporalAccumulate.Execute(
@@ -392,7 +397,7 @@ bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKW
 bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.temporalAccumulateColorTexture;
-	auto& target = data.outPutTexture;
+	auto& target = data.denoisedTexture;
 	auto& moment = data.temporalAccumulateMomentTexture;
 
 	if (!source || source->IsEmpty())
@@ -419,6 +424,36 @@ bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWra
 		state.camera.curUBO,
 		state.camera.prevUBO,
 		state.option.rayTraceReflectParams.filterCount
+	);
+
+	cmd->SubmitToQueue();
+
+	return true;
+}
+
+bool RTCoreRayTraceReflectPass::DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+{
+	// 低分辨率降噪结果 → 全分辨率输出：联合双边上采样（按平面距离 / 法线拒绝跨边缘的点）。
+	// 光追端已除以镜面反射率（RayTraceReflect.rgen），这里乘回
+	if (!data.denoisedTexture || data.denoisedTexture->IsEmpty() || !data.outPutTexture || data.outPutTexture->IsEmpty())
+		return false;
+
+	// 降噪调试：上采样时域累积的调试热力图代替降噪结果（不重新调制），最终合成时替换场景颜色显示
+	auto debugTexture = _temporalAccumulate.GetDebugTexture();
+	const bool debugView = debugTexture != nullptr;
+
+	_upsample.Execute(
+		cmd,
+		debugView ? debugTexture : data.denoisedTexture,
+		data.gPosition,
+		data.gNormal,
+		data.gDepthStencil,
+		data.gAlbedoOpacity,
+		data.gMetallicRoughness,
+		data.outPutTexture,
+		debugView ? IndirectUpsample::Remodulation::None : IndirectUpsample::Remodulation::Specular,
+		state.camera.curUBO,
+		state.camera.prevUBO
 	);
 
 	cmd->SubmitToQueue();

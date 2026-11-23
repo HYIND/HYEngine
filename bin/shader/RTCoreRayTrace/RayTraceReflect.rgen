@@ -9,6 +9,7 @@
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Helper/lightingHelper.comp"
 #include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
+#include "shader/Filter/IndirectDemodulation.comp"
 
 
 //光追参数
@@ -231,6 +232,8 @@ void main()
             // 镜面合成只收镜面：不追踪的像素只回退 IBL 镜面，漫反射由漫反射合成 / LightingPass 负责
             vec3 unusedDiffuse, color;
             CalculateIBLLightingSplit(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, color);
+            // 去调制（与追踪路径同一个除数），全分辨率上采样时乘回
+            color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(fragNormal, -viewDir), 0.0, 1.0));
             color = clamp(color, vec3(0.f), vec3(1000.f));
             imageStore(outputImage, pixelCoord, vec4(color, 1.0));
         }
@@ -241,6 +244,9 @@ void main()
     calculateFirstHitInfo(firstHit, uv);
 
     vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
+    // 去调制：除以接收面的镜面反射率，降噪只处理入射光照；全分辨率上采样时乘回（IndirectUpsample.comp）
+    vec3 viewToFrag = normalize(camera.position - texture(gPosition, uv).rgb);
+    color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(firstHit.normal, viewToFrag), 0.0, 1.0));
     color = clamp(color, vec3(0.f), vec3(1000.f));
     imageStore(outputImage, pixelCoord, vec4(color, 1.0));
 }

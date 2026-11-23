@@ -605,29 +605,44 @@ void VulkanRenderer::InitSceneRenderGraph()
 				if (!_shader)
 					return;
 
-				std::vector<std::shared_ptr<Texture2D>> all_tex;
-				for (auto* slots : { &ctx.inputs, &ctx.optionInputs }) {
-					for (auto& slot : *slots) {
-						if (auto tex = slot.As<Texture2D>()) all_tex.push_back(tex);
-					}
-				}
-				if (all_tex.empty())
-					return;
-
 				auto sceneColorBuffer = ctx.GetExternal(0);
 				if (!sceneColorBuffer)
 					return;
 
-				auto tempColorBuffer = ctx.GetTemp(0);
-
 				auto cmd = cmdCtx.GetCmd();
 
-				if (!Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColorBuffer))
-					return;
+				std::vector<std::shared_ptr<Texture2D>> all_tex;
+				const auto& denoiseDebug = state.option.denoiseDebug;
+				if (state.option.DenoiseDebugEffective())
+				{
+					// 降噪调试：场景颜色只保留被调试 Pass 所在的分支（输入顺序：漫反射、镜面、路径追踪），
+					// 不叠加原场景颜色。同分支另一个 Pass（RTR 与 SSR、RTGI 与 SSGI）开着时它的结果仍会叠加
+					// 被调试的 Pass 没开时不走这里（分支输出是清零的，替换后整屏发黑），按正常画面合成
+					using Target = Scene3DRenderOption::DenoiseDebugTarget;
+					const bool specular = denoiseDebug.target == Target::RayTraceReflect || denoiseDebug.target == Target::SSR;
+					if (auto tex = ctx.GetInput(specular ? 1 : 2))
+						all_tex.push_back(tex);
+					if (all_tex.empty())
+						return;
+				}
+				else
+				{
+					for (auto* slots : { &ctx.inputs, &ctx.optionInputs }) {
+						for (auto& slot : *slots) {
+							if (auto tex = slot.As<Texture2D>()) all_tex.push_back(tex);
+						}
+					}
+					if (all_tex.empty())
+						return;
 
-				cmd->SubmitToQueue();
+					auto tempColorBuffer = ctx.GetTemp(0);
+					if (!Texture2D::CopyTextureAsync(cmd, sceneColorBuffer, tempColorBuffer))
+						return;
 
-				all_tex.push_back(tempColorBuffer);
+					cmd->SubmitToQueue();
+
+					all_tex.push_back(tempColorBuffer);
+				}
 
 				uint32_t width = sceneColorBuffer->GetWidth();
 				uint32_t height = sceneColorBuffer->GetHeight();
@@ -878,8 +893,15 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto gEmission = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
 
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
-	auto rayTraceReflect_Output = resbuilder.CreateTexture((width * 2) / 3, (height * 2) / 3, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
-	auto rayTraceGI_Output = resbuilder.CreateTexture((width * 2) / 3, (height * 2) / 3, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
+	// RTR / RTGI：按 2/3 分辨率追踪、时域累积、空域滤波（rtLowRes 的 Temp / Persistent），
+	// 最后一步联合双边上采样 + 材质重新调制写到全分辨率输出（IndirectUpsample），合成 Pass 直接读全分辨率结果
+	const uint32_t rtLowResWidth = std::max(1u, (width * 2) / 3);
+	const uint32_t rtLowResHeight = std::max(1u, (height * 2) / 3);
+	auto rtLowRes = [&](const RenderGraph::ResourceName& name) {
+		return resbuilder.CreateTexture(rtLowResWidth, rtLowResHeight, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, name);
+		};
+	auto rayTraceReflect_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceReflect_Output");
+	auto rayTraceGI_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "rayTraceGI_Output");
 	auto ssr_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssr_Output");
 	auto ssgi_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssgi_Output");
 
@@ -1047,10 +1069,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
 		)
 		.Temp(
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp2"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp3"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_Temp4"), computeWriteLayout }
+			ResourceData{ rtLowRes("rayTraceReflect_Temp1"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceReflect_Temp2"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceReflect_Temp3"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceReflect_Temp4"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceReflect_Temp5"), computeWriteLayout }		// 空域滤波结果，上采样的输入
 		)
 		// 命中点的漫反射间接光采样 DDGI（可选持久资源：DDGI 从没执行过时为空，不会因此分配）
 		.PersistentOption(
@@ -1060,8 +1083,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 		)
 		.Output(ResourceData{ rayTraceReflect_Output, computeWriteLayout })
 		.Persistent(
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyColorTexture"), computeReadLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceReflect_Output, "rayTraceReflect_historyMomentTexture"), computeReadLayout }
+			ResourceData{ rtLowRes("rayTraceReflect_historyColorTexture"), computeReadLayout },
+			ResourceData{ rtLowRes("rayTraceReflect_historyMomentTexture"), computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode, ddgiBlendNode)
 		.Before(opaqueFence)
@@ -1075,15 +1098,16 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
 		)
 		.Temp(
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp1"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp2"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp3"), computeWriteLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_Temp4"), computeWriteLayout }
+			ResourceData{ rtLowRes("rayTraceGI_Temp1"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceGI_Temp2"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceGI_Temp3"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceGI_Temp4"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceGI_Temp5"), computeWriteLayout }		// 空域滤波结果，上采样的输入
 		)
 		.Output(ResourceData{ rayTraceGI_Output, computeWriteLayout })
 		.Persistent(
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyColorTexture"), computeReadLayout },
-			ResourceData{ resbuilder.CreateTexture(rayTraceGI_Output, "rayTraceGI_historyMomentTexture"), computeReadLayout }
+			ResourceData{ rtLowRes("rayTraceGI_historyColorTexture"), computeReadLayout },
+			ResourceData{ rtLowRes("rayTraceGI_historyMomentTexture"), computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode)
 		.Before(opaqueFence)

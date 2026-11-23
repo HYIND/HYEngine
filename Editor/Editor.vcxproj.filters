@@ -58,6 +58,9 @@
     <ClInclude Include="source\include\RenderProfilerPanel.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\RenderOptionPanels.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\Reflect.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -150,6 +153,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\RenderProfilerPanel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderOptionPanels.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\IconManager.cpp">

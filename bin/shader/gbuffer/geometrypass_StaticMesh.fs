@@ -1,6 +1,7 @@
 #version 460 core
 
 #include "shader/dataDef/MaterialTextureDef.comp"
+#include "shader/dataDef/GBufferPack.comp"
 
 layout (location = 0) in vec3 FragPos;
 layout (location = 1) in vec3 FragNormal;
@@ -10,7 +11,7 @@ layout (location = 6) in vec4 CurClipPos;
 layout (location = 8) in vec4 PrevClipPos;
 layout (location = 7) flat in uint materialIndex;
 
-layout (location = 0) out vec3 gPosition;
+layout (location = 0) out vec4 gPosition;		// xyz = 世界坐标，w = 打包的几何法线（GBufferPack.comp）
 layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec4 gAlbedoOpacity;
 layout (location = 3) out vec4 gMetallicRoughness;
@@ -37,7 +38,7 @@ void main()
 	if (opacity < 0.01)
 		discard;
 
-	gPosition = FragPos;
+	gPosition = vec4(FragPos, PackGeometryNormal(FragNormal));
 	gNormal = normal;
 	gAlbedoOpacity = vec4(albedo, opacity);
 	gMetallicRoughness = vec4(metallic, roughness, ambientOcclusion, material.IOR);

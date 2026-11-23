@@ -112,6 +112,13 @@ void SSGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fr
 
 	if (!DrawSpatialDenoising(cmd, data, state)) return;
 
+	// 降噪调试：用时域累积的调试热力图覆盖输出，最终合成时替换场景颜色显示
+	if (auto debugTexture = _temporalAccumulate.GetDebugTexture(); debugTexture && data.outPutTexture)
+	{
+		Texture2D::CopyTextureAsync(cmd, debugTexture, data.outPutTexture);
+		if (cmd->IsRecording())
+			cmd->SubmitToQueue();
+	}
 }
 
 void SSGIPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -254,7 +261,9 @@ bool SSGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommand
 		.depthThreshold = state.option.ssgiTraceParams.depthThreshold,
 		.positiondistThreshold = state.option.ssgiTraceParams.positiondistThreshold,
 		.normalThreshold = state.option.ssgiTraceParams.normalThreshold,
-		.motionWeightScale = state.option.ssgiTraceParams.motionWeightScale
+		.motionWeightScale = state.option.ssgiTraceParams.motionWeightScale,
+		.varianceClipGamma = state.option.ssgiTraceParams.varianceClipGamma,
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::SSGI)
 	};
 
 	_temporalAccumulate.Execute(

@@ -134,6 +134,13 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 
 	if (!DrawSpatialDenoising(cmd, data, state)) return;
 
+	// 降噪调试：用时域累积的调试热力图覆盖输出，最终合成时替换场景颜色显示
+	if (auto debugTexture = _temporalAccumulate.GetDebugTexture(); debugTexture && data.outPutTexture)
+	{
+		Texture2D::CopyTextureAsync(cmd, debugTexture, data.outPutTexture);
+		if (cmd->IsRecording())
+			cmd->SubmitToQueue();
+	}
 }
 
 void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -348,7 +355,9 @@ bool SSRPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandB
 		.depthThreshold = state.option.ssrTraceParams.depthThreshold,
 		.positiondistThreshold = state.option.ssrTraceParams.positiondistThreshold,
 		.normalThreshold = state.option.ssrTraceParams.normalThreshold,
-		.motionWeightScale = state.option.ssrTraceParams.motionWeightScale
+		.motionWeightScale = state.option.ssrTraceParams.motionWeightScale,
+		.varianceClipGamma = state.option.ssrTraceParams.varianceClipGamma,
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::SSR)
 	};
 
 	_temporalAccumulate.Execute(

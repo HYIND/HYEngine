@@ -6,6 +6,7 @@
 #include "PropertiesHelper.h"
 #include "DDGIEditor.h"
 #include "RenderProfilerPanel.h"
+#include "RenderOptionPanels.h"
 #include "IconManager.h"
 #include "SceneCodec/ComponentCodec.h"
 #include <filesystem>
@@ -1427,6 +1428,8 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 				&& projectManager && projectManager->IsProjectOpen() && !m_currentSceneAssetGuid.empty();
 			if (ImGui::MenuItem("设为默认场景", nullptr, false, canSetDefaultScene))
 				projectManager->SetDefaultSceneGUID(m_currentSceneAssetGuid);
+			ImGui::Separator();
+			RenderOptionPanels::DrawMenu();		// 「渲染参数」二级菜单：各组参数的独立浮动面板
 			ImGui::EndMenu();
 		}
 
@@ -1483,6 +1486,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		if (ImGui::BeginMenu("调试"))
 		{
 			ImGui::MenuItem("渲染性能", nullptr, &RenderProfilerPanel::Visible());
+			ImGui::MenuItem("DDGI 调试", nullptr, &DDGIEditor::DebugWindowVisible());
 			ImGui::EndMenu();
 		}
 
@@ -2845,14 +2849,24 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 
 	auto option = editorApp->GetOption();
 
-	bool change = PropertiesHelper::DrawData(option);
+	// 这里只保留功能开关与后处理参数；其余各组参数在「场景 → 渲染参数」里，
+	// 或点开关右边的「参数」按钮打开（同一个独立浮动面板）
+	bool change = false;
+	if (ImGui::CollapsingHeader("PostProcessFlags", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::PushID("PostProcessFlags");
+		change |= RenderOptionPanels::DrawFlags(option);
+		ImGui::PopID();
+	}
+	change |= PropertiesHelper::DrawWithTitle("PostProcessParams", option.postProcessParams);
 	if (change)
 		editorApp->SetOption(option);
 
-	DDGIEditor::DrawDebugOptions(editorApp);
-
 	ImGui::End();
 
+	// 独立浮动窗口（不参与停靠）
+	RenderOptionPanels::Draw(editorApp);	// 「场景 → 渲染参数」/ 开关右边的「参数」
+	DDGIEditor::DrawDebugWindow(editorApp);	// 「调试 → DDGI 调试」
 	DDGIEditor::DrawLeakWindow(editorApp);
 	RenderProfilerPanel::Draw(editorApp);	// 「调试 → 渲染性能」；关着时只负责关闭统计
 }

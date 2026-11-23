@@ -21,12 +21,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 0.04;
+		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
-		float motionWeightScale = 0.01;
+		float motionWeightScale = 0.0;
+		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
@@ -42,12 +43,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 0.8;
-		float luminanceFactor = 0.04;
+		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
-		float motionWeightScale = 0.01;
+		float motionWeightScale = 0.0;
+		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
@@ -64,12 +66,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 0.04;
+		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
-		float motionWeightScale = 0.01;
+		float motionWeightScale = 0.0;
+		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
@@ -88,12 +91,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 0.04;
+		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
-		float motionWeightScale = 0.01;
+		float motionWeightScale = 0.0;
+		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
@@ -213,4 +217,49 @@ struct Scene3DRenderOption
 		bool autoExposureOn = false;
 		bool calculateOcclusionCulling = true;
 	} flags;
+
+	// 降噪调试（运行时调试状态，不序列化：不在 EngineRuntime 的 JSON 字段列表里）。
+	// 把某个 Pass 时域累积的内部状态画成热力图，并在间接光最终合成时替换场景颜色显示（见 Temporal/TemporalAccumulate.comp）。
+	// 同一时刻只调试一个 Pass；RTR / RTGI 的软件光追版本与硬件版本共用同一个目标。
+	enum class DenoiseDebugTarget : uint32_t {
+		None = 0,
+		RayTraceReflect,
+		RayTraceGI,
+		SSR,
+		SSGI,
+	};
+	enum class DenoiseDebugMode : uint32_t {
+		Off = 0,
+		HistoryLength,		// 混合后的历史长度：黑 = 没有历史，蓝 → 红 = 越来越长（到 maxAccumulateCount）
+		RejectReason,		// 历史被拒的原因（2×2 各点按双线性权重叠加）：红 = 法线，绿 = 平面距离，蓝 = 世界距离，品红 = 历史是天空，白 = 出屏幕，灰 = 通过
+		ClipAmount,			// 方差裁剪把历史拉动了多少：暗灰 = 在盒子里没动，蓝 → 红 = 超出盒子 1 ~ 4 倍半径
+		HistoryWeight,		// 2×2 重投影里通过检测的双线性权重之和：黑 = 0（没有历史），红 = 1（全部通过）
+	};
+	struct DenoiseDebugParams {
+		DenoiseDebugTarget target = DenoiseDebugTarget::None;
+		DenoiseDebugMode mode = DenoiseDebugMode::Off;
+
+		bool Active() const { return target != DenoiseDebugTarget::None && mode != DenoiseDebugMode::Off; }
+		// 传给 TemporalAccumulate 的调试模式：不是这个 Pass 时为 0
+		uint32_t ModeFor(DenoiseDebugTarget t) const { return (Active() && target == t) ? uint32_t(mode) : 0u; }
+	} denoiseDebug;
+
+	// 降噪调试目标对应的 Pass 开着没有（RTR / RTGI 的软件、硬件版本共用同一个开关）
+	bool IsDenoiseDebugTargetOn(DenoiseDebugTarget t) const
+	{
+		switch (t)
+		{
+		case DenoiseDebugTarget::RayTraceReflect: return flags.rayTraceReflectOn;
+		case DenoiseDebugTarget::RayTraceGI: return flags.rayTraceGIOn;
+		case DenoiseDebugTarget::SSR: return flags.ssrOn;
+		case DenoiseDebugTarget::SSGI: return flags.ssgiOn;
+		default: return false;
+		}
+	}
+	// 降噪调试真正生效：选了模式，并且被调试的 Pass 开着。
+	// Pass 没开时它不执行、所在分支的输出被清零，拿它替换场景颜色只会是一片黑，所以这时按正常画面显示
+	bool DenoiseDebugEffective() const
+	{
+		return denoiseDebug.Active() && IsDenoiseDebugTargetOn(denoiseDebug.target);
+	}
 };

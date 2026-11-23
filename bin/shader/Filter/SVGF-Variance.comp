@@ -1,0 +1,141 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
+
+#include "shader/dataDef/camerauboDef.comp"
+
+// SVGF 方差估计（À-trous 第一轮之前执行一次）。
+// 时域累积给出的是亮度一阶 / 二阶矩的时间平均（TemporalAccumulate 的 moments：x = M1, y = M2, z = M2 - M1², w = 历史长度）。
+// M2 - M1² 是「单帧样本」的方差，历史再长也不会变小；而送进 À-trous 的颜色是 n 帧的平均，噪声只有它的 1/n。
+// 所以输出的是「均值的方差」σ²/n（n = 历史长度，已含运动衰减），σ_l 跟着收紧：已收敛的静止区域几乎不再被空域滤，
+// 不会因为按单样本噪声估边缘而把纹理 / 细节多糊一遍（原 SVGF 偏糊的主要原因）。
+//   * 历史长度 >= 4：σ²_时间 / n；
+//   * 历史长度 <  4（新出现 / 刚被拒的像素，时间方差只有 1~3 个样本、几乎为 0）：
+//     在 7×7 邻域里按法线 / 深度加权平均邻居的 M1、M2 求空间方差 σ²_空间，输出 σ²_空间 / n × 4 / n。
+//     4 / n 是 SVGF 对短历史的放宽（历史越短越不可信、滤得越开）；n = 4 处与上一档连续。
+// 输出 R32F：方差（>= 0）；天空像素写 -1，À-trous 的方差预滤波据此跳过。
+
+layout (binding = 0) uniform Params
+{
+    float normalFactor;
+    float depthFactor;
+    float luminanceFactor;
+};
+
+layout (binding = 1, r32f) uniform image2D varianceOut;
+layout (binding = 3) uniform sampler2D gNormal;
+layout (binding = 4) uniform sampler2D depthMap;
+layout (binding = 5) uniform sampler2D momentTexture;
+
+const float kSkyDepth = 0.99994;
+
+float DepthBufferConvertToViewDepth(float depth)
+{
+    return camera.farPlane * camera.nearPlane / (camera.farPlane - depth * (camera.farPlane - camera.nearPlane));
+}
+
+float GetLuminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// 线性深度对「输出图像素」的梯度：在输出图 UV 上前后各偏一个输出像素采样，
+// 与按输出像素计的偏移同一单位，深度图（全分辨率）与输出图（RT 为 2/3）分辨率无关。
+vec2 GetDepthGradient(vec2 uvCenter, vec2 outputTexel)
+{
+    vec2 uvL = clamp(uvCenter - vec2(outputTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 uvR = clamp(uvCenter + vec2(outputTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 uvT = clamp(uvCenter - vec2(0.0, outputTexel.y), vec2(0.0), vec2(1.0));
+    vec2 uvB = clamp(uvCenter + vec2(0.0, outputTexel.y), vec2(0.0), vec2(1.0));
+
+    float zL = DepthBufferConvertToViewDepth(textureLod(depthMap, uvL, 0.0).r);
+    float zR = DepthBufferConvertToViewDepth(textureLod(depthMap, uvR, 0.0).r);
+    float zT = DepthBufferConvertToViewDepth(textureLod(depthMap, uvT, 0.0).r);
+    float zB = DepthBufferConvertToViewDepth(textureLod(depthMap, uvB, 0.0).r);
+
+    return vec2(zR - zL, zB - zT) * 0.5;
+}
+
+// 法线 / 深度的边缘权重（方差估计与 À-trous 共用）
+float GeometryWeight(vec3 centerNormal, float centerZ, vec2 depthGradient, float depthEpsilon,
+                     vec3 sampleNormal, float sampleZ, vec2 offsetPixels)
+{
+    float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), normalFactor);
+    float depthWeight = exp(-abs(centerZ - sampleZ) / (depthFactor * abs(dot(depthGradient, offsetPixels)) + depthEpsilon));
+    return normalWeight * depthWeight;
+}
+
+const float kMinHistoryLength = 4.0;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(varianceOut);
+    if (coord.x >= size.x || coord.y >= size.y)
+        return;
+
+    vec2 texel = 1.0 / vec2(size);
+    vec2 uvCenter = (vec2(coord) + 0.5) * texel;
+
+    float centerDepth = textureLod(depthMap, uvCenter, 0.0).r;
+    if (centerDepth >= kSkyDepth)
+    {
+        imageStore(varianceOut, coord, vec4(-1.0));
+        return;
+    }
+
+    vec4 moments = textureLod(momentTexture, uvCenter, 0.0);
+    float historyLength = max(moments.w, 1.0);    // 时域累积里最少为 1（被拒 / 新像素）
+    float variance = max(moments.z, 0.0);
+
+    if (historyLength < kMinHistoryLength)
+    {
+        vec3 centerNormal = normalize(textureLod(gNormal, uvCenter, 0.0).xyz);
+        float centerZ = DepthBufferConvertToViewDepth(centerDepth);
+        vec2 depthGradient = GetDepthGradient(uvCenter, texel);
+        float depthEpsilon = max(centerZ * 1e-3, 1e-4);
+
+        float sumW = 0.0;
+        vec2 sumM = vec2(0.0);
+        for (int y = -3; y <= 3; ++y)
+        {
+            for (int x = -3; x <= 3; ++x)
+            {
+                ivec2 sampleCoord = clamp(coord + ivec2(x, y), ivec2(0), size - 1);
+                vec2 uv = (vec2(sampleCoord) + 0.5) * texel;
+
+                float sampleDepth = textureLod(depthMap, uv, 0.0).r;
+                if (sampleDepth >= kSkyDepth)
+                    continue;
+
+                vec3 sampleNormal = normalize(textureLod(gNormal, uv, 0.0).xyz);
+                float sampleZ = DepthBufferConvertToViewDepth(sampleDepth);
+                float w = GeometryWeight(centerNormal, centerZ, depthGradient, depthEpsilon,
+                                         sampleNormal, sampleZ, vec2(x, y));
+
+                sumM += textureLod(momentTexture, uv, 0.0).xy * w;
+                sumW += w;
+            }
+        }
+
+        if (sumW > 1e-6)
+        {
+            vec2 m = sumM / sumW;
+            variance = max(m.y - m.x * m.x, 0.0);
+        }
+        // 历史越短越不可信，放宽亮度边缘（SVGF 的做法）
+        variance *= kMinHistoryLength / historyLength;
+    }
+
+    // 单样本方差 → 均值的方差
+    variance /= historyLength;
+
+    imageStore(varianceOut, coord, vec4(variance));
+}

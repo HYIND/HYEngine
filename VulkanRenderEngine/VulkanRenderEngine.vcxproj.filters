@@ -356,6 +356,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousBilateralFilter.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectUpsample.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\TemporalAccumulate.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
@@ -632,6 +635,9 @@
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousBilateralFilter.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectUpsample.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp">

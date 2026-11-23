@@ -5,6 +5,7 @@
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/Base/RayTracingPipeline.h"
 #include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
+#include "VulkanRenderEngine/General/IndirectUpsample.h"
 #include "VulkanRenderEngine/General/TemporalAccumulate.h"
 
 class DDGISharedState;
@@ -52,6 +53,7 @@ private:
 		std::shared_ptr<Texture2D> temporalAccumulateColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateMomentTexture;
 		std::shared_ptr<Texture2D> spatialDenoisingTempTexture;
+		std::shared_ptr<Texture2D> denoisedTexture;			// 空域滤波结果（低分辨率），再联合双边上采样到 outPutTexture（全分辨率）
 
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
@@ -64,6 +66,7 @@ private:
 	bool DrawRayTraceReflect(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawScale(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 	void SetEnable(bool enable) const;
@@ -85,4 +88,5 @@ private:
 
 	TemporalAccumulate _temporalAccumulate;
 	AtrousBilateralFilter _spatialDenoisingFilter;
+	IndirectUpsample _upsample;
 };

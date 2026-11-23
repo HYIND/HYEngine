@@ -1,0 +1,42 @@
+#ifndef GBUFFER_PACK_COMP
+#define GBUFFER_PACK_COMP
+
+// 几何法线（插值的顶点法线，不含法线贴图）打包进 gPosition.w，供时域累积 / 上采样做几何一致性判断。
+// 法线贴图的高频扰动会让重投影到相邻像素时法线差超过阈值、零星丢历史（移动时凹凸表面闪），
+// 判断「是不是同一个表面」应该用几何法线；光照仍用带法线贴图的 gNormal。
+// 编码：八面体映射到 [0,1]²，每轴 12 位，value = qx·4096 + qy（< 2^24，float32 精确表示，不会出现 NaN / 非规格化数）。
+// 角度精度约 0.05°。gPosition 是最近点采样，不会被插值破坏；天空像素（清屏为 0）解出来的法线没有意义，调用方先判深度。
+
+vec2 GBufferOctEncode(vec3 n)
+{
+    n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1e-8);
+    vec2 p = n.xy;
+    if (n.z < 0.0)
+        p = (1.0 - abs(p.yx)) * vec2(p.x >= 0.0 ? 1.0 : -1.0, p.y >= 0.0 ? 1.0 : -1.0);
+    return p;
+}
+
+vec3 GBufferOctDecode(vec2 p)
+{
+    vec3 n = vec3(p, 1.0 - abs(p.x) - abs(p.y));
+    float t = max(-n.z, 0.0);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
+float PackGeometryNormal(vec3 n)
+{
+    vec2 p = GBufferOctEncode(normalize(n)) * 0.5 + 0.5;
+    uvec2 q = uvec2(clamp(round(p * 4095.0), vec2(0.0), vec2(4095.0)));
+    return float(q.x * 4096u + q.y);
+}
+
+vec3 UnpackGeometryNormal(float packedValue)
+{
+    uint u = uint(max(packedValue, 0.0) + 0.5);
+    vec2 p = vec2(float(u >> 12u), float(u & 4095u)) / 4095.0 * 2.0 - 1.0;
+    return GBufferOctDecode(p);
+}
+
+#endif

@@ -240,25 +240,25 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGen
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceReflectParams,
 	tMin, tMax, maxBounceLimit, NumSamples, normalFactor, depthFactor, luminanceFactor,
-	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale, varianceClipGamma,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGIParams,
 	tMin, tMax, maxBounceLimit, NumSamples, GIIntensity, normalFactor, depthFactor,
 	luminanceFactor,
-	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale, varianceClipGamma,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSRTraceParams,
 	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples,
 	DistanceFactor, normalFactor, depthFactor, luminanceFactor,
-	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale, varianceClipGamma,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSGITraceParams,
 	tMin, tMax, maxBounceLimit, RayMarchingMaxStep, NumSamples,
 	GIIntensity, AOIntensity, DistanceFactor, normalFactor, depthFactor, luminanceFactor,
-	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale,
+	depthThreshold, positiondistThreshold, normalThreshold, motionWeightScale, varianceClipGamma,
 	maxAccumulateCount, filterCount)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::SSAOParams, radius, bias)

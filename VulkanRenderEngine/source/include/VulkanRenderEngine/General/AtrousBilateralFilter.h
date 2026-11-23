@@ -14,7 +14,11 @@ public:
 	};
 
 public:
-	AtrousBilateralFilter(const std::string& atrousComputeShaderPath = "shader/Filter/Atrous-BilateralFilter.comp");
+	// SVGF：先用 varianceShaderPath 估计初始方差（短历史用空间方差），再迭代 À-trous，方差随颜色逐轮传递。
+	// 方差的两张 R32F 乒乓图由本对象持有，按输出尺寸按需重建（各 Pass 各有一个实例，Graph 内串行执行）。
+	AtrousBilateralFilter(
+		const std::string& atrousComputeShaderPath = "shader/Filter/Atrous-BilateralFilter.comp",
+		const std::string& varianceShaderPath = "shader/Filter/SVGF-Variance.comp");
 
 	void Execute(
 		const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
@@ -31,5 +35,10 @@ public:
 	);
 
 private:
+	void EnsureVarianceTextures(uint32_t width, uint32_t height);
+
+private:
 	ComputePipeline _pipeline;
+	ComputePipeline _variancePipeline;
+	std::shared_ptr<Texture2D> _variance[2];
 };

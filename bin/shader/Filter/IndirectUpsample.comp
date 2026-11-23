@@ -1,0 +1,122 @@
+#version 450 core
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/dataDef/camerauboDef.comp"
+#include "shader/Filter/IndirectDemodulation.comp"
+#include "shader/dataDef/GBufferPack.comp"
+
+// 间接光的联合双边上采样（低分辨率降噪结果 → 全分辨率），并按 mode 重新调制材质反射率。
+// 每个全分辨率像素取低分辨率的 2×2 双线性邻域，权重 = 双线性 × 平面距离 × 法线：
+//   平面距离 |n·(P_tap − P)| 对同一平面上的点恒为 0（无论斜看多少），跨物体边缘时很大，
+//   边缘处不再把背景混进前景（原来 combin 直接线性采样，边缘一圈光晕）。
+// 4 个点都被拒（细小物体、薄边）时退回几何上最接近的那个点。
+// 边缘判断用几何法线（gPosition.w，不含法线贴图）：法线贴图的细节不是几何边缘，用它会在凹凸表面上零星退回单点、出现块状；
+// 重新调制的 N·V 用 gNormal（与光追端去调制时一致）。
+// 低分辨率像素的几何取自全分辨率 GBuffer 在其中心 UV 处的值，与光追 / 降噪时用的完全一致。
+// mode：0 = 不调制（未去调制的软件光追）；1 = 路径追踪（漫反射 + 镜面反射率）；2 = 镜面反射率。
+// 天空像素写 0。
+
+layout (binding = 1, rgba16f) uniform image2D outputImage;
+layout (binding = 2) uniform sampler2D lowResImage;
+layout (binding = 3) uniform sampler2D gNormal;
+layout (binding = 4) uniform sampler2D depthMap;
+layout (binding = 5) uniform sampler2D gAlbedoOpacity;
+layout (binding = 6) uniform sampler2D gMetallicRoughness;
+layout (binding = 7) uniform sampler2D gPosition;
+
+layout (push_constant) uniform Param {
+    uint mode;
+};
+
+const float kSkyDepth = 0.99994;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 fullSize = imageSize(outputImage);
+    if (coord.x >= fullSize.x || coord.y >= fullSize.y)
+        return;
+
+    float depth = texelFetch(depthMap, coord, 0).r;
+    if (depth >= kSkyDepth)
+    {
+        imageStore(outputImage, coord, vec4(0.0));
+        return;
+    }
+
+    vec4 centerPosition = texelFetch(gPosition, coord, 0);
+    vec3 P = centerPosition.xyz;
+    vec3 N = UnpackGeometryNormal(centerPosition.w);
+    float viewDepth = max(abs((camera.view * vec4(P, 1.0)).z), camera.nearPlane);
+    // 平面距离的尺度：1% 视深（深度缓冲 / 位置的精度随距离变差）
+    float planeScale = viewDepth * 0.01 + 1e-4;
+
+    ivec2 lowSize = textureSize(lowResImage, 0);
+    vec2 uv = (vec2(coord) + 0.5) / vec2(fullSize);
+    vec2 lowPos = uv * vec2(lowSize) - 0.5;
+    ivec2 base = ivec2(floor(lowPos));
+    vec2 f = lowPos - vec2(base);
+
+    vec4 sum = vec4(0.0);
+    float weightSum = 0.0;
+    vec4 fallback = vec4(0.0);
+    float bestScore = 1e30;
+
+    for (int i = 0; i < 4; ++i)
+    {
+        ivec2 offset = ivec2(i & 1, i >> 1);
+        ivec2 tap = clamp(base + offset, ivec2(0), lowSize - 1);
+        vec2 tapUV = (vec2(tap) + 0.5) / vec2(lowSize);
+
+        float tapDepth = textureLod(depthMap, tapUV, 0.0).r;
+        if (tapDepth >= kSkyDepth)
+            continue;
+
+        vec4 tapPosition = textureLod(gPosition, tapUV, 0.0);
+        vec3 tapP = tapPosition.xyz;
+        vec3 tapN = UnpackGeometryNormal(tapPosition.w);
+        vec4 tapColor = texelFetch(lowResImage, tap, 0);
+
+        float planeDistance = abs(dot(N, tapP - P));
+        float normalDot = max(dot(N, tapN), 0.0);
+
+        vec2 bil = mix(1.0 - f, f, vec2(offset));
+        float w = bil.x * bil.y
+                * exp(-planeDistance / planeScale)
+                * pow(normalDot, 32.0);
+
+        sum += tapColor * w;
+        weightSum += w;
+
+        float score = planeDistance / planeScale + (1.0 - normalDot) * 8.0;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            fallback = tapColor;
+        }
+    }
+
+    vec4 color = weightSum > 1e-4 ? sum / weightSum : fallback;
+
+    if (mode != 0u)
+    {
+        vec3 albedo = texelFetch(gAlbedoOpacity, coord, 0).rgb;
+        vec2 mr = texelFetch(gMetallicRoughness, coord, 0).rg;
+        vec3 shadingN = normalize(texelFetch(gNormal, coord, 0).xyz);
+        float NdotV = clamp(dot(shadingN, normalize(camera.position - P)), 0.0, 1.0);
+        vec3 reflectance = mode == 1u
+            ? IndirectDemodulationPathTracing(albedo, mr.x, mr.y, NdotV)
+            : IndirectDemodulationSpecular(albedo, mr.x, mr.y, NdotV);
+        color.rgb *= reflectance;
+    }
+
+    imageStore(outputImage, coord, color);
+}

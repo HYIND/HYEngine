@@ -103,6 +103,7 @@ void RTCoreRayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	data.temporalAccumulateColorTexture = ctx.GetTemp(1);
 	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
 	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
+	data.denoisedTexture = ctx.GetTemp(4);
 
 	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
 	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
@@ -123,6 +124,8 @@ void RTCoreRayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 		cmd->SubmitToQueue();
 
 	if (!DrawSpatialDenoising(cmd, data, state)) return;
+
+	if (!DrawUpsample(cmd, data, state)) return;
 
 	//if (!DrawScale(data, state)) return;
 }
@@ -271,7 +274,9 @@ bool RTCoreRayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrappe
 		.depthThreshold = state.option.rayTraceGIParams.depthThreshold,
 		.positiondistThreshold = state.option.rayTraceGIParams.positiondistThreshold,
 		.normalThreshold = state.option.rayTraceGIParams.normalThreshold,
-		.motionWeightScale = state.option.rayTraceGIParams.motionWeightScale
+		.motionWeightScale = state.option.rayTraceGIParams.motionWeightScale,
+		.varianceClipGamma = state.option.rayTraceGIParams.varianceClipGamma,
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceGI)
 	};
 
 	_temporalAccumulate.Execute(
@@ -301,7 +306,7 @@ bool RTCoreRayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrappe
 bool RTCoreRayTraceGIPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.temporalAccumulateColorTexture;
-	auto& target = data.outPutTexture;
+	auto& target = data.denoisedTexture;
 	auto& moment = data.temporalAccumulateMomentTexture;
 
 	if (!source || source->IsEmpty())
@@ -328,6 +333,36 @@ bool RTCoreRayTraceGIPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper:
 		state.camera.curUBO,
 		state.camera.prevUBO,
 		state.option.rayTraceGIParams.filterCount
+	);
+
+	cmd->SubmitToQueue();
+
+	return true;
+}
+
+bool RTCoreRayTraceGIPass::DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+{
+	// 低分辨率降噪结果 → 全分辨率输出：联合双边上采样（按平面距离 / 法线拒绝跨边缘的点）。
+	// 光追端已除以「漫反射 + 镜面反射率」（RayTraceGI.rgen），这里乘回
+	if (!data.denoisedTexture || data.denoisedTexture->IsEmpty() || !data.outPutTexture || data.outPutTexture->IsEmpty())
+		return false;
+
+	// 降噪调试：上采样时域累积的调试热力图代替降噪结果（不重新调制），最终合成时替换场景颜色显示
+	auto debugTexture = _temporalAccumulate.GetDebugTexture();
+	const bool debugView = debugTexture != nullptr;
+
+	_upsample.Execute(
+		cmd,
+		debugView ? debugTexture : data.denoisedTexture,
+		data.gPosition,
+		data.gNormal,
+		data.gDepthStencil,
+		data.gAlbedoOpacity,
+		data.gMetallicRoughness,
+		data.outPutTexture,
+		debugView ? IndirectUpsample::Remodulation::None : IndirectUpsample::Remodulation::PathTracing,
+		state.camera.curUBO,
+		state.camera.prevUBO
 	);
 
 	cmd->SubmitToQueue();

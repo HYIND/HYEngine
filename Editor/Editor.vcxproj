@@ -169,6 +169,7 @@
     <ClInclude Include="source\include\PropertiesHelper.h" />
     <ClInclude Include="source\include\DDGIEditor.h" />
     <ClInclude Include="source\include\RenderProfilerPanel.h" />
+    <ClInclude Include="source\include\RenderOptionPanels.h" />
     <ClInclude Include="source\include\Reflect.h" />
     <ClInclude Include="source\include\stdafx.h" />
     <ClInclude Include="source\include\EditorApp.h" />
@@ -192,6 +193,7 @@
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
     <ClCompile Include="source\src\DDGIEditor.cpp" />
     <ClCompile Include="source\src\RenderProfilerPanel.cpp" />
+    <ClCompile Include="source\src\RenderOptionPanels.cpp" />
     <ClCompile Include="source\src\EditorApp.cpp" />
     <ClCompile Include="source\src\SceneEditor.cpp" />
     <ClCompile Include="source\src\ViewportCamera.cpp" />

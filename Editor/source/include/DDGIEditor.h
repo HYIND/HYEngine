@@ -25,10 +25,11 @@ namespace DDGIEditor
 	void DrawViewportOverlay(EditorApp* app, Entity selected, const glm::mat4& view, const glm::mat4& projectionGL,
 		const glm::vec2& viewportPos, const glm::vec2& viewportSize);
 
-	// 「Options」窗口里的调试选项与运行时统计
-	void DrawDebugOptions(EditorApp* app);
+	// 「调试 → DDGI 调试」窗口：探针可视化设置、漏光调试开关与运行时统计（独立浮动窗口，不参与停靠）
+	bool& DebugWindowVisible();
+	void DrawDebugWindow(EditorApp* app);
 
-	// 漏光调试结果窗口（打开漏光调试时显示）
+	// 漏光调试结果窗口（打开漏光调试时显示，独立浮动窗口）
 	void DrawLeakWindow(EditorApp* app);
 
 	// 组件面板（注册到 PropertiesHelper 的自定义绘制）

@@ -5,8 +5,26 @@ struct PushConstant {
 	int curPassIndex;
 };
 
-AtrousBilateralFilter::AtrousBilateralFilter(const std::string& atrousComputeShaderPath)
+AtrousBilateralFilter::AtrousBilateralFilter(const std::string& atrousComputeShaderPath, const std::string& varianceShaderPath)
 {
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
+		config.computePath = varianceShaderPath;
+
+		config
+			.AddCameraUnifromDataBinding()
+			.AddUnifromBuffer(0)		// Params（与 À-trous 同一份）
+			.AddStorageImage(1)			// 方差输出 R32F
+			.AddUnifromTexture(3)		// 法线
+			.AddUnifromTexture(4)		// 深度
+			.AddUnifromTexture(5);		// 时域矩
+
+		if (config.Validate())
+			_variancePipeline.Create(config);
+	}
+
 	ComputePipelineConfig config;
 	config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
 	config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
@@ -20,10 +38,21 @@ AtrousBilateralFilter::AtrousBilateralFilter(const std::string& atrousComputeSha
 		.AddUnifromTexture(3)
 		.AddUnifromTexture(4)
 		.AddUnifromTexture(5)
+		.AddUnifromTexture(6)		// 上一轮方差
+		.AddStorageImage(7)			// 本轮方差
 		.AddPushConstant(sizeof(PushConstant));
 
 	if (config.Validate())
 		_pipeline.Create(config);
+}
+
+void AtrousBilateralFilter::EnsureVarianceTextures(uint32_t width, uint32_t height)
+{
+	for (auto& tex : _variance)
+	{
+		if (!tex || tex->IsEmpty() || tex->GetWidth() != width || tex->GetHeight() != height)
+			tex = std::make_shared<Texture2D>(width, height, vk::Format::eR32Sfloat);
+	}
 }
 
 void AtrousBilateralFilter::Execute(
@@ -64,6 +93,26 @@ void AtrousBilateralFilter::Execute(
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 	paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
 
+	const uint32_t groupX = (imageSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X;
+	const uint32_t groupY = (imageSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y;
+
+	// SVGF 方差估计：写 _variance[0]（每个像素都写，天空为 -1，不需要清）
+	EnsureVarianceTextures(imageSize.x, imageSize.y);
+	{
+		_variance[0]->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+		ComputeBindingRecord varianceBinding;
+		varianceBinding.SetCameraUnifromData(curCameraUBO, prevCameraUBO);
+		varianceBinding.SetUniformBlock(paramsUBO, 0);
+		varianceBinding.SetStorageImage(_variance[0], vk::ImageAspectFlagBits::eColor, 1);
+		varianceBinding.SetUniformTexture(normalMap, vk::ImageAspectFlagBits::eColor, 3);
+		varianceBinding.SetUniformTexture(depthMap, vk::ImageAspectFlagBits::eDepth, 4);
+		varianceBinding.SetUniformTexture(momentsMap, vk::ImageAspectFlagBits::eColor, 5);
+
+		_variancePipeline.Bind(cmd, varianceBinding);
+		cmd->dispatch(groupX, groupY, 1);
+	}
+
 	ComputeBindingRecord binding;
 	binding.SetUniformBlock(paramsUBO, 0);
 
@@ -80,15 +129,23 @@ void AtrousBilateralFilter::Execute(
 	for (uint32_t i = 0; i < filterCount; i++)
 	{
 
+		// 方差乒乓：第 i 轮读 _variance[i % 2]，写 _variance[(i + 1) % 2]
+		auto& varianceIn = _variance[i % 2];
+		auto& varianceOut = _variance[(i + 1) % 2];
+
 		DrawImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 		SampleImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+		varianceOut->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+		varianceIn->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 
 		binding.SetStorageImage(DrawImage, vk::ImageAspectFlagBits::eColor, 1);
 		binding.SetUniformTexture(SampleImage, vk::ImageAspectFlagBits::eColor, 2);
+		binding.SetUniformTexture(varianceIn, vk::ImageAspectFlagBits::eColor, 6);
+		binding.SetStorageImage(varianceOut, vk::ImageAspectFlagBits::eColor, 7);
 		_pipeline.SetPushConstants(cmd, &pc_params, sizeof(pc_params));
 
 		_pipeline.Bind(cmd, binding);
-		cmd->dispatch((imageSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (imageSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
+		cmd->dispatch(groupX, groupY, 1);
 
 		pc_params.curPassIndex++;
 		if (first_iteration)

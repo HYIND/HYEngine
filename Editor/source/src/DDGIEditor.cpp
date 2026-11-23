@@ -1,6 +1,7 @@
 #include "DDGIEditor.h"
 #include "EditorApp.h"
 #include "PropertiesHelper.h"
+#include "RenderOptionPanels.h"
 #include "CommonComponent.h"
 #include "PlatformRuntimeComponents.h"
 #include "RenderEngine/Renderer3D.h"
@@ -30,6 +31,8 @@ namespace
 		float probeRadius = 0.12f;
 		bool onlySelectedVolume = false;
 		bool drawVolumeBoxes = true;
+
+		bool debugWindowVisible = false;		// 「调试 → DDGI 调试」
 
 		bool leakDebug = false;
 		bool leakFreeze = false;
@@ -515,15 +518,39 @@ namespace DDGIEditor
 		dl->PopClipRect();
 	}
 
-	void DrawDebugOptions(EditorApp* app)
+	bool& DebugWindowVisible()
+	{
+		return State().debugWindowVisible;
+	}
+
+	void DrawDebugWindow(EditorApp* app)
 	{
 		auto& s = State();
-		if (!ImGui::CollapsingHeader("DDGI 调试"))
+		if (!s.debugWindowVisible)
 			return;
+
+		ImGui::SetNextWindowSize(ImVec2(460.0f, 420.0f), ImGuiCond_FirstUseEver);
+		// 独立浮动窗口，不参与停靠
+		if (!ImGui::Begin("DDGI 调试", &s.debugWindowVisible, ImGuiWindowFlags_NoDocking))
+		{
+			ImGui::End();
+			return;
+		}
 		ImGui::PushID("DDGIDebug");
 
-		const auto option = app ? app->GetOption() : Scene3DRenderOption{};
-		ImGui::TextDisabled("探针球的总开关：PostProcessFlags / ddgiProbeDrawOn");
+		auto option = app ? app->GetOption() : Scene3DRenderOption{};
+		{
+			// 与 PostProcessFlags 里的是同一组字段
+			bool flagsChanged = ImGui::Checkbox("启用（ddgiOn）", &option.flags.ddgiOn);
+			ImGui::SameLine();
+			flagsChanged |= ImGui::Checkbox("探针可视化（ddgiProbeDrawOn）", &option.flags.ddgiProbeDrawOn);
+			if (flagsChanged && app)
+				app->SetOption(option);
+			ImGui::SameLine();
+			if (ImGui::SmallButton("DDGI 参数"))
+				RenderOptionPanels::OpenForFlag("ddgiOn");
+		}
+		ImGui::Separator();
 
 		const char* modes[] = { "辐照度", "状态", "命中距离" };
 		int mode = int(s.drawMode);
@@ -554,6 +581,7 @@ namespace DDGIEditor
 		{
 			ImGui::TextDisabled("渲染器未就绪");
 			ImGui::PopID();
+			ImGui::End();
 			return;
 		}
 
@@ -597,6 +625,7 @@ namespace DDGIEditor
 		}
 
 		ImGui::PopID();
+		ImGui::End();
 	}
 
 	void DrawLeakWindow(EditorApp* app)
@@ -609,7 +638,7 @@ namespace DDGIEditor
 		if (s.hovered && ImGui::IsKeyPressed(ImGuiKey_F, false) && !ImGui::GetIO().WantTextInput)
 			s.leakFreeze = !s.leakFreeze;
 
-		if (!ImGui::Begin("DDGI 漏光调试", &s.leakDebug))
+		if (!ImGui::Begin("DDGI 漏光调试", &s.leakDebug, ImGuiWindowFlags_NoDocking))
 		{
 			ImGui::End();
 			return;
