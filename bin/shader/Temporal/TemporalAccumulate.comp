@@ -12,6 +12,13 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 
 #include "shader/dataDef/camerauboDef.comp"
 
+// 几何一致性检测（判断重投影到的历史是不是同一个表面）：
+//   depthThreshold        平面距离的相对阈值：|n·(P_cur − P_hist)| < depthThreshold × 视深 + 1 个像素的覆盖尺寸。
+//                         原来比的是两帧的视空间深度差（绝对 2 cm），相机前后移动 / 转动时视深每帧都在变，整屏历史被清掉。
+//   positiondistThreshold 世界距离的绝对下限（米）。实际阈值 = 它 + 2 个像素的覆盖尺寸 / max(N·V, 0.1)，
+//                         远处、斜看的地面一个像素就超过 5 cm，原来的纯绝对阈值让这些地方一直没有历史。
+//   normalThreshold       法线点积下限（不变）
+// 世界坐标比较的前提是表面不动；运动物体上同一点两帧的世界坐标本来就不同，仍会被拒（与原来一致）。
 layout (binding = 0) uniform Params
 {
     uint maxAccumulateCount;
@@ -104,18 +111,25 @@ void main()
     vec3 historyNormal = texture(prevNormalMap, historyUV).xyz;
     vec3 historyWorldPos = texture(prevPositionMap, historyUV).xyz;
 
-    float currentLinearDepth = DepthBufferConvertToViewDepth(currentDepth);
-    float historyLinearDepth = DepthBufferConvertToViewDepth(historyDepth);
+    // 当前点的视深与一个全分辨率像素在该深度上的覆盖尺寸（GBuffer 是全分辨率、最近点采样，量化误差按全分辨率算）
+    float viewDepth = max(abs((camera.view * vec4(currentWorldPos, 1.0)).z), camera.nearPlane);
+    float fullResHeight = float(textureSize(positionMap, 0).y);
+    float pixelWorld = 2.0 * viewDepth / max(abs(camera.projection[1][1]) * fullResHeight, 1e-6);
+
+    vec3 n = normalize(currentNormal);
+    float NdotV = abs(dot(n, normalize(camera.position - currentWorldPos)));
 
     float normalSimilarity = dot(currentNormal, historyNormal);
     bool normalValid = normalSimilarity > normalThreshold;
 
-    float depthDiff = abs(currentLinearDepth - historyLinearDepth); 
-    bool depthValid = depthDiff < depthThreshold;
-
+    // 平面距离：同一平面上的点无论相隔多远、视角多斜都是 0，只有换了表面（前后遮挡）才会大
     vec3 d = currentWorldPos - historyWorldPos;
-    float positionDiff2 = dot(d, d);
-    bool positionValid = positionDiff2 < positiondistThreshold * positiondistThreshold;
+    float planeDistance = abs(dot(n, d));
+    bool depthValid = planeDistance < depthThreshold * viewDepth + pixelWorld;
+
+    // 世界距离：兜住同一平面上但重投影错位太远的情况（运动矢量误差），阈值随像素覆盖尺寸和掠射角放大
+    float positionTolerance = positiondistThreshold + 2.0 * pixelWorld / max(NdotV, 0.1);
+    bool positionValid = dot(d, d) < positionTolerance * positionTolerance;
 
     // {
     //     vec4 color = vec4(0,0,0,1);

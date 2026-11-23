@@ -48,27 +48,23 @@ void GetDepthNormal(vec2 uv, inout float depth, inout float lineraDepth, inout v
     lineraDepth = DepthBufferConvertToViewDepth(depth);
 }
 
-vec2 GetDepthGradient(ivec2 coord)
+// 线性深度对「输出图像素」的梯度。
+// 原来拿输出图（RT 为 2/3 分辨率）的整数坐标直接 texelFetch 全分辨率深度图：取到的是画面上另一个位置
+// （坐标被缩到 2/3），梯度和当前点无关；单位又是全分辨率像素，和按输出像素算的 stepCoord 差 1.5 倍。
+// 改为在输出图的 UV 上前后各偏一个输出像素采样，梯度与 stepCoord 同一单位，深度图分辨率与输出图无关。
+vec2 GetDepthGradient(vec2 uvCenter, vec2 outputTexel)
 {
-    ivec2 size = textureSize(depthMap, 0);
+    vec2 uvL = clamp(uvCenter - vec2(outputTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 uvR = clamp(uvCenter + vec2(outputTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 uvT = clamp(uvCenter - vec2(0.0, outputTexel.y), vec2(0.0), vec2(1.0));
+    vec2 uvB = clamp(uvCenter + vec2(0.0, outputTexel.y), vec2(0.0), vec2(1.0));
 
-    ivec2 left  = max(coord + ivec2(-1, 0), ivec2(0));
-    ivec2 right = min(coord + ivec2( 1, 0), size - 1);
+    float zL = DepthBufferConvertToViewDepth(textureLod(depthMap, uvL, 0.0).r);
+    float zR = DepthBufferConvertToViewDepth(textureLod(depthMap, uvR, 0.0).r);
+    float zT = DepthBufferConvertToViewDepth(textureLod(depthMap, uvT, 0.0).r);
+    float zB = DepthBufferConvertToViewDepth(textureLod(depthMap, uvB, 0.0).r);
 
-    ivec2 top    = max(coord + ivec2(0, -1), ivec2(0));
-    ivec2 bottom = min(coord + ivec2(0,  1), size - 1);
-
-    float zL = DepthBufferConvertToViewDepth(texelFetch(depthMap, left, 0).r);
-    float zR = DepthBufferConvertToViewDepth(texelFetch(depthMap, right, 0).r);
-
-    float zT = DepthBufferConvertToViewDepth(texelFetch(depthMap, top, 0).r);
-    float zB = DepthBufferConvertToViewDepth(texelFetch(depthMap, bottom, 0).r);
-
-    float dzdx = (zR - zL) * 0.5;
-    float dzdy = (zB - zT) * 0.5;
-
-    vec2 gradZ = vec2(dzdx, dzdy);
-    return gradZ;
+    return vec2(zR - zL, zB - zT) * 0.5;
 }
 
 void main() 
@@ -92,7 +88,10 @@ void main()
     float centerM2 = centerMoments.y;
     float centerVariance = centerMoments.z;
 
-    vec2 depthGradient = GetDepthGradient(coord);
+    vec2 depthGradient = GetDepthGradient(uvCenter, 1.0 / vec2(imageSize));
+    // 正对相机的平面梯度≈0，原来分母只有 1e-6，深度缓冲的量化误差（远处毫米级）就足以把权重压成 0、整片不滤。
+    // 加一个随视深的小下限（0.1%）
+    float depthEpsilon = max(centerLinearDepth * 1e-3, 1e-4);
 
     vec4 total = vec4(0.0);
     float totalWeight = 0.0;
@@ -126,7 +125,7 @@ void main()
 
             float depthDiff = abs(centerLinearDepth - sampleLinearDepth);
             // float depthWeight = exp(-blurDepthWeight * depthDiff * depthDiff);            
-            float depthWeight = exp(-depthDiff / (depthFactor * (abs(dot(depthGradient, vec2(stepCoord))) + 1e-6)));
+            float depthWeight = exp(-depthDiff / (depthFactor * abs(dot(depthGradient, vec2(stepCoord))) + depthEpsilon));
 
             float luminanceDiff = abs(centerM1 - sampleM1);
             float sigmaL = max(sqrt(centerVariance), 1e-3);

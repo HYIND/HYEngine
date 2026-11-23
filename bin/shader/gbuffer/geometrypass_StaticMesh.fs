@@ -6,7 +6,8 @@ layout (location = 0) in vec3 FragPos;
 layout (location = 1) in vec3 FragNormal;
 layout (location = 2) in vec2 FragTextureCoords;
 layout (location = 3) in mat3 TBN;
-layout (location = 6) in vec2 MotionVector;
+layout (location = 6) in vec4 CurClipPos;
+layout (location = 8) in vec4 PrevClipPos;
 layout (location = 7) flat in uint materialIndex;
 
 layout (location = 0) out vec3 gPosition;
@@ -40,6 +41,15 @@ void main()
 	gNormal = normal;
 	gAlbedoOpacity = vec4(albedo, opacity);
 	gMetallicRoughness = vec4(metallic, roughness, ambientOcclusion, material.IOR);
-	gMotionVector = MotionVector;
+	// 透视除法放在插值之后。上一帧在相机后方（w <= 0）时没有有效的上一帧位置，
+	// 给一个超出屏幕的运动矢量，时域累积的边界检查会直接拒掉历史（原来会除出错误的值）
+	vec2 uv_curr = CurClipPos.xy / CurClipPos.w * 0.5 + 0.5;
+	vec2 motion = vec2(2.0);
+	if (PrevClipPos.w > 1e-5)
+	{
+		vec2 uv_prev = PrevClipPos.xy / PrevClipPos.w * 0.5 + 0.5;
+		motion = uv_curr - uv_prev;
+	}
+	gMotionVector = motion;
 	gEmission = emission;
 }

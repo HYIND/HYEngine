@@ -9,7 +9,10 @@ layout (location = 0) out vec3 FragPos;
 layout (location = 1) out vec3 FragNormal;	
 layout (location = 2) out vec2 FragTextureCoords;
 layout (location = 3) out mat3 TBN;
-layout (location = 6) out vec2 MotionVector;
+// 运动矢量在片元着色器里算：透视除法之后的屏幕坐标对三角形不是线性的，
+// 在顶点里先除再插值，靠近相机的大三角形（地面）会偏。这里只传裁剪坐标，插值后再除。
+layout (location = 6) out vec4 CurClipPos;
+layout (location = 8) out vec4 PrevClipPos;
 layout (location = 7) flat out uint materialIndex;
 
 #include "shader/dataDef/camerauboDef.comp"
@@ -43,14 +46,9 @@ void main()
 
 	vec4 clipPos = camera.projView * worldPos;
 
-	MotionVector = vec2(0.0);
 	vec4 prevWorldPos = prevModel * vec4(aPos, 1.0f);
-	vec4 prevClipPos = prevcamera.projView * prevWorldPos;
-
-	// 转 NDC 算 UV 差值
-	vec2 uv_curr = clipPos.xy / clipPos.w * 0.5 + 0.5;
-	vec2 uv_prev = prevClipPos.xy / prevClipPos.w * 0.5 + 0.5;
-	MotionVector = uv_curr - uv_prev;
+	CurClipPos = clipPos;
+	PrevClipPos = prevcamera.projView * prevWorldPos;
 
 
 	TBN = mat3(T, B, N);
