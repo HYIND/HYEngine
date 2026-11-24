@@ -137,6 +137,69 @@ namespace
         }
     }
 
+    // ---------------- 2D 枚举 / 颜色 ----------------
+    const char* EncodeBlendMode2D(VKRenderContext::BlendMode2D mode)
+    {
+        switch (mode)
+        {
+        case VKRenderContext::BlendMode2D::Additive: return "Additive";
+        case VKRenderContext::BlendMode2D::Multiply: return "Multiply";
+        case VKRenderContext::BlendMode2D::Premultiplied: return "Premultiplied";
+        default: return "Alpha";
+        }
+    }
+
+    VKRenderContext::BlendMode2D DecodeBlendMode2D(const std::string& name)
+    {
+        if (name == "Additive") return VKRenderContext::BlendMode2D::Additive;
+        if (name == "Multiply") return VKRenderContext::BlendMode2D::Multiply;
+        if (name == "Premultiplied") return VKRenderContext::BlendMode2D::Premultiplied;
+        return VKRenderContext::BlendMode2D::Alpha;
+    }
+
+    const char* EncodeSpriteDrawMode(SpriteDrawMode mode)
+    {
+        return mode == SpriteDrawMode::Sliced ? "Sliced" : "Simple";
+    }
+
+    SpriteDrawMode DecodeSpriteDrawMode(const std::string& name)
+    {
+        return name == "Sliced" ? SpriteDrawMode::Sliced : SpriteDrawMode::Simple;
+    }
+
+    const char* EncodeAspectMode2D(VKRenderContext::AspectMode2D mode)
+    {
+        switch (mode)
+        {
+        case VKRenderContext::AspectMode2D::Stretch: return "Stretch";
+        case VKRenderContext::AspectMode2D::Fill: return "Fill";
+        default: return "Fit";
+        }
+    }
+
+    VKRenderContext::AspectMode2D DecodeAspectMode2D(const std::string& name)
+    {
+        if (name == "Stretch") return VKRenderContext::AspectMode2D::Stretch;
+        if (name == "Fill") return VKRenderContext::AspectMode2D::Fill;
+        return VKRenderContext::AspectMode2D::Fit;
+    }
+
+    bool DecodeColor4(const Json& j, glm::vec4& color)
+    {
+        if (!j.is_array() || j.size() != 4)
+            return false;
+        glm::vec4 value;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (!j[i].is_number())
+                return false;
+            value[i] = j[i].get<float>();
+        }
+        color = value;
+        return true;
+    }
+
+
     const char* GetBodyTypeName(Physics::BodyType type)
     {
         switch (type)
@@ -1132,6 +1195,121 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 )
                 return false;
 
+            return true;
+        }));
+
+    // ---------------- 2D ----------------
+    // 资产引用都存 GUID；运行时句柄由 Render2DResourceSystem 解析，不进场景文件
+    result.push_back(GenerateComponentCodec<Sprite>(
+        "engine.sprite",
+        "Sprite",
+        [](const Sprite& sprite) {
+            return Json{
+                { "visible", sprite.visible },
+                { "layer", sprite.layer },
+                { "order", sprite.internalZOrder },
+                { "offset", EncodeVec2(sprite.offset) },
+                { "spriteGuid", sprite.spriteGuid.empty() ? Json(nullptr) : Json(sprite.spriteGuid) },
+                { "region", sprite.region },
+                { "size", EncodeVec2(sprite.size) },
+                { "overridePivot", sprite.overridePivot },
+                { "pivot", EncodeVec2(sprite.pivot) },
+                { "color", Json{ sprite.color.r, sprite.color.g, sprite.color.b, sprite.color.a } },
+                { "flipX", sprite.flipX },
+                { "flipY", sprite.flipY },
+                { "drawMode", EncodeSpriteDrawMode(sprite.drawMode) },
+                { "blend", EncodeBlendMode2D(sprite.blend) }
+            };
+        },
+        [](Sprite& sprite, const Json& data) {
+            if (!data.is_object())
+                return false;
+            sprite.visible = data.value("visible", true);
+            sprite.layer = data.value("layer", 0);
+            sprite.internalZOrder = data.value("order", 0);
+            if (auto it = data.find("offset"); it != data.end()) DecodeVec2(*it, sprite.offset);
+            if (auto it = data.find("spriteGuid"); it != data.end())
+                sprite.spriteGuid = it->is_string() ? it->get<std::string>() : AssetGUID();
+            sprite.region = data.value("region", std::string());
+            if (auto it = data.find("size"); it != data.end()) DecodeVec2(*it, sprite.size);
+            sprite.overridePivot = data.value("overridePivot", false);
+            if (auto it = data.find("pivot"); it != data.end()) DecodeVec2(*it, sprite.pivot);
+            if (auto it = data.find("color"); it != data.end()) DecodeColor4(*it, sprite.color);
+            sprite.flipX = data.value("flipX", false);
+            sprite.flipY = data.value("flipY", false);
+            sprite.drawMode = DecodeSpriteDrawMode(data.value("drawMode", std::string("Simple")));
+            sprite.blend = DecodeBlendMode2D(data.value("blend", std::string("Alpha")));
+            return true;
+        }));
+
+    result.push_back(GenerateComponentCodec<AnimatedImagePlayer>(
+        "engine.animated_image_player",
+        "Animated Image Player",
+        [](const AnimatedImagePlayer& player) {
+            return Json{
+                { "visible", player.visible },
+                { "layer", player.layer },
+                { "order", player.internalZOrder },
+                { "offset", EncodeVec2(player.offset) },
+                { "imageGuid", player.imageGuid.empty() ? Json(nullptr) : Json(player.imageGuid) },
+                { "playing", player.playing },
+                { "loopCount", player.loopCount },
+                { "speed", player.speed },
+                { "time", player.time },
+                { "size", EncodeVec2(player.size) },
+                { "pivot", EncodeVec2(player.pivot) },
+                { "color", Json{ player.color.r, player.color.g, player.color.b, player.color.a } },
+                { "flipX", player.flipX },
+                { "flipY", player.flipY },
+                { "blend", EncodeBlendMode2D(player.blend) }
+            };
+        },
+        [](AnimatedImagePlayer& player, const Json& data) {
+            if (!data.is_object())
+                return false;
+            player.visible = data.value("visible", true);
+            player.layer = data.value("layer", 0);
+            player.internalZOrder = data.value("order", 0);
+            if (auto it = data.find("offset"); it != data.end()) DecodeVec2(*it, player.offset);
+            if (auto it = data.find("imageGuid"); it != data.end())
+                player.imageGuid = it->is_string() ? it->get<std::string>() : AssetGUID();
+            player.playing = data.value("playing", true);
+            player.loopCount = data.value("loopCount", 0);
+            player.speed = data.value("speed", 1.0f);
+            player.time = std::max(0.0f, data.value("time", 0.0f));
+            if (auto it = data.find("size"); it != data.end()) DecodeVec2(*it, player.size);
+            if (auto it = data.find("pivot"); it != data.end()) DecodeVec2(*it, player.pivot);
+            if (auto it = data.find("color"); it != data.end()) DecodeColor4(*it, player.color);
+            player.flipX = data.value("flipX", false);
+            player.flipY = data.value("flipY", false);
+            player.blend = DecodeBlendMode2D(data.value("blend", std::string("Alpha")));
+            player.finished = false;
+            return true;
+        }));
+
+    result.push_back(GenerateComponentCodec<Camera2D>(
+        "engine.camera2D",
+        "Camera 2D",
+        [](const Camera2D& camera) {
+            return Json{
+                { "designSize", EncodeVec2(camera.designSize) },
+                { "zoom", camera.zoom },
+                { "aspectMode", EncodeAspectMode2D(camera.aspectMode) },
+                { "pixelSnap", camera.pixelSnap },
+                { "primary", camera.primary },
+                { "priority", camera.priority }
+            };
+        },
+        [](Camera2D& camera, const Json& data) {
+            if (!data.is_object())
+                return false;
+            if (auto it = data.find("designSize"); it != data.end()) DecodeVec2(*it, camera.designSize);
+            camera.designSize = glm::max(camera.designSize, glm::vec2(1.0f));
+            camera.zoom = std::max(data.value("zoom", 1.0f), 1e-4f);
+            camera.aspectMode = DecodeAspectMode2D(data.value("aspectMode", std::string("Fit")));
+            camera.pixelSnap = data.value("pixelSnap", false);
+            camera.primary = data.value("primary", true);
+            camera.priority = data.value("priority", 0);
             return true;
         }));
 

@@ -27,7 +27,9 @@ static const std::map<AssetType, std::string> metaPerfix = {
 	{ AssetType::SkinnedMesh,"SkinnedMesh" },
 	{ AssetType::SkinnedModel,"SkinnedModel" },
 	{ AssetType::Skeleton,"Skeleton" },
-	{ AssetType::AnimationClip,"AnimationClip" }
+	{ AssetType::AnimationClip,"AnimationClip" },
+	{ AssetType::Sprite,"Sprite" },
+	{ AssetType::AnimatedImage,"AnimImage" }
 };
 
 class ProjectAssetPathProvider :public IAssetFullPathProvider
@@ -473,6 +475,106 @@ bool ProjectManager::ImportTextureAsset(const std::string& sourcePathStr, const 
 
 	if (autoSave) SaveProject();
 	return true;
+}
+
+bool ProjectManager::ImportAnimatedImageAsset(const std::string& sourcePathStr, const std::string& destPathStr, const TextureConfig& config, std::vector<AssetMeta>* out, bool autoSave)
+{
+	if (!m_isOpen) return false;
+	if (!fs::exists(sourcePathStr)) return false;
+	if (!Tool::IsSubDirectory(destPathStr, m_projectPath)) return false;
+
+	fs::path assetPath = fs::relative(fs::path(destPathStr), fs::path(m_projectPath));
+
+	if (sourcePathStr != destPathStr && !CopyToProject(sourcePathStr, assetPath.string())) return false;
+
+	AssetMeta meta = CreateAssetMeta(AssetType::AnimatedImage, assetPath.string());
+
+	AnimatedImageAssetDescription desc;
+	desc.SetPath(assetPath.string());
+	desc.SetConfig(config);
+	if (!desc.SaveToFile(GetProjectAssetFullPath(meta.path)))
+		return false;
+
+	m_database->AddAssetMeta(meta);
+	if (out) out->push_back(meta);
+	if (autoSave) SaveProject();
+	return true;
+}
+
+bool ProjectManager::ImportSpriteAsset(const std::string& sourcePathStr, const std::string& destPathStr, const TextureConfig& config, std::vector<AssetMeta>* out, bool autoSave)
+{
+	if (!m_isOpen) return false;
+	if (!fs::exists(sourcePathStr)) return false;
+	if (!Tool::IsSubDirectory(destPathStr, m_projectPath)) return false;
+
+	fs::path assetPath = fs::relative(fs::path(destPathStr), fs::path(m_projectPath));
+
+	if (sourcePathStr != destPathStr && !CopyToProject(sourcePathStr, assetPath.string())) return false;
+
+	AssetMeta meta = CreateAssetMeta(AssetType::Sprite, assetPath.string());
+
+	SpriteAssetDescription desc;
+	desc.SetPath(assetPath.string());
+	desc.SetConfig(config);
+	if (!desc.SaveToFile(GetProjectAssetFullPath(meta.path)))
+		return false;
+
+	m_database->AddAssetMeta(meta);
+	if (out) out->push_back(meta);
+	if (autoSave) SaveProject();
+	return true;
+}
+
+std::vector<AssetMeta> ProjectManager::FindImageAssetsFromSource(AssetType type, const AssetPath& sourcePath)
+{
+	std::vector<AssetMeta> result;
+	if (!m_isOpen || !m_database || sourcePath.empty() || (type != AssetType::Texture && type != AssetType::Sprite))
+		return result;
+
+	auto prefixIt = metaPerfix.find(type);
+	if (prefixIt == metaPerfix.end())
+		return result;
+
+	const fs::path source = fs::path(sourcePath).lexically_normal();
+	const std::string fileName = source.filename().string();
+	const std::string head = prefixIt->second + "_";
+	const std::string tail = "_" + fileName + ".meta";
+
+	for (const auto& meta : m_database->GetAssetMetasByType(type))
+	{
+		const fs::path metaPath = fs::path(meta.path).lexically_normal();
+		if (metaPath.parent_path() != source.parent_path())
+			continue;
+
+		// 名字：前缀_编号_原图文件名.meta
+		const std::string name = metaPath.filename().string();
+		if (name.size() <= head.size() + tail.size() || name.compare(0, head.size(), head) != 0
+			|| name.compare(name.size() - tail.size(), tail.size(), tail) != 0)
+			continue;
+		const std::string number = name.substr(head.size(), name.size() - head.size() - tail.size());
+		if (number.empty() || !std::all_of(number.begin(), number.end(), [](unsigned char c) { return std::isdigit(c) != 0; }))
+			continue;
+
+		// 再确认元文件里记的确实是这张图（防止同名的另一张图）
+		AssetPath recorded;
+		if (type == AssetType::Texture)
+		{
+			TextureAssetDescription desc;
+			if (desc.LoadFromFile(GetProjectAssetFullPath(meta.path)))
+				recorded = desc.GetPath();
+		}
+		else
+		{
+			SpriteAssetDescription desc;
+			if (desc.LoadFromFile(GetProjectAssetFullPath(meta.path)))
+				recorded = desc.GetPath();
+		}
+		if (!recorded.empty() && fs::path(recorded).lexically_normal() == source)
+			result.push_back(meta);
+	}
+
+	std::sort(result.begin(), result.end(), [](const AssetMeta& a, const AssetMeta& b) { return a.path < b.path; });
+	return result;
 }
 
 bool ProjectManager::ImportScriptAsset(const std::string& sourcePathStr, const std::string& destPathStr, std::vector<AssetMeta>* out, bool autoSave)

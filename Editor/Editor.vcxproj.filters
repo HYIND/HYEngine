@@ -67,6 +67,9 @@
     <ClInclude Include="source\include\IconManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Sprite2DEditor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\AssetImportPopup.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -162,6 +165,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\IconManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Sprite2DEditor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\AssetImportPopup.cpp">

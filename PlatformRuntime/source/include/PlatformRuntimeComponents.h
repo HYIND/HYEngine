@@ -15,5 +15,7 @@
 #include "Render\Components\SkyBox.h"
 #include "Render\Components\RenderBase.h"
 #include "Render\Components\Sprite.h"
-#include "Render\Components\GIFAnimator.h"
+#include "Render\Components\AnimatedImagePlayer.h"
+#include "Render\Components\Camera2D.h"
 #include "Render\Components\DDGIVolume.h"
+#include "Render\Systems\Render2DResourceSystem.h"

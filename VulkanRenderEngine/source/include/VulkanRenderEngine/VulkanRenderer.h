@@ -76,6 +76,11 @@ public:
     void SetOption(Scene3DRenderOption option);
     void Resize(uint32_t width, uint32_t height);
 
+    // 关掉后整帧不跑 3D 渲染图（省 GPU），输出图清成黑色，2D 层 / UI 照常叠在上面。
+    // 切换时要等在途的帧画完，下一帧起生效
+    void SetSceneRenderEnabled(bool enabled) { _sceneRenderEnabled.store(enabled, std::memory_order_release); }
+    bool IsSceneRenderEnabled() const { return _sceneRenderEnabled.load(std::memory_order_acquire); }
+
     void PushFrameState(std::shared_ptr<RenderState>& state);
     // 候选队列里是否还有没被 ExecuteLoop 取走的帧；帧循环据此决定要不要重复提交旧数据
     bool HasPendingFrameState();
@@ -129,9 +134,11 @@ private:
         // prev 来自上一张真正提交过的帧，cur 是本帧。各帧各持一份，互不干扰
         camera_compData cameraPrevData{};
         camera_compData cameraCurData{};
+        bool skipScene = false;     // 3D 关闭：这一帧只清输出图
     };
 
     void DrawOffScreen(const std::shared_ptr<FrameData>& data);
+    void DrawEmptyFrame(const std::shared_ptr<FrameData>& data);
 
     void PresentImage(std::shared_ptr<FrameData>& data);
 
@@ -235,5 +242,6 @@ private:
 
     ThreadPool _frameTaskPool;
     bool _stop = true;
+    std::atomic<bool> _sceneRenderEnabled{ true };
     std::shared_ptr<std::thread> _exeLoopThread;
 };

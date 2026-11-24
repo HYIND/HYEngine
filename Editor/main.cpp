@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "ImguiLayout.h"
+#include "Sprite2DEditor.h"
 
 #include <stdio.h>
 #if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
@@ -427,6 +428,8 @@ int ImGuiMain()
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
+		// 编辑器自己的贴图描述符缓存（缩略图、Sprite 编辑器、动图预览）
+		Sprite2DEditor::TextureCache().BeginFrame();
 
 		auto editorApp = EditorApp::Instance();
 		auto projectManager = editorApp->GetProjectManager();
@@ -484,6 +487,8 @@ int ImGuiMain()
 	err = vkDeviceWaitIdle(g_Device);
 	check_vk_result(err);
 
+	// 描述符集属于 ImGui 后端，后端关掉前先还回去
+	Sprite2DEditor::TextureCache().Clear(true);
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();

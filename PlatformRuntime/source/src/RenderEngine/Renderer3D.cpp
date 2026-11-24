@@ -308,7 +308,11 @@ namespace Render
         if (const auto& profiler = renderer->GetRenderProfiler(); profiler && profiler->IsEnabled())
             profile = std::make_shared<RenderFrameProfile>();
 
+        const bool sceneEnabled = m_sceneRenderEnabled.load(std::memory_order_acquire);
+        renderer->SetSceneRenderEnabled(sceneEnabled);
+
         auto mutableFrame = frame;
+        if (sceneEnabled)
         {
             RenderProfileScope scope(profile.get(), RenderProfileStep::Analysis);
             RenderFrameDataAnalysisHelp::AnalysisRenderFrameData(mutableFrame, *state);

@@ -137,6 +137,18 @@ void EditorApp::SetOption(Scene3DRenderOption option)
 		renderer3D->SetOption(option);
 }
 
+Render::Renderer::LayerVisibility EditorApp::GetLayerVisibility() const
+{
+	auto* renderer = m_runtime.GetRenderer();
+	return renderer ? renderer->GetLayerVisibility() : Render::Renderer::LayerVisibility{};
+}
+
+void EditorApp::SetLayerVisibility(const Render::Renderer::LayerVisibility& visibility)
+{
+	if (auto* renderer = m_runtime.GetRenderer())
+		renderer->SetLayerVisibility(visibility);
+}
+
 void EditorApp::SetTargetFps(uint32_t fps)
 {
 	m_runtime.SetTargetFps(fps);

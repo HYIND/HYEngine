@@ -345,6 +345,12 @@ namespace UI
 			if (node.contains("selectable") && node["selectable"].is_boolean())
 				result.selectable = node["selectable"].get<bool>();
 
+			// 图像是动图时怎么播：和 AnimatedImagePlayer 组件一样由使用方决定（资产只描述帧）
+			if (node.contains("loop") && node["loop"].is_number_integer())
+				result.imageLoop = node["loop"].get<int>();
+			if (node.contains("speed") && node["speed"].is_number())
+				result.imageSpeed = node["speed"].get<float>();
+
 			result.inlineStyle = ReadNodeInlineStyle(node);
 			result.inlineStates = ReadInlineStates(node);
 			result.onClick = ReadEvent(node, "onClick");

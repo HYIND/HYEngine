@@ -1,6 +1,4 @@
 #include "BusyLoaderDialog.h"
-#include "GameEngine.h"
-#include "RenderEngine/Renderer.h"
 #include <string>
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -234,10 +232,10 @@ void BusyLoaderDialog::DrawAnimation() {
 	if (!m_renderTarget)
 	{
 		RECT rect;
-		auto* renderer2D = GameEngine::Instance().Runtime().GetRenderer2D();
-		if (renderer2D && GetClientRect(hWnd, &rect))
+		// D2D 工厂来自共用图形上下文
+		if (pD2DFactory && GetClientRect(hWnd, &rect))
 		{
-			renderer2D->GetFactory()->CreateHwndRenderTarget(
+			pD2DFactory->CreateHwndRenderTarget(
 				RenderTargetProperties(),
 				HwndRenderTargetProperties(hWnd, SizeU(rect.right - rect.left, rect.bottom - rect.top)),
 				&m_renderTarget
@@ -255,13 +253,14 @@ void BusyLoaderDialog::DrawAnimation() {
 
 		if (!m_Text_Format)
 		{
+			// DWrite 工厂来自共用图形上下文
 			pIDWriteFactory->CreateTextFormat(
 				L"SimSun",                   // Font family name
 				NULL,                          // Font collection(NULL sets it to the system font collection)
 				DWRITE_FONT_WEIGHT_REGULAR,    // Weight
 				DWRITE_FONT_STYLE_NORMAL,      // Style
 				DWRITE_FONT_STRETCH_NORMAL,    // Stretch
-				20.0f,                         // Size    
+				20.0f,                         // Size
 				L"zh-cn",                      // Local
 				&m_Text_Format                // Pointer to recieve the created object
 			);
@@ -350,7 +349,7 @@ LRESULT CALLBACK BusyLoaderDialog::WindowProc(HWND hwnd, UINT uMsg, WPARAM wPara
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
 
-		if (pDialog->showAmination)
+		if (pDialog && pDialog->showAmination)
 			pDialog->DrawAnimation();
 
 		EndPaint(hwnd, &ps);

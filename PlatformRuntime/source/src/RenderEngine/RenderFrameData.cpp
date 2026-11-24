@@ -2,13 +2,6 @@
 
 using namespace Render;
 
-bool D2DRenderContext::RenderContext::operator<(const D2DRenderContext::RenderContext& other) const
-{
-	if (layer != other.layer)
-		return layer == other.layer;
-	return internalZOrder < other.internalZOrder;
-}
-
 void Render3DFrameData::reset()
 {
 	Scene3D_Contexts.clear();
@@ -25,11 +18,6 @@ void Render3DFrameData::reset()
 	nearPlane = 0.1f;
 	farPlane = 500.f;
 	fov = 80.f;
-}
-
-void Render2DFrameData::reset()
-{
-	D2D_Contexts.clear();
 }
 
 void RenderUIFrameData::reset()

@@ -4,7 +4,8 @@
 #include <memory>
 #include <vector>
 #include "Coroutine.h"
-#include "RenderEngine/D2DTools.h"
+
+#include "Manager/GraphicsContextManager.h"
 
 enum class DialogResult
 {
@@ -49,6 +50,8 @@ private:
 	Task<bool> m_coroTask;							// 异步任务
 	std::function<void(bool)> m_onCompleteCallback; // 完成回调
 
+	// 加载框只挂自己的 D2D HwndRenderTarget（窗口是半透明分层窗口，靠 LWA_ALPHA 出透明度），
+	// D2D 工厂和 DWrite 工厂用共用的图形上下文（Manager/GraphicsContextManager.h），不再自己建设备
 	ID2D1HwndRenderTarget* m_renderTarget = nullptr;
 	ID2D1SolidColorBrush* m_Text_Brush = nullptr;
 	ID2D1SolidColorBrush* m_Dot_Brush = nullptr;

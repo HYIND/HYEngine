@@ -126,7 +126,12 @@ namespace UI
 		UiRect rect;
 
 		std::string text;
+		// 图像引用：Sprite / Texture / AnimatedImage 资产 GUID（可带 "#区域"），或工程内图片路径
 		std::string texture;
+
+		// texture 是动图时的播放方式（<= 0 无限循环；speed 为倍速）
+		int imageLoop = 0;
+		float imageSpeed = 1.0f;
 
 		// 带数值的控件（slider / toggle / progress / scrolllist）
 		float minValue = 0.0f;

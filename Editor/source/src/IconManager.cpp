@@ -69,7 +69,7 @@ ImTextureID IconManager::GetIconByAssetType(AssetType type) const
 		type == AssetType::SkinnedMesh || type == AssetType::SkinnedModel) {
 		return GetIcon("model");
 	}
-	else if (type == AssetType::Texture) {
+	else if (type == AssetType::Texture || type == AssetType::Sprite || type == AssetType::AnimatedImage) {
 		return GetIcon("texture");
 	}
 	else if (type == AssetType::Material) {
@@ -98,7 +98,7 @@ ImTextureID IconManager::GetIconByFilePath(const std::string& filePath) const
 	if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".stl") {
 		return GetIcon("model");
 	}
-	else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga") {
+	else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".gif") {
 		return GetIcon("texture");
 	}
 	else if (ext == ".mat") {

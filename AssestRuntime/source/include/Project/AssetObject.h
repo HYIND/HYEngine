@@ -5,10 +5,12 @@
 #include "VulkanRenderEngine/Base/StaticModel.h"
 #include "VulkanRenderEngine/Base/SkinnedModel.h"
 #include "VulkanRenderEngine/Base/AnimationClip.h"
+#include "VulkanRenderEngine/Base/Sprite2D.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Script/ScriptSourceData.h"
 #include "UI/UiDocumentParser.h"
 #include <filesystem>
+#include <mutex>
 
 class AssetStroage;
 class AssetStroageHelper;
@@ -37,6 +39,9 @@ public:
 	virtual std::shared_ptr<SkinnedModel> AsSkinnedModel();
 	virtual std::shared_ptr<Skeleton> AsSkeleton();
 	virtual std::shared_ptr<AnimationClip> AsAnimationClip();
+	// 2D 图元：Sprite 资产返回自身；Texture 资产返回一个"整张贴图、无区域"的 Sprite，方便直接拿贴图当 Sprite 用
+	virtual std::shared_ptr<Render2D::Sprite> AsSprite();
+	virtual std::shared_ptr<Render2D::AnimatedImage> AsAnimatedImage();
 
 public:
 	virtual bool NeedUpdate() { return false; }
@@ -70,9 +75,12 @@ public:
 	TextureAsset();
 	virtual ~TextureAsset();
 	virtual std::shared_ptr<Texture2D> AsTexture() override;
+	virtual std::shared_ptr<Render2D::Sprite> AsSprite() override;
 
 private:
 	std::shared_ptr<Texture2D> _texture;
+	std::shared_ptr<Render2D::Sprite> _sprite;
+	std::mutex _spriteMutex;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };
@@ -105,6 +113,53 @@ private:
 	MaterialProperties _properties;
 	std::map<TextureType, AssetGUID> _dependencyTexture;
 	std::shared_ptr<Material> _material;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+// Sprite：自己从原始图片加载贴图（不经过 Texture 资产）
+class SpriteAsset : public AssetObject
+{
+public:
+	SpriteAsset();
+	virtual ~SpriteAsset() = default;
+	virtual std::shared_ptr<Render2D::Sprite> AsSprite() override;
+	// 方便 UI / 编辑器预览：Sprite 自己的那张贴图
+	virtual std::shared_ptr<Texture2D> AsTexture() override;
+
+	AssetPath GetPath() const;
+	TextureConfig GetConfig() const;
+	std::vector<Render2D::SpriteRegion> GetRegions() const;
+	// 编辑器修改后立即作用到运行时对象（已引用它的实体马上看到效果），存盘走 SaveAsset
+	void SetRegions(const std::vector<Render2D::SpriteRegion>& regions);
+	// 改导入配置（采样过滤 / sRGB）：按新配置重新加载图片，运行时对象直接换贴图
+	bool SetConfig(const TextureConfig& config, const std::string& sourceFullPath);
+
+private:
+	mutable std::mutex _mutex;
+	AssetPath _path;
+	TextureConfig _config;
+	std::vector<Render2D::SpriteRegion> _regions;
+	std::shared_ptr<Render2D::Sprite> _sprite;
+	friend AssetStroage;
+	friend AssetStroageHelper;
+};
+
+class AnimatedImageAsset : public AssetObject
+{
+public:
+	AnimatedImageAsset();
+	virtual ~AnimatedImageAsset() = default;
+	virtual std::shared_ptr<Render2D::AnimatedImage> AsAnimatedImage() override;
+
+	const AnimatedImageAssetDescription& GetDescription() const { return _description; }
+	// 改导入配置（采样过滤 / sRGB）：存盘后重新解码生成图集；已引用旧图集的地方下一次解析时换成新的
+	bool SetConfig(const TextureConfig& config, const std::string& sourceFullPath);
+
+private:
+	AnimatedImageAssetDescription _description;
+	std::shared_ptr<Render2D::AnimatedImage> _image;
+	mutable std::mutex _mutex;
 	friend AssetStroage;
 	friend AssetStroageHelper;
 };

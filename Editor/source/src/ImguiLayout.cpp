@@ -9,6 +9,9 @@
 #include "LogicProfilerPanel.h"
 #include "RenderOptionPanels.h"
 #include "IconManager.h"
+#include "Sprite2DEditor.h"
+#include "Render/Systems/RenderSystem.h"
+#include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
 #include <filesystem>
 #include <fstream>
@@ -16,6 +19,8 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include <mutex>
+#include "glm/gtc/matrix_transform.hpp"
 #include "Coroutine.h"
 #include "EditorTags.h"
 #include "Input/EngineInputContext.h"
@@ -31,6 +36,146 @@ namespace fs = std::filesystem;
 
 namespace
 {
+	// ---------------- 编辑器视口里的 2D 层：点选、手柄 ----------------
+
+	// 最近一次从 2D 层点选到的实体：它用 2D 手柄直接改 Transform2D
+	Entity s_pickedBy2D;
+
+	// 2D 手柄每帧要用的相机：异步从场景线程取，界面用上一份结果，不阻塞界面线程
+	struct Gizmo2DCameraCache
+	{
+		std::mutex mutex;
+		VKRenderContext::Camera2DData camera;
+		bool valid = false;
+	};
+	Gizmo2DCameraCache s_gizmo2DCamera;
+
+	// 和 2D 渲染一致：按渲染目标的尺寸算可见区域（还没有目标时退回视口尺寸）
+	VKRenderContext::View2D Viewport2DView(const VKRenderContext::Camera2DData& camera, EditorApp* app, const ImVec2& viewportSize)
+	{
+		uint32_t width = app->GetRenderTargetWidth();
+		uint32_t height = app->GetRenderTargetHeight();
+		if (width == 0 || height == 0)
+		{
+			width = static_cast<uint32_t>(std::max(1.0f, viewportSize.x));
+			height = static_cast<uint32_t>(std::max(1.0f, viewportSize.y));
+		}
+		return VKRenderContext::ComputeView2D(camera, width, height);
+	}
+
+	// 鼠标位置 -> 2D 世界，点选最上面的 2D 实体
+	Entity Pick2DAtMouse(EditorApp* app, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return Entity();
+
+		const glm::vec2 uv((mouse.x - viewportPos.x) / viewportSize.x, (mouse.y - viewportPos.y) / viewportSize.y);
+		Entity picked;
+		world->SubmitCommand([&](World& w)
+			{
+				const auto view = Viewport2DView(RenderSystem::GetActiveCamera2D(w), app, viewportSize);
+				picked = RenderSystem::Pick2D(w, view.ScreenToWorld(uv * view.targetSize));
+			}).get();
+		return picked;
+	}
+
+	// 选中的实体用不用 2D 手柄：从 2D 层点选到的，或者只有 Transform2D、没有 3D Transform 的
+	bool Use2DGizmo(Entity entity)
+	{
+		if (!entity || !entity.isValid() || !entity.tryGetComponent<Transform2D>())
+			return false;
+		return entity == s_pickedBy2D || !entity.tryGetComponent<Transform>();
+	}
+
+	// 2D 手柄：平移 X/Y、绕 Z 旋转、缩放 X/Y，结果写回 Transform2D
+	void Draw2DGizmo(EditorApp* app, Entity entity, const ImVec2& viewportSize, ImGuizmo::OPERATION operation, ImGuizmo::MODE mode, const float* snap)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		auto* transform = entity.tryGetComponent<Transform2D>();
+		if (!world || !transform)
+			return;
+
+		world->SubmitCommand([](World& w)
+			{
+				const auto camera = RenderSystem::GetActiveCamera2D(w);
+				std::lock_guard lock(s_gizmo2DCamera.mutex);
+				s_gizmo2DCamera.camera = camera;
+				s_gizmo2DCamera.valid = true;
+			});
+
+		VKRenderContext::Camera2DData camera;
+		{
+			std::lock_guard lock(s_gizmo2DCamera.mutex);
+			if (!s_gizmo2DCamera.valid)
+				return;
+			camera = s_gizmo2DCamera.camera;
+		}
+
+		const auto view2D = Viewport2DView(camera, app, viewportSize);
+		// 2D 世界 y 朝下、viewProj 是 Vulkan 裁剪空间；ImGuizmo 按 OpenGL 习惯（NDC y 朝上）映射到屏幕，所以把 y 翻回来
+		const glm::mat4 projection = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, 1.0f)) * view2D.viewProj;
+		const glm::mat4 view(1.0f);
+
+		const glm::vec2 position = transform->position;
+		const float rotation = transform->rotation;
+		const glm::vec2 scale = transform->scale;
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f))
+			* glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f))
+			* glm::scale(glm::mat4(1.0f), glm::vec3(scale, 1.0f));
+
+		ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Y;
+		if (operation == ImGuizmo::ROTATE)
+			op = ImGuizmo::ROTATE_Z;
+		else if (operation == ImGuizmo::SCALE)
+			op = ImGuizmo::SCALE_X | ImGuizmo::SCALE_Y;
+
+		ImGuizmo::SetOrthographic(true);
+		ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), op, mode, glm::value_ptr(model), nullptr, snap);
+		ImGuizmo::SetOrthographic(false);
+		if (!ImGuizmo::IsUsing())
+			return;
+
+		// 拆回位置 / 旋转 / 缩放；只写当前操作改的那一项，免得浮点误差把别的分量慢慢带偏
+		glm::vec2 newPosition = position;
+		float newRotation = rotation;
+		glm::vec2 newScale = scale;
+		const glm::vec2 ex(model[0]);
+		const glm::vec2 ey(model[1]);
+		if (operation == ImGuizmo::ROTATE || operation == ImGuizmo::SCALE)
+		{
+			// x 缩放为负（镜像）时，x 轴方向和旋转方向相反
+			const float lengthX = glm::length(ex);
+			if (lengthX < 1e-6f)
+				return;
+			const glm::vec2 dir = ex / (scale.x < 0.0f ? -lengthX : lengthX);
+			if (operation == ImGuizmo::ROTATE)
+			{
+				const float angle = glm::degrees(std::atan2(dir.y, dir.x));
+				newRotation = rotation + std::remainder(angle - rotation, 360.0f);
+			}
+			else
+			{
+				newScale.x = glm::dot(ex, dir);
+				newScale.y = glm::dot(ey, glm::vec2(-dir.y, dir.x));
+			}
+		}
+		else
+		{
+			newPosition = glm::vec2(model[3]);
+		}
+
+		world->SubmitCommand([entity, newPosition, newRotation, newScale]() mutable
+			{
+				if (auto* t = entity.tryGetComponent<Transform2D>())
+				{
+					t->position = newPosition;
+					t->rotation = newRotation;
+					t->scale = newScale;
+				}
+			});
+	}
+
 	// 找 code.cmd：先查 PATH，再查两个常见安装位置。
 	std::string FindVSCodeCommand()
 	{
@@ -772,7 +917,17 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 			: iconMgr->GetIconByFilePath(item.name);
 
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
-		if (fileIcon != 0) {
+		// Sprite / 动图直接显示内容缩略图（动图会动），拿不到时退回类型图标
+		Render2D::SpriteFrame thumbnail;
+		if (isAssetFile && (meta.type == AssetType::Sprite || meta.type == AssetType::AnimatedImage))
+			thumbnail = Sprite2DEditor::GetAssetThumbnail(projectManager, meta);
+		if (thumbnail.IsValid())
+		{
+			Sprite2DEditor::DrawFrameInRect(drawList, thumbnail,
+				ImVec2(iconPos.x + iconSize * 0.1f, iconPos.y + iconSize * 0.1f),
+				ImVec2(iconPos.x + iconSize * 0.9f, iconPos.y + iconSize * 0.9f));
+		}
+		else if (fileIcon != 0) {
 			drawList->AddImage(
 				fileIcon,
 				ImVec2(iconPos.x + iconSize * 0.1, iconPos.y + iconSize * 0.1),
@@ -814,6 +969,16 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 				if (isAssetFile && meta->type == AssetType::Material)
 				{
 					ImguiLayout::OpenMaterialEditor(meta->guid);
+					return;
+				}
+				if (isAssetFile && meta->type == AssetType::Sprite)
+				{
+					Sprite2DEditor::OpenSpriteEditor(meta->guid);
+					return;
+				}
+				if (isAssetFile && meta->type == AssetType::AnimatedImage)
+				{
+					Sprite2DEditor::OpenAnimatedImageViewer(meta->guid);
 					return;
 				}
 
@@ -871,6 +1036,11 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 					}
 				}
 			}
+
+			if (isAssetFile && meta.type == AssetType::Texture && ImGui::MenuItem("生成精灵"))
+				RequestSpriteFromTexture(meta.guid, projectManager);
+			if (isAssetFile && meta.type == AssetType::Sprite && ImGui::MenuItem("生成贴图"))
+				RequestTextureFromSprite(meta.guid, projectManager);
 
 			ImGui::Separator();
 
@@ -1547,6 +1717,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			ImGui::EndPopup();
 		}
 	}
+	DrawImageConvertConfirm();
 	if (s_assetImportPopup.GetVisiable()) {
 		s_assetImportPopup.DrawPopup(projectManager);
 	}
@@ -1613,6 +1784,23 @@ void ImguiLayout::DrawPlayControls(EditorApp* editorApp, ProjectManager* project
 			editorApp->Scene().StopPlayback();
 			selectedEntity = Entity();
 		}
+	}
+
+	// 视口三层显示开关：只影响编辑器视口；关掉的层不参与点选。3D 关掉时整帧不跑 3D 渲染
+	{
+		auto visibility = editorApp->GetLayerVisibility();
+		bool changed = false;
+		ImGui::SameLine(0.0f, 24.0f);
+		changed |= ImGui::Checkbox("3D", &visibility.layer3D);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("显示 3D 层（关掉时不跑 3D 渲染，也不能点选 3D 物体）");
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox("2D", &visibility.layer2D);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("显示 2D 层（精灵、动图；关掉时也不能点选 2D 物体）");
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox("UI", &visibility.layerUI);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("显示 UI 层（关掉时 UI 也不响应点击）");
+		if (changed)
+			editorApp->SetLayerVisibility(visibility);
 	}
 	ImGui::End();
 	ImGui::PopStyleVar(3);
@@ -2210,6 +2398,20 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 								materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
 							}
 						}
+						else if (textureMeta && textureMeta->type == AssetType::Sprite)
+						{
+							// 精灵拖进贴图栏：先用精灵的原图生成一张贴图，导入成功后填进这个栏
+							const AssetGUID materialGuid = meta->guid;
+							const TextureType slotType = type;
+							RequestTextureFromSprite(textureMeta->guid, projectManager, [projectManager, materialGuid, slotType](const AssetMeta& created)
+								{
+									auto material = std::dynamic_pointer_cast<MaterialAsset>(projectManager->LoadAsset(materialGuid));
+									auto textureObject = projectManager->LoadAsset(created.guid);
+									auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+									if (material && texture)
+										material->SetTextureDependency(slotType, created.guid, texture);
+								});
+						}
 					}
 				}
 				ImGui::EndDragDropTarget();
@@ -2300,6 +2502,7 @@ void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
 		ImGui::End();
 	}
 	DrawMaterialEditor(projectManager);
+	Sprite2DEditor::DrawWindows(projectManager);
 }
 
 void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectManager)
@@ -2666,11 +2869,16 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 		glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
 		const bool hasCamera = editorApp->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection);
 
-		if (selectedEntity && hasCamera)
+		const bool use2DGizmo = Use2DGizmo(selectedEntity);
+		if (selectedEntity && (hasCamera || use2DGizmo))
 		{
 			auto* transform = selectedEntity.tryGetComponent<Transform>();
 			auto* physics = selectedEntity.tryGetComponent<Physics>();
-			if (transform)
+			if (use2DGizmo)
+			{
+				Draw2DGizmo(editorApp, selectedEntity, viewportSize, mCurrentGizmoOperation, mCurrentGizmoMode, useSnap ? snap : nullptr);
+			}
+			else if (transform && hasCamera)
 			{
 				glm::mat4 projOG = projection;
 				projOG[1][1] *= -1;
@@ -2679,6 +2887,7 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 				glm::mat4 deltaMatrix = glm::mat4(1.0f);
 
 				// 显示 Gizmo 并操作
+				ImGuizmo::SetOrthographic(false);
 				ImGuizmo::Manipulate(
 					(float*)glm::value_ptr(view),
 					(float*)glm::value_ptr(projOG),
@@ -2809,9 +3018,18 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 						(float*)&rayDirection
 					);
 
-					// 拾取（DDGI 探针编辑模式下先点选探针）
+					// 拾取（DDGI 探针编辑模式下先点选探针）。和绘制顺序一致：2D 层在上面先选，2D 没点中才选 3D；关掉的层不参与
 					if (!DDGIEditor::HandleViewportClick(selectedEntity, rayOrigin, rayDirection, io.KeyShift))
-						selectedEntity = editorApp->Scene().PickObject(rayOrigin, rayDirection);
+					{
+						const auto visibility = editorApp->GetLayerVisibility();
+						Entity picked;
+						if (visibility.layer2D)
+							picked = Pick2DAtMouse(editorApp, mousePos, viewportPos, viewportSize);
+						s_pickedBy2D = picked;
+						if (!picked && visibility.layer3D)
+							picked = editorApp->Scene().PickObject(rayOrigin, rayDirection);
+						selectedEntity = picked;
+					}
 
 					//if (selectedEntity)
 					//	editorApp->SelectObject(selectedEntity);
@@ -3215,9 +3433,27 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 	}
 	case AssetType::Texture:
 	{
+		// 贴图拖进场景只管 3D（不转成精灵）；目前还没有给 3D 物体贴图的处理
 		if (auto texture = assetObject->AsTexture())
 		{
 		}
+		break;
+	}
+	case AssetType::Sprite:
+	case AssetType::AnimatedImage:
+	{
+		// 2D：在鼠标位置（换算到当前 2D 相机下的世界坐标）建一个精灵 / 动图实体
+		auto world = editorApp->GetWorld();
+		if (!world)
+			break;
+		world->SubmitCommand([&](World& w)
+			{
+				const auto camera = RenderSystem::GetActiveCamera2D(w);
+				const auto view = VKRenderContext::ComputeView2D(camera,
+					static_cast<uint32_t>(std::max(1.0f, viewportSize.x)), static_cast<uint32_t>(std::max(1.0f, viewportSize.y)));
+				const glm::vec2 position = view.ScreenToWorld(glm::vec2(mousePos.x - viewportPos.x, mousePos.y - viewportPos.y));
+				Sprite2DEditor::Create2DEntity(w, meta, position);
+			}).get();
 		break;
 	}
 	case AssetType::Material:
@@ -3460,6 +3696,183 @@ void ImguiLayout::HandleScriptFileDrop(const std::string& filePath, Entity targe
 			ApplyScriptAsset(target, importedMeta, projectManager);
 		});
 	s_assetImportPopup.SetVisiable(true);
+}
+
+namespace
+{
+	// 转资产前发现同一张图已经有同类资产时的确认框
+	struct ImageConvertConfirm
+	{
+		bool pending = false;
+		std::string title;					// 例如"从贴图 xxx 生成精灵"
+		std::vector<AssetMeta> existing;		// 已有的同类资产
+		std::function<void()> proceed;			// 仍然新建：打开导入弹窗
+		std::function<void(const AssetMeta&)> useExisting;	// 用已有的（可为空：只是生成资产时没有"用"这个说法）
+	};
+	ImageConvertConfirm s_imageConvertConfirm;
+
+	// 导入回调里挑出指定类型的那个新资产交给调用方
+	std::function<void(const std::vector<AssetMeta>&)> PickCreated(AssetType type, std::function<void(const AssetMeta&)> onCreated)
+	{
+		return [type, onCreated = std::move(onCreated)](const std::vector<AssetMeta>& metas)
+			{
+				if (!onCreated)
+					return;
+				for (const auto& created : metas)
+				{
+					if (created.type == type)
+					{
+						onCreated(created);
+						return;
+					}
+				}
+			};
+	}
+}
+
+bool ImguiLayout::RequestSpriteFromTexture(const AssetGUID& textureGuid, ProjectManager* projectManager, std::function<void(const AssetMeta&)> onCreated)
+{
+	if (!projectManager || !projectManager->IsProjectOpen())
+		return false;
+	auto database = projectManager->GetDatabase();
+	auto textureMeta = database ? database->GetAssetMetaByGuid(textureGuid) : nullptr;
+	if (!textureMeta || textureMeta->type != AssetType::Texture)
+		return false;
+
+	TextureAssetDescription desc;
+	if (!desc.LoadFromFile(projectManager->GetProjectAssetFullPath(textureMeta->path)) || desc.GetPath().empty())
+		return false;
+
+	// 原图已经在工程里：源路径和目标路径相同，导入时不会再复制一份
+	const std::string source = projectManager->GetProjectAssetFullPath(desc.GetPath());
+	const TextureConfig config = desc.GetConfig();
+	const std::string textureName = textureMeta->name;
+	auto openImport = [source, config, textureName, onCreated]()
+		{
+			s_assetImportPopup.SetFilePath(source);
+			s_assetImportPopup.SetImportPath(source);
+			s_assetImportPopup.SetAssetType(AssetType::Sprite);
+			s_assetImportPopup.SetImage2DConfig(config);
+			s_assetImportPopup.SetHint(std::format("从贴图 {} 生成精灵：用同一张原图，导入配置默认取这张贴图的", textureName));
+			s_assetImportPopup.SetImportCallback(PickCreated(AssetType::Sprite, onCreated));
+			s_assetImportPopup.SetVisiable(true);
+		};
+
+	auto existing = projectManager->FindImageAssetsFromSource(AssetType::Sprite, desc.GetPath());
+	if (existing.empty())
+	{
+		openImport();
+		return true;
+	}
+	s_imageConvertConfirm.pending = true;
+	s_imageConvertConfirm.title = std::format("从贴图 {} 生成精灵", textureName);
+	s_imageConvertConfirm.existing = std::move(existing);
+	s_imageConvertConfirm.proceed = openImport;
+	s_imageConvertConfirm.useExisting = onCreated;
+	return true;
+}
+
+bool ImguiLayout::RequestTextureFromSprite(const AssetGUID& spriteGuid, ProjectManager* projectManager, std::function<void(const AssetMeta&)> onCreated)
+{
+	if (!projectManager || !projectManager->IsProjectOpen())
+		return false;
+	auto database = projectManager->GetDatabase();
+	auto spriteMeta = database ? database->GetAssetMetaByGuid(spriteGuid) : nullptr;
+	if (!spriteMeta || spriteMeta->type != AssetType::Sprite)
+		return false;
+
+	SpriteAssetDescription desc;
+	if (!desc.LoadFromFile(projectManager->GetProjectAssetFullPath(spriteMeta->path)) || desc.GetPath().empty())
+		return false;
+
+	// 精灵只存了过滤方式和 sRGB；贴图的其它配置（环绕、各向异性）用默认值，可以在弹窗里改
+	const TextureConfig spriteConfig = desc.GetConfig();
+	TextureConfig config;
+	config.minFilter = spriteConfig.minFilter;
+	config.magFilter = spriteConfig.magFilter;
+	config.gammaCorrection = spriteConfig.gammaCorrection;
+
+	const std::string source = projectManager->GetProjectAssetFullPath(desc.GetPath());
+	const std::string spriteName = spriteMeta->name;
+	auto openImport = [source, config, spriteName, onCreated]()
+		{
+			s_assetImportPopup.SetFilePath(source);
+			s_assetImportPopup.SetImportPath(source);
+			s_assetImportPopup.SetAssetType(AssetType::Texture);
+			s_assetImportPopup.SetTextureConfig(config);
+			s_assetImportPopup.SetHint(std::format("从精灵 {} 生成贴图：用同一张原图，过滤方式和 Gamma 默认取这个精灵的", spriteName));
+			s_assetImportPopup.SetImportCallback(PickCreated(AssetType::Texture, onCreated));
+			s_assetImportPopup.SetVisiable(true);
+		};
+
+	auto existing = projectManager->FindImageAssetsFromSource(AssetType::Texture, desc.GetPath());
+	if (existing.empty())
+	{
+		openImport();
+		return true;
+	}
+	s_imageConvertConfirm.pending = true;
+	s_imageConvertConfirm.title = std::format("从精灵 {} 生成贴图", spriteName);
+	s_imageConvertConfirm.existing = std::move(existing);
+	s_imageConvertConfirm.proceed = openImport;
+	s_imageConvertConfirm.useExisting = onCreated;
+	return true;
+}
+
+void ImguiLayout::DrawImageConvertConfirm()
+{
+	auto& state = s_imageConvertConfirm;
+	if (!state.pending)
+		return;
+
+	auto finish = [&](std::function<void()> action)
+		{
+			// 先清状态再执行：执行里会打开导入弹窗，或者把资产填回去
+			state = ImageConvertConfirm{};
+			ImGui::CloseCurrentPopup();
+			if (action)
+				action();
+		};
+
+	ImGui::OpenPopup("ImageConvertConfirm");
+	if (ImGui::BeginPopupModal("ImageConvertConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextUnformatted(state.title.c_str());
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "这张图已经有 %zu 个同类资产：", state.existing.size());
+		for (size_t i = 0; i < state.existing.size(); ++i)
+		{
+			const AssetMeta meta = state.existing[i];
+			ImGui::PushID(static_cast<int>(i));
+			ImGui::BulletText("%s", meta.name.c_str());
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", meta.path.c_str());
+			if (state.useExisting)
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton("用这个"))
+				{
+					auto use = state.useExisting;
+					finish([use, meta]() { use(meta); });
+					ImGui::PopID();
+					ImGui::EndPopup();
+					return;
+				}
+			}
+			ImGui::PopID();
+		}
+		ImGui::Spacing();
+		if (ImGui::Button("仍然新建"))
+		{
+			finish(state.proceed);
+			ImGui::EndPopup();
+			return;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消"))
+			finish({});
+		ImGui::EndPopup();
+	}
 }
 
 std::string ImguiLayout::GetWindowAtPosition(const ImVec2& pos)

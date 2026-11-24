@@ -25,14 +25,18 @@
 #include "VulkanRenderEngine/Base/AnimationClip.h"
 #include "SceneCodec/SceneCodec.h"
 #include "Systems/UIViewSystem.h"
+#include "Render/Systems/Render2DResourceSystem.h"
+#include "VulkanRenderEngine/Base/Texture2D.h"
 #include "UI/EngineCommands.h"
 #include "UI/UiTypes.h"
 
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
+#include <cwctype>
 #include <mutex>
 #include <stdexcept>
 
@@ -876,6 +880,9 @@ void EngineRuntime::StepEditorFrame(float deltaMilliseconds)
 		cameraSystem->postUpdate(deltaMilliseconds);
 	if (auto* animationSystem = m_world->getSystem<AnimationSystem>())
 		animationSystem->postUpdate(0.f);
+	// 编辑态不推进动图时间，但要解析资源：拖进来的精灵 / 动图马上就能看到（停在当前帧）
+	if (auto* resource2D = m_world->getSystem<Render2DResourceSystem>())
+		resource2D->postUpdate(0.f);
 	if (auto* renderSystem = m_world->getSystem<RenderSystem>())
 		renderSystem->postUpdate(deltaMilliseconds);
 }
@@ -983,19 +990,127 @@ const Render::Renderer3D* EngineRuntime::GetRenderer3D() const
 	return m_renderer->GetRenderer3D();
 }
 
-bool EngineRuntime::CreateRenderer2D(ID3D11Device* device, IDXGISwapChain1* swapChain, std::string* error)
+std::string EngineRuntime::FindImageFile(const std::string& path) const
 {
-	if (!device || !swapChain)
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const fs::path reference(reinterpret_cast<const char8_t*>(path.c_str()));
+
+	auto existing = [&](const fs::path& candidate) -> std::string
+		{
+			if (candidate.empty() || !fs::is_regular_file(candidate, ec))
+				return {};
+			const auto canonical = fs::weakly_canonical(candidate, ec);
+			const auto u8 = (ec ? candidate : canonical).u8string();
+			return std::string(u8.begin(), u8.end());
+		};
+
+	// 只在工程目录内解析：工程不能依赖工程外的文件（不再找工作目录和它的上级目录），
+	// 写成绝对路径的也必须落在工程目录里
+	if (!m_project || !m_project->IsProjectOpen())
+		return {};
+
+	const auto projectPath = m_project->GetProjectFolderFullPath();
+	const fs::path projectRoot = fs::weakly_canonical(fs::path(reinterpret_cast<const char8_t*>(projectPath.c_str())), ec);
+	const std::string found = existing(reference.is_absolute() ? reference : projectRoot / reference);
+	if (found.empty())
+		return {};
+
+	auto lower = [](std::wstring s)
+		{
+			std::transform(s.begin(), s.end(), s.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+			return s;
+		};
+	std::wstring root = lower(projectRoot.generic_wstring());
+	if (!root.empty() && root.back() != L'/')
+		root += L'/';
+	const std::wstring resolved = lower(fs::path(reinterpret_cast<const char8_t*>(found.c_str())).generic_wstring());
+	if (root.size() <= 1 || resolved.compare(0, root.size(), root) != 0)
+		return {};
+	return found;
+}
+
+void EngineRuntime::ClearImageFileCache()
+{
+	std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
+	m_imageFileCache.clear();
+	m_imageFileMissing.clear();
+}
+
+Render2D::ImageSource EngineRuntime::ResolveImageReference(const std::string& reference)
+{
+	std::string assetPart, region;
+	Render2D::SplitImageReference(reference, assetPart, region);
+	if (assetPart.empty())
+		return {};
+
+	// 1. 资产 GUID
+	if (m_project && m_project->IsProjectOpen())
 	{
-		if (error)
-			*error = "创建 2D 服务需要宿主的 D3D11 设备与交换链";
-		return false;
+		auto database = m_project->GetDatabase();
+		if (auto meta = database ? database->GetAssetMetaByGuid(assetPart) : nullptr)
+		{
+			auto asset = m_project->LoadAsset(meta->guid);
+			if (!asset)
+				return {};
+
+			Render2D::ImageSource source;
+			source.region = region;
+			if (meta->type == AssetType::Sprite || meta->type == AssetType::Texture)
+				source.sprite = asset->AsSprite();
+			else if (meta->type == AssetType::AnimatedImage)
+				source.animated = asset->AsAnimatedImage();
+			return source;
+		}
 	}
 
-	if (!m_renderer)
-		return false;
+	// 2. 图片文件路径（UI 文档里常见的写法）
+	const std::string projectFolder = (m_project && m_project->IsProjectOpen()) ? m_project->GetProjectFolderFullPath() : std::string();
+	{
+		std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
+		if (m_imageFileCacheProject != projectFolder)
+		{
+			m_imageFileCache.clear();
+			m_imageFileMissing.clear();
+			m_imageFileCacheProject = projectFolder;
+		}
+		if (m_imageFileMissing.contains(assetPart))
+			return {};
+		if (auto it = m_imageFileCache.find(assetPart); it != m_imageFileCache.end())
+		{
+			auto source = it->second;
+			source.region = region;
+			return source;
+		}
+	}
 
-	return m_renderer->GetRenderer2D()->Initialize(device, swapChain, error);
+	Render2D::ImageSource source;
+	const std::string file = FindImageFile(assetPart);
+	if (!file.empty())
+	{
+		// 直接加载的图片用线性过滤、不做 sRGB 转换（和 UI 的颜色空间一致）
+		TextureConfig config;
+		config.minFilter = vk::Filter::eLinear;
+		config.magFilter = vk::Filter::eLinear;
+
+		std::string extension = std::filesystem::path(reinterpret_cast<const char8_t*>(file.c_str())).extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+		if (extension == ".gif")
+			source.animated = Render2D::AnimatedImage::LoadFromFile(file, config);
+		else if (auto texture = std::make_shared<Texture2D>(file, config, false); texture && !texture->IsEmpty())
+			source.sprite = std::make_shared<Render2D::Sprite>(std::move(texture), std::vector<Render2D::SpriteRegion>{});
+	}
+
+	std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
+	if (!source.IsValid())
+	{
+		m_imageFileMissing[assetPart] = true;
+		return {};
+	}
+	m_imageFileCache[assetPart] = source;
+	source.region = region;
+	return source;
 }
 
 Render::Renderer2D* EngineRuntime::GetRenderer2D()
@@ -1043,6 +1158,10 @@ void EngineRuntime::RegisterBaseSystems(World& world)
 				return asset->AsUIDocument();
 			});
 	}
+
+	// 2D 资源桥：比 UIViewSystem 晚（文档先加载），比 RenderSystem 早（收集前资源已解析好）
+	auto& resource2D = world.registerSystem<Render2DResourceSystem>(ToSystemPriority(EngineSystemPriority::Render) + 50);
+	resource2D.SetImageResolver([this](const std::string& reference) { return ResolveImageReference(reference); });
 
 	m_renderer->RegisterRenderSystem(world);
 }

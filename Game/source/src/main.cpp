@@ -1,7 +1,7 @@
 
 #include "stdafx.h"
 #include "RenderProcess.h"
-#include "Manager/ResourceManager.h"
+#include "Manager/GraphicsContextManager.h"
 
 #include "GameEngine.h"
 #include "Input/EngineKey.h"
@@ -17,14 +17,6 @@
 WCHAR szTitle[MAX_LOADSTRING] = L"HyTestGame";  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
-
-bool Init_all_Resource()
-{
-	LOGINFO("Init", "Init_All");
-	ResFactory->InitD2DResource();
-	ResFactory->InitAudioResource();
-	return true;
-}
 
 
 bool ShowConsole = false;
@@ -318,11 +310,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		SyncInputViewport(hWnd);
 
-		bool result = Init_all_Resource();
-		if (!result)
+		// 共用图形上下文（D3D11 设备/交换链 + D2D/DWrite/WIC）必须在启动渲染线程之前、
+		// 界面线程里建好：渲染线程的出图桥和界面线程的加载框都用这一份。
+		if (!GraphicsContextManager::Instance()->InitSharedGraphicsContext())
 		{
-			MessageBox(hWnd, _T("位图加载失败"), L"Error", MB_OK);
+			MessageBox(hWnd, _T("共用图形上下文创建失败"), L"Error", MB_OK);
 			DestroyWindow(hWnd);
+			return -1;
 		}
 
 		renderThread = std::make_shared<std::thread>(&RenderLoop, &shouldStopRenderThread);

@@ -72,6 +72,10 @@ namespace Render
         Scene3DRenderOption GetOption() const;
         void SetOption(Scene3DRenderOption option);
 
+        // 关掉后后端整帧不跑 3D 渲染图，帧数据也不再解析（见 VulkanRenderer::SetSceneRenderEnabled）
+        void SetSceneRenderEnabled(bool enabled) noexcept { m_sceneRenderEnabled.store(enabled, std::memory_order_release); }
+        bool IsSceneRenderEnabled() const noexcept { return m_sceneRenderEnabled.load(std::memory_order_acquire); }
+
     private:
         void FrameLoop();
 
@@ -93,6 +97,7 @@ namespace Render
         DynamicFpsController m_fpsController;
 
         std::atomic<uint32_t> m_targetFps{ 60 };
+        std::atomic<bool> m_sceneRenderEnabled{ true };
         uint32_t m_appliedFps = 0xFFFFFFFFu;
 
         // 最近一帧的相机矩阵

@@ -6,6 +6,7 @@
 #include "UI/MessageBus.h"
 
 #include "Project/ProjectManager.h"
+#include "Render/Image2DSource.h"
 
 #include <glm/glm.hpp>
 #include "VulkanRenderEngine/RenderOption.h"
@@ -18,14 +19,13 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 class AudioDevice;
 class EngineInputContext;
 class SceneCodec;
 namespace Render { class Renderer; class Renderer3D; class Renderer2D; }
-struct ID3D11Device;
-struct IDXGISwapChain1;
 class VulkanRenderer;
 
 enum class EngineHostType : uint32_t
@@ -108,10 +108,15 @@ public:
 	Render::Renderer3D* GetRenderer3D();
 	const Render::Renderer3D* GetRenderer3D() const;
 
-	// 2D 能力：D3D11 设备与交换链由宿主创建并持有，引擎只借用句柄建 D2D 设备上下文。
-	bool CreateRenderer2D(ID3D11Device* device, IDXGISwapChain1* swapChain, std::string* error = nullptr);
+	// 2D 层（Vulkan）随 Renderer 一起创建，宿主不需要额外初始化
 	Render::Renderer2D* GetRenderer2D();
 	const Render::Renderer2D* GetRenderer2D() const;
+
+	// 2D 层和 UI 共用的图像引用解析：Sprite / Texture / AnimatedImage 资产 GUID（可带 "#区域"），
+	// 或工程内 / 工作目录下的图片文件路径（.gif 按动图加载）。线程安全
+	Render2D::ImageSource ResolveImageReference(const std::string& reference);
+	// 丢掉按文件路径直接加载的图片缓存（资产本身由 ProjectManager 管）
+	void ClearImageFileCache();
 
 	std::shared_ptr<AudioDevice> GetAudioDevice() const { return m_audioDevice; }
 
@@ -183,6 +188,7 @@ private:
 	void RegisterBaseSystems(World& world);
 	void BindVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
 	void SceneThreadLoop();
+	std::string FindImageFile(const std::string& path) const;
 
 	void UnloadModules(); // 只在 Shutdown 里用：模块必须在它们供给的场景销毁之后才卸载。
 
@@ -228,4 +234,10 @@ private:
 	float m_fixedDeltaMilliseconds = 16.0f;
 	// 世界时间膨胀系数。切场景时新建的 World 也要继承它，否则换场景会悄悄回到 1x。
 	float m_worldTimeScale = 1.0f;
+
+	// 按文件路径（非资产）加载的图片：键是规范化后的完整路径
+	std::mutex m_imageFileCacheMutex;
+	std::unordered_map<std::string, Render2D::ImageSource> m_imageFileCache;
+	std::unordered_map<std::string, bool> m_imageFileMissing;	// 找不到 / 加载失败的路径，避免每帧重试
+	std::string m_imageFileCacheProject;						// 缓存所属的工程目录，换工程就清空
 };

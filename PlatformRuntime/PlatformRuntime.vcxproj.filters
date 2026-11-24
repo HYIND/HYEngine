@@ -108,15 +108,6 @@
     <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h">
       <Filter>头文件\Input\Systems</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h">
-      <Filter>头文件\RenderEngine</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\RenderEngine\D2DTools.h">
-      <Filter>头文件\RenderEngine</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\RenderEngine\D2DWrapper.h">
-      <Filter>头文件\RenderEngine</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\RenderEngine\Renderer.h">
       <Filter>头文件\RenderEngine</Filter>
     </ClInclude>
@@ -134,9 +125,6 @@
     </ClInclude>
     <ClInclude Include="source\include\RenderEngine\RenderFrameData.h">
       <Filter>头文件\RenderEngine</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Render\Components\GIFAnimator.h">
-      <Filter>头文件\Render\Components</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Render\Components\LaserBeamEmitter.h">
       <Filter>头文件\Render\Components</Filter>
@@ -159,6 +147,12 @@
     <ClInclude Include="source\include\Render\Components\Sprite.h">
       <Filter>头文件\Render\Components</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Render\Components\Camera2D.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Components\AnimatedImagePlayer.h">
+      <Filter>头文件\Render\Components</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\Render\Systems\AnimationSystem.h">
       <Filter>头文件\Render\Systems</Filter>
     </ClInclude>
@@ -169,6 +163,12 @@
       <Filter>头文件\Render\Systems</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Render\Systems\RenderSystem.h">
+      <Filter>头文件\Render\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Image2DSource.h">
+      <Filter>头文件\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\Render\Systems\Render2DResourceSystem.h">
       <Filter>头文件\Render\Systems</Filter>
     </ClInclude>
     <ClCompile Include="source\src\EngineRuntime.cpp">
@@ -191,12 +191,6 @@
     </ClCompile>
     <ClCompile Include="source\src\Input\LocalInputSystem.cpp">
       <Filter>源文件\Input</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\RenderEngine\D2DTools.cpp">
-      <Filter>源文件\RenderEngine</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp">
-      <Filter>源文件\RenderEngine</Filter>
     </ClCompile>
     <ClCompile Include="source\src\RenderEngine\Renderer.cpp">
       <Filter>源文件\RenderEngine</Filter>
@@ -226,6 +220,9 @@
       <Filter>源文件\Render</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Render\RenderSystem.cpp">
+      <Filter>源文件\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Render\Render2DResourceSystem.cpp">
       <Filter>源文件\Render</Filter>
     </ClCompile>
     <ClInclude Include="source\include\UI\EngineCommands.h">

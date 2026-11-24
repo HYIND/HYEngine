@@ -3,6 +3,7 @@
 #include "AssetMeta.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/Material.h"
+#include "VulkanRenderEngine/Base/Sprite2D.h"
 #include <nlohmann/json.hpp>
 #include <cstdint>
 #include <string>
@@ -44,6 +45,48 @@ public:
 
 	void SetPath(const AssetPath& assetPath);
 	void SetConfig(const TextureConfig& config);
+
+private:
+	AssetPath _path;
+	TextureConfig _config;
+};
+
+// Sprite：原始图片文件 + 导入配置 + 区域列表，和 AnimatedImage 一样一个原始文件对应一个元文件，不依赖 Texture 资产。
+// 导入配置只有采样过滤和 sRGB：环绕固定 ClampToEdge、不生成 mip、不开各向异性（区域挨着区域，这些都会采到相邻区域）
+class SpriteAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	AssetPath GetPath() const { return _path; }
+	TextureConfig GetConfig() const { return _config; }
+	const std::vector<Render2D::SpriteRegion>& GetRegions() const { return _regions; }
+
+	void SetPath(const AssetPath& assetPath) { _path = assetPath; }
+	void SetConfig(const TextureConfig& config) { _config = config; }
+	void SetRegions(const std::vector<Render2D::SpriteRegion>& regions) { _regions = regions; }
+
+private:
+	AssetPath _path;
+	TextureConfig _config;
+	std::vector<Render2D::SpriteRegion> _regions;
+};
+
+// AnimatedImage：原始动图文件 + 导入配置。
+// 导入配置只管"图像数据怎么上 GPU"：采样过滤和是否 sRGB；
+// 怎么播（循环几次、多快、从哪帧开始）是 AnimatedImagePlayer 组件 / UI 节点的事，不放在资产里
+class AnimatedImageAssetDescription : public AssetDescription
+{
+public:
+	virtual bool LoadFromFile(const std::string& filePath) override;
+	virtual bool SaveToFile(const std::string& filePath) override;
+
+	AssetPath GetPath() const { return _path; }
+	TextureConfig GetConfig() const { return _config; }
+
+	void SetPath(const AssetPath& assetPath) { _path = assetPath; }
+	void SetConfig(const TextureConfig& config) { _config = config; }
 
 private:
 	AssetPath _path;

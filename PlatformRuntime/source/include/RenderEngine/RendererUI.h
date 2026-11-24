@@ -10,12 +10,14 @@
 #include "Input/EngineInputContext.h"
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct ImGuiContext;
 struct ImDrawList;
 struct ImFont;
 class Texture2D;
+class ImGuiTextureCache;
 
 namespace Render
 {
@@ -49,6 +51,11 @@ namespace Render
 			const UI::ParseResult& parsed, UI::UiInstanceState* instance,
 			float scaleX, float scaleY, float offsetX, float offsetY);
 
+		// 画一个图像引用（Sprite / Texture / 动图），支持 fit（fill / contain / cover / none）和九宫格；
+		// 返回是否画成（引用解析失败时调用方退回纯色块）
+		bool DrawImage(::ImDrawList* drawList, const std::string& reference, const UI::UiNode& node, const UI::StyleFields& style,
+			UI::UiInstanceState* instance, float x, float y, float w, float h, float scaleX, float scaleY, unsigned int color, float rounding);
+
 		// 把 EngineInputContext 里的鼠标/文字翻成 ImGuiIO 事件（坐标换算到渲染目标像素）。
 		void FeedInput(float targetWidth, float targetHeight);
 
@@ -72,6 +79,14 @@ namespace Render
 		std::shared_ptr<FrameBuffer> m_frameBuffer;
 		std::shared_ptr<EngineInputContext> m_input;
 		std::vector<UI::UiEvent> m_events;
+
+		// 本上下文的贴图描述符缓存（随后端创建 / 重建时清空）
+		std::unique_ptr<ImGuiTextureCache> m_textureCache;
+		// 正在画的那个视图的图像表（DrawUiContent 里逐视图切换）
+		const Render2D::UIImageTable* m_currentImages = nullptr;
+		// UI 时钟（毫秒）与动图节点的起始时间
+		float m_uiTimeMs = 0.0f;
+		std::unordered_map<uint64_t, float> m_animationStart;
 
 		// 没有实例状态时的兜底（例如调试用的一帧数据没带 instance）。
 		UI::UiNodeState m_fallbackState;

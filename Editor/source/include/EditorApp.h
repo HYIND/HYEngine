@@ -6,6 +6,7 @@
 #include "CommonSystems.h"
 #include "CommonData/LightData.h"
 #include "EngineRuntime.h"
+#include "RenderEngine/Renderer.h"
 #include "SceneEditor.h"
 
 #include <functional>
@@ -59,6 +60,10 @@ public:
 
 	Scene3DRenderOption GetOption() const;
 	void SetOption(Scene3DRenderOption option);
+
+	// 视口三层显示开关（播放控制栏旁边的勾选框）；关掉的层也不参与点选
+	Render::Renderer::LayerVisibility GetLayerVisibility() const;
+	void SetLayerVisibility(const Render::Renderer::LayerVisibility& visibility);
 
 	void SetTargetFps(uint32_t fps);
 	uint32_t GetTargetFps() const;

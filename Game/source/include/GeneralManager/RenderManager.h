@@ -1,6 +1,5 @@
 #pragma once
 
-#include "RenderEngine/D2DTools.h"
 #include "RenderEngine/Renderer.h"
 #include "Helper/DynamicFpsController.h"
 #include "RenderEngine/RenderFrameData.h"

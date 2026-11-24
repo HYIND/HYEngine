@@ -159,6 +159,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Pipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\RayTracingPipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2D.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\Base\Sprite2D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2DArray.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture3D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\Base\TextureCube.h" />
@@ -185,6 +186,8 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelper.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext2D.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderer2D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderState.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferBase.h" />
@@ -278,6 +281,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\Base\RayTracingPipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Skeleton.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2D.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\Base\Sprite2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture2DArray.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture3D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\Base\DynamicBlock.cpp" />
@@ -293,6 +297,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelper.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\General\VKRenderer2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TAAFilter.cpp" />

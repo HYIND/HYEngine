@@ -7,14 +7,14 @@
     <ClCompile Include="source\src\RenderProcess.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\ResourceManager.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\BusyLoaderDialog.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\RenderEngine\VulkanPresentBridge.cpp">
       <Filter>源文件\RenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\GraphicsContextManager.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -24,17 +24,11 @@
     <ClInclude Include="source\include\RenderProcess.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\Scene.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="source\include\Tank_War.h">
       <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\Manager\ResourceManager.h">
-      <Filter>头文件\Manager</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>资源文件</Filter>
@@ -45,24 +39,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="Game.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\Fail.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\Win.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\Text_BK.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\Return.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\OP_KB.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="Resource\Pause.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
@@ -81,35 +57,12 @@
     <Filter Include="头文件">
       <UniqueIdentifier>{6b924a41-7b84-4f3e-8d4d-57b9b7055268}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Manager">
-      <UniqueIdentifier>{b7ac37c2-c829-4302-9db9-ea166d49fd3b}</UniqueIdentifier>
-    </Filter>
     <Filter Include="头文件\GeneralManager">
       <UniqueIdentifier>{8f3a1c2b-5d84-4f61-9a0e-7c2d5b1e4a90}</UniqueIdentifier>
     </Filter>
     <Filter Include="源文件\GeneralManager">
       <UniqueIdentifier>{3b7e9d44-1c25-4a83-8f70-6e5b2d9c1f38}</UniqueIdentifier>
     </Filter>
-  </ItemGroup>
-  <ItemGroup>
-    <Media Include="Resource\Default_Attacked.wav">
-      <Filter>资源文件</Filter>
-    </Media>
-    <Media Include="Resource\Default_Shoot.wav">
-      <Filter>资源文件</Filter>
-    </Media>
-    <Media Include="Resource\Game_BGM.wav">
-      <Filter>资源文件</Filter>
-    </Media>
-    <Media Include="Resource\Heal.wav">
-      <Filter>资源文件</Filter>
-    </Media>
-    <Media Include="Resource\Menu_BGM.wav">
-      <Filter>资源文件</Filter>
-    </Media>
-    <Media Include="Resource\Fire.wav">
-      <Filter>资源文件</Filter>
-    </Media>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Game.rc">
@@ -142,6 +95,9 @@
     <ClInclude Include="source\include\GameEngine.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Manager\GraphicsContextManager.h">
+      <Filter>头文件\Manager</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\src\GameEngine.cpp">
@@ -151,5 +107,8 @@
   <ItemGroup>
     <Filter Include="头文件\RenderEngine" />
     <Filter Include="源文件\RenderEngine" />
+    <Filter Include="头文件\Manager">
+      <UniqueIdentifier>{b7ac37c2-c829-4302-9db9-ea166d49fd3b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

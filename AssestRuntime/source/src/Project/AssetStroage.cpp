@@ -22,6 +22,8 @@ private:
 	static std::shared_ptr<SkinnedModelAsset> LoadSkinnedModel(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<SkeletonAsset> LoadSkeletonAsset(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static std::shared_ptr<AnimationClipAsset> LoadAnimationClip(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<SpriteAsset> LoadSprite(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static std::shared_ptr<AnimatedImageAsset> LoadAnimatedImage(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 
 public:
 	static bool SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
@@ -35,6 +37,8 @@ private:
 	static bool SaveScene(std::shared_ptr<SceneAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static bool SaveMaterial(std::shared_ptr<MaterialAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 	static bool SaveScript(std::shared_ptr<ScriptAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static bool SaveSprite(std::shared_ptr<SpriteAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
+	static bool SaveAnimatedImage(std::shared_ptr<AnimatedImageAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider);
 };
 
 bool AssetStroageHelper::RefreshScriptIfChanged(const AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider, ScriptAsset& asset, std::shared_ptr<ScriptSourceData>* outData)
@@ -319,6 +323,10 @@ std::shared_ptr<AssetObject> AssetStroageHelper::LoadAsset(AssetMeta& meta, std:
 		return LoadSkeletonAsset(meta, pathProvider);
 	case AssetType::AnimationClip:
 		return LoadAnimationClip(meta, pathProvider);
+	case AssetType::Sprite:
+		return LoadSprite(meta, pathProvider);
+	case AssetType::AnimatedImage:
+		return LoadAnimatedImage(meta, pathProvider);
 	default:
 		return nullptr;
 	}
@@ -338,6 +346,57 @@ std::shared_ptr<TextureAsset> AssetStroageHelper::LoadTexture(AssetMeta& meta, s
 	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config, true);
 	asset->_texture->SetAssetGUID(meta.guid);
 
+	return asset;
+}
+
+std::shared_ptr<SpriteAsset> AssetStroageHelper::LoadSprite(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<SpriteAsset>();
+
+	SpriteAssetDescription desc;
+	if (desc.LoadFromFile(pathProvider->GetFullPath(meta.path)))
+	{
+		asset->_path = desc.GetPath();
+		asset->_config = desc.GetConfig();
+		asset->_regions = desc.GetRegions();
+	}
+
+	std::shared_ptr<Texture2D> texture;
+	if (asset->_path.empty())
+	{
+		std::cerr << std::format("[ Asset ] Sprite 没有图片路径（{}）；旧版引用 Texture 的 Sprite 需要重新导入\n", meta.path);
+	}
+	else
+	{
+		std::string error;
+		texture = Render2D::LoadImageTexture(pathProvider->GetFullPath(asset->_path), asset->_config, &error);
+		if (texture)
+			texture->SetAssetGUID(meta.guid);
+		else
+			std::cerr << std::format("[ Asset ] Sprite 图片加载失败（{}）：{}\n", meta.path, error);
+	}
+
+	asset->_sprite = std::make_shared<Render2D::Sprite>(std::move(texture), asset->_regions);
+	asset->_sprite->SetAssetGUID(meta.guid);
+	return asset;
+}
+
+std::shared_ptr<AnimatedImageAsset> AssetStroageHelper::LoadAnimatedImage(AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	auto asset = std::make_shared<AnimatedImageAsset>();
+
+	if (!asset->_description.LoadFromFile(pathProvider->GetFullPath(meta.path)))
+		return asset;
+
+	std::string error;
+	asset->_image = Render2D::AnimatedImage::LoadFromFile(pathProvider->GetFullPath(asset->_description.GetPath()), asset->_description.GetConfig(), &error);
+	if (!asset->_image)
+	{
+		std::cerr << std::format("[ Asset ] 动图加载失败（{}）：{}\n", meta.path, error);
+		return asset;
+	}
+
+	asset->_image->SetAssetGUID(meta.guid);
 	return asset;
 }
 
@@ -525,10 +584,40 @@ bool AssetStroageHelper::SaveAsset(std::shared_ptr<AssetObject> asset, AssetMeta
 		return false;
 	case AssetType::Script:
 		return SaveScript(std::static_pointer_cast<ScriptAsset>(asset), meta, pathProvider);
+	case AssetType::Sprite:
+		return SaveSprite(std::static_pointer_cast<SpriteAsset>(asset), meta, pathProvider);
+	case AssetType::AnimatedImage:
+		return SaveAnimatedImage(std::static_pointer_cast<AnimatedImageAsset>(asset), meta, pathProvider);
 	default:
 		return false;
 	}
 	return false;
+}
+
+bool AssetStroageHelper::SaveSprite(std::shared_ptr<SpriteAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	if (!asset || !pathProvider)
+		return false;
+	const std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	if (fullMetaPath.empty())
+		return false;
+
+	SpriteAssetDescription desc;
+	desc.SetPath(asset->GetPath());
+	desc.SetConfig(asset->GetConfig());
+	desc.SetRegions(asset->GetRegions());
+	return desc.SaveToFile(fullMetaPath);
+}
+
+bool AssetStroageHelper::SaveAnimatedImage(std::shared_ptr<AnimatedImageAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)
+{
+	if (!asset || !pathProvider)
+		return false;
+	const std::string fullMetaPath = pathProvider->GetFullPath(meta.path);
+	if (fullMetaPath.empty())
+		return false;
+	auto desc = asset->GetDescription();
+	return desc.SaveToFile(fullMetaPath);
 }
 
 bool AssetStroageHelper::SaveMaterial(std::shared_ptr<MaterialAsset> asset, AssetMeta& meta, std::shared_ptr<IAssetFullPathProvider> pathProvider)

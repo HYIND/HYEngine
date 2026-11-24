@@ -6,7 +6,6 @@
 #include "Render/Systems/RenderSystem.h"
 #include "EngineSystemPriority.h"
 #include "ECSCore/World.h"
-#include "RenderEngine/D2DTools.h"
 #include "Helper/Tools.h"
 #include "VulkanRenderEngine/VKContext.h"
 #include <glm/gtc/matrix_access.hpp>
@@ -105,10 +104,14 @@ void Renderer::WaitImage(const WaitImageCallback& callback)
 	if (!_renderer3D)
 		return;
 
-	// 3D 出帧之后才轮到 UI：先拿 3D 的纹理，再把 UI 叠上去
+	// 3D 出帧之后依次叠：3D -> 2D 层 -> UI（UI 永远在最上面）
 	_renderer3D->WaitImage([this, callback](std::shared_ptr<Texture2D> tex, std::shared_ptr<RenderState> state)
 		{
-			 _uiRender->Render(tex);
+			if (_renderer2D && _layer2DVisible.load(std::memory_order_acquire))
+				_renderer2D->Render(tex);
+
+			if (_uiRender && _layerUIVisible.load(std::memory_order_acquire))
+				_uiRender->Render(tex);
 
 			// 事件是 Render 里面（ImGui 控件判定时）产生的，所以只能在这里、同一线程紧接着取。
 			if (_uiEventSink)
@@ -128,6 +131,23 @@ void Renderer::SetUiInputContext(std::shared_ptr<EngineInputContext> context)
 void Renderer::SetUiEventSink(std::function<void(std::vector<UI::UiEvent>)> sink)
 {
 	_uiEventSink = std::move(sink);
+}
+
+void Renderer::SetLayerVisibility(const LayerVisibility& visibility)
+{
+	if (_renderer3D)
+		_renderer3D->SetSceneRenderEnabled(visibility.layer3D);
+	_layer2DVisible.store(visibility.layer2D, std::memory_order_release);
+	_layerUIVisible.store(visibility.layerUI, std::memory_order_release);
+}
+
+Renderer::LayerVisibility Renderer::GetLayerVisibility() const
+{
+	LayerVisibility visibility;
+	visibility.layer3D = _renderer3D ? _renderer3D->IsSceneRenderEnabled() : true;
+	visibility.layer2D = _layer2DVisible.load(std::memory_order_acquire);
+	visibility.layerUI = _layerUIVisible.load(std::memory_order_acquire);
+	return visibility;
 }
 
 void Renderer::BindRenderSystem(RenderSystem& renderSystem)

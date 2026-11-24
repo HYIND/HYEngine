@@ -5,9 +5,11 @@
 #include "PlatformRuntimeComponents.h"
 #include "ECSCore/World.h"
 #include "Systems/ScriptSystem.h"
+#include "Render/Systems/Render2DResourceSystem.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
 
 #include <execution>
+#include <tuple>
 #include <functional>
 
 using namespace Render;
@@ -70,6 +72,10 @@ bool RenderableBaseModule::SetVisiable(const Entity& entity, const std::string& 
 	else if (field == "sprite")
 	{
 		comp = entity.tryGetComponent<Sprite>();
+	}
+	else if (field == "animatedimage")
+	{
+		comp = entity.tryGetComponent<AnimatedImagePlayer>();
 	}
 	else if (field == "laserbeam")
 	{
@@ -188,7 +194,8 @@ void RenderSystem::postUpdate(float deltaTime)
 	if (framebuffer2D)
 	{
 		tasks.push_back(submit(LogicRenderSection::Sprite, [&] {ProcessSprite(framebuffer2D); }));
-		tasks.push_back(submit(LogicRenderSection::GIFAnimation, [&] {ProcessGIFAnimation(framebuffer2D); }));
+		tasks.push_back(submit(LogicRenderSection::AnimatedImage, [&] {ProcessAnimatedImage(framebuffer2D); }));
+		tasks.push_back(submit(LogicRenderSection::Camera2D, [&] {ProcessCamera2D(framebuffer2D); }));
 		tasks.push_back(submit(LogicRenderSection::DebugLines, [&] {ProcessDebugLines(framebuffer2D); }));
 	}
 
@@ -242,6 +249,8 @@ void RenderSystem::ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuf
 		Render::RenderUIFrameData::View item;
 		item.document = runtime.document;
 		item.instance = runtime.instance;
+		if (const auto* images = entity.tryGetComponent<UIViewImageTable>(); images && images->document == runtime.document)
+			item.images = images->table;
 		item.layer = view.layer;
 		framebuffer->views.push_back(std::move(item));
 	}
@@ -253,9 +262,160 @@ void RenderSystem::ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuf
 		});
 }
 
+namespace
+{
+	// 2D 放置：位置 + 旋转后的两根单位轴（y 朝下，角度为度，正方向顺时针）
+	struct Placement2D
+	{
+		glm::vec2 position = glm::vec2(0.0f);
+		glm::vec2 ex = glm::vec2(1.0f, 0.0f);
+		glm::vec2 ey = glm::vec2(0.0f, 1.0f);
+	};
+
+	Placement2D MakePlacement(const Transform2D& transform, const glm::vec2& offset, bool flipX, bool flipY)
+	{
+		Placement2D p;
+		const float r = glm::radians(transform.rotation);
+		const float c = std::cos(r), s = std::sin(r);
+		p.ex = glm::vec2(c, s);
+		p.ey = glm::vec2(-s, c);
+		// offset 是渲染中心相对 Transform2D 的偏移，跟着物体一起旋转
+		p.position = transform.position + p.ex * offset.x + p.ey * offset.y;
+		// 翻转以轴心为对称中心
+		if (flipX) p.ex = -p.ex;
+		if (flipY) p.ey = -p.ey;
+		return p;
+	}
+
+	// 在放置坐标系里，局部矩形 [l0, l1]（相对轴心）映射 uv 子矩形
+	VKRenderContext::Sprite2DDrawItem MakeQuad(const Placement2D& p, const glm::vec2& l0, const glm::vec2& l1, const glm::vec4& uv)
+	{
+		VKRenderContext::Sprite2DDrawItem item;
+		item.origin = p.position + p.ex * l0.x + p.ey * l0.y;
+		item.axisX = p.ex * (l1.x - l0.x);
+		item.axisY = p.ey * (l1.y - l0.y);
+		item.uvRect = uv;
+		return item;
+	}
+
+	// 把一帧精灵展开成四边形（Simple 一个，Sliced 最多九个）
+	void EmitSpriteQuads(std::vector<VKRenderContext::Sprite2DDrawItem>& out,
+		const Render2D::SpriteFrame& frame, const Placement2D& placement,
+		const glm::vec2& worldSize, const glm::vec2& pivot, bool sliced, const glm::vec2& scale,
+		const VKRenderContext::Sprite2DDrawItem& common)
+	{
+		const glm::vec2 l0 = -pivot * worldSize;
+		const glm::vec2 l1 = l0 + worldSize;
+
+		auto push = [&](const glm::vec2& a, const glm::vec2& b, const glm::vec4& uv)
+			{
+				auto item = MakeQuad(placement, a, b, uv);
+				item.texture = common.texture;
+				item.color = common.color;
+				item.blend = common.blend;
+				item.layer = common.layer;
+				item.order = common.order;
+				item.sequence = common.sequence;
+				out.push_back(std::move(item));
+			};
+
+		if (!sliced || !frame.HasBorder())
+		{
+			push(l0, l1, frame.uvRect);
+			return;
+		}
+
+		// 九宫格：边距按像素（1 像素 = 1 单位）再乘物体缩放，尺寸不够时按比例压缩边距
+		const glm::vec2 absSize = glm::abs(worldSize);
+		const glm::vec2 absScale = glm::abs(scale);
+		glm::vec4 b(frame.border.x * absScale.x, frame.border.y * absScale.y, frame.border.z * absScale.x, frame.border.w * absScale.y);
+		if (b.x + b.z > absSize.x && b.x + b.z > 0.0f) { const float k = absSize.x / (b.x + b.z); b.x *= k; b.z *= k; }
+		if (b.y + b.w > absSize.y && b.y + b.w > 0.0f) { const float k = absSize.y / (b.y + b.w); b.y *= k; b.w *= k; }
+
+		const glm::vec2 sign(worldSize.x < 0.0f ? -1.0f : 1.0f, worldSize.y < 0.0f ? -1.0f : 1.0f);
+		const float xs[4] = { l0.x, l0.x + b.x * sign.x, l1.x - b.z * sign.x, l1.x };
+		const float ys[4] = { l0.y, l0.y + b.y * sign.y, l1.y - b.w * sign.y, l1.y };
+
+		const glm::vec2 uvPerPixel = glm::vec2(frame.uvRect.z - frame.uvRect.x, frame.uvRect.w - frame.uvRect.y) / glm::max(frame.size, glm::vec2(1.0f));
+		const float us[4] = { frame.uvRect.x, frame.uvRect.x + frame.border.x * uvPerPixel.x, frame.uvRect.z - frame.border.z * uvPerPixel.x, frame.uvRect.z };
+		const float vs[4] = { frame.uvRect.y, frame.uvRect.y + frame.border.y * uvPerPixel.y, frame.uvRect.w - frame.border.w * uvPerPixel.y, frame.uvRect.w };
+
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int col = 0; col < 3; ++col)
+			{
+				if (std::abs(xs[col + 1] - xs[col]) <= 1e-5f || std::abs(ys[row + 1] - ys[row]) <= 1e-5f)
+					continue;
+				push(glm::vec2(xs[col], ys[row]), glm::vec2(xs[col + 1], ys[row + 1]), glm::vec4(us[col], vs[row], us[col + 1], vs[row + 1]));
+			}
+		}
+	}
+
+	glm::vec2 ResolveWorldSize(const glm::vec2& requested, const glm::vec2& frameSize, const glm::vec2& scale)
+	{
+		const glm::vec2 base(requested.x > 0.0f ? requested.x : frameSize.x, requested.y > 0.0f ? requested.y : frameSize.y);
+		return base * scale;
+	}
+}
+
+Entity RenderSystem::Pick2D(World& world, const glm::vec2& point)
+{
+	Entity best;
+	bool found = false;
+	int bestLayer = 0;
+	int bestOrder = 0;
+	uint32_t bestSequence = 0;
+
+	auto consider = [&](Entity entity, const Transform2D& transform, const RenderBase2D& base, const Render2D::SpriteFrame& frame,
+		const glm::vec2& requestedSize, const glm::vec2& pivot, bool flipX, bool flipY)
+		{
+			if (!frame.IsValid())
+				return;
+			const glm::vec2 worldSize = ResolveWorldSize(requestedSize, frame.size, transform.scale);
+			if (worldSize.x == 0.0f || worldSize.y == 0.0f)
+				return;
+
+			// 点换到放置坐标系里（ex / ey 是单位轴，翻转时取反），再和相对轴心的矩形比
+			const Placement2D placement = MakePlacement(transform, base.offset, flipX, flipY);
+			const glm::vec2 d = point - placement.position;
+			const glm::vec2 local(glm::dot(d, placement.ex), glm::dot(d, placement.ey));
+			const glm::vec2 l0 = -pivot * worldSize;
+			const glm::vec2 l1 = l0 + worldSize;
+			const glm::vec2 lo = glm::min(l0, l1);
+			const glm::vec2 hi = glm::max(l0, l1);
+			if (local.x < lo.x || local.x > hi.x || local.y < lo.y || local.y > hi.y)
+				return;
+
+			const uint32_t sequence = static_cast<uint32_t>(entity.getId());
+			if (!found || std::tie(base.layer, base.internalZOrder, sequence) > std::tie(bestLayer, bestOrder, bestSequence))
+			{
+				found = true;
+				best = entity;
+				bestLayer = base.layer;
+				bestOrder = base.internalZOrder;
+				bestSequence = sequence;
+			}
+		};
+
+	for (auto [entity, transform, sprite] : world.getViewWith<Transform2D, Sprite>())
+	{
+		if (!sprite.visible || !sprite.resource || sprite.color.a <= 0.0f)
+			continue;
+		const Render2D::SpriteFrame frame = sprite.ResolveFrame();
+		consider(entity, transform, sprite, frame, sprite.size, sprite.overridePivot ? sprite.pivot : frame.pivot, sprite.flipX, sprite.flipY);
+	}
+	for (auto [entity, transform, player] : world.getViewWith<Transform2D, AnimatedImagePlayer>())
+	{
+		if (!player.visible || !player.resource || player.color.a <= 0.0f)
+			continue;
+		consider(entity, transform, player, player.ResolveFrame(), player.size, player.pivot, player.flipX, player.flipY);
+	}
+	return best;
+}
+
 void RenderSystem::pushDebugLine(const Line2& line)
 {
-	LockGuard guard(_D2D_SpinLock);
+	LockGuard guard(_debugLineLock);
 	_DebugLines.push_back(line);
 }
 
@@ -263,105 +423,152 @@ void RenderSystem::ProcessSprite(std::shared_ptr<Render::Render2DFrameData> fram
 {
 	auto entities = m_world->getViewWith<Transform2D, Sprite>();
 
-	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
+	std::vector<VKRenderContext::Sprite2DDrawItem> temp;
 	temp.reserve(entities.size());
 	for (auto [entity, transform, sprite] : entities)
 	{
-		if (!sprite.visible ||
-			!sprite.bitmap ||
-			sprite.opacity <= 0 ||
-			sprite.width <= 0 ||
-			sprite.height <= 0)
+		if (!sprite.visible || !sprite.resource || sprite.color.a <= 0.0f)
 			continue;
 
-		auto renderdata = std::make_shared<D2DRenderContext::SpriteRenderData>();
-		renderdata->x = transform.position.x - sprite.offset.x;
-		renderdata->y = transform.position.y - sprite.offset.y;
-		renderdata->rotation = transform.rotation;
-		renderdata->width = sprite.width;
-		renderdata->height = sprite.height;
-		renderdata->bitmap = sprite.bitmap;
-		renderdata->opacity = sprite.opacity;
+		const Render2D::SpriteFrame frame = sprite.ResolveFrame();
+		if (!frame.IsValid())
+			continue;
 
-		auto context = std::make_shared<D2DRenderContext::RenderContext>();
-		context->type = D2DRenderContext::RenderContextType::Sprite;
-		context->layer = sprite.layer;
-		context->internalZOrder = sprite.internalZOrder;
-		context->data = renderdata;
+		const glm::vec2 worldSize = ResolveWorldSize(sprite.size, frame.size, transform.scale);
+		if (worldSize.x == 0.0f || worldSize.y == 0.0f)
+			continue;
 
-		temp.emplace_back(std::move(context));
+		VKRenderContext::Sprite2DDrawItem common;
+		common.texture = frame.texture;
+		common.color = sprite.color;
+		common.blend = sprite.blend;
+		common.layer = sprite.layer;
+		common.order = sprite.internalZOrder;
+		common.sequence = static_cast<uint32_t>(entity.getId());
+
+		const glm::vec2 pivot = sprite.overridePivot ? sprite.pivot : frame.pivot;
+		const Placement2D placement = MakePlacement(transform, sprite.offset, sprite.flipX, sprite.flipY);
+		EmitSpriteQuads(temp, frame, placement, worldSize, pivot, sprite.drawMode == SpriteDrawMode::Sliced, transform.scale, common);
 	}
 
+	if (temp.empty())
+		return;
 	LockGuard guard(_D2D_SpinLock);
-	framebuffer->D2D_Contexts.append_range(temp);
+	framebuffer->sprites.append_range(std::move(temp));
+	framebuffer->hasContent = true;
 }
 
-void RenderSystem::ProcessGIFAnimation(std::shared_ptr<Render::Render2DFrameData> framebuffer)
+void RenderSystem::ProcessAnimatedImage(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
-	auto entities = m_world->getViewWith<Transform2D, GIFAnimator>();
-	if (entities.empty())
+	auto entities = m_world->getViewWith<Transform2D, AnimatedImagePlayer>();
+
+	std::vector<VKRenderContext::Sprite2DDrawItem> temp;
+	temp.reserve(entities.size());
+	for (auto [entity, transform, player] : entities)
+	{
+		if (!player.visible || !player.resource || player.color.a <= 0.0f)
+			continue;
+
+		const Render2D::SpriteFrame frame = player.ResolveFrame();
+		if (!frame.IsValid())
+			continue;
+
+		const glm::vec2 worldSize = ResolveWorldSize(player.size, frame.size, transform.scale);
+		if (worldSize.x == 0.0f || worldSize.y == 0.0f)
+			continue;
+
+		VKRenderContext::Sprite2DDrawItem common;
+		common.texture = frame.texture;
+		common.color = player.color;
+		common.blend = player.blend;
+		common.layer = player.layer;
+		common.order = player.internalZOrder;
+		common.sequence = static_cast<uint32_t>(entity.getId());
+
+		const Placement2D placement = MakePlacement(transform, player.offset, player.flipX, player.flipY);
+		EmitSpriteQuads(temp, frame, placement, worldSize, player.pivot, false, transform.scale, common);
+	}
+
+	if (temp.empty())
+		return;
+	LockGuard guard(_D2D_SpinLock);
+	framebuffer->sprites.append_range(std::move(temp));
+	framebuffer->hasContent = true;
+}
+
+VKRenderContext::Camera2DData RenderSystem::GetActiveCamera2D(World& world, bool* found)
+{
+	// primary 且 priority 最大的那台；一台都没有时保持默认（等同旧的 MapBoundary：1000x600 拉伸）
+	Entity chosen;
+	const Camera2D* camera = nullptr;
+	for (auto [entity, candidate] : world.getViewWith<Camera2D>())
+	{
+		if (!candidate.primary)
+			continue;
+		if (!camera || candidate.priority > camera->priority)
+		{
+			camera = &candidate;
+			chosen = entity;
+		}
+	}
+
+	if (found)
+		*found = camera != nullptr;
+
+	VKRenderContext::Camera2DData data;
+	if (!camera)
+		return data;
+
+	data.designSize = glm::max(camera->designSize, glm::vec2(1.0f));
+	data.zoom = std::max(camera->zoom, 1e-4f);
+	data.aspectMode = camera->aspectMode;
+	data.pixelSnap = camera->pixelSnap;
+	data.center = data.designSize * 0.5f;
+	data.rotation = 0.0f;
+	if (const auto* transform = chosen.tryGetComponent<Transform2D>())
+	{
+		data.center = transform->position;
+		data.rotation = transform->rotation;
+	}
+	return data;
+}
+
+void RenderSystem::ProcessCamera2D(std::shared_ptr<Render::Render2DFrameData> framebuffer)
+{
+	bool found = false;
+	auto data = GetActiveCamera2D(*m_world, &found);
+	if (!found)
 		return;
 
-	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
-	temp.reserve(entities.size());
-	for (auto [entity, transform, gifanimator] : entities)
-	{
-		if (!gifanimator.visible || !gifanimator.gifInfo)continue;
-
-		UINT framecount = gifanimator.gifInfo->getFrameCount();
-		if (framecount <= 0 || gifanimator.giftotalTime <= 0.f) continue;
-		if (gifanimator.width <= 0 || gifanimator.height <= 0) continue;
-		int64_t currenttime = Tool::GetTimestampMilliseconds();
-		if (gifanimator.loopCount > 0 && currenttime > gifanimator.startTime + gifanimator.loopCount * gifanimator.giftotalTime) continue;
-		if (gifanimator.opacity <= 0.f) continue;
-
-		auto renderdata = std::make_shared<D2DRenderContext::GIFAnimationRenderData>();
-		renderdata->x = transform.position.x - gifanimator.offset.x;
-		renderdata->y = transform.position.y - gifanimator.offset.y;
-		renderdata->rotation = transform.rotation;
-		renderdata->width = gifanimator.width;
-		renderdata->height = gifanimator.height;
-		renderdata->opacity = gifanimator.opacity;
-		renderdata->gifInfo = gifanimator.gifInfo;
-		renderdata->startTime = gifanimator.startTime;
-		renderdata->giftotalTime = gifanimator.giftotalTime;
-		renderdata->loopCount = gifanimator.loopCount;
-
-		auto context = std::make_shared<D2DRenderContext::RenderContext>();
-		context->type = D2DRenderContext::RenderContextType::GIFAnimation;
-		context->layer = gifanimator.layer;
-		context->internalZOrder = gifanimator.internalZOrder;
-		context->data = renderdata;
-
-		temp.emplace_back(std::move(context));
-	}
-	LockGuard guard(_D2D_SpinLock);
-	framebuffer->D2D_Contexts.append_range(temp);
+	// 只有这个任务写 camera，不用和精灵共用锁
+	framebuffer->camera = data;
 }
 
 void RenderSystem::ProcessDebugLines(std::shared_ptr<Render::Render2DFrameData> framebuffer)
 {
 	std::vector<Line2> lines;
 	{
+		LockGuard guard(_debugLineLock);
 		lines.swap(_DebugLines);
 	}
+	if (lines.empty())
+		return;
 
-	std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> temp;
+	std::vector<VKRenderContext::Line2DDrawItem> temp;
 	temp.reserve(lines.size());
-	for (auto& line : lines)
+	for (const auto& line : lines)
 	{
-		auto renderdata = std::make_shared <D2DRenderContext::DebugLineRenderData>();
-		renderdata->line_pos1 = line.pos1;
-		renderdata->line_pos2 = line.pos2;
-
-		auto context = std::make_shared<D2DRenderContext::RenderContext>();
-		context->type = D2DRenderContext::RenderContextType::DebugLine;
-		context->data = renderdata;
-
-		temp.emplace_back(std::move(context));
+		VKRenderContext::Line2DDrawItem item;
+		item.from = line.pos1;
+		item.to = line.pos2;
+		item.color = line.color;
+		item.width = line.width;
+		temp.push_back(item);
 	}
+
 	LockGuard guard(_D2D_SpinLock);
-	framebuffer->D2D_Contexts.append_range(temp);
+	framebuffer->lines.append_range(std::move(temp));
+	framebuffer->hasContent = true;
 }
 
 void RenderSystem::ProcessStaticModel(std::shared_ptr<Render3DFrameData> framebuffer, Entity maincamera)

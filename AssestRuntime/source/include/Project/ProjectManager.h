@@ -37,6 +37,13 @@ public:
 	bool ImportMeshAsset(const std::string& filePath, const std::string& assetPath, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
 	bool ImportModelAsset(const std::string& filePath, const std::string& assetPath, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
 	bool ImportTextureAsset(const std::string& filePath, const std::string& assetPath, const TextureConfig& config, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
+	// 动图：原文件拷进工程 + 导入配置；图集在加载时生成，不落盘
+	bool ImportAnimatedImageAsset(const std::string& filePath, const std::string& assetPath, const TextureConfig& config, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
+	// Sprite：原图拷进工程 + 导入配置，区域之后在 Sprite 编辑器里编辑（没有区域时整张图就是一帧）
+	bool ImportSpriteAsset(const std::string& filePath, const std::string& assetPath, const TextureConfig& config, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
+	// 同一张原图已经导入过的 type 资产（贴图 / 精灵）：元文件和原图在同一目录、名字是"前缀_编号_原图文件名.meta"，
+	// 并且元文件里记的原图路径就是 sourcePath。转资产前用来提示重复
+	std::vector<AssetMeta> FindImageAssetsFromSource(AssetType type, const AssetPath& sourcePath);
 	bool ImportScriptAsset(const std::string& filePath, const std::string& assetPath, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
 	bool ImportUIDocumentAsset(const std::string& filePath, const std::string& assetPath, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);
 	bool ImportUIStyleAsset(const std::string& filePath, const std::string& assetPath, std::vector<AssetMeta>* out = nullptr, bool autoSave = true);

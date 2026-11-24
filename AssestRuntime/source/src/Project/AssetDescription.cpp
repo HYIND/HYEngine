@@ -235,6 +235,124 @@ void TextureAssetDescription::SetPath(const AssetPath& assetPath) { _path = asse
 
 void TextureAssetDescription::SetConfig(const TextureConfig& config) { _config = config; }
 
+namespace
+{
+	Json EncodeVec(const float* v, int count)
+	{
+		Json array = Json::array();
+		for (int i = 0; i < count; ++i)
+			array.push_back(v[i]);
+		return array;
+	}
+
+	void DecodeVec(const Json& j, const char* key, float* v, int count)
+	{
+		if (!j.contains(key) || !j[key].is_array() || j[key].size() != static_cast<size_t>(count))
+			return;
+		for (int i = 0; i < count; ++i)
+		{
+			if (j[key][i].is_number())
+				v[i] = j[key][i].get<float>();
+		}
+	}
+
+	Json EncodeTextureConfig(const TextureConfig& config)
+	{
+		// 2D 图像（Sprite / 动图）只用得到过滤方式和 sRGB（环绕、各向异性固定）
+		Json a;
+		a["minFilter"] = config.minFilter;
+		a["magFilter"] = config.magFilter;
+		a["gammaCorrection"] = config.gammaCorrection;
+		return a;
+	}
+
+	void DecodeTextureConfig(const Json& a, TextureConfig& config)
+	{
+		config.minFilter = a.value("minFilter", config.minFilter);
+		config.magFilter = a.value("magFilter", config.magFilter);
+		config.gammaCorrection = a.value("gammaCorrection", config.gammaCorrection);
+	}
+}
+
+bool SpriteAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+
+	_path.clear();
+	_regions.clear();
+
+	if (content.contains("SpriteSetting") && content["SpriteSetting"].is_object())
+	{
+		const auto& a = content["SpriteSetting"];
+		_path = a.value("path", "");
+		DecodeTextureConfig(a, _config);
+		if (a.contains("regions") && a["regions"].is_array())
+		{
+			for (const auto& r : a["regions"])
+			{
+				if (!r.is_object())
+					continue;
+				Render2D::SpriteRegion region;
+				region.name = r.value("name", std::string());
+				DecodeVec(r, "rect", &region.rect.x, 4);
+				DecodeVec(r, "pivot", &region.pivot.x, 2);
+				DecodeVec(r, "border", &region.border.x, 4);
+				_regions.push_back(std::move(region));
+			}
+		}
+	}
+	return true;
+}
+
+bool SpriteAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json regions = Json::array();
+	for (const auto& region : _regions)
+	{
+		regions.push_back(Json{
+			{ "name", region.name },
+			{ "rect", EncodeVec(&region.rect.x, 4) },
+			{ "pivot", EncodeVec(&region.pivot.x, 2) },
+			{ "border", EncodeVec(&region.border.x, 4) }
+			});
+	}
+
+	Json a = EncodeTextureConfig(_config);
+	a["path"] = _path;
+	a["regions"] = std::move(regions);
+
+	Json content;
+	content["SpriteSetting"] = std::move(a);
+	return SaveJsonFile(filePath, content, 1);
+}
+
+bool AnimatedImageAssetDescription::LoadFromFile(const std::string& filePath)
+{
+	Json content;
+	if (!LoadJsonFile(filePath, content))
+		return false;
+
+	if (content.contains("AnimatedImageSetting") && content["AnimatedImageSetting"].is_object())
+	{
+		const auto& a = content["AnimatedImageSetting"];
+		_path = a.value("path", "");
+		DecodeTextureConfig(a, _config);
+	}
+	return true;
+}
+
+bool AnimatedImageAssetDescription::SaveToFile(const std::string& filePath)
+{
+	Json a = EncodeTextureConfig(_config);
+	a["path"] = _path;
+
+	Json content;
+	content["AnimatedImageSetting"] = std::move(a);
+	return SaveJsonFile(filePath, content);
+}
+
 bool AduioAssetDescription::LoadFromFile(const std::string& filePath)
 {
 	Json content;

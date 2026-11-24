@@ -156,10 +156,9 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="source\include\BusyLoaderDialog.h" />
     <ClInclude Include="source\include\GameEngine.h" />
-    <ClInclude Include="source\include\Manager\ResourceManager.h" />
+    <ClInclude Include="source\include\Manager\GraphicsContextManager.h" />
     <ClInclude Include="source\include\RenderEngine\VulkanPresentBridge.h" />
     <ClInclude Include="source\include\RenderProcess.h" />
-    <ClInclude Include="source\include\Scene.h" />
     <ClInclude Include="source\include\stdafx.h" />
     <ClInclude Include="source\include\Tank_War.h" />
   </ItemGroup>
@@ -168,12 +167,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="Game.ico" />
-    <Image Include="Resource\Fail.png" />
-    <Image Include="Resource\OP_KB.png" />
-    <Image Include="Resource\Pause.png" />
-    <Image Include="Resource\Return.png" />
-    <Image Include="Resource\Text_BK.png" />
-    <Image Include="Resource\Win.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resource\Cursor.cur" />
@@ -187,15 +180,7 @@
     <ClCompile Include="source\src\main.cpp" />
     <ClCompile Include="source\src\RenderEngine\VulkanPresentBridge.cpp" />
     <ClCompile Include="source\src\RenderProcess.cpp" />
-    <ClCompile Include="source\src\ResourceManager.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <Media Include="Resource\Default_Attacked.wav" />
-    <Media Include="Resource\Default_Shoot.wav" />
-    <Media Include="Resource\Fire.wav" />
-    <Media Include="Resource\Game_BGM.wav" />
-    <Media Include="Resource\Heal.wav" />
-    <Media Include="Resource\Menu_BGM.wav" />
+    <ClCompile Include="source\src\GraphicsContextManager.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

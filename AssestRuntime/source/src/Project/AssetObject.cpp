@@ -36,6 +36,10 @@ std::shared_ptr<Skeleton> AssetObject::AsSkeleton() { return nullptr; }
 
 std::shared_ptr<AnimationClip> AssetObject::AsAnimationClip() { return nullptr; }
 
+std::shared_ptr<Render2D::Sprite> AssetObject::AsSprite() { return nullptr; }
+
+std::shared_ptr<Render2D::AnimatedImage> AssetObject::AsAnimatedImage() { return nullptr; }
+
 
 StaticMeshAsset::StaticMeshAsset() { _type = AssetType::StaticMesh; }
 
@@ -46,6 +50,118 @@ TextureAsset::TextureAsset() { _type = AssetType::Texture; }
 TextureAsset::~TextureAsset() { _texture.reset(); }
 
 std::shared_ptr<Texture2D> TextureAsset::AsTexture() { return _texture; }
+
+std::shared_ptr<Render2D::Sprite> TextureAsset::AsSprite()
+{
+	std::lock_guard<std::mutex> lock(_spriteMutex);
+	if (!_sprite && _texture && !_texture->IsEmpty())
+	{
+		_sprite = std::make_shared<Render2D::Sprite>(_texture, std::vector<Render2D::SpriteRegion>{});
+		_sprite->SetAssetGUID(_assetGUID);
+	}
+	return _sprite;
+}
+
+// ============================== Sprite ==============================
+
+SpriteAsset::SpriteAsset() { _type = AssetType::Sprite; }
+
+std::shared_ptr<Render2D::Sprite> SpriteAsset::AsSprite()
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+	if (!_sprite)
+	{
+		// 正常在加载时就建好了；这里只是兜底，保证引用方拿到的对象不为空
+		_sprite = std::make_shared<Render2D::Sprite>(nullptr, _regions);
+		_sprite->SetAssetGUID(_assetGUID);
+	}
+	return _sprite;
+}
+
+std::shared_ptr<Texture2D> SpriteAsset::AsTexture()
+{
+	auto sprite = AsSprite();
+	return sprite ? sprite->GetTexture() : nullptr;
+}
+
+AssetPath SpriteAsset::GetPath() const
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+	return _path;
+}
+
+TextureConfig SpriteAsset::GetConfig() const
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+	return _config;
+}
+
+std::vector<Render2D::SpriteRegion> SpriteAsset::GetRegions() const
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+	return _regions;
+}
+
+bool SpriteAsset::SetConfig(const TextureConfig& config, const std::string& sourceFullPath)
+{
+	std::string error;
+	auto texture = Render2D::LoadImageTexture(sourceFullPath, config, &error);
+	if (!texture)
+	{
+		std::cerr << std::format("[ Asset ] Sprite 重新加载图片失败：{}\n", error);
+		return false;
+	}
+	texture->SetAssetGUID(_assetGUID);
+
+	auto sprite = AsSprite();
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		_config = config;
+	}
+	sprite->SetTexture(std::move(texture));
+	return true;
+}
+
+void SpriteAsset::SetRegions(const std::vector<Render2D::SpriteRegion>& regions)
+{
+	std::shared_ptr<Render2D::Sprite> sprite;
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		_regions = regions;
+		sprite = _sprite;
+	}
+	if (sprite)
+		sprite->SetRegions(regions);
+}
+
+// ============================== AnimatedImage ==============================
+
+AnimatedImageAsset::AnimatedImageAsset() { _type = AssetType::AnimatedImage; }
+
+std::shared_ptr<Render2D::AnimatedImage> AnimatedImageAsset::AsAnimatedImage()
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+	return _image;
+}
+
+bool AnimatedImageAsset::SetConfig(const TextureConfig& config, const std::string& sourceFullPath)
+{
+	std::string error;
+	auto image = Render2D::AnimatedImage::LoadFromFile(sourceFullPath, config, &error);
+	if (!image)
+	{
+		std::cerr << std::format("[ Asset ] 动图重新解码失败：{}\n", error);
+		return false;
+	}
+	image->SetAssetGUID(_assetGUID);
+
+	std::lock_guard<std::mutex> lock(_mutex);
+	_description.SetConfig(config);
+	if (_image)
+		_image->MarkStale();
+	_image = std::move(image);
+	return true;
+}
 
 AudioAsset::AudioAsset() { _type = AssetType::Audio; }
 

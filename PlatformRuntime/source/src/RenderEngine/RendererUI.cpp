@@ -3,6 +3,7 @@
 
 #include "VulkanRenderEngine/VKContext.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
+#include "RenderEngine/ImGuiTextureCache.h"
 
 #include <utility>
 
@@ -20,6 +21,8 @@ using namespace Render;
 RendererUI::RendererUI()
 {
 	// 和 Renderer3D 一样：帧数据缓冲由渲染端持有，RenderSystem 在 bind 时注入引用。
+	// RendererUI 每帧都同步等 GPU 做完，描述符集不用延迟释放；布局转换在 Render 里统一插（TransitionUsed）
+	m_textureCache = std::make_unique<ImGuiTextureCache>(0u, 300u, false);
 	m_frameBuffer = std::make_shared<FrameBuffer>();
 	for (int i = 0; i < 3; ++i)
 		m_frameBuffer->setInitialValue(i, std::make_shared<RenderUIFrameData>());
@@ -93,6 +96,11 @@ void RendererUI::ShutdownBackend()
 	{
 		ImGuiContext* previous = ImGui::GetCurrentContext();
 		ImGui::SetCurrentContext(m_context);
+
+		// 描述符集属于这个后端：后端关掉之前先还回去（要在拿描述符池锁之前，Clear 自己会拿）
+		if (m_textureCache)
+			m_textureCache->Clear(true);
+		m_animationStart.clear();
 		{
 			// ImGui 后端用的是引擎的图形队列，内部会直接 vkQueueSubmit / vkQueueWaitIdle，必须和引擎的提交互斥
 			LockGuard guard_queue(VKCONTEXT->GetDevice()->GetGraphicsQueueMutex());
@@ -159,6 +167,8 @@ bool RendererUI::EnsureBackend(vk::Format format)
 void RendererUI::Shutdown()
 {
 	ShutdownBackend();
+	if (m_textureCache)
+		m_textureCache->Clear(false);
 
 	if (VKCONTEXT && VKCONTEXT->GetDevice())
 		VKCONTEXT->GetDeviceHandle().waitIdle();
@@ -336,7 +346,21 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		textColor = ImGui::ColorConvertFloat4ToU32(ImVec4(color.r, color.g, color.b, color.a * opacity));
 	}
 
-	if (fill != 0 && node.type != "text")
+	// 背景 / 图像：引用了图像（样式的 texture，或 image 节点自带的 texture）就画图，tint 作为染色；
+	// 没有图像或解析失败时退回纯色块（tint）
+	bool imageDrawn = false;
+	if (node.type != "text")
+	{
+		const std::string& imageRef = (style->texture && !style->texture->empty()) ? *style->texture : node.texture;
+		if (!imageRef.empty())
+		{
+			const UI::Vec4 tint = style->tint ? *style->tint : UI::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+			const ImU32 imageColor = ImGui::ColorConvertFloat4ToU32(ImVec4(tint.r, tint.g, tint.b, tint.a * opacity));
+			imageDrawn = DrawImage(drawList, imageRef, node, *style, instance, x, y, w, h, scaleX, scaleY, imageColor, rounding);
+		}
+	}
+
+	if (!imageDrawn && fill != 0 && node.type != "text")
 		drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), fill, rounding);
 
 	// ---- 滚动列表：行数据来自实例，滚动交给 ImGui 子窗口 ----
@@ -760,6 +784,124 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
 }
 
+bool RendererUI::DrawImage(ImDrawList* drawList, const std::string& reference, const UI::UiNode& node, const UI::StyleFields& style,
+	UI::UiInstanceState* instance, float x, float y, float w, float h, float scaleX, float scaleY, ImU32 color, float rounding)
+{
+	if (!m_currentImages || !m_textureCache || w <= 0.0f || h <= 0.0f)
+		return false;
+
+	auto it = m_currentImages->find(reference);
+	if (it == m_currentImages->end())
+		return false;
+	const Render2D::ImageSource& source = it->second;
+
+	// 动图按 UI 时钟播放；有限循环从这个节点第一次出现开始计时
+	float timeMs = 0.0f;
+	if (source.IsAnimated())
+	{
+		const uint64_t key = (reinterpret_cast<uint64_t>(instance ? static_cast<const void*>(instance) : static_cast<const void*>(&node)) << 16)
+			^ static_cast<uint64_t>(node.id);
+		auto [start, inserted] = m_animationStart.try_emplace(key, m_uiTimeMs);
+		timeMs = m_uiTimeMs - start->second;
+	}
+
+	const Render2D::SpriteFrame frame = source.Evaluate(timeMs, node.imageLoop, node.imageSpeed);
+	if (!frame.IsValid())
+		return false;
+
+	const ImTextureID id = m_textureCache->Get(frame.texture);
+	if (id == ImTextureID_Invalid)
+		return false;
+
+	const bool nearest = ImGuiTextureCache::WantsNearest(*frame.texture);
+	ImGuiPlatformIO& platformIO = ImGui::GetPlatformIO();
+	if (nearest && platformIO.DrawCallback_SetSamplerNearest)
+		drawList->AddCallback(platformIO.DrawCallback_SetSamplerNearest, nullptr);
+
+	ImVec2 p0(x, y), p1(x + w, y + h);
+	ImVec2 uv0(frame.uvRect.x, frame.uvRect.y), uv1(frame.uvRect.z, frame.uvRect.w);
+	const std::string fit = style.fit ? *style.fit : std::string("fill");
+
+	// 九宫格：样式里的 slice（源图像素）优先，其次 Sprite 区域自带的边距；只在拉伸模式下生效
+	glm::vec4 border(0.0f);		// left, top, right, bottom（源图像素）
+	if (style.slice)
+		border = glm::vec4(style.slice->left, style.slice->top, style.slice->right, style.slice->bottom);
+	else if (frame.HasBorder())
+		border = frame.border;
+	const bool sliced = (fit == "fill" || fit == "stretch") && (border.x > 0.0f || border.y > 0.0f || border.z > 0.0f || border.w > 0.0f);
+
+	if (sliced)
+	{
+		// 屏幕上的边宽 = 源像素 * UI 缩放；放不下时等比压缩
+		float bl = border.x * scaleX, br = border.z * scaleX, bt = border.y * scaleY, bb = border.w * scaleY;
+		if (bl + br > w && bl + br > 0.0f) { const float k = w / (bl + br); bl *= k; br *= k; }
+		if (bt + bb > h && bt + bb > 0.0f) { const float k = h / (bt + bb); bt *= k; bb *= k; }
+
+		const float du = (frame.uvRect.z - frame.uvRect.x) / std::max(frame.size.x, 1.0f);
+		const float dv = (frame.uvRect.w - frame.uvRect.y) / std::max(frame.size.y, 1.0f);
+		const float xs[4] = { x, x + bl, x + w - br, x + w };
+		const float ys[4] = { y, y + bt, y + h - bb, y + h };
+		const float us[4] = { frame.uvRect.x, frame.uvRect.x + border.x * du, frame.uvRect.z - border.z * du, frame.uvRect.z };
+		const float vs[4] = { frame.uvRect.y, frame.uvRect.y + border.y * dv, frame.uvRect.w - border.w * dv, frame.uvRect.w };
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int col = 0; col < 3; ++col)
+			{
+				if (xs[col + 1] - xs[col] <= 0.0f || ys[row + 1] - ys[row] <= 0.0f)
+					continue;
+				drawList->AddImage(id, ImVec2(xs[col], ys[row]), ImVec2(xs[col + 1], ys[row + 1]),
+					ImVec2(us[col], vs[row]), ImVec2(us[col + 1], vs[row + 1]), color);
+			}
+		}
+	}
+	else
+	{
+		const float imageAspect = frame.size.x / std::max(frame.size.y, 1e-4f);
+		const float boxAspect = w / std::max(h, 1e-4f);
+		if (fit == "contain")
+		{
+			// 等比缩放，完整显示，居中留边
+			float dw = w, dh = h;
+			if (imageAspect > boxAspect) dh = w / imageAspect; else dw = h * imageAspect;
+			p0 = ImVec2(x + (w - dw) * 0.5f, y + (h - dh) * 0.5f);
+			p1 = ImVec2(p0.x + dw, p0.y + dh);
+		}
+		else if (fit == "cover")
+		{
+			// 等比缩放，铺满，裁掉多出的部分（裁 UV）
+			const float uSpan = uv1.x - uv0.x, vSpan = uv1.y - uv0.y;
+			if (imageAspect > boxAspect)
+			{
+				const float keep = boxAspect / imageAspect;
+				const float cut = (1.0f - keep) * 0.5f * uSpan;
+				uv0.x += cut; uv1.x -= cut;
+			}
+			else
+			{
+				const float keep = imageAspect / boxAspect;
+				const float cut = (1.0f - keep) * 0.5f * vSpan;
+				uv0.y += cut; uv1.y -= cut;
+			}
+		}
+		else if (fit == "none")
+		{
+			// 原始像素尺寸（乘 UI 缩放），居中
+			const float dw = frame.size.x * scaleX, dh = frame.size.y * scaleY;
+			p0 = ImVec2(x + (w - dw) * 0.5f, y + (h - dh) * 0.5f);
+			p1 = ImVec2(p0.x + dw, p0.y + dh);
+		}
+
+		if (rounding > 0.0f)
+			drawList->AddImageRounded(id, p0, p1, uv0, uv1, color, rounding);
+		else
+			drawList->AddImage(id, p0, p1, uv0, uv1, color);
+	}
+
+	if (nearest && platformIO.DrawCallback_SetSamplerLinear)
+		drawList->AddCallback(platformIO.DrawCallback_SetSamplerLinear, nullptr);
+	return true;
+}
+
 std::vector<UI::UiEvent> RendererUI::PollEvents()
 {
 	std::vector<UI::UiEvent> events;
@@ -830,7 +972,9 @@ void RendererUI::DrawUiContent(const std::shared_ptr<RenderUIFrameData>& frame)
 			if (view.instance)
 				instanceLock = std::unique_lock<CriticalSectionLock>(view.instance->mutex);
 
+			m_currentImages = view.images.get();
 			DrawNode(drawList, document.root, *view.document, view.instance.get(), scaleX, scaleY, offsetX, offsetY);
+			m_currentImages = nullptr;
 		}
 		ImGui::PopID();
 	}
@@ -873,6 +1017,10 @@ void RendererUI::Render(const std::shared_ptr<Texture2D>& target)
 
 	FeedInput(static_cast<float>(width), static_cast<float>(height));
 
+	m_uiTimeMs += deltaMilliseconds;
+	if (m_textureCache)
+		m_textureCache->BeginFrame();
+
 	ImGui_ImplVulkan_NewFrame();
 	ImGui::NewFrame();
 
@@ -892,6 +1040,10 @@ void RendererUI::Render(const std::shared_ptr<Texture2D>& target)
 			cmd->Begin();
 
 			target->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+
+			// 这一帧 UI 用到的图在开始渲染前切到可采样
+			if (m_textureCache)
+				m_textureCache->TransitionUsed(cmd);
 
 			DynamicRenderInfo renderInfo{};
 			renderInfo.SetRenderArea(width, height);

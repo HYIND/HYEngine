@@ -29,6 +29,11 @@ static bool DetectType(const std::string& path, AssetType& type)
 		type = AssetType::Texture;
 		return true;
 	}
+	if (ext == ".gif")
+	{
+		type = AssetType::AnimatedImage;
+		return true;
+	}
 	if (ext == ".mat")
 	{
 		type = AssetType::Material;
@@ -95,6 +100,8 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 	ImGui::OpenPopup("AssetImportPopup");
 	if (ImGui::BeginPopupModal("AssetImportPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
 		ImGui::Text("ImportAsset");
+		if (!m_hint.empty())
+			ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", m_hint.c_str());
 		ImGui::Separator();
 
 		ImGui::Text("Location:");
@@ -137,7 +144,9 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		ImGui::PopID();
 
 		int currentItem = static_cast<int>(m_importAssetType);
-		const char* items[] = { "未知", "贴图", "音频", "材质", "网格体","模型", "场景", "脚本", "UI 文档", "UI 样式" };
+		// 下标就是 AssetType 的值
+		const char* items[] = { "未知", "贴图", "音频", "材质", "网格体","模型", "场景", "脚本", "UI 文档", "UI 样式",
+			"蒙皮网格", "蒙皮模型", "骨骼", "动画片段", "精灵", "动图" };
 		if (ImGui::Combo("资产类型", &currentItem, items, IM_ARRAYSIZE(items)))
 			m_importAssetType = static_cast<AssetType>(currentItem);
 
@@ -163,6 +172,10 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 		case AssetType::UiDocument:
 			break;
 		case AssetType::UiStyle:
+			break;
+		case AssetType::AnimatedImage:
+		case AssetType::Sprite:
+			DrawImage2DConfig();
 			break;
 		default:
 			break;
@@ -204,6 +217,12 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 					case AssetType::UiStyle:
 						imported = projectManager->ImportUIStyleAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, &importedMetas);
 						break;
+					case AssetType::AnimatedImage:
+						imported = projectManager->ImportAnimatedImageAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, m_image2DConfig, &importedMetas);
+						break;
+					case AssetType::Sprite:
+						imported = projectManager->ImportSpriteAsset(m_wantImportFilePathBuffer, m_wantImportAssetPathBuffer, m_image2DConfig, &importedMetas);
+						break;
 					default:
 						break;
 					}
@@ -217,6 +236,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 				ImGui::CloseCurrentPopup();
 				visiable = false;
 				m_importCallback = nullptr;
+				m_hint.clear();
 			}
 		}
 
@@ -225,6 +245,7 @@ void AssetImportPopup::DrawPopup(ProjectManager* projectManager)
 			memset(m_wantImportFilePathBuffer, 0, sizeof(m_wantImportFilePathBuffer));
 			memset(m_wantImportAssetPathBuffer, 0, sizeof(m_wantImportAssetPathBuffer));
 			m_importCallback = nullptr;
+			m_hint.clear();
 			ImGui::CloseCurrentPopup();
 			visiable = false;
 		}
@@ -276,6 +297,24 @@ void AssetImportPopup::DrawTextureConfig()
 
 		// Gamma Correction
 		ImGui::Checkbox("Gamma Correction", &m_config.gammaCorrection);
+	}
+}
+
+void AssetImportPopup::DrawImage2DConfig()
+{
+	if (ImGui::CollapsingHeader("2D 图像导入配置", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		// 精灵和动图只关心采样过滤和 sRGB；环绕固定 ClampToEdge、不生成 mip、不开各向异性（区域 / 帧挨在一起）。
+		// 精灵的区域导入后在精灵编辑器里编辑；动图的播放方式（循环、速度）在 AnimatedImagePlayer 组件 / UI 节点上设置
+		const char* filterItems[] = { "NEAREST", "LINEAR" };
+		unsigned int filterValues[] = { (int)vk::Filter::eNearest, (int)vk::Filter::eLinear };
+		int currentFilter = GetFilterIndex((int)m_image2DConfig.magFilter, filterValues, 2);
+		if (ImGui::Combo("过滤方式", &currentFilter, filterItems, IM_ARRAYSIZE(filterItems)))
+		{
+			m_image2DConfig.minFilter = (vk::Filter)filterValues[currentFilter];
+			m_image2DConfig.magFilter = (vk::Filter)filterValues[currentFilter];
+		}
+		ImGui::Checkbox("Gamma 校正（sRGB）", &m_image2DConfig.gammaCorrection);
 	}
 }
 

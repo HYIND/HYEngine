@@ -165,6 +165,7 @@
     <ClInclude Include="source\include\EditorComponent.h" />
     <ClInclude Include="source\include\EditorTags.h" />
     <ClInclude Include="source\include\IconManager.h" />
+    <ClInclude Include="source\include\Sprite2DEditor.h" />
     <ClInclude Include="source\include\ImguiLayout.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />
     <ClInclude Include="source\include\DDGIEditor.h" />
@@ -190,6 +191,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="source\src\AssetImportPopup.cpp" />
     <ClCompile Include="source\src\IconManager.cpp" />
+    <ClCompile Include="source\src\Sprite2DEditor.cpp" />
     <ClCompile Include="source\src\ImguiLayout.cpp" />
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
     <ClCompile Include="source\src\DDGIEditor.cpp" />

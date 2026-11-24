@@ -1,7 +1,5 @@
 #pragma once
 
-#include "RenderEngine/D2DTools.h"
-#include "RenderEngine/D2DRenderContext.h"
 #include "RenderEngine/RenderFrameData.h"
 #include "RenderEngine/Renderer3D.h"
 #include "RenderEngine/Renderer2D.h"
@@ -9,6 +7,7 @@
 
 #include "VulkanRenderEngine/VulkanRenderer.h"
 
+#include <atomic>
 #include <functional>
 #include <string>
 #include <vector>
@@ -58,9 +57,19 @@ namespace Render
 
 		void Shutdown();
 
-		// 宿主只面对这一个入口：等 3D 那一帧，顺带把 UI 叠上去，回调里拿到的就是合成结果。
+		// 宿主只面对这一个入口：等 3D 那一帧，依次叠上 2D 层和 UI，回调里拿到的就是合成结果。
 		using WaitImageCallback = std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>;
 		void WaitImage(const WaitImageCallback& callback);
+
+		// 三层各自的显示开关（编辑器视口用）：3D 关掉时整帧不跑 3D 渲染；2D / UI 关掉时跳过那一层
+		struct LayerVisibility
+		{
+			bool layer3D = true;
+			bool layer2D = true;
+			bool layerUI = true;
+		};
+		void SetLayerVisibility(const LayerVisibility& visibility);
+		LayerVisibility GetLayerVisibility() const;
 
 		void BindRenderSystem(RenderSystem& renderSystem);
 		void RegisterRenderSystem(World& world);
@@ -70,5 +79,7 @@ namespace Render
 		std::unique_ptr<Renderer2D> _renderer2D;
 		std::unique_ptr<RendererUI> _uiRender;
 		std::function<void(const std::vector<UI::UiEvent>&)> _uiEventSink;
+		std::atomic<bool> _layer2DVisible{ true };
+		std::atomic<bool> _layerUIVisible{ true };
 	};
 }

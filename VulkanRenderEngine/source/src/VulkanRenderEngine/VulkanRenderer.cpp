@@ -1568,6 +1568,37 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 
 }
 
+void VulkanRenderer::DrawEmptyFrame(const std::shared_ptr<FrameData>& data)
+{
+	if (!data || !data->state || !data->sync)
+		return;
+
+	VKCONTEXT->ProcessRetireAndPushFrameIndex();
+
+	const auto& texture = data->renderTarget ? data->renderTarget->finalColorBuffer : nullptr;
+	if (texture && !texture->IsEmpty())
+	{
+		auto cmd = VKCONTEXT->GetCommandBuffer();
+		auto layout = texture->GetLayout(0);
+		if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
+			texture->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+		vk::ImageSubresourceRange range;
+		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1)
+			.setBaseMipLevel(0)
+			.setLevelCount(1);
+		cmd->clearColorImage(texture->GetImage(), layout, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f }, range);
+		cmd->SubmitNowAndWait();
+	}
+
+	FinishRendering(data->state);
+
+	// 这一帧没有跑渲染图，进度计数和正常帧对不上；紧跟着的正常帧会逐段等这条时间线，直接放到很大，让它不用等
+	data->sync->curframeTimeLine->Signal(std::numeric_limits<uint32_t>::max() / 2u);
+}
+
 void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
 {
 	auto& state = data->state;
@@ -1962,6 +1993,11 @@ void VulkanRenderer::ExecuteLoop()
 			LockGuard guard(_candidateFrameStatesMutex);
 			while (!_candidateFrameStates.empty() && (_runningFrames.size() < _maxFramesInFlight))
 			{
+				// 3D 关闭的帧不跑渲染图，没法和前后帧按进度逐段交接：等在途的帧全部画完再放它进去（它不再等上一帧）
+				const bool skipScene = !_sceneRenderEnabled.load(std::memory_order_acquire);
+				if (skipScene && !_runningFrames.empty())
+					break;
+
 				auto sync = std::make_shared<RenderGraph::Graph::FilghtSync>();
 				sync->curframeTimeLine = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
 				sync->preFrameTimeLine = !_runningFrames.empty() ? _runningFrames.back()->sync->curframeTimeLine : nullptr;
@@ -1991,13 +2027,21 @@ void VulkanRenderer::ExecuteLoop()
 
 				data->state->curFrameSkinnedData = std::make_shared<FrameHistoryData>();
 				data->state->preFrameSkinnedData = !_runningFrames.empty() ? _runningFrames.back()->state->curFrameSkinnedData : nullptr;
+				data->skipScene = skipScene;
 
-				ResolveFrameHistory(data);
+				// 相机历史只跟真正画过的帧走，空帧不参与
+				if (!skipScene)
+					ResolveFrameHistory(data);
 
 				data->handle = _frameTaskPool.submit([&, weakData = std::weak_ptr(data)]()->void
 					{
 						if (auto data = weakData.lock())
-							DrawOffScreen(data);
+						{
+							if (data->skipScene)
+								DrawEmptyFrame(data);
+							else
+								DrawOffScreen(data);
+						}
 
 						LockGuard guard(_executeMutex);
 						_executeCV.NotifyOne();

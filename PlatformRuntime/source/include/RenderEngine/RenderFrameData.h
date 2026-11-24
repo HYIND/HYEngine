@@ -3,12 +3,12 @@
 #include <vector>
 #include <variant>
 #include "glm/glm.hpp"
-#include "RenderEngine/D2DTools.h"
 #include "VulkanRenderEngine/General/VKRenderContext.h"
-#include "RenderEngine/D2DRenderContext.h"
+#include "VulkanRenderEngine/General/VKRenderContext2D.h"
 #include "VulkanRenderEngine/Base/TextureCube.h"
 #include "VulkanRenderEngine/General/DDGIVolumeDesc.h"
 #include "UI/UiTypes.h"
+#include "Render/Image2DSource.h"
 
 namespace Render
 {
@@ -35,12 +35,8 @@ namespace Render
 		void reset();
 	};
 
-	struct Render2DFrameData
-	{
-		std::vector<std::shared_ptr<D2DRenderContext::RenderContext>> D2D_Contexts;
-
-		void reset();
-	};
+	// 2D 层一帧的数据就是 VKRenderContext 里的平铺数组（精灵、调试线、相机）
+	using Render2DFrameData = VKRenderContext::Render2DFrame;
 
 	// UI 这一帧要画的东西：由 RenderSystem 从 UIViewRuntime 收集，按 layer 排好序。
 	struct RenderUIFrameData
@@ -49,6 +45,7 @@ namespace Render
 		{
 			std::shared_ptr<UI::ParseResult> document;      // 解析好的 UI 文档（含每节点有效样式），共享只读
 			std::shared_ptr<UI::UiInstanceState> instance;  // 该实例自己的运行时状态（开关/滑块等）
+			std::shared_ptr<const Render2D::UIImageTable> images;	// 文档里图像引用的解析结果（Sprite / Texture / 动图）
 			int layer = 0;                                  // 大的后画
 		};
 

@@ -149,10 +149,8 @@
     <ClInclude Include="source\include\PlatformRuntimeTags.h" />
     <ClInclude Include="source\include\Helper\AudioTool.h" />
     <ClInclude Include="source\include\Input\Systems\LocalInputSystem.h" />
-    <ClInclude Include="source\include\RenderEngine\D2DRenderContext.h" />
-    <ClInclude Include="source\include\RenderEngine\D2DTools.h" />
-    <ClInclude Include="source\include\RenderEngine\D2DWrapper.h" />
     <ClInclude Include="source\include\RenderEngine\Renderer.h" />
+    <ClInclude Include="source\include\RenderEngine\ImGuiTextureCache.h" />
     <ClInclude Include="source\include\RenderEngine\Renderer3D.h" />
     <ClInclude Include="source\include\RenderEngine\RendererUI.h" />
     <ClInclude Include="source\include\UI\Message.h" />
@@ -168,7 +166,10 @@
     <ClInclude Include="source\include\RenderEngine\Renderer2D.h" />
     <ClInclude Include="source\include\RenderEngine\RenderFrameDataAnalysis.h" />
     <ClInclude Include="source\include\RenderEngine\RenderFrameData.h" />
-    <ClInclude Include="source\include\Render\Components\GIFAnimator.h" />
+    <ClInclude Include="source\include\Render\Components\AnimatedImagePlayer.h" />
+    <ClInclude Include="source\include\Render\Components\Camera2D.h" />
+    <ClInclude Include="source\include\Render\Image2DSource.h" />
+    <ClInclude Include="source\include\Render\Systems\Render2DResourceSystem.h" />
     <ClInclude Include="source\include\Render\Components\LaserBeamEmitter.h" />
     <ClInclude Include="source\include\Render\Components\ParticleEmitter.h" />
     <ClInclude Include="source\include\Render\Components\RenderBase.h" />
@@ -194,9 +195,8 @@
     <ClCompile Include="source\src\PlatformRuntime.cpp" />
     <ClCompile Include="source\src\Helper\AudioTool.cpp" />
     <ClCompile Include="source\src\Input\LocalInputSystem.cpp" />
-    <ClCompile Include="source\src\RenderEngine\D2DTools.cpp" />
-    <ClCompile Include="source\src\RenderEngine\D2DWrapper.cpp" />
     <ClCompile Include="source\src\RenderEngine\Renderer.cpp" />
+    <ClCompile Include="source\src\RenderEngine\ImGuiTextureCache.cpp" />
     <ClCompile Include="source\src\RenderEngine\Renderer3D.cpp" />
     <ClCompile Include="source\src\RenderEngine\RendererUI.cpp" />
     <ClCompile Include="source\src\UI\Message.cpp" />
@@ -214,6 +214,7 @@
     <ClCompile Include="source\src\Render\LaserBeamSystem.cpp" />
     <ClCompile Include="source\src\Render\ParticleSystem.cpp" />
     <ClCompile Include="source\src\Render\RenderSystem.cpp" />
+    <ClCompile Include="source\src\Render\Render2DResourceSystem.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

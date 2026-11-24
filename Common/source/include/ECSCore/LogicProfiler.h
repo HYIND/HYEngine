@@ -60,7 +60,8 @@ enum class LogicRenderSection : uint32_t
 	DDGIVolume,
 	SyncCamera,
 	Sprite,
-	GIFAnimation,
+	AnimatedImage,
+	Camera2D,
 	DebugLines,
 	UI,
 	Count
@@ -78,7 +79,8 @@ inline const char* LogicRenderSectionName(LogicRenderSection section)
 	case LogicRenderSection::DDGIVolume:	return "ProcessDDGIVolume";
 	case LogicRenderSection::SyncCamera:	return "SyncGLCamera";
 	case LogicRenderSection::Sprite:		return "ProcessSprite (2D)";
-	case LogicRenderSection::GIFAnimation:	return "ProcessGIFAnimation (2D)";
+	case LogicRenderSection::AnimatedImage:	return "ProcessAnimatedImage (2D)";
+	case LogicRenderSection::Camera2D:		return "ProcessCamera2D (2D)";
 	case LogicRenderSection::DebugLines:	return "ProcessDebugLines (2D)";
 	case LogicRenderSection::UI:			return "ProcessUI";
 	default:								return "?";

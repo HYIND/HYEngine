@@ -2,6 +2,8 @@
 #include "ImguiLayout.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "Render/Components/ParticleEmitter.h"
+#include "PlatformRuntimeComponents.h"
+#include "Sprite2DEditor.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 #include <algorithm>
 #include <cstdio>
@@ -52,6 +54,34 @@ struct EditorSnapshot<Script>
 		dst.data = snapshot.data;
 		dst.enabled = snapshot.enabled;
 		dst.needReload = snapshot.needReload;
+	}
+};
+
+// 动图播放器：播放时间由系统每帧推进，快照写回时不能把它倒回去；其余运行时句柄也不覆盖
+template <>
+struct EditorSnapshot<AnimatedImagePlayer>
+{
+	static void Make(const AnimatedImagePlayer& src, AnimatedImagePlayer& snapshot) { snapshot = src; }
+
+	static void Apply(AnimatedImagePlayer&& snapshot, AnimatedImagePlayer& dst)
+	{
+		const bool resumeFinished = !dst.playing && snapshot.playing && dst.finished;
+		dst.visible = snapshot.visible;
+		dst.layer = snapshot.layer;
+		dst.internalZOrder = snapshot.internalZOrder;
+		dst.offset = snapshot.offset;
+		dst.imageGuid = snapshot.imageGuid;
+		dst.playing = snapshot.playing;
+		dst.loopCount = snapshot.loopCount;
+		dst.speed = snapshot.speed;
+		dst.size = snapshot.size;
+		dst.pivot = snapshot.pivot;
+		dst.color = snapshot.color;
+		dst.flipX = snapshot.flipX;
+		dst.flipY = snapshot.flipY;
+		dst.blend = snapshot.blend;
+		// 播完以后重新勾上"播放"等于从头播
+		dst.restartRequested = dst.restartRequested || snapshot.restartRequested || resumeFinished;
 	}
 };
 
@@ -2097,6 +2127,259 @@ inline bool PropertiesHelper::DrawComponent<UIView>(UIView& comp, ProjectManager
 		ImGui::EndDragDropTarget();
 	}
 
+	return changed;
+}
+
+namespace PropertiesHelperDetail
+{
+	inline const char* BlendModeNames[] = { "Alpha（透明混合）", "Additive（叠加）", "Multiply（正片叠底）", "Premultiplied（预乘 Alpha）" };
+
+	inline bool DrawBlendMode(VKRenderContext::BlendMode2D& blend)
+	{
+		int value = static_cast<int>(blend);
+		PropertiesHelper::SetNextPropertyFieldWidth(160.0f, 0.55f);
+		if (ImGui::Combo("混合模式", &value, BlendModeNames, IM_ARRAYSIZE(BlendModeNames)))
+		{
+			blend = static_cast<VKRenderContext::BlendMode2D>(value);
+			return true;
+		}
+		return false;
+	}
+
+	// RenderBase2D 的公共字段：可见、层级、层内顺序、偏移
+	inline bool DrawRenderBase2D(RenderBase2D& comp)
+	{
+		bool changed = false;
+		changed |= ImGui::Checkbox("可见", &comp.visible);
+		PropertiesHelper::SetNextPropertyFieldWidth(130.0f, 0.55f);
+		changed |= ImGui::DragInt("层级", &comp.layer, 0.1f, -100000, 100000);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("大的后画（盖在上面）；编辑器点选时也优先选层级大的");
+		PropertiesHelper::SetNextPropertyFieldWidth(130.0f, 0.55f);
+		changed |= ImGui::DragInt("层内顺序", &comp.internalZOrder, 0.1f, -100000, 100000);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("同一层级内的先后，大的后画");
+		PropertiesHelper::SetNextPropertyFieldWidth(250.0f, 0.6f);
+		changed |= ImGui::DragFloat2("偏移", glm::value_ptr(comp.offset), 0.5f);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("渲染中心相对 Transform2D 的偏移（随物体旋转）");
+		return changed;
+	}
+
+	inline bool DrawSizeField(glm::vec2& size, const glm::vec2& native)
+	{
+		bool changed = false;
+		PropertiesHelper::SetNextPropertyFieldWidth(250.0f, 0.6f);
+		changed |= ImGui::DragFloat2("尺寸", glm::value_ptr(size), 0.5f, 0.0f, 100000.0f);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("世界尺寸；分量为 0 时用图像像素尺寸（1 像素 = 1 单位）");
+		ImGui::SameLine();
+		if (ImGui::SmallButton("原始尺寸") && native.x > 0.0f && native.y > 0.0f)
+		{
+			size = native;
+			changed = true;
+		}
+		return changed;
+	}
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<Transform2D>(Transform2D& comp, ProjectManager* assetManager)
+{
+	bool changed = false;
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::DragFloat2("位置", glm::value_ptr(comp.position), 0.5f);
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	changed |= ImGui::DragFloat("旋转", &comp.rotation, 0.5f, -36000.0f, 36000.0f, "%.1f°");
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("单位：度，正方向顺时针（2D 世界 y 朝下）");
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::DragFloat2("缩放", glm::value_ptr(comp.scale), 0.01f);
+	return changed;
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<Sprite>(Sprite& comp, ProjectManager* assetManager)
+{
+	using namespace PropertiesHelperDetail;
+	bool changed = false;
+
+	// 拖进来的是贴图：先用贴图的原图生成精灵（走导入弹窗，可以改配置），导入完成后再填给这个组件
+	const Entity target = ImguiLayout::selectedEntity;
+	changed |= Sprite2DEditor::DrawAssetSlot("精灵", comp.spriteGuid, { AssetType::Sprite }, assetManager,
+		{ AssetType::Texture }, [target, assetManager](const AssetMeta& texture)
+		{
+			ImguiLayout::RequestSpriteFromTexture(texture.guid, assetManager, [target](const AssetMeta& created) mutable
+				{
+					auto* world = target.getWorld();
+					if (!world)
+						return;
+					world->SubmitCommand([target, guid = created.guid](World& w) mutable
+						{
+							if (!w.IsValidWorldEntity(target))
+								return;
+							if (auto* sprite = target.tryGetComponent<Sprite>())
+								sprite->spriteGuid = guid;
+						});
+				});
+		});
+
+	auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+	auto meta = (database && !comp.spriteGuid.empty()) ? database->GetAssetMetaByGuid(comp.spriteGuid) : nullptr;
+	if (meta && meta->type == AssetType::Sprite)
+	{
+		if (ImGui::Button("编辑精灵资产", ImVec2(-FLT_MIN, 0.0f)))
+			Sprite2DEditor::OpenSpriteEditor(meta->guid);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("编辑区域、轴心、九宫格边距和导入配置");
+
+		auto asset = assetManager->LoadAsset(meta->guid);
+		auto sprite = asset ? asset->AsSprite() : nullptr;
+		const auto names = sprite ? sprite->GetRegionNames() : std::vector<std::string>{};
+		const std::string preview = comp.region.empty() ? std::string("（默认：第一个区域）") : comp.region;
+		SetNextPropertyFieldWidth(200.0f, 0.6f);
+		if (ImGui::BeginCombo("区域", preview.c_str()))
+		{
+			if (ImGui::Selectable("（默认：第一个区域）", comp.region.empty()))
+			{
+				comp.region.clear();
+				changed = true;
+			}
+			for (const auto& name : names)
+			{
+				if (ImGui::Selectable(name.c_str(), comp.region == name))
+				{
+					comp.region = name;
+					changed = true;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("一张图里可以切出多块命名区域（序列帧、图集里的按钮等），这里选画哪一块");
+		if (!comp.region.empty() && sprite && !sprite->HasRegion(comp.region))
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "区域 \"%s\" 不存在，按默认区域画", comp.region.c_str());
+	}
+
+	const Render2D::SpriteFrame frame = comp.ResolveFrame();
+	if (comp.resolveFailed)
+		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "资产解析失败（不是精灵资产，或图片加载失败）");
+	Sprite2DEditor::DrawFramePreview(frame, ImVec2(96.0f, 96.0f));
+	if (frame.IsValid())
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled("%.0f x %.0f", frame.size.x, frame.size.y);
+	}
+
+	changed |= DrawRenderBase2D(comp);
+	changed |= DrawSizeField(comp.size, frame.size);
+
+	changed |= ImGui::Checkbox("覆盖轴心", &comp.overridePivot);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("不勾：用精灵区域里设置的轴心");
+	if (comp.overridePivot)
+	{
+		SetNextPropertyFieldWidth(250.0f, 0.6f);
+		changed |= ImGui::DragFloat2("轴心", glm::value_ptr(comp.pivot), 0.01f, 0.0f, 1.0f);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("图片上的锚点，按比例：(0,0) 左上，(0.5,0.5) 中心，(0.5,1) 底边中点。\n位置指的就是轴心所在的点，旋转和缩放也绕它进行");
+	}
+
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::ColorEdit4("染色", glm::value_ptr(comp.color));
+	changed |= ImGui::Checkbox("水平翻转", &comp.flipX);
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("垂直翻转", &comp.flipY);
+
+	int drawMode = static_cast<int>(comp.drawMode);
+	const char* drawModes[] = { "简单", "九宫格" };
+	SetNextPropertyFieldWidth(160.0f, 0.55f);
+	if (ImGui::Combo("绘制模式", &drawMode, drawModes, IM_ARRAYSIZE(drawModes)))
+	{
+		comp.drawMode = static_cast<SpriteDrawMode>(drawMode);
+		changed = true;
+	}
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("简单：整块拉伸到尺寸。\n九宫格：按区域的四个边距切成 3x3，四角不缩放、四边单向拉伸、中间双向拉伸，\n适合按钮、面板这类怎么拉伸边框和圆角都不变形的图");
+	if (comp.drawMode == SpriteDrawMode::Sliced && frame.IsValid() && !frame.HasBorder())
+		ImGui::TextDisabled("这个区域没有设置九宫格边距，效果等同简单模式");
+
+	changed |= DrawBlendMode(comp.blend);
+	return changed;
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<AnimatedImagePlayer>(AnimatedImagePlayer& comp, ProjectManager* assetManager)
+{
+	using namespace PropertiesHelperDetail;
+	bool changed = false;
+
+	changed |= Sprite2DEditor::DrawAssetSlot("动图", comp.imageGuid, { AssetType::AnimatedImage }, assetManager);
+	if (!comp.imageGuid.empty())
+	{
+		if (ImGui::Button("编辑动图资产", ImVec2(-FLT_MIN, 0.0f)))
+			Sprite2DEditor::OpenAnimatedImageViewer(comp.imageGuid);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("逐帧预览、修改导入配置");
+	}
+
+	const Render2D::SpriteFrame frame = comp.ResolveFrame();
+	if (comp.resolveFailed)
+		ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "资产解析失败（不是动图，或解码失败）");
+	Sprite2DEditor::DrawFramePreview(frame, ImVec2(96.0f, 96.0f));
+	if (comp.resource)
+	{
+		ImGui::SameLine();
+		ImGui::BeginGroup();
+		ImGui::TextDisabled("%u 帧，一轮 %.0f ms", comp.resource->GetFrameCount(), comp.resource->GetTotalDuration());
+		ImGui::TextDisabled("当前第 %u 帧，%.0f ms%s", comp.resource->FrameIndexAt(comp.time, comp.loopCount), comp.time, comp.finished ? "（已播完）" : "");
+		ImGui::EndGroup();
+	}
+
+	// ---- 播放方式（只在组件上，资产不带） ----
+	changed |= ImGui::Checkbox("播放中", &comp.playing);
+	ImGui::SameLine();
+	if (ImGui::SmallButton("从头播放"))
+	{
+		comp.restartRequested = true;
+		comp.playing = true;
+		changed = true;
+	}
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	changed |= ImGui::DragInt("循环次数", &comp.loopCount, 0.1f, 0, 100000);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = 无限循环；大于 0 时播完停在最后一帧");
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	changed |= ImGui::DragFloat("速度", &comp.speed, 0.01f, 0.0f, 100.0f, "%.2fx");
+	ImGui::TextDisabled("编辑模式下不推进时间，进入运行后开始播放");
+
+	changed |= DrawRenderBase2D(comp);
+	changed |= DrawSizeField(comp.size, frame.size);
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::DragFloat2("轴心", glm::value_ptr(comp.pivot), 0.01f, 0.0f, 1.0f);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("图片上的锚点，按比例：(0,0) 左上，(0.5,0.5) 中心，(0.5,1) 底边中点。\n位置指的就是轴心所在的点，旋转和缩放也绕它进行");
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::ColorEdit4("染色", glm::value_ptr(comp.color));
+	changed |= ImGui::Checkbox("水平翻转", &comp.flipX);
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("垂直翻转", &comp.flipY);
+	changed |= DrawBlendMode(comp.blend);
+	return changed;
+}
+
+template<>
+inline bool PropertiesHelper::DrawComponent<Camera2D>(Camera2D& comp, ProjectManager* assetManager)
+{
+	bool changed = false;
+	SetNextPropertyFieldWidth(250.0f, 0.6f);
+	changed |= ImGui::DragFloat2("设计尺寸", glm::value_ptr(comp.designSize), 1.0f, 1.0f, 100000.0f);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("设计分辨率（世界单位）。视野中心取同一实体的 Transform2D，没有就在设计区域中央");
+	comp.designSize = glm::max(comp.designSize, glm::vec2(1.0f));
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	changed |= ImGui::DragFloat("缩放", &comp.zoom, 0.01f, 0.01f, 100.0f);
+
+	int mode = static_cast<int>(comp.aspectMode);
+	const char* modes[] = { "拉伸", "完整显示", "铺满裁切" };
+	SetNextPropertyFieldWidth(160.0f, 0.55f);
+	if (ImGui::Combo("适配模式", &mode, modes, IM_ARRAYSIZE(modes)))
+	{
+		comp.aspectMode = static_cast<VKRenderContext::AspectMode2D>(mode);
+		changed = true;
+	}
+	changed |= ImGui::Checkbox("像素对齐", &comp.pixelSnap);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("顶点吸附到整像素");
+	changed |= ImGui::Checkbox("主相机", &comp.primary);
+	SetNextPropertyFieldWidth(130.0f, 0.55f);
+	changed |= ImGui::DragInt("优先级", &comp.priority, 0.1f);
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("有多台主相机时取优先级最大的");
 	return changed;
 }
 

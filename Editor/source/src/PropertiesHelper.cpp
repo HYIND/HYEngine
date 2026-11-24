@@ -183,6 +183,10 @@ static void RegisterAllComponents()
     PropertiesHelper::RegisterComponent<UIView>();
     PropertiesHelper::RegisterComponent<TagCurrentControl>();
     PropertiesHelper::RegisterComponent<CameraFollow>();
+    PropertiesHelper::RegisterComponent<Transform2D>();
+    PropertiesHelper::RegisterComponent<Sprite>();
+    PropertiesHelper::RegisterComponent<AnimatedImagePlayer>();
+    PropertiesHelper::RegisterComponent<Camera2D>();
     PropertiesHelper::RegisterCustomDraw(ComponentType<DDGIVolumeComponent>::getId(), &DDGIEditor::DrawVolumeComponent);
 }
 
