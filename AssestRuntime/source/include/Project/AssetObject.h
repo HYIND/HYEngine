@@ -103,13 +103,19 @@ class MaterialAsset : public AssetObject
 public:
 	MaterialAsset();
 	virtual ~MaterialAsset() = default;
+	// 第一次调用时建运行时材质：依赖的贴图全部提交给加载器并行加载（同一张贴图全局只加载一次）。
+	// 多个线程同时第一次调用时只建一份，其余的等它
 	virtual std::shared_ptr<Material> AsMaterial() override;
 	MaterialProperties GetProperties() const;
 	void SetProperties(const MaterialProperties& properties);
 	const std::map<TextureType, AssetGUID>& GetTextureDependencies() const;
 	void SetTextureDependency(TextureType type, const AssetGUID& guid, const std::shared_ptr<Texture2D>& texture);
+	// 只提交依赖贴图的后台加载、不等（模型加载时先把所有材质的贴图一起提交，再逐个建材质）
+	void PrefetchTextures();
 
 private:
+	mutable std::mutex _mutex;		// 保护下面三个字段
+	std::mutex _buildMutex;			// 第一次建运行时材质时串行化，避免多个线程各建一份
 	MaterialProperties _properties;
 	std::map<TextureType, AssetGUID> _dependencyTexture;
 	std::shared_ptr<Material> _material;

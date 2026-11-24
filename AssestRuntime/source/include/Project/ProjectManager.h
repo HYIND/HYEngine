@@ -63,7 +63,11 @@ public:
 
 public:
 	std::shared_ptr<AssetObject> LoadAsset(AssetGUID guid);
+	// 后台加载（不阻塞），同一个资产同时只会加载一次；见 AssetStroage::RequestAsset
+	AssetStroage::AssetRequest RequestAsset(const AssetGUID& guid, AssetLoadPriority priority = AssetLoadPriority::Normal);
 	bool SaveAsset(AssetGUID guid);
+	// 统一后台加载器（缩略图等不进资产表的加载也走它）
+	AssetLoader& GetAssetLoader() { return m_storage->GetLoader(); }
 
 public:
 	std::vector<std::shared_ptr<ScriptSourceData>> CheckScriptAssetChanges();

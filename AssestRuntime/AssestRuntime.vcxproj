@@ -140,6 +140,7 @@
     <ClInclude Include="source\include\Project\AssetDataBase.h" />
     <ClInclude Include="source\include\Project\AssetDescription.h" />
     <ClInclude Include="source\include\Project\AssetStroage.h" />
+    <ClInclude Include="source\include\Project\AssetLoader.h" />
     <ClInclude Include="source\include\Project\AssetMeta.h" />
     <ClInclude Include="source\include\Project\AssetObject.h" />
     <ClInclude Include="source\include\Project\ProjectManager.h" />
@@ -155,6 +156,7 @@
     <ClCompile Include="source\src\Project\AssetDataBase.cpp" />
     <ClCompile Include="source\src\Project\AssetDescription.cpp" />
     <ClCompile Include="source\src\Project\AssetStroage.cpp" />
+    <ClCompile Include="source\src\Project\AssetLoader.cpp" />
     <ClCompile Include="source\src\Project\AssetObject.cpp" />
     <ClCompile Include="source\src\Project\ProjectManager.cpp" />
     <ClCompile Include="source\src\UI\UiDocumentParser.cpp" />

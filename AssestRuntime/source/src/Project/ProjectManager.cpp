@@ -844,6 +844,11 @@ std::shared_ptr<AssetObject> ProjectManager::LoadAsset(AssetGUID guid)
 	return m_storage->LoadAsset(guid);
 }
 
+AssetStroage::AssetRequest ProjectManager::RequestAsset(const AssetGUID& guid, AssetLoadPriority priority)
+{
+	return m_storage->RequestAsset(guid, priority);
+}
+
 bool ProjectManager::SaveAsset(AssetGUID guid)
 {
 	return m_storage->SaveAsset(guid);

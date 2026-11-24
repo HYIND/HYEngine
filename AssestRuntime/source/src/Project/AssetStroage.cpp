@@ -2,6 +2,7 @@
 #include "Project/AssetStroage.h"
 #include "Project/AssetAnalysisHelper.h"
 #include <nlohmann/json.hpp>
+#include <format>
 
 class AssetStroageHelper
 {
@@ -143,48 +144,109 @@ void AssetStroage::SetPathProvider(std::shared_ptr<IAssetFullPathProvider> provi
 	_pathProvider = provider;
 }
 
-std::shared_ptr<AssetObject> AssetStroage::LoadAsset(const AssetGUID& guid)
+AssetStroage::AssetStroage()
+	: _loader(std::make_unique<AssetLoader>())
+{}
+
+AssetStroage::~AssetStroage()
+{
+	// 先停加载器：还在排队的取消、正在执行的做完，之后才拆资产表
+	_loader.reset();
+}
+
+std::shared_ptr<AssetObject> AssetStroage::FindLoaded(const AssetGUID& guid)
 {
 	std::shared_ptr<AssetObject> result;
-	if (m_GuidToAsset.Find(guid, result))
+	if (!m_GuidToAsset.Find(guid, result))
+		return nullptr;
+
+	if (result && result->GetType() == AssetType::Script)
 	{
-		if (result && result->GetType() == AssetType::Script)
+		auto metaProvider = _metaProvider;
+		auto pathProvider = _pathProvider;
+		if (metaProvider && pathProvider)
 		{
-			auto metaProvider = _metaProvider;
-			auto pathProvider = _pathProvider;
-			if (metaProvider && pathProvider)
-			{
-				if (auto meta = metaProvider->GetAssetMetaByGuid(guid))
-				{
-					AssetStroageHelper::RefreshScriptIfChanged(*meta, pathProvider, static_cast<ScriptAsset&>(*result));
-				}
-			}
+			if (auto meta = metaProvider->GetAssetMetaByGuid(guid))
+				AssetStroageHelper::RefreshScriptIfChanged(*meta, pathProvider, static_cast<ScriptAsset&>(*result));
 		}
-		return result;
 	}
+	return result;
+}
+
+std::shared_ptr<AssetObject> AssetStroage::LoadNow(const AssetGUID& guid, uint64_t generation)
+{
+	if (generation != _generation.load(std::memory_order_acquire))
+		return nullptr;
+
+	// 去重表在请求完成时才移除，这中间可能已经有人加载完了
+	std::shared_ptr<AssetObject> result;
+	if (m_GuidToAsset.Find(guid, result))
+		return result;
 
 	auto metaProvider = _metaProvider;
 	auto pathProvider = _pathProvider;
+	if (!metaProvider || !pathProvider)
+		return nullptr;
 
-	if (metaProvider && pathProvider)
-	{
-		if (auto meta = metaProvider->GetAssetMetaByGuid(guid))
+	auto meta = metaProvider->GetAssetMetaByGuid(guid);
+	if (!meta)
+		return nullptr;
+
+	auto asset = AssetStroageHelper::LoadAsset(*meta, pathProvider);
+	if (!asset)
+		return nullptr;
+
+	asset->_assetGUID = meta->guid;
+	auto guard = m_GuidToAsset.MakeLockGuard();
+	if (generation != _generation.load(std::memory_order_acquire))
+		return nullptr;
+	if (m_GuidToAsset.Find(guid, result))
+		return result;
+
+	asset->_storage = shared_from_this();
+	m_GuidToAsset[guid] = asset;
+	return asset;
+}
+
+AssetStroage::AssetRequest AssetStroage::Submit(const AssetGUID& guid, AssetLoadPriority priority, bool runInlineIfNew)
+{
+	if (guid.empty())
+		return AssetLoadTask<std::shared_ptr<AssetObject>>::Completed(nullptr);
+	if (auto loaded = FindLoaded(guid))
+		return AssetLoadTask<std::shared_ptr<AssetObject>>::Completed(std::move(loaded));
+
+	// key 带上 generation：切换工程后，旧工程还在途的同 GUID 请求不会被复用
+	const uint64_t generation = _generation.load(std::memory_order_acquire);
+	std::weak_ptr<AssetStroage> weak = weak_from_this();
+	return _loader->Request<std::shared_ptr<AssetObject>>(std::format("asset:{}:{}", generation, guid), priority, AssetLoadLane::Asset,
+		[weak, guid, generation]() -> std::shared_ptr<AssetObject>
 		{
-			if (auto asset = AssetStroageHelper::LoadAsset(*meta, pathProvider))
-			{
-				asset->_assetGUID = meta->guid;
-				auto guard = m_GuidToAsset.MakeLockGuard();
-				if (m_GuidToAsset.Find(guid, result))
-					return result;
+			auto storage = weak.lock();
+			return storage ? storage->LoadNow(guid, generation) : nullptr;
+		}, runInlineIfNew);
+}
 
-				asset->_storage = shared_from_this();
-				m_GuidToAsset[guid] = asset;
-				result = asset;
-			}
-		}
-	}
+std::shared_ptr<AssetObject> AssetStroage::LoadAsset(const AssetGUID& guid)
+{
+	if (auto loaded = FindLoaded(guid))
+		return loaded;
 
-	return result;
+	auto request = Submit(guid, AssetLoadPriority::High, true);
+	return request ? request->WaitResult() : nullptr;
+}
+
+AssetStroage::AssetRequest AssetStroage::RequestAsset(const AssetGUID& guid, AssetLoadPriority priority)
+{
+	return Submit(guid, priority, false);
+}
+
+std::vector<AssetStroage::AssetRequest> AssetStroage::RequestAssets(const std::vector<AssetGUID>& guids, AssetLoadPriority priority)
+{
+	std::vector<AssetRequest> requests;
+	requests.reserve(guids.size());
+	for (const auto& guid : guids)
+		requests.push_back(Submit(guid, priority, false));
+	return requests;
 }
 
 bool AssetStroage::SaveAsset(const AssetGUID& guid, std::shared_ptr<AssetObject> newAsset)
@@ -283,6 +345,9 @@ std::vector<std::shared_ptr<UI::ParseResult>> AssetStroage::CheckUIDocumentChang
 }
 
 void AssetStroage::ClearLoadedAsset() {
+	_generation.fetch_add(1, std::memory_order_acq_rel);
+	if (_loader)
+		_loader->CancelQueued();
 	m_GuidToAsset.Clear();
 }
 

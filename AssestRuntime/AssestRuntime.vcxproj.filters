@@ -48,6 +48,9 @@
     <ClInclude Include="source\include\Project\AssetStroage.h">
       <Filter>头文件\Project</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\Project\AssetLoader.h">
+      <Filter>头文件\Project</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\Project\AssetMeta.h">
       <Filter>头文件\Project</Filter>
     </ClInclude>
@@ -87,6 +90,9 @@
       <Filter>源文件\Project</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Project\AssetStroage.cpp">
+      <Filter>源文件\Project</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\Project\AssetLoader.cpp">
       <Filter>源文件\Project</Filter>
     </ClCompile>
     <ClCompile Include="source\src\Project\AssetObject.cpp">

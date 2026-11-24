@@ -1,6 +1,5 @@
 ﻿#include "Project/AssetObject.h"
 #include "Project/AssetStroage.h"
-#include "Coroutine.h"
 
 AssetType AssetObject::GetType() const {
 	return _type;
@@ -171,33 +170,70 @@ MaterialAsset::MaterialAsset() { _type = AssetType::Material; }
 
 std::shared_ptr<Material> MaterialAsset::AsMaterial()
 {
-	if (!_material)
 	{
-		_material = std::make_shared<Material>();
-		_material->SetAssetGUID(_assetGUID);
-		_material->SetProperty(_properties);
-		if (auto storage = _storage.lock())
+		std::lock_guard lock(_mutex);
+		if (_material)
+			return _material;
+	}
+
+	std::lock_guard build(_buildMutex);
+	std::map<TextureType, AssetGUID> textures;
+	MaterialProperties properties;
+	{
+		std::lock_guard lock(_mutex);
+		if (_material)
+			return _material;	// 等锁期间别的线程已经建好了
+		textures = _dependencyTexture;
+		properties = _properties;
+	}
+
+	auto material = std::make_shared<Material>();
+	material->SetAssetGUID(_assetGUID);
+	material->SetProperty(properties);
+	if (auto storage = _storage.lock())
+	{
+		// 先全部提交再逐个等：还在排队的由当前线程直接执行，其余的线程池并行做
+		std::vector<std::pair<TextureType, AssetStroage::AssetRequest>> requests;
+		requests.reserve(textures.size());
+		for (const auto& [type, guid] : textures)
+			requests.emplace_back(type, storage->RequestAsset(guid));
+		for (auto& [type, request] : requests)
 		{
-			for (auto& [type, guid] : _dependencyTexture)
-			{
-				if (auto asset = storage->LoadAsset(guid))
-				{
-					if (auto texture = asset->AsTexture())
-						_material->SetTexture(type, texture);
-				}
-			}
+			auto asset = request ? request->WaitResult() : nullptr;
+			if (auto texture = asset ? asset->AsTexture() : nullptr)
+				material->SetTexture(type, texture);
 		}
 	}
+
+	std::lock_guard lock(_mutex);
+	if (!_material)
+		_material = std::move(material);
 	return _material;
+}
+
+void MaterialAsset::PrefetchTextures()
+{
+	std::vector<AssetGUID> guids;
+	{
+		std::lock_guard lock(_mutex);
+		if (_material)
+			return;
+		for (const auto& [type, guid] : _dependencyTexture)
+			guids.push_back(guid);
+	}
+	if (auto storage = _storage.lock())
+		storage->RequestAssets(guids);
 }
 
 MaterialProperties MaterialAsset::GetProperties() const
 {
+	std::lock_guard lock(_mutex);
 	return _properties;
 }
 
 void MaterialAsset::SetProperties(const MaterialProperties& properties)
 {
+	std::lock_guard lock(_mutex);
 	_properties = properties;
 	if (_material)
 		_material->SetProperty(properties);
@@ -210,6 +246,7 @@ const std::map<TextureType, AssetGUID>& MaterialAsset::GetTextureDependencies() 
 
 void MaterialAsset::SetTextureDependency(TextureType type, const AssetGUID& guid, const std::shared_ptr<Texture2D>& texture)
 {
+	std::lock_guard lock(_mutex);
 	if (guid.empty())
 		_dependencyTexture.erase(type);
 	else
@@ -218,65 +255,67 @@ void MaterialAsset::SetTextureDependency(TextureType type, const AssetGUID& guid
 		_material->SetTexture(type, texture);
 }
 
+namespace
+{
+	// 模型的依赖加载：网格和材质一次性全部提交给加载器（同一个资产全局只加载一次），
+	// 材质资产一到手就把它们的贴图也提交出去，最后按网格顺序组装。
+	// 等待时还在排队的由当前线程直接执行，所以不会出现线程池里的任务互相干等
+	template<typename MeshPtr, typename AsMeshes>
+	void ResolveModelDependencies(AssetStroage& storage, const std::vector<AssetGUID>& meshGuids, const std::unordered_map<uint32_t, AssetGUID>& materialGuids,
+		AsMeshes asMeshes, std::vector<MeshPtr>& outMeshes, std::vector<std::shared_ptr<Material>>& outMaterials)
+	{
+		auto meshRequests = storage.RequestAssets(meshGuids);
+		std::unordered_map<uint32_t, AssetStroage::AssetRequest> materialRequests;
+		for (const auto& [index, guid] : materialGuids)
+			materialRequests.emplace(index, storage.RequestAsset(guid));
+
+		// 材质资产本身很小，先等它们，好尽早把所有贴图一起提交（各材质的贴图并行，而不是一个材质一个材质地来）
+		std::unordered_map<uint32_t, std::shared_ptr<MaterialAsset>> materialAssets;
+		for (auto& [index, request] : materialRequests)
+		{
+			auto asset = std::dynamic_pointer_cast<MaterialAsset>(request ? request->WaitResult() : nullptr);
+			if (asset)
+			{
+				asset->PrefetchTextures();
+				materialAssets.emplace(index, std::move(asset));
+			}
+		}
+
+		for (auto& request : meshRequests)
+		{
+			auto asset = request ? request->WaitResult() : nullptr;
+			if (!asset)
+				continue;
+			for (auto& mesh : asMeshes(*asset))
+				outMeshes.push_back(std::move(mesh));
+		}
+
+		outMaterials.resize(outMeshes.size());
+		for (uint32_t i = 0; i < outMeshes.size(); ++i)
+		{
+			auto it = materialAssets.find(i);
+			std::shared_ptr<Material> material = it != materialAssets.end() ? it->second->AsMaterial() : nullptr;
+			outMaterials[i] = material ? std::move(material) : std::make_shared<Material>();
+		}
+	}
+}
+
 StaticModelAsset::StaticModelAsset() { _type = AssetType::StaticModel; }
 
 std::shared_ptr<StaticModel> StaticModelAsset::AsStaticModel()
 {
-	std::vector<std::shared_ptr<StaticMeshInfo>> mesheInfos;
+	std::vector<std::shared_ptr<StaticMesh>> meshes;
+	std::vector<std::shared_ptr<Material>> materials;
 	if (auto storage = _storage.lock())
 	{
-		std::vector<Task<std::vector<std::shared_ptr<StaticMesh>>>> staticMeshTask;
-		std::vector<Task<void>> materialTask;
-
-		for (auto& guid : _dependencyStaticMesh)
-		{
-			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<StaticMesh>> {
-				auto asset = storage->LoadAsset(guid);
-				if (asset)
-					return asset->AsStaticMesh();
-				return {};
-				});
-			staticMeshTask.push_back(std::move(task));
-		}
-
-		for (auto& task : staticMeshTask)
-		{
-			for (auto& mesh : task.sync_wait())
-			{
-				auto meshInfo = std::make_shared<StaticMeshInfo>();
-				meshInfo->mesh = mesh;
-				mesheInfos.push_back(std::move(meshInfo));
-			}
-		}
-
-		for (uint32_t i = 0; i < mesheInfos.size(); i++)
-		{
-			auto task = CoroTask::Run([i, &storage, &mesheInfos, this]() ->auto {
-				std::shared_ptr<Material> material;
-				if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
-				{
-					auto& guid = _dependencyMaterial[i];
-					auto asset = storage->LoadAsset(guid);
-					if (asset)
-						material = asset->AsMaterial();
-				}
-
-				if (!material)
-					material = std::make_shared<Material>();
-
-				mesheInfos[i]->material = material;
-				});
-			materialTask.push_back(std::move(task));
-		}
-
-		for (auto& task : materialTask)
-			task.sync_wait();
+		ResolveModelDependencies(*storage, _dependencyStaticMesh, _dependencyMaterial,
+			[](AssetObject& asset) { return asset.AsStaticMesh(); }, meshes, materials);
 	}
 
 	auto model = std::make_shared<StaticModel>();
 	model->SetAssetGUID(_assetGUID);
-	for (auto& info : mesheInfos)
-		model->AddMesh(info->mesh, info->material);
+	for (size_t i = 0; i < meshes.size(); ++i)
+		model->AddMesh(meshes[i], materials[i]);
 
 	return model;
 }
@@ -321,61 +360,18 @@ SkinnedModelAsset::SkinnedModelAsset() { _type = AssetType::SkinnedModel; }
 
 std::shared_ptr<SkinnedModel> SkinnedModelAsset::AsSkinnedModel()
 {
-	std::vector<std::shared_ptr<SkinnedMeshInfo>> mesheInfos;
+	std::vector<std::shared_ptr<SkinnedMesh>> meshes;
+	std::vector<std::shared_ptr<Material>> materials;
 	if (auto storage = _storage.lock())
 	{
-		std::vector<Task<std::vector<std::shared_ptr<SkinnedMesh>>>> skinnedMeshTask;
-		std::vector<Task<void>> materialTask;
-
-		for (auto& guid : _dependencySkinnedMesh)
-		{
-			auto task = CoroTask::Run([guid, &storage]() -> std::vector<std::shared_ptr<SkinnedMesh>> {
-				auto asset = storage->LoadAsset(guid);
-				if (asset)
-					return asset->AsSkinnedMesh();
-				return {};
-				});
-			skinnedMeshTask.push_back(std::move(task));
-		}
-
-		for (auto& task : skinnedMeshTask)
-		{
-			for (auto& mesh : task.sync_wait())
-			{
-				auto meshInfo = std::make_shared<SkinnedMeshInfo>();
-				meshInfo->mesh = mesh;
-				mesheInfos.push_back(std::move(meshInfo));
-			}
-		}
-
-		for (uint32_t i = 0; i < mesheInfos.size(); i++)
-		{
-			auto task = CoroTask::Run([i, &storage, &mesheInfos, this]() ->auto {
-				std::shared_ptr<Material> material;
-				if (_dependencyMaterial.find(i) != _dependencyMaterial.end())
-				{
-					auto& guid = _dependencyMaterial[i];
-					auto asset = storage->LoadAsset(guid);
-					if (asset)
-						material = asset->AsMaterial();
-				}
-
-				if (!material)
-					material = std::make_shared<Material>();
-
-				mesheInfos[i]->material = material;
-				});
-			materialTask.push_back(std::move(task));
-		}
-
-		for (auto& task : materialTask)
-			task.sync_wait();
+		ResolveModelDependencies(*storage, _dependencySkinnedMesh, _dependencyMaterial,
+			[](AssetObject& asset) { return asset.AsSkinnedMesh(); }, meshes, materials);
 	}
 
 	auto model = std::make_shared<SkinnedModel>();
 	model->SetAssetGUID(_assetGUID);
-	for (auto& info : mesheInfos)
-		model->AddMesh(info->mesh, info->material);
+	for (size_t i = 0; i < meshes.size(); ++i)
+		model->AddMesh(meshes[i], materials[i]);
 
 	return model;
 }
