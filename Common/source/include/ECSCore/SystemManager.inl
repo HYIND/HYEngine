@@ -36,6 +36,7 @@ inline T& SystemManager::registerSystem(int priority, Args&&... args)
 	m_typeIdToIndex[systemid] = m_systems.size() - 1;
 	m_typeIdentities[systemid] = identity;
 	m_needsSorting = true;
+	m_profileLayout.reset();
 
 	if (m_world) {
 		ref.Attach(*m_world);

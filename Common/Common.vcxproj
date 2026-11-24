@@ -176,6 +176,7 @@
     <ClInclude Include="source\include\ECSCore\IComponent.h" />
     <ClInclude Include="source\include\ECSCore\System.h" />
     <ClInclude Include="source\include\ECSCore\SystemManager.h" />
+    <ClInclude Include="source\include\ECSCore\LogicProfiler.h" />
     <ClInclude Include="source\include\ECSCore\SystemTypes.h" />
     <ClInclude Include="source\include\ECSCore\Types.h" />
     <ClInclude Include="source\include\ECSCore\TypeKey.h" />

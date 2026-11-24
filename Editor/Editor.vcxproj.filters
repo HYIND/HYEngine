@@ -79,6 +79,9 @@
     <ClInclude Include="source\include\EditorTags.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\LogicProfilerPanel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="资源文件">
@@ -168,6 +171,9 @@
       <Filter>源文件\ImguiInit</Filter>
     </ClCompile>
     <ClCompile Include="source\src\EditorGlfwInput.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\LogicProfilerPanel.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

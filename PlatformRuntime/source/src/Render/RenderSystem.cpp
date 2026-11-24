@@ -144,6 +144,18 @@ void RenderSystem::postUpdate(float deltaTime)
 	if (!_threadPool.running())
 		_threadPool.start();
 
+	// 逻辑性能统计：各段在线程池里并行执行，各自计时写原子量；整段按墙钟另记
+	LogicFrameProfile* profile = m_world->GetCurrentLogicProfile();
+	const int64_t collectStart = profile ? LogicProfileNowUs() : 0;
+	auto submit = [this, profile](LogicRenderSection section, auto fn)
+		{
+			return _threadPool.submit([profile, section, fn = std::move(fn)]
+				{
+					LogicRenderSectionScope scope(profile, section);
+					fn();
+				});
+		};
+
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> tasks;
 
 	auto triBuffer3D = _triBuffer3D;
@@ -161,13 +173,13 @@ void RenderSystem::postUpdate(float deltaTime)
 		if (maincamera)
 		{
 
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessModel(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLight(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessParticle(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessLaserBeam(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessSkybox(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {ProcessDDGIVolume(framebuffer3D, maincamera); })));
-			tasks.push_back(std::move(_threadPool.submit([&, maincamera] {SyncGLCamera(framebuffer3D, maincamera); })));
+			tasks.push_back(submit(LogicRenderSection::Model, [&, maincamera] {ProcessModel(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::Light, [&, maincamera] {ProcessLight(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::Particle, [&, maincamera] {ProcessParticle(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::LaserBeam, [&, maincamera] {ProcessLaserBeam(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::Skybox, [&, maincamera] {ProcessSkybox(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::DDGIVolume, [&, maincamera] {ProcessDDGIVolume(framebuffer3D, maincamera); }));
+			tasks.push_back(submit(LogicRenderSection::SyncCamera, [&, maincamera] {SyncGLCamera(framebuffer3D, maincamera); }));
 		}
 	}
 
@@ -175,16 +187,16 @@ void RenderSystem::postUpdate(float deltaTime)
 	auto framebuffer2D = triBuffer2D ? triBuffer2D->acquireWriteBuffer() : nullptr;
 	if (framebuffer2D)
 	{
-		tasks.push_back(std::move(_threadPool.submit([&] {ProcessSprite(framebuffer2D); })));
-		tasks.push_back(std::move(_threadPool.submit([&] {ProcessGIFAnimation(framebuffer2D); })));
-		tasks.push_back(std::move(_threadPool.submit([&] {ProcessDebugLines(framebuffer2D); })));
+		tasks.push_back(submit(LogicRenderSection::Sprite, [&] {ProcessSprite(framebuffer2D); }));
+		tasks.push_back(submit(LogicRenderSection::GIFAnimation, [&] {ProcessGIFAnimation(framebuffer2D); }));
+		tasks.push_back(submit(LogicRenderSection::DebugLines, [&] {ProcessDebugLines(framebuffer2D); }));
 	}
 
 	auto triBufferUI = _triBufferUI;
 	auto framebufferUI = triBufferUI ? triBufferUI->acquireWriteBuffer() : nullptr;
 	if (framebufferUI)
 	{
-		tasks.push_back(std::move(_threadPool.submit([&] {ProcessUI(framebufferUI); })));
+		tasks.push_back(submit(LogicRenderSection::UI, [&] {ProcessUI(framebufferUI); }));
 	}
 
 	if (!tasks.empty())
@@ -192,6 +204,8 @@ void RenderSystem::postUpdate(float deltaTime)
 		for (auto& task : tasks)
 			task->get();
 	}
+
+	const int64_t submitStart = profile ? LogicProfileNowUs() : 0;
 
 	if (triBuffer3D && framebuffer3D)
 		triBuffer3D->submitWriteBuffer();
@@ -201,6 +215,17 @@ void RenderSystem::postUpdate(float deltaTime)
 
 	if (triBufferUI && framebufferUI)
 		triBufferUI->submitWriteBuffer();
+
+	if (profile)
+	{
+		const int64_t now = LogicProfileNowUs();
+		profile->renderCollected = true;
+		profile->renderCollectUs = submitStart - collectStart;
+		profile->renderSubmitUs = now - submitStart;
+		profile->submitted3D = triBuffer3D && framebuffer3D;
+		profile->submitted2D = triBuffer2D && framebuffer2D;
+		profile->submittedUI = triBufferUI && framebufferUI;
+	}
 }
 
 void RenderSystem::ProcessUI(std::shared_ptr<Render::RenderUIFrameData> framebuffer)

@@ -10,6 +10,7 @@
 //#include "SystemManager.h"
 
 #include "ECSCore/EventSystem.h"
+#include "ECSCore/LogicProfiler.h"
 
 #include <functional>
 #include <future>
@@ -129,6 +130,13 @@ public:
 	float getFixedDeltaTime() const;
 	void setFixedDeltaTime(float dt);
 
+	// ==== 逻辑性能统计（编辑器「调试 → 逻辑性能」）====
+	// 通道随 World 一起活着，编辑器每帧根据窗口开关调 SetEnabled
+	const std::shared_ptr<LogicProfilerChannel>& GetLogicProfiler() const { return m_logicProfiler; }
+	// 正在进行的这次 update 的统计；只在场景线程的 update 期间有效，没在统计时为 nullptr。
+	// 系统可以往里写计数（SetCounter），线程池任务只能写 renderSections 这类原子量。
+	LogicFrameProfile* GetCurrentLogicProfile() const { return m_currentLogicProfile; }
+
 	// ==== 事件操作 ====
 
 	// 订阅感兴趣事件
@@ -183,6 +191,9 @@ private:
 	bool m_isRunning = false;
 
 	Entity m_MainCameraEntity;
+
+	std::shared_ptr<LogicProfilerChannel> m_logicProfiler = std::make_shared<LogicProfilerChannel>();
+	LogicFrameProfile* m_currentLogicProfile = nullptr;
 
 private:
 	struct CommandTask

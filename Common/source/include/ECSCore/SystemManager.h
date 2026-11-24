@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include "SystemTypes.h"
+#include "ECSCore/LogicProfiler.h"
 
 class System;
 class World;
@@ -55,8 +56,13 @@ public:
 	size_t getSystemCount() const;
 	size_t getEnabledSystemCount() const;
 
+	// 逻辑性能统计：World::update 开头传入这一帧的 profile（结尾传 nullptr）。
+	// 这里先把排序做掉，保证这一帧内各阶段的 System 顺序和 profile->systems 下标一致。
+	void BeginProfileFrame(LogicFrameProfile* profile);
+
 private:
 	void sortSystems();
+	void runPhase(LogicSystemPhase phase, float deltaTime, void (System::*fn)(float));
 
 private:
 	std::vector<SystemEntry> m_systems;
@@ -64,6 +70,10 @@ private:
 	std::unordered_map<SystemTypeID, EcsTypeIdentity> m_typeIdentities;
 	World* m_world = nullptr;
 	bool m_needsSorting = false;
+
+	LogicFrameProfile* m_profile = nullptr;
+	std::shared_ptr<const LogicSystemLayout> m_profileLayout;	// 注册 / 排序后置空，下次统计时重建
+	int m_profileLayoutVersion = 0;
 };
 
 #include "ECSCore/SystemManager.inl"

@@ -90,6 +90,14 @@ namespace
 		std::vector<std::pair<int, int>> edges;			// 传递约简后的边 (from, to)
 		ImVec2 boundsMin = ImVec2(0, 0);
 		ImVec2 boundsMax = ImVec2(0, 0);
+
+		// 祖先位集：第 i 行是节点 i 的全部祖先（传递闭包），选中节点时高亮上游用
+		int words = 0;
+		std::vector<uint64_t> ancestors;
+		bool IsAncestor(int x, int of) const
+		{
+			return ((ancestors[size_t(of) * words + x / 64] >> (x % 64)) & 1ull) != 0;
+		}
 	};
 
 	struct PanelState
@@ -364,11 +372,16 @@ namespace
 			g.boundsMin = ImVec2(std::min(g.boundsMin.x, pos.x), std::min(g.boundsMin.y, pos.y));
 			g.boundsMax = ImVec2(std::max(g.boundsMax.x, pos.x + size.x), std::max(g.boundsMax.y, pos.y + size.y));
 		}
+
+		// 祖先集合留着：选中节点时直接查，图结构不变就不用重算
+		g.words = words;
+		g.ancestors = std::move(ancestors);
 	}
 
-	// 关键路径：按耗时最长的依赖链。同长时优先层号大的前驱，这样不会走到被约简掉的冗余边
+	// 关键路径：按耗时最长的依赖链。同长时优先层号大的前驱，这样不会走到被约简掉的冗余边。
+	// target < 0：整张图里最长的那条；target >= 0：以 target 为终点（含它自己）的最长链
 	void CriticalPath(const GraphGeometry& g, const RenderGraphProfileLayout& layout, const std::vector<double>& weight,
-		std::vector<int>& parent, std::vector<char>& onPath, double& length, int& count)
+		int target, std::vector<int>& parent, std::vector<char>& onPath, double& length, int& count)
 	{
 		const int n = int(layout.nodes.size());
 		parent.assign(n, -1);
@@ -403,10 +416,15 @@ namespace
 		}
 
 		int end = 0;
-		for (int i = 1; i < n; ++i)
+		if (target >= 0 && target < n)
+			end = target;
+		else
 		{
-			if (dist[i] > dist[end])
-				end = i;
+			for (int i = 1; i < n; ++i)
+			{
+				if (dist[i] > dist[end])
+					end = i;
+			}
 		}
 		length = dist[end];
 		if (length <= 0.0)
@@ -715,12 +733,31 @@ namespace
 			maxValue = std::max(maxValue, value[i]);
 		}
 
+		// 选中节点：只亮它的全部上游（祖先 + 自己），橙色改为「到达它的最长链」，替换整张图的关键路径
+		const int selected = (s.selectedPass >= 0 && s.selectedPass < n) ? s.selectedPass : -1;
+		std::vector<char> upstream;
+		int upstreamPasses = 0;
+		if (selected >= 0)
+		{
+			upstream.assign(n, 0);
+			upstream[selected] = 1;
+			for (int i = 0; i < n; ++i)
+			{
+				if (i != selected && g.IsAncestor(i, selected))
+				{
+					upstream[i] = 1;
+					if (!layout.nodes[i].fence)
+						++upstreamPasses;
+				}
+			}
+		}
+
 		std::vector<int> parent;
 		std::vector<char> onPath;
 		double pathLength = 0.0;
 		int pathCount = 0;
-		CriticalPath(g, layout, value, parent, onPath, pathLength, pathCount);
-		const bool showPath = s.showCriticalPath && pathLength > 0.0;
+		CriticalPath(g, layout, value, selected, parent, onPath, pathLength, pathCount);
+		const bool showPath = pathLength > 0.0 && (selected >= 0 || s.showCriticalPath);
 
 		// ── 工具栏 ──
 		const char* modes[] = { "当前帧", "平均", "最大" };
@@ -734,14 +771,24 @@ namespace
 			ImGui::SetTooltip("扣除「等待执行」（等前面的 Pass 在 GPU 上执行完的时间）。\n关掉则按总耗时，节点颜色会被串行等待放大。");
 		ImGui::SameLine();
 		ImGui::Checkbox("关键路径", &s.showCriticalPath);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("没有选中节点时显示整张图的关键路径。\n选中节点后改为显示到达该节点的最长链（不受这个开关影响），点空白处取消选中。");
 		ImGui::SameLine();
 		if (ImGui::Button("适应窗口"))
 			s.fitRequested = true;
 		ImGui::SameLine();
-		ImGui::TextDisabled("右键 / 中键拖动平移，滚轮缩放，双击节点跳到步骤表");
-		if (showPath)
+		ImGui::TextDisabled("单击节点看上游，右键 / 中键拖动平移，滚轮缩放，双击节点跳到步骤表");
+		if (selected >= 0)
+		{
+			ImGui::Text("到达 %s 的最长链 %.2f ms（%d 个 Pass，含自身）    上游共 %d 个 Pass    SceneRenderGraph %.2f ms",
+				layout.nodes[selected].name.c_str(), Ms(pathLength), pathCount, upstreamPasses,
+				Ms(Value(agg.steps[size_t(RenderProfileStep::SceneGraph)], s.graphValue)));
+		}
+		else if (showPath)
+		{
 			ImGui::Text("关键路径 %.2f ms（%d 个 Pass）    SceneRenderGraph %.2f ms",
 				Ms(pathLength), pathCount, Ms(Value(agg.steps[size_t(RenderProfileStep::SceneGraph)], s.graphValue)));
+		}
 
 		ImGui::BeginChild("##profilerGraph", ImVec2(0, 0), ImGuiChildFlags_None,
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -798,17 +845,39 @@ namespace
 				dl->AddLine(ImVec2(origin.x, origin.y + y), ImVec2(canvasMax.x, origin.y + y), gridColor);
 		}
 
-		// 边
+		// 边：选中时先画变暗的，再画上游的，免得被盖住
 		const float arrow = std::clamp(6.0f * zoom, 3.0f, 9.0f);
-		for (const auto& [a, b] : g.edges)
-		{
+		auto drawEdge = [&](int a, int b, bool dim) {
 			const ImVec2 p0 = toScreen(ImVec2(g.pos[a].x + g.size[a].x, g.pos[a].y + g.size[a].y * 0.5f));
 			const ImVec2 p3 = toScreen(ImVec2(g.pos[b].x, g.pos[b].y + g.size[b].y * 0.5f));
-			const bool critical = showPath && onPath[b] && parent[b] == a;
-			const ImU32 color = critical ? IM_COL32(255, 160, 40, 235) : IM_COL32(150, 156, 168, 105);
+			const bool critical = !dim && showPath && onPath[b] && parent[b] == a;
+			ImU32 color;
+			if (critical)
+				color = IM_COL32(255, 160, 40, 235);
+			else if (dim)
+				color = IM_COL32(150, 156, 168, 26);
+			else if (selected >= 0)
+				color = IM_COL32(200, 206, 218, 170);	// 上游的边比平时亮一点
+			else
+				color = IM_COL32(150, 156, 168, 105);
 			const float dx = std::max(20.0f * zoom, (p3.x - p0.x) * 0.5f);
 			dl->AddBezierCubic(p0, ImVec2(p0.x + dx, p0.y), ImVec2(p3.x - dx, p3.y), p3, color, critical ? 2.5f : 1.2f);
 			dl->AddTriangleFilled(p3, ImVec2(p3.x - arrow, p3.y - arrow * 0.6f), ImVec2(p3.x - arrow, p3.y + arrow * 0.6f), color);
+			};
+		if (selected < 0)
+		{
+			for (const auto& [a, b] : g.edges)
+				drawEdge(a, b, false);
+		}
+		else
+		{
+			// 终点在上游集合里的边，起点必然也在（是它的前驱）
+			for (const auto& [a, b] : g.edges)
+				if (!upstream[b])
+					drawEdge(a, b, true);
+			for (const auto& [a, b] : g.edges)
+				if (upstream[b])
+					drawEdge(a, b, false);
 		}
 
 		// 节点
@@ -831,12 +900,18 @@ namespace
 			else
 				fill = ImGui::ColorConvertFloat4ToU32(HeatColor(maxValue > 0.0 ? float(value[i] / maxValue) : 0.0f));
 
+			const bool dim = selected >= 0 && !upstream[i];
+			if (dim)
+				fill = (fill & ~IM_COL32_A_MASK) | (ImU32(50) << IM_COL32_A_SHIFT);
+
 			const float rounding = 5.0f * zoom;
 			dl->AddRectFilled(mn, mx, fill, rounding);
-			const bool selected = s.selectedPass == i;
-			const bool critical = showPath && onPath[i] && !node.fence;
-			const ImU32 border = selected ? IM_COL32(255, 255, 255, 255) : (critical ? IM_COL32(255, 160, 40, 255) : IM_COL32(16, 16, 18, 255));
-			dl->AddRect(mn, mx, border, rounding, 0, (selected || critical) ? 2.5f : 1.0f);
+			const bool isSelected = selected == i;
+			const bool critical = !dim && showPath && onPath[i] && !node.fence;
+			ImU32 border = isSelected ? IM_COL32(255, 255, 255, 255) : (critical ? IM_COL32(255, 160, 40, 255) : IM_COL32(16, 16, 18, 255));
+			if (dim)
+				border = IM_COL32(16, 16, 18, 60);
+			dl->AddRect(mn, mx, border, rounding, 0, (isSelected || critical) ? 2.5f : 1.0f);
 
 			if (hovered && io.MousePos.x >= mn.x && io.MousePos.x <= mx.x && io.MousePos.y >= mn.y && io.MousePos.y <= mx.y)
 				hoveredNode = i;
@@ -844,7 +919,9 @@ namespace
 			if (zoom < 0.35f)
 				continue;
 
-			const ImU32 textColor = (executed[i] || node.fence) ? IM_COL32(245, 245, 245, 255) : IM_COL32(165, 165, 165, 255);
+			ImU32 textColor = (executed[i] || node.fence) ? IM_COL32(245, 245, 245, 255) : IM_COL32(165, 165, 165, 255);
+			if (dim)
+				textColor = (textColor & ~IM_COL32_A_MASK) | (ImU32(70) << IM_COL32_A_SHIFT);
 			const float available = (mx.x - mn.x) - 8.0f * zoom;
 			const char* name = node.name.c_str();
 			float nameSize = baseFont * zoom * (node.fence ? 0.85f : 1.0f);
@@ -876,7 +953,9 @@ namespace
 		}
 
 		dl->AddText(ImVec2(origin.x + 8.0f, origin.y + 6.0f), IM_COL32(200, 200, 200, 170),
-			"颜色 = 耗时（绿→红）  灰：未执行  蓝灰：栅栏  橙：关键路径  白框：选中");
+			selected >= 0
+			? "选中：只亮它的上游  橙：到达它的最长链  白框：选中  点空白处取消"
+			: "颜色 = 耗时（绿→红）  灰：未执行  蓝灰：栅栏  橙：关键路径  白框：选中");
 		dl->PopClipRect();
 
 		// 交互

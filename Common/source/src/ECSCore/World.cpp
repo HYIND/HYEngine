@@ -167,6 +167,25 @@ void World::update(float deltaTime)
 	if (!m_isRunning)
 		return;
 
+	// 逻辑性能统计：窗口开着才挂 profile；结尾（含异常）统一收尾
+	std::shared_ptr<LogicFrameProfile> profile;
+	if (m_logicProfiler && m_logicProfiler->IsEnabled())
+	{
+		profile = std::make_shared<LogicFrameProfile>();
+		profile->startUs = LogicProfileNowUs();
+	}
+	struct ProfileFrameGuard
+	{
+		World& world;
+		~ProfileFrameGuard()
+		{
+			world.m_systemManager->BeginProfileFrame(nullptr);
+			world.m_currentLogicProfile = nullptr;
+		}
+	} profileGuard{ *this };
+	m_currentLogicProfile = profile.get();
+	m_systemManager->BeginProfileFrame(profile.get());
+
 	// 时间膨胀：真实 dt 乘上系数后再喂给逻辑/固定步长
 	// 系统里拿到的 deltaTime 一律是膨胀后的值，物理的固定步长频率也跟着变慢/变快。
 	const float scaledDeltaTime = deltaTime * m_timeScale.load(std::memory_order_relaxed);
@@ -174,7 +193,17 @@ void World::update(float deltaTime)
 	m_deltaTime = scaledDeltaTime;
 	m_frameCount++;
 
-	ProcessCommands();
+	if (profile)
+	{
+		profile->frameIndex = m_frameCount;
+		profile->logicBudgetMs = m_logicDeltaTime;
+		profile->timeScale = m_timeScale.load(std::memory_order_relaxed);
+		const int64_t commandsStart = LogicProfileNowUs();
+		ProcessCommands();
+		profile->commandsUs = LogicProfileNowUs() - commandsStart;
+	}
+	else
+		ProcessCommands();
 
 	m_logicAccumulator += scaledDeltaTime;
 	bool shouupdateLogic = m_logicAccumulator >= m_logicDeltaTime;
@@ -184,6 +213,8 @@ void World::update(float deltaTime)
 		m_systemManager->update(m_logicAccumulator);
 	}
 
+	int fixedSteps = 0;
+	bool fixedCatchUp = false;
 	{
 		// 固定时间步长更新
 		const int MAX_ITERATIONS = 6;
@@ -214,13 +245,27 @@ void World::update(float deltaTime)
 			float largeStep = std::min(m_fixedAccumulator, m_fixedDeltaTime * 3);
 			m_systemManager->fixedUpdate(largeStep);
 			m_fixedAccumulator -= largeStep;
+			fixedCatchUp = true;
 		}
+		fixedSteps = iterations + (fixedCatchUp ? 1 : 0);
 	}
 
 	if (shouupdateLogic)
 	{
 		m_systemManager->postUpdate(m_logicAccumulator);
 		m_logicAccumulator = 0;
+	}
+
+	if (profile)
+	{
+		profile->logicUpdated = shouupdateLogic;
+		profile->fixedSteps = fixedSteps;
+		profile->fixedCatchUp = fixedCatchUp;
+		profile->entityCount = getAllEntityCount();
+		profile->endUs = LogicProfileNowUs();
+		m_currentLogicProfile = nullptr;
+		m_systemManager->BeginProfileFrame(nullptr);
+		m_logicProfiler->Publish(std::move(profile));
 	}
 }
 

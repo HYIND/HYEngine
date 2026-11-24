@@ -6,6 +6,7 @@
 #include "PropertiesHelper.h"
 #include "DDGIEditor.h"
 #include "RenderProfilerPanel.h"
+#include "LogicProfilerPanel.h"
 #include "RenderOptionPanels.h"
 #include "IconManager.h"
 #include "SceneCodec/ComponentCodec.h"
@@ -1486,6 +1487,7 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		if (ImGui::BeginMenu("调试"))
 		{
 			ImGui::MenuItem("渲染性能", nullptr, &RenderProfilerPanel::Visible());
+			ImGui::MenuItem("逻辑性能", nullptr, &LogicProfilerPanel::Visible());
 			ImGui::MenuItem("DDGI 调试", nullptr, &DDGIEditor::DebugWindowVisible());
 
 			// 阴影调试：只对场景里选中的、启用了的方向光生效，替换直接光颜色（运行时状态，不保存进场景）。
@@ -2921,6 +2923,7 @@ void ImguiLayout::DrawOptions(EditorApp* editorApp)
 	DDGIEditor::DrawDebugWindow(editorApp);	// 「调试 → DDGI 调试」
 	DDGIEditor::DrawLeakWindow(editorApp);
 	RenderProfilerPanel::Draw(editorApp);	// 「调试 → 渲染性能」；关着时只负责关闭统计
+	LogicProfilerPanel::Draw(editorApp);	// 「调试 → 逻辑性能」；关着时只负责关闭统计
 }
 
 void ImguiLayout::DrawStatusBar(EditorApp* editorApp)

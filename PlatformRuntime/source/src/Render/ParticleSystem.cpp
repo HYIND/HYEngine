@@ -9,13 +9,13 @@
 namespace
 {
 	// 粒子数超过这个值才并行（小发射器串行更快，省掉线程调度）
-	constexpr std::size_t kParallelThreshold = 512;
+	constexpr std::size_t kParallelThreshold = 200;
 
 	template<typename It, typename F>
 	void ForEachMaybeParallel(It first, It last, F&& f)
 	{
 		if (static_cast<std::size_t>(std::distance(first, last)) >= kParallelThreshold)
-			std::for_each(std::execution::par, first, last, f);
+			std::for_each(std::execution::par_unseq, first, last, f);
 		else
 			std::for_each(first, last, f);
 	}
@@ -46,11 +46,16 @@ ParticleSystem::ParticleSystem()
 
 void ParticleSystem::update(float deltaTime)
 {
-	//auto start = Tool::GetTimestampMircoseconds();
 	UpdateParticle(deltaTime);
 	EmitParticle(deltaTime);
 	BuildFrameData();
-	//std::cout << std::format("ParticleSystem upadte cost {}us, Particle number = {}\n", Tool::GetTimestampMircoseconds() - start, _particleCount);
+
+	// 逻辑性能面板的规模数据（耗时由 SystemManager 统一记）
+	if (auto* profile = m_world->GetCurrentLogicProfile())
+	{
+		profile->SetCounter("存活粒子", static_cast<int64_t>(_particleCount));
+		profile->SetCounter("粒子发射器", static_cast<int64_t>(_emitters.size()));
+	}
 }
 
 void ParticleSystem::UpdateParticle(float deltaTime)
