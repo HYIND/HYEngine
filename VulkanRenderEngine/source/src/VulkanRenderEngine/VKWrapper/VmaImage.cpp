@@ -21,7 +21,8 @@ public:
 	VmaAllocation m_allocation = VK_NULL_HANDLE;
 };
 
-void static PrintFormatSupport(vk::PhysicalDevice physicalDevice, vk::Format format)
+// 打印格式在 optimal tiling 下支持的用途（编辑器「调试 → 打印纹理格式支持」调用）
+void VKWrapper::PrintFormatSupport(vk::PhysicalDevice physicalDevice, vk::Format format)
 {
 	vk::FormatProperties2 formatProps{};
 	formatProps.sType = vk::StructureType::eFormatProperties2;

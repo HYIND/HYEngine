@@ -5,6 +5,8 @@
 
 namespace VKWrapper {
 
+	void PrintFormatSupport(vk::PhysicalDevice physicalDevice, vk::Format format);
+
 	class VmaImage :public BaseVKImage
 	{
 
