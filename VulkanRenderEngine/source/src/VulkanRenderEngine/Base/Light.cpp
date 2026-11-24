@@ -94,6 +94,26 @@ uint32_t Light::GetShadowMapSize() const
 	return _shadowMapSize;
 }
 
+void Light::SetShadowNormalBias(float texels)
+{
+	_shadowNormalBias = std::clamp(texels, 0.0f, 8.0f);
+}
+
+void Light::SetShadowSlopeBias(float slope)
+{
+	_shadowSlopeBias = std::clamp(slope, 0.0f, 16.0f);
+}
+
+float Light::GetShadowNormalBias() const
+{
+	return _shadowNormalBias;
+}
+
+float Light::GetShadowSlopeBias() const
+{
+	return _shadowSlopeBias;
+}
+
 bool Light::GetVolumeLightEnable() const
 {
 	return volumeLightEnable;

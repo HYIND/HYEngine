@@ -33,7 +33,7 @@ void main()
     ShadowMaterialData material = shadowMaterials[data[dataIndex].materialIndex];
     if (calculateOpacity(material, FragTextureCoords) < 0.02)
         discard;
-        
-    float lightDistance = length(WorldPos - lightProp[viewIndex].lightPos);
-    gl_FragDepth = lightDistance / lightProp[viewIndex].farPlane;
+
+    // 不再写 gl_FragDepth：深度用 cube 面透视投影的硬件深度，这样硬件斜率深度偏移（depthBias）才生效，
+    // 也不会关掉 early-Z。采样端按面的朝向轴距离算参考深度（lightingHelper.comp 的 PointShadowFaceDepth）
 }

@@ -16,6 +16,12 @@ struct DirLight {
 	// 阴影距离渐隐（相机视空间深度）：<= start 完整阴影，>= end 不算阴影
 	float shadowFadeStart;
 	float shadowFadeEnd;
+
+	// 法线偏移（单位：阴影贴图 texel）
+	float shadowNormalBias;
+
+	// 阴影调试：这盏灯是编辑器里选中的那盏
+	bool shadowDebug;
 };
 
 struct DirLightCascade
@@ -42,6 +48,9 @@ struct PointLight {
 	bool volumeLightEnable;
 	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
+
+	// 法线偏移（单位：阴影贴图 texel）
+	float shadowNormalBias;
 };
 
 struct SpotLight {
@@ -65,6 +74,9 @@ struct SpotLight {
 	bool volumeLightEnable;
 	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
+
+	// 法线偏移（单位：阴影贴图 texel），放在 mat4 之前原有的空隙里
+	float shadowNormalBias;
 
 	mat4 lightSpaceMatrix;
 };

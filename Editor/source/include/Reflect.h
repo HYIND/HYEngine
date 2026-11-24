@@ -193,6 +193,8 @@ namespace rfl {
 
 			bool castShadow = true;
 			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+			float shadowNormalBias = __LightDataDefault::__default_shadowNormalBias;	// 法线偏移（texel）
+			float shadowSlopeBias = __LightDataDefault::__default_shadowSlopeBias;		// 斜率深度偏移
 
 			float luxIntensity = 3.5f;
 
@@ -212,6 +214,8 @@ namespace rfl {
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
+				.shadowNormalBias = src.shadowNormalBias,
+				.shadowSlopeBias = src.shadowSlopeBias,
 				.luxIntensity = src.luxIntensity,
 				.cascadeLevel = src.cascadeLevel,
 				.shadowDistance = src.shadowDistance,
@@ -227,6 +231,8 @@ namespace rfl {
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;
+			src.shadowNormalBias = std::clamp(ref.shadowNormalBias, 0.0f, 8.0f);
+			src.shadowSlopeBias = std::clamp(ref.shadowSlopeBias, 0.0f, 16.0f);
 			src.luxIntensity = ref.luxIntensity;
 			src.cascadeLevel = ref.cascadeLevel;
 			src.shadowDistance = std::max(ref.shadowDistance, 1.0f);
@@ -246,6 +252,8 @@ namespace rfl {
 
 			bool castShadow = true;
 			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+			float shadowNormalBias = __LightDataDefault::__default_shadowNormalBias;	// 法线偏移（texel）
+			float shadowSlopeBias = __LightDataDefault::__default_shadowSlopeBias;		// 斜率深度偏移
 
 			float cdIntensity = 300.f;
 		};
@@ -261,6 +269,8 @@ namespace rfl {
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
+				.shadowNormalBias = src.shadowNormalBias,
+				.shadowSlopeBias = src.shadowSlopeBias,
 				.cdIntensity = src.cdIntensity
 			};
 		}
@@ -272,6 +282,8 @@ namespace rfl {
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;
+			src.shadowNormalBias = std::clamp(ref.shadowNormalBias, 0.0f, 8.0f);
+			src.shadowSlopeBias = std::clamp(ref.shadowSlopeBias, 0.0f, 16.0f);
 			src.cdIntensity = ref.cdIntensity;
 		}
 	};
@@ -288,6 +300,8 @@ namespace rfl {
 
 			bool castShadow = true;
 			uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+			float shadowNormalBias = __LightDataDefault::__default_shadowNormalBias;	// 法线偏移（texel）
+			float shadowSlopeBias = __LightDataDefault::__default_shadowSlopeBias;		// 斜率深度偏移
 
 			float cdIntensity = 300.f;
 
@@ -306,6 +320,8 @@ namespace rfl {
 				.volumetricScatteringIntensity = src.volumetricScatteringIntensity,
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
+				.shadowNormalBias = src.shadowNormalBias,
+				.shadowSlopeBias = src.shadowSlopeBias,
 				.cdIntensity = src.cdIntensity,
 				.cutOffAngle = src.cutOffAngle,
 				.outercutOffAngle = src.outercutOffAngle
@@ -319,6 +335,8 @@ namespace rfl {
 			src.volumetricScatteringIntensity = ref.volumetricScatteringIntensity;
 			src.castShadow = ref.castShadow;
 			src.shadowMapSize = ref.shadowMapSize;
+			src.shadowNormalBias = std::clamp(ref.shadowNormalBias, 0.0f, 8.0f);
+			src.shadowSlopeBias = std::clamp(ref.shadowSlopeBias, 0.0f, 16.0f);
 			src.cdIntensity = ref.cdIntensity;
 			src.cutOffAngle = ref.cutOffAngle;
 			src.outercutOffAngle = ref.outercutOffAngle;

@@ -32,6 +32,7 @@ namespace VKRenderContext
 	struct BaseLightData :public BaseRenderData
 	{
 		bool renderCube;
+		uint32_t entityId = UINT32_MAX;	// 所属实体（编辑器调试用：只对选中的灯显示阴影调试）
 	};
 
 	struct EffectRenderData :public BaseRenderData

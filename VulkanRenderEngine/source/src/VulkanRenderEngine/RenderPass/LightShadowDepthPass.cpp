@@ -23,8 +23,16 @@ struct alignas(16) DirLightMetaInfo {
 	// 和 lightingssboDef.comp 的 DirLight 对齐：volumetricScatteringIntensity 在 52，这两个在 56 / 60，结构体仍是 64 字节
 	float shadowFadeStart = 3.0e38f;
 	float shadowFadeEnd = 3.0e38f;
+
+	// 法线偏移（texel），偏移 64；结构体按 16 对齐到 80 字节，和 GLSL std430 一致
+	float shadowNormalBias = 1.0f;
+
+	// 阴影调试：这盏灯就是编辑器里选中的那盏（偏移 68，结构体仍是 80 字节）
+	uint32_t shadowDebug = 0;
 };
-static_assert(sizeof(DirLightMetaInfo) == 64);
+static_assert(sizeof(DirLightMetaInfo) == 80);
+static_assert(offsetof(DirLightMetaInfo, shadowNormalBias) == 64);
+static_assert(offsetof(DirLightMetaInfo, shadowDebug) == 68);
 
 struct alignas(16) DirLightCascadeInfo {
 	alignas(16) glm::mat4 lightSpaceMatrix;
@@ -56,8 +64,13 @@ struct SpotLightMetaInfo {
 	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
 
+	// 法线偏移（texel），占用 mat4 前原有的 4 字节空隙（偏移 92），结构体大小不变
+	float shadowNormalBias = 1.0f;
+
 	alignas(16) glm::mat4 lightSpaceMatrix;
 };
+static_assert(sizeof(SpotLightMetaInfo) == 160);
+static_assert(offsetof(SpotLightMetaInfo, shadowNormalBias) == 92);
 
 struct alignas(16) PointLightMetaInfo {
 	alignas(16) glm::vec3 position;
@@ -71,7 +84,19 @@ struct alignas(16) PointLightMetaInfo {
 	uint32_t volumeLightEnable = 0;
 	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
+
+	// 法线偏移（texel），占用结构体末尾原有的空隙（偏移 152），结构体大小不变
+	float shadowNormalBias = 1.0f;
 };
+static_assert(sizeof(PointLightMetaInfo) == 160);
+static_assert(offsetof(PointLightMetaInfo, shadowNormalBias) == 152);
+
+// 阴影深度偏移的常量项（× 深度格式的最小可分辨差 r，D32F 下 r ≈ 2^(e-23)），只用来吸收光栅化和 shader 里矩阵运算的浮点误差；
+// 真正的偏移靠斜率项（每盏灯的 shadowSlopeBias）和接收端的法线偏移
+constexpr float kShadowDepthBiasConstant = 4.0f;
+
+// 点光源 cube 每个面的透视投影近平面，必须和 lightingHelper.comp 的 kPointShadowNearPlane 一致
+constexpr float kPointShadowNearPlane = 0.1f;
 
 static bool GetCubeViewPorts(std::array<DynamicViewport, 6>& viewports, const std::shared_ptr<PointLightInfo>& info, const AtlasMap& atlasShadowMap)
 {
@@ -107,7 +132,8 @@ static void SetupDirLightData(
 	std::shared_ptr<StorageBlock>& cascadeDstances_ssbo,
 	const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
 	const std::shared_ptr<AtlasMap>& atlasShadowMap,
-	float cameraFarPlane
+	float cameraFarPlane,
+	uint32_t shadowDebugEntity
 )
 {
 
@@ -131,6 +157,9 @@ static void SetupDirLightData(
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
 		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
+		metainfo.shadowNormalBias = light->GetShadowNormalBias();
+		// 阴影调试只对选中的那盏方向光生效（RenderLight 不可见的灯根本不会进这个列表）
+		metainfo.shadowDebug = (shadowDebugEntity != UINT32_MAX && info->entityId == shadowDebugEntity) ? 1u : 0u;
 
 		metainfo.castShadow = info->light->GetCastShadow() || !info->cascades.empty();
 		if (metainfo.castShadow)
@@ -222,6 +251,7 @@ static void SetupPointLightData(
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
 		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
+		metainfo.shadowNormalBias = light->GetShadowNormalBias();
 		for (int i = 0; i < 6; i++)
 		{
 			auto& viewport = viewports[i];
@@ -270,6 +300,7 @@ static void SetupSpotLightData(
 		metainfo.volumeLightEnable = uint32_t(light->GetVolumeLightEnable());
 		metainfo.volumeLightEffectByAtmospher = uint32_t(light->GetVolumeLightEffectByAtmospher());
 		metainfo.volumetricScatteringIntensity = light->GetVolumetricScatteringIntensity();
+		metainfo.shadowNormalBias = light->GetShadowNormalBias();
 		metainfo.atlasX = rect.x;
 		metainfo.atlasY = rect.y;
 		metainfo.atlasWidth = rect.width;
@@ -363,6 +394,9 @@ LightShadowDepthPass::LightShadowDepthPass(
 			.AddStorageBuffer(5);
 
 		config.AddDynamicState(vk::DynamicState::eCullMode);
+		// 斜率深度偏移：画阴影图时硬件按三角形的深度斜率把深度推远，数值每批按灯光参数动态设置
+		config.SetDepthBiasEnable(true);
+		config.AddDynamicState(vk::DynamicState::eDepthBias);
 
 		if (config.Validate())
 			_dirLightShadowDepthStaticMeshShader->Create(config);
@@ -389,6 +423,9 @@ LightShadowDepthPass::LightShadowDepthPass(
 			.AddStorageBuffer(6);
 
 		config.AddDynamicState(vk::DynamicState::eCullMode);
+		// 点光源也走硬件透视深度（FS 不再写 gl_FragDepth），所以同样可以用硬件斜率深度偏移
+		config.SetDepthBiasEnable(true);
+		config.AddDynamicState(vk::DynamicState::eDepthBias);
 
 		if (config.Validate())
 			_pointLightShadowDepthStaticMeshShader->Create(config);
@@ -509,6 +546,9 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 			dirLightShadowDepthStaticMeshBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
 			dirLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
 
+			// 动态状态不跨命令缓冲：每批（每次 SubmitNow 之后）都要重新设置
+			cmd->setDepthBias(kShadowDepthBiasConstant, 0.0f, data.slopeBias);
+
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
 				_dirLightShadowDepthStaticMeshShader,
 				dirLightShadowDepthStaticMeshBinding,
@@ -523,6 +563,8 @@ void LightShadowDepthPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 			pointLightShadowDepthStaticMeshBinding.SetStorageBlock(data.ssbo_LightProps, 6);
 			pointLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_ShadowMatrices, 4);
 			pointLightShadowDepthSkinnedBinding.SetStorageBlock(data.ssbo_LightProps, 6);
+
+			cmd->setDepthBias(kShadowDepthBiasConstant, 0.0f, data.slopeBias);
 
 			PreRecordRenderScene(cmd, selfctx, data, renderInfo,
 				_pointLightShadowDepthStaticMeshShader,
@@ -616,7 +658,9 @@ struct DrawParams {
 
 void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
 {
-	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, ctx.ssbo_dirLightCascadeDistances, state.lights.dirLightInfos, ctx.atlas, state.camera.farPlane);
+	const uint32_t shadowDebugEntity = state.option.shadowDebugMode != Scene3DRenderOption::ShadowDebugMode::Off
+		? state.option.shadowDebugEntity : UINT32_MAX;
+	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, ctx.ssbo_dirLightCascadeDistances, state.lights.dirLightInfos, ctx.atlas, state.camera.farPlane, shadowDebugEntity);
 	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
 	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
 }
@@ -661,10 +705,19 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 		shouldCullings.clear();
 		};
 
+	// 加一个视口之前调用：斜率偏移和当前批不同就先把当前批提交（depthBias 是每次绘制一个值）
+	auto beginView = [&](float slopeBias) {
+		if (count > 0 && data.slopeBias != slopeBias)
+			render();
+		data.slopeBias = slopeBias;
+		};
+
 	for (auto& info : dirLightsInfo)
 	{
 		if (!info || !info->light || info->cascades.empty() || !info->light->GetCastShadow())
 			continue;
+
+		const float slopeBias = info->light->GetShadowSlopeBias();
 
 		for (auto& cascade : info->cascades)
 		{
@@ -672,6 +725,7 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 			if (!ctx.atlas->GetSpace(cascade.id, rect))
 				continue;
 
+			beginView(slopeBias);
 			data.shadowMatrices.push_back(cascade.lightSpaceMatrix);
 			data.viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
 			shouldCullings.push_back(false);
@@ -701,6 +755,7 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 		if (!ctx.atlas->GetSpace(info->atlas->id, rect))
 			continue;
 
+		beginView(light->GetShadowSlopeBias());
 		data.shadowMatrices.push_back(mat);
 		data.viewPorts.push_back({ rect.width, rect.height, rect.x ,rect.y });
 		shouldCullings.push_back(true);
@@ -759,6 +814,12 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 		lightProps.clear();
 		};
 
+	auto beginView = [&](float slopeBias) {
+		if (count > 0 && data.slopeBias != slopeBias)
+			render();
+		data.slopeBias = slopeBias;
+		};
+
 	for (auto& info : pointLightsInfo)
 	{
 		if (!info || !info->light || !info->light->GetCastShadow())
@@ -775,7 +836,8 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 
 		float shadowMapSize = light->GetShadowMapSize();
 
-		float near_plane = 0.1f;
+		// 近平面和 shader 里按面算参考深度用的是同一个常量
+		float near_plane = kPointShadowNearPlane;
 		float far_plane = light->GetRadius();
 		glm::mat4 shadowProj = vkPerspective(glm::radians(90.0f), 1.0, near_plane, far_plane);
 		glm::vec3 lightPos = light->GetPosition();
@@ -800,6 +862,7 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 			if (!state.camera.frustum.IsIntersectsFrustum(faceFrustm))
 				continue;
 
+			beginView(light->GetShadowSlopeBias());
 			data.shadowMatrices.push_back(shadowTransforms[face]);
 			lightProps.push_back({ lightPos ,far_plane });
 			data.viewPorts.push_back(viewports[face]);

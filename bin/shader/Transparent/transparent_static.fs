@@ -29,7 +29,8 @@ void main()
 	PBRProperties prop;
 	getPBRProperties(material, FragTextureCoords, prop.albedo, prop.metallic, prop.roughness, prop.ambientOcclusion);
 
-	vec3 lightingColor = CalcLighting(camera.view, camera.position, camera.farPlane, atlasShadowMap, FragPos, normal, prop);
+	// FragNormal 是插值的几何法线，阴影法线偏移用它
+	vec3 lightingColor = CalcLightingWithGeometryNormal(camera.view, camera.position, camera.farPlane, atlasShadowMap, FragPos, normal, FragNormal, prop);
 
 	vec3 scatteringColor = prop.albedo;
 	const float lightingFact = 0.9;

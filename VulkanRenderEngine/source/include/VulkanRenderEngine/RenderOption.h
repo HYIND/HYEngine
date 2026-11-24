@@ -244,6 +244,18 @@ struct Scene3DRenderOption
 		uint32_t ModeFor(DenoiseDebugTarget t) const { return (Active() && target == t) ? uint32_t(mode) : 0u; }
 	} denoiseDebug;
 
+	// 阴影调试（运行时调试状态，不序列化）。只对编辑器里选中的、启用了的方向光生效（shadowDebugEntity），
+	// 在 LightingPass 里替换直接光颜色；没有选中方向光时正常渲染。
+	// 品红斜纹 = 接收点投影到了所选级联范围外；黑白斜纹 = 开了投影但一个级联都没分到；暗灰 = 超出阴影距离
+	enum class ShadowDebugMode : uint32_t {
+		Off = 0,
+		Cascade,		// 按级联着色：红 0 / 绿 1 / 蓝 2 / 黄 3，阴影处变暗，渐隐段加斜纹
+		ShadowFactor,	// 只显示阴影结果：白 = 受光，黑 = 阴影
+		ShadowMapContent,	// 阴影图在接收点处存了什么：青 = 空（没有物体画进来），红 = 有更近的遮挡物，绿 = 只有接收面自己
+	};
+	ShadowDebugMode shadowDebugMode = ShadowDebugMode::Off;
+	uint32_t shadowDebugEntity = UINT32_MAX;	// 要调试的方向光所属实体（编辑器每帧按选中实体设置），UINT32_MAX = 没有
+
 	// 降噪调试目标对应的 Pass 开着没有（RTR / RTGI 的软件、硬件版本共用同一个开关）
 	bool IsDenoiseDebugTargetOn(DenoiseDebugTarget t) const
 	{

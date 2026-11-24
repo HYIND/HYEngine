@@ -44,6 +44,7 @@ namespace Render
 					auto info = std::make_shared<DirLightInfo>();
 					info->light = ptr->light;
 					info->renderCube = ptr->renderCube;
+					info->entityId = ptr->entityId;
 					dirLightInfos.push_back(std::move(info));
 				}
 				break;

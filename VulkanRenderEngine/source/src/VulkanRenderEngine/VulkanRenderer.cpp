@@ -970,7 +970,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto indirectDiffuse_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectDiffuse_Output");
 	auto indirectSpecular_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectSpecular_Output");
 	auto indirectPathTracing_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectPathTracing_Output");
-	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");
+	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");
 
 	auto gPrevPosition = resbuilder.CreateTexture(gPosition, "gPrevPosition");
 	auto gPrevNormal = resbuilder.CreateTexture(gNormal, "gPrevNormal");

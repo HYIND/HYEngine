@@ -76,8 +76,9 @@ namespace
 			[](Scene3DRenderOption& o) { o.ddgiParams = {}; return true; }, 560.0f },
 	} };
 
-	// PostProcessFlags 里没有参数面板、但有别的窗口可以打开的开关
-	constexpr std::string_view kProbeDrawFlag = "ddgiProbeDrawOn";		// → DDGI 调试
+	// 不在左下角 PostProcessFlags 列表里显示的字段：属于调试开关，只在对应面板里开关
+	//   ddgiProbeDrawOn：DDGI 探针可视化，在 DDGI 参数面板 / DDGI 调试窗口里开
+	constexpr std::string_view kHiddenFlags[] = { "ddgiProbeDrawOn" };
 
 	struct PanelState
 	{
@@ -563,26 +564,25 @@ namespace
 	void DrawFlagEntry(std::string_view flagName, float column)
 	{
 		const int panel = FindPanelByFlag(flagName);
-		const bool probeDraw = flagName == kProbeDrawFlag;
-		if (panel < 0 && !probeDraw)
+		if (panel < 0)
 			return;
 
 		ImGui::SameLine(column);
-		const std::string label = std::string(probeDraw ? "调试" : "参数") + "##entry_" + std::string(flagName);
+		const std::string label = "参数##entry_" + std::string(flagName);
 		if (ImGui::SmallButton(label.c_str()))
-		{
-			if (probeDraw)
-				DDGIEditor::DebugWindowVisible() = true;
-			else
-				Open(size_t(panel));
-		}
+			Open(size_t(panel));
 		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("打开「%s」参数面板", kPanels[size_t(panel)].title);
+	}
+
+	bool IsHiddenFlag(std::string_view flagName)
+	{
+		for (std::string_view hidden : kHiddenFlags)
 		{
-			if (probeDraw)
-				ImGui::SetTooltip("打开 DDGI 调试窗口");
-			else
-				ImGui::SetTooltip("打开「%s」参数面板", kPanels[size_t(panel)].title);
+			if (flagName == hidden)
+				return true;
 		}
+		return false;
 	}
 
 	// 写成模板（同 PropertiesHelper::DrawComponent）：rfl 的字段推导在非模板函数里会被立即求值，
@@ -599,13 +599,19 @@ namespace
 		// 入口按钮对齐到同一列：勾选框 + 最长的字段名之后
 		float maxLabel = 0.0f;
 		for (std::size_t i = 0; i < kFieldCount; ++i)
+		{
+			if (IsHiddenFlag(fields[i].name()))
+				continue;
 			maxLabel = std::max(maxLabel, ImGui::CalcTextSize(fields[i].name().c_str()).x);
+		}
 		const ImGuiStyle& style = ImGui::GetStyle();
 		const float column = ImGui::GetCursorPosX() + ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + maxLabel + style.ItemSpacing.x * 2.0f;
 
 		[&] <std::size_t... I>(std::index_sequence<I...>) {
 			((changed |= [&]() -> bool {
 				const std::string& name = fields[I].name();
+				if (IsHiddenFlag(name))
+					return false;
 				auto* ptr = view.template get<I>();
 				bool c = false;
 				if constexpr (std::is_same_v<std::remove_cvref_t<std::remove_pointer_t<decltype(ptr)>>, bool>)

@@ -8,6 +8,8 @@ namespace __LightDataDefault
 	constexpr inline uint32_t __default_cascadeLevel = 4;
 	constexpr inline float __default_shadowDistance = 200.0f;
 	constexpr inline float __default_cascadeSplitLambda = 0.75f;
+	constexpr inline float __default_shadowNormalBias = 1.0f;
+	constexpr inline float __default_shadowSlopeBias = 2.0f;
 }
 
 struct BaseLightData
@@ -20,6 +22,12 @@ struct BaseLightData
 
 	bool castShadow = true;
 	uint32_t shadowMapSize = __LightDataDefault::__default_shadow_side;
+	// 阴影法线偏移（单位：阴影贴图 texel）。接收点沿几何法线外推 texel 世界尺寸 × 该值 × sinθ，
+	// 主要解决掠射角的自阴影；texel 尺寸按级联 / 到光源距离自动换算
+	float shadowNormalBias = __LightDataDefault::__default_shadowNormalBias;
+	// 阴影斜率深度偏移（光栅化 depthBias 的 slopeFactor）。画阴影图时硬件按三角形深度斜率把深度推远，
+	// ≥ PCF 半径 + 0.5 才能让 3×3 PCF 外圈共用中心参考深度而不出痘
+	float shadowSlopeBias = __LightDataDefault::__default_shadowSlopeBias;
 };
 
 struct DirectionalLightData : public BaseLightData

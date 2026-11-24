@@ -61,6 +61,10 @@ private:
 		std::vector<glm::mat4> shadowMatrices;
 		std::vector<DynamicViewport> viewPorts;
 
+		// 这一批的斜率深度偏移（depthBias slopeFactor）。depthBias 是每次绘制一个值，不能按视口区分，
+		// 所以偏移不同的灯不能放进同一批
+		float slopeBias = 0.0f;
+
 		std::shared_ptr<StorageBlock> ssbo_ShadowMatrices = std::make_shared<StorageBlock>();
 		std::shared_ptr<StorageBlock> ssbo_LightProps = std::make_shared<StorageBlock>();
 
@@ -75,6 +79,7 @@ private:
 			type = other.type;
 			shadowMatrices = std::move(other.shadowMatrices);
 			viewPorts = std::move(other.viewPorts);
+			slopeBias = other.slopeBias;
 
 			ssbo_ShadowMatrices = std::move(other.ssbo_ShadowMatrices);
 			ssbo_LightProps = std::move(other.ssbo_LightProps);

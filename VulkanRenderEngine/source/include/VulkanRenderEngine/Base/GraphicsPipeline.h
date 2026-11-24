@@ -94,6 +94,8 @@ struct GraphicsPipelineConfig : public PipelineConfig
 	void SetTopology(vk::PrimitiveTopology topology);
 	void SetPolygonMode(vk::PolygonMode mode);
 	void SetCullMode(vk::CullModeFlags mode);
+	// 打开光栅化深度偏移；具体数值用动态状态 vk::DynamicState::eDepthBias 在绘制时设置
+	void SetDepthBiasEnable(bool enable);
 	void SetFrontFace(vk::FrontFace face);
 	void SetSampleCount(vk::SampleCountFlagBits samples);
 

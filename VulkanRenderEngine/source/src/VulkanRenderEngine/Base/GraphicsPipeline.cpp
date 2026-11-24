@@ -132,6 +132,7 @@ void GraphicsPipelineConfig::UpdateAllProps() {
 void GraphicsPipelineConfig::SetTopology(vk::PrimitiveTopology topology) { pack.inputAssemblyStateCi.topology = topology; }
 void GraphicsPipelineConfig::SetPolygonMode(vk::PolygonMode mode) { pack.rasterizationStateCi.polygonMode = mode; }
 void GraphicsPipelineConfig::SetCullMode(vk::CullModeFlags mode) { pack.rasterizationStateCi.cullMode = mode; }
+void GraphicsPipelineConfig::SetDepthBiasEnable(bool enable) { pack.rasterizationStateCi.depthBiasEnable = enable ? VK_TRUE : VK_FALSE; }
 void GraphicsPipelineConfig::SetFrontFace(vk::FrontFace face) { pack.rasterizationStateCi.frontFace = face; }
 void GraphicsPipelineConfig::SetDepthTest(bool enable, bool write, vk::CompareOp op) {
 	pack.depthStencilStateCi.depthTestEnable = enable ? VK_TRUE : VK_FALSE;

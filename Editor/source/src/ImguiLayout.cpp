@@ -1487,6 +1487,38 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 		{
 			ImGui::MenuItem("渲染性能", nullptr, &RenderProfilerPanel::Visible());
 			ImGui::MenuItem("DDGI 调试", nullptr, &DDGIEditor::DebugWindowVisible());
+
+			// 阴影调试：只对场景里选中的、启用了的方向光生效，替换直接光颜色（运行时状态，不保存进场景）。
+			// 没有选中方向光时画面正常显示
+			if (editorApp && ImGui::BeginMenu("阴影调试"))
+			{
+				using ShadowDebugMode = Scene3DRenderOption::ShadowDebugMode;
+				struct Item { const char* name; ShadowDebugMode mode; const char* tip; };
+				static const Item items[] = {
+					{ "关闭", ShadowDebugMode::Off, nullptr },
+					{ "级联着色", ShadowDebugMode::Cascade, "红 0 / 绿 1 / 蓝 2 / 黄 3，阴影处变暗，渐隐段带斜纹\n品红斜纹：接收点投影出了所选级联范围\n黑白斜纹：一个级联都没分到；暗灰：超出阴影距离" },
+					{ "阴影结果", ShadowDebugMode::ShadowFactor, "白 = 受光，黑 = 阴影（已含渐隐）" },
+					{ "阴影图内容", ShadowDebugMode::ShadowMapContent, "接收点处阴影图存了什么：\n青 = 空（这里没有物体画进阴影图：被剔除或被裁掉）\n红 = 有更近的遮挡物；绿 = 只有接收面自己" },
+				};
+				auto option = editorApp->GetOption();
+				bool changed = false;
+				for (const Item& item : items)
+				{
+					if (ImGui::MenuItem(item.name, nullptr, option.shadowDebugMode == item.mode))
+					{
+						option.shadowDebugMode = item.mode;
+						changed = true;
+					}
+					if (item.tip && ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", item.tip);
+				}
+				ImGui::Separator();
+				ImGui::TextDisabled("选中一个启用了的方向光实体后生效");
+				ImGui::TextDisabled("暗紫 = 选中的方向光没开投影");
+				if (changed)
+					editorApp->SetOption(option);
+				ImGui::EndMenu();
+			}
 			ImGui::EndMenu();
 		}
 
@@ -2286,6 +2318,26 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 
 	// DDGI：推送调试设置（可视化、选中体积 / 探针、漏光像素）、处理烘焙结果
 	DDGIEditor::UpdateFrame(editorApp, selectedEntity);
+
+	// 阴影调试：只对选中的、启用了的方向光生效。选中别的实体 / 灯被禁用时渲染器收到 UINT32_MAX，按正常画面显示
+	{
+		uint32_t shadowDebugEntity = UINT32_MAX;
+		if (selectedEntity && selectedEntity.isValid())
+		{
+			if (auto* light = selectedEntity.tryGetComponent<RenderLight>())
+			{
+				if (light->visible && light->type == LightType::Directional)
+					shadowDebugEntity = selectedEntity.getId();
+			}
+		}
+		auto option = editorApp->GetOption();
+		if (option.shadowDebugEntity != shadowDebugEntity)
+		{
+			option.shadowDebugEntity = shadowDebugEntity;
+			editorApp->SetOption(option);
+		}
+	}
+
 	{
 		const ImVec2 mouse = ImGui::GetMousePos();
 		const bool inside = viewportSize.x > 0 && viewportSize.y > 0

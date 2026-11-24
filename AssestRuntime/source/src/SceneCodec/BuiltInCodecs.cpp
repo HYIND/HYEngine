@@ -1669,7 +1669,9 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "cascadeLevel", d->cascadeLevel },
                     { "shadowDistance", d->shadowDistance },
                     { "cascadeSplitLambda", d->cascadeSplitLambda },
-                    { "shadowMapSize", d->shadowMapSize }
+                    { "shadowMapSize", d->shadowMapSize },
+                    { "shadowNormalBias", d->shadowNormalBias },
+                    { "shadowSlopeBias", d->shadowSlopeBias }
                 };
                 break;
             }
@@ -1686,7 +1688,9 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "volumeLightEnable", d->volumeLightEnable },
                     { "volumeLightEffectByAtmospher", d->volumeLightEffectByAtmospher },
                     { "castShadow", d->castShadow },
-                    { "shadowMapSize", d->shadowMapSize }
+                    { "shadowMapSize", d->shadowMapSize },
+                    { "shadowNormalBias", d->shadowNormalBias },
+                    { "shadowSlopeBias", d->shadowSlopeBias }
                 };
                 break;
             }
@@ -1705,7 +1709,9 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "cutOffAngle", d->cutOffAngle },
                     { "outercutOffAngle", d->outercutOffAngle },
                     { "castShadow", d->castShadow },
-                    { "shadowMapSize", d->shadowMapSize }
+                    { "shadowMapSize", d->shadowMapSize },
+                    { "shadowNormalBias", d->shadowNormalBias },
+                    { "shadowSlopeBias", d->shadowSlopeBias }
                 };
                 break;
             }
@@ -1763,6 +1769,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.shadowDistance = data.value("shadowDistance", __LightDataDefault::__default_shadowDistance);
                 d.cascadeSplitLambda = data.value("cascadeSplitLambda", __LightDataDefault::__default_cascadeSplitLambda);
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
+                d.shadowNormalBias = data.value("shadowNormalBias", __LightDataDefault::__default_shadowNormalBias);
+                d.shadowSlopeBias = data.value("shadowSlopeBias", __LightDataDefault::__default_shadowSlopeBias);
 
                 light = RenderLight(d);
                 break;
@@ -1788,6 +1796,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.volumeLightEffectByAtmospher = data.value("volumeLightEffectByAtmospher", false);
                 d.castShadow = data.at("castShadow").get<bool>();
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
+                d.shadowNormalBias = data.value("shadowNormalBias", __LightDataDefault::__default_shadowNormalBias);
+                d.shadowSlopeBias = data.value("shadowSlopeBias", __LightDataDefault::__default_shadowSlopeBias);
 
                 light = RenderLight(d);
                 break;
@@ -1815,6 +1825,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.outercutOffAngle = data.at("outercutOffAngle").get<float>();
                 d.castShadow = data.at("castShadow").get<bool>();
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
+                d.shadowNormalBias = data.value("shadowNormalBias", __LightDataDefault::__default_shadowNormalBias);
+                d.shadowSlopeBias = data.value("shadowSlopeBias", __LightDataDefault::__default_shadowSlopeBias);
 
                 light = RenderLight(d);
                 break;

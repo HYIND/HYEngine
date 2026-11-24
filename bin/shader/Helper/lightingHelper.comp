@@ -19,10 +19,10 @@ float SamplerAtlasCubeMapWithCompare(vec3 dir, sampler2D atlasMap, vec2 atlasSiz
 //shadow
 vec3 NormalBias(vec3 fragPos, vec3 lightDir, vec3 normal, float biasFactor);
 float DirLightShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize);
-float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
+float PointLightShadowCalculation(vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
 
 float DirLightFastShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, vec2 subStart, vec2 subSize);
-float PointLightFastShadowCalculation(vec3 cameraPos, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
+float PointLightFastShadowCalculation(vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius);
 
 //lightingWithoutShadow
 vec3 CalcDirLightWithoutShadow(DirLight light, vec3 normal, vec3 viewDir, PBRProperties prop);
@@ -30,11 +30,39 @@ vec3 CalcPointLightWithoutShadow(PointLight light, vec3 normal, vec3 fragPos, ve
 vec3 CalcSpotLightWithoutShadow(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, PBRProperties prop);
 
 //lighting
-vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 cameraView ,vec3 viewDir, PBRProperties prop);
-vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 viewDir, PBRProperties prop);
-vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, vec3 viewDir, PBRProperties prop);
+vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, mat4 cameraView ,vec3 viewDir, PBRProperties prop);
+vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, vec3 viewDir, PBRProperties prop);
+vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, vec3 viewDir, PBRProperties prop);
 
 
+// fragNormal：着色法线（带法线贴图），用于 BRDF；geoNormal：几何法线（插值顶点法线），只用于阴影的法线偏移。
+// 阴影图是按真实三角形光栅化的，偏移方向 / 大小要按真实几何面算，法线贴图的扰动会让明暗交界处漏光、阴影边缘爬动
+vec3 CalcLightingWithGeometryNormal(
+    mat4 view, vec3 viewPos, float cameraFarPlane,
+	sampler2D atlasMap,
+    vec3 fragPos, vec3 fragNormal, vec3 geoNormal,
+	PBRProperties prop
+)
+{
+	vec3 viewDir = normalize(fragPos - viewPos);
+
+	// 双面材质时几何法线可能和着色法线不在同一侧，翻到同一侧，偏移才是往表面「外面」推
+	vec3 geoN = normalize(geoNormal);
+	if (dot(geoN, fragNormal) < 0.0)
+		geoN = -geoN;
+
+	vec3 lightColor = vec3(0.f,0.f,0.f);
+	for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
+		lightColor += CalcDirLight(dirLightMetaData.info[i], atlasMap, fragNormal, geoN, fragPos, view, viewDir, prop);
+	for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
+		lightColor += CalcPointLight(pointLightMetaData.info[i], atlasMap, fragNormal, geoN, fragPos, viewDir, prop);
+	for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
+		lightColor += CalcSpotLight(spotLightMetaData.info[i], atlasMap, fragNormal, geoN, fragPos, viewDir, prop);
+
+	return lightColor;
+}
+
+// 没有几何法线的调用方：用着色法线代替（阴影偏移会受法线贴图影响）
 vec3 CalcLighting(
     mat4 view, vec3 viewPos, float cameraFarPlane,
 	sampler2D atlasMap,
@@ -42,17 +70,7 @@ vec3 CalcLighting(
 	PBRProperties prop
 )
 {
-	vec3 viewDir = normalize(fragPos - viewPos);		
-
-	vec3 lightColor = vec3(0.f,0.f,0.f);
-	for(uint i = 0;i < dirLightMetaData.dirLightCount; i++)
-		lightColor += CalcDirLight(dirLightMetaData.info[i], atlasMap, fragNormal, fragPos, view, viewDir, prop);
-	for(uint i = 0;i < pointLightMetaData.pointLightCount; i++)
-		lightColor += CalcPointLight(pointLightMetaData.info[i], atlasMap, fragNormal, viewPos, cameraFarPlane, fragPos, viewDir, prop);
-	for(uint i = 0;i < spotLightMetaData.spotLightCount; i++)
-		lightColor += CalcSpotLight(spotLightMetaData.info[i], atlasMap, fragNormal, fragPos, viewDir, prop);
-
-	return lightColor;
+	return CalcLightingWithGeometryNormal(view, viewPos, cameraFarPlane, atlasMap, fragPos, fragNormal, fragNormal, prop);
 }
 
 
@@ -82,6 +100,58 @@ float DirLightShadowDistanceFade(DirLight light, float viewDepth)
 	if (viewDepth <= light.shadowFadeStart)
 		return 1.0;
 	return 1.0 - smoothstep(light.shadowFadeStart, light.shadowFadeEnd, viewDepth);
+}
+
+// ---------------- 阴影偏移 ----------------
+// 分工：深度方向的偏移由画阴影图时的硬件斜率深度偏移（depthBias，每盏灯 shadowSlopeBias）负责，已经写进阴影图，
+// 采样时直接用接收点的原始深度比较，不再减偏移；接收端只做法线偏移，补掠射角（斜率偏移在这里要么不够、要么过大）。
+
+// 阴影贴图一个 texel 在 worldPos 处对应的世界尺寸。
+// 正交（方向光级联）：clip.w = 1，|row0.xyz| = 2 / 投影宽度；透视（聚光）：clip.w = 到光源的视深，|row0.xyz| = 1 / tan(半张角)
+float ShadowTexelWorldSize(mat4 lightSpaceMatrix, vec3 worldPos, float resolution)
+{
+	vec3 row0 = vec3(lightSpaceMatrix[0][0], lightSpaceMatrix[1][0], lightSpaceMatrix[2][0]);
+	vec4 row3 = vec4(lightSpaceMatrix[0][3], lightSpaceMatrix[1][3], lightSpaceMatrix[2][3], lightSpaceMatrix[3][3]);
+	float w = abs(dot(row3, vec4(worldPos, 1.0)));
+	return 2.0 * w / max(length(row0) * resolution, 1e-6);
+}
+
+// 法线偏移：沿几何法线外推 texel × biasTexels × sinθ（θ 是法线和光线的夹角）。
+// 正对光源时 sinθ = 0 不偏移（接触阴影不脱开），掠射时最大；偏移量以 texel 为单位，近处级联 / 离光源近时自然很小，薄物体不会被推穿
+vec3 ShadowNormalOffset(vec3 geoNormal, vec3 toLight, float texelWorld, float biasTexels)
+{
+	float NdotL = clamp(dot(geoNormal, toLight), -1.0, 1.0);
+	float sinTheta = sqrt(max(1.0 - NdotL * NdotL, 0.0));
+	return geoNormal * (texelWorld * biasTexels * sinTheta);
+}
+
+// 点光源 cube 每个面的透视投影近平面，必须和 LightShadowDepthPass.cpp 的 kPointShadowNearPlane 一致
+const float kPointShadowNearPlane = 0.1;
+
+// 点光源阴影图存的是 cube 面透视投影 vkPerspective(90°, 1, near, radius) 的硬件深度（Vulkan [0,1]）。
+// axisDistance 是点在这个面朝向轴上的距离（不是欧氏距离）
+float PointShadowFaceDepth(float axisDistance, float farPlane)
+{
+	float n = kPointShadowNearPlane;
+	float z = max(axisDistance, n);
+	return farPlane * (z - n) / ((farPlane - n) * z);
+}
+
+// 主轴：0 = x，1 = y，2 = z。判定顺序必须和 SamplerAtlasCubeMap 选面一致
+int CubeMajorAxis(vec3 v)
+{
+	vec3 a = abs(v);
+	if (a.x >= a.y && a.x >= a.z)
+		return 0;
+	return a.y >= a.z ? 1 : 2;
+}
+
+// 参考深度：采样方向 sampleDir 落在哪个面，就用接收点在那个面朝向轴上的距离。
+// PCF 采样跨到相邻面时，主轴变了，必须按采样点所在的面重新算（线性距离不需要，透视深度需要）
+float PointShadowRefDepth(vec3 sampleDir, vec3 lightToFrag, float farPlane)
+{
+	int axis = CubeMajorAxis(sampleDir);
+	return PointShadowFaceDepth(abs(lightToFrag[axis]), farPlane);
 }
 
 float SamplerAtlasMap(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize)
@@ -210,60 +280,45 @@ float DirLightFastShadowCalculation(vec4 fragPosLightSpace, sampler2D atlasMap, 
 }
 
 
-float PointLightShadowCalculation(vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
+// 3×3 PCF：在接收点处垂直于光线的平面上按一个 texel 的世界尺寸偏移，每个采样按自己落到的面算参考深度。
+// 深度偏移已经由硬件斜率偏移写进阴影图，这里不再减偏移
+float PointLightShadowCalculation(vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
 {
 	vec3 lightToFrag = fragPos - lightPos;
-    float currentDepth = length(fragPos - lightPos);
+	float dist = length(lightToFrag);
+	if (dist <= 1e-4)
+		return 0.0;
 
 	vec2 atlasSize = 1.0 / textureSize(atlasMap, 0);
 
-    float distanceFactor = (radius - currentDepth) * 0.002;
+	vec3 L = lightToFrag / dist;
+	vec3 helperAxis = abs(L.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+	vec3 T = normalize(cross(helperAxis, L));
+	vec3 B = cross(L, T);
 
-	// float distanceFactor = (radius - currentDepth) / radius;
-    // distanceFactor = distanceFactor * distanceFactor;
-	// float depthBias = distanceFactor + 0.2;
-	
-	float depthBias = distanceFactor;
-    float refDepth = (currentDepth - depthBias) / radius;
+	vec3 a = abs(lightToFrag);
+	float axisDistance = max(a.x, max(a.y, a.z));
+	float texelWorld = 2.0 * axisDistance / max(subSize[0].x, 1.0);
 
-	float shadow = 0.0;
-
-	int samplenumber = 1;
-	int sampleWidth = 1 + samplenumber * 2;
-	int sumsamplecount = sampleWidth * sampleWidth * sampleWidth;
-
-	float stride = (1.0 + (length(cameraPos - fragPos) / cameraFarPlane)) / 25.0;
-
-	float min_offset = -samplenumber * stride;
-	float max_offset = -min_offset;
-
-	for(float x = min_offset; x <= max_offset; x += stride)
+	float lit = 0.0;
+	for (int x = -1; x <= 1; ++x)
 	{
-		for(float y = min_offset; y <= max_offset; y += stride)
+		for (int y = -1; y <= 1; ++y)
 		{
-			for(float z = min_offset; z <= max_offset; z += stride)
-			{
-				float temp = SamplerAtlasCubeMapWithCompare(normalize(lightToFrag + vec3(x, y, z)), atlasMap, atlasSize, subStart, subSize, refDepth);
-				shadow += temp;
-			}
+			vec3 sampleDir = lightToFrag + (float(x) * T + float(y) * B) * texelWorld;
+			float refDepth = PointShadowRefDepth(sampleDir, lightToFrag, radius);
+			lit += SamplerAtlasCubeMapWithCompare(sampleDir, atlasMap, atlasSize, subStart, subSize, refDepth);
 		}
 	}
-    return 1.0f - shadow / float(sumsamplecount);
+	return 1.0 - lit / 9.0;
 }
 
 float PointLightFastShadowCalculation(vec3 fragPos, vec3 lightPos, sampler2D atlasMap, vec2 subStart[6], vec2 subSize[6], float radius)
 {
 	vec3 lightToFrag = fragPos - lightPos;
-    float currentDepth = length(fragPos - lightPos);
-
 	vec2 atlasSize = 1.0 / textureSize(atlasMap, 0);
-
-    float distanceFactor = (radius - currentDepth) * 0.002;
-
-	float depthBias = distanceFactor;
-    float refDepth = (currentDepth - depthBias) / radius;
-
-	return 1.0 - SamplerAtlasCubeMapWithCompare(normalize(lightToFrag), atlasMap, atlasSize, subStart, subSize, refDepth);
+	float refDepth = PointShadowRefDepth(lightToFrag, lightToFrag, radius);
+	return 1.0 - SamplerAtlasCubeMapWithCompare(lightToFrag, atlasMap, atlasSize, subStart, subSize, refDepth);
 }
 
 vec3 CalcDirLightWithoutShadow(DirLight light, vec3 normal, vec3 viewDir, PBRProperties prop)
@@ -368,21 +423,22 @@ vec3 CalcSpotLightWithoutShadow(SpotLight light, vec3 normal, vec3 fragPos, vec3
 }
 
 
-vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, mat4 cameraView ,vec3 viewDir, PBRProperties prop)
+vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, mat4 cameraView ,vec3 viewDir, PBRProperties prop)
 {
 	float shadow = 0.f;
 	if (light.castShadow)
 	{
-		vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
-		vec4 shiftedPosViewSpace = cameraView * vec4(shiftedPos, 1.0f);
-		float shadowFade = DirLightShadowDistanceFade(light, abs(shiftedPosViewSpace.z));
+		// 选级联、阴影距离渐隐用接收点的原始位置；法线偏移量取决于选中级联的 texel 尺寸，所以放在选级联之后
+		vec4 fragPosViewSpace = cameraView * vec4(fragPos, 1.0f);
+		float shadowFade = DirLightShadowDistanceFade(light, abs(fragPosViewSpace.z));
 		if (shadowFade > 0.0)
 		{
-			DirLightCascade cascade = GetCascade(shiftedPosViewSpace, light.cascadeFirst, light.cascadeCount);
+			DirLightCascade cascade = GetCascade(fragPosViewSpace, light.cascadeFirst, light.cascadeCount);
+			vec2 subSize = vec2(cascade.atlasWidth, cascade.atlasHeight);
+			float texelWorld = ShadowTexelWorldSize(cascade.lightSpaceMatrix, fragPos, subSize.x);
+			vec3 shiftedPos = fragPos + ShadowNormalOffset(geoNormal, -normalize(light.direction), texelWorld, light.shadowNormalBias);
 			vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-			shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
-													vec2(cascade.atlasX, cascade.atlasY),
-													vec2(cascade.atlasWidth, cascade.atlasHeight));
+			shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(cascade.atlasX, cascade.atlasY), subSize);
 			shadow = clamp(shadow, 0.f, 1.f) * shadowFade;
 		}
 	}
@@ -416,7 +472,7 @@ vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos,
 	return result;
 }
 
-vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 cameraPos, float cameraFarPlane, vec3 fragPos, vec3 viewDir, PBRProperties prop)
+vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, vec3 viewDir, PBRProperties prop)
 {
 	float dist = length(light.position - fragPos);
     if(dist >= light.radius)
@@ -425,8 +481,12 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
 	float shadow = 0.f;
 	if (light.castShadow)
 	{
-		// vec3 shiftedPos = NormalBias(fragPos, normalize(fragPos - light.position), normal, 0.2);
-		shadow = PointLightShadowCalculation(cameraPos, cameraFarPlane, fragPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);    
+		// cube 面是 90° 透视：接收点处一个 texel 的世界尺寸 = 2 × 接收点在该面朝向轴上的距离 / 分辨率
+		vec3 a = abs(fragPos - light.position);
+		float axisDistance = max(a.x, max(a.y, a.z));
+		float texelWorld = 2.0 * axisDistance / max(light.atlasSize[0].x, 1.0);
+		vec3 shiftedPos = fragPos + ShadowNormalOffset(geoNormal, normalize(light.position - fragPos), texelWorld, light.shadowNormalBias);
+		shadow = PointLightShadowCalculation(shiftedPos, light.position, atlasMap, light.atlasStart, light.atlasSize, light.radius);
 		shadow = clamp(shadow, 0.f, 1.f);
 	}
 
@@ -468,7 +528,7 @@ vec3 CalcPointLight(PointLight light, sampler2D atlasMap, vec3 normal, vec3 came
 	return result;
 }
 
-vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos, vec3 viewDir, PBRProperties prop)
+vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 geoNormal, vec3 fragPos, vec3 viewDir, PBRProperties prop)
 {
     
 	float dist = length(light.position - fragPos);
@@ -493,9 +553,12 @@ vec3 CalcSpotLight(SpotLight light, sampler2D atlasMap, vec3 normal, vec3 fragPo
 	float shadow = 0.f;
 	if (light.castShadow)
 	{
-		vec3 shiftedPos = NormalBias(fragPos, lightDir, normal, 0.1);
+		// 透视投影：texel 世界尺寸随到光源的视深线性变大。lightDir 是光源指向接收点，所以朝光方向是 -lightDir
+		vec2 subSize = vec2(light.atlasWidth, light.atlasHeight);
+		float texelWorld = ShadowTexelWorldSize(light.lightSpaceMatrix, fragPos, subSize.x);
+		vec3 shiftedPos = fragPos + ShadowNormalOffset(geoNormal, -lightDir, texelWorld, light.shadowNormalBias);
 		vec4 fragPosLightSpace = light.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-		shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), vec2(light.atlasWidth, light.atlasHeight));   
+		shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, vec2(light.atlasX, light.atlasY), subSize);
 		shadow = clamp(shadow, 0.f, 1.f);
 	}
 

@@ -49,6 +49,7 @@ struct DirLightInfo
 {
 	std::shared_ptr<DirLight> light;
 	bool renderCube;
+	uint32_t entityId = UINT32_MAX;	// 所属实体，和 Scene3DRenderOption::shadowDebugEntity 比较
 
 	struct cascadeData {
 		uint32_t id;

@@ -18,6 +18,8 @@ public:
 
 	void SetCastShadow(bool value);
 	void SetShadowMapSize(uint32_t w);
+	void SetShadowNormalBias(float texels);
+	void SetShadowSlopeBias(float slope);
 
 	void SetVolumeLightEnable(bool value);
 	void SetVolumeLightEffectByAtmospher(bool value);
@@ -28,6 +30,8 @@ public:
 
 	bool GetCastShadow() const;
 	uint32_t GetShadowMapSize() const;
+	float GetShadowNormalBias() const;
+	float GetShadowSlopeBias() const;
 
 	bool GetVolumeLightEnable() const;
 	bool GetVolumeLightEffectByAtmospher() const;
@@ -37,6 +41,8 @@ protected:
 	glm::vec3 _color = glm::vec3(1.0f);
 	uint32_t _shadowMapSize = __default_shadow_side;
 	bool _castShadow = true;
+	float _shadowNormalBias = 1.0f;	// 法线偏移（单位：阴影贴图 texel）
+	float _shadowSlopeBias = 2.0f;	// 斜率深度偏移（光栅化 depthBias 的 slopeFactor）
 	bool volumeLightEnable = false;
 	bool _volumeLightEffectByAtmospher = false;
 	float _volumetricScatteringIntensity = 1.0f;

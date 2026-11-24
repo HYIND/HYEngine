@@ -144,10 +144,11 @@ vec3 traceRay(
             vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
 
             vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
-            vec3 lightingColor = CalcLighting(
+            // hit.normal 是插值的几何法线，阴影法线偏移用它
+            vec3 lightingColor = CalcLightingWithGeometryNormal(
                     camera.view, ray.origin, camera.farPlane,
                     atlasShadowMap, 
-                    hit.position, normal,
+                    hit.position, normal, hit.normal,
                     prop
                     );
             colors[hitCount] = lightingColor + emission;

@@ -12,6 +12,7 @@ namespace
 	{
 		uint32_t IBLDiffuseEnable = 0;
 		uint32_t IBLSpecularEnable = 0;
+		uint32_t ShadowDebugMode = 0;	// Scene3DRenderOption::ShadowDebugMode
 	};
 }
 
@@ -72,6 +73,7 @@ void LightingPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	IBLParams params;
 	params.IBLDiffuseEnable = iblReady && policy.lightingIBLDiffuse;
 	params.IBLSpecularEnable = iblReady && policy.lightingIBLSpecular;
+	params.ShadowDebugMode = uint32_t(state.option.shadowDebugMode);
 
 	auto cmd = cmdCtx.GetCmd();
 

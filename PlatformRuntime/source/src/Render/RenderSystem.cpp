@@ -471,6 +471,8 @@ void RenderSystem::ProcessLight(std::shared_ptr<Render::Render3DFrameData> frame
 			light->SetColor(data->color);
 			light->SetShadowMapSize(data->shadowMapSize);
 			light->SetCastShadow(data->castShadow);
+			light->SetShadowNormalBias(data->shadowNormalBias);
+			light->SetShadowSlopeBias(data->shadowSlopeBias);
 			light->SetVolumeLightEnable(data->volumeLightEnable);
 			light->SetVolumeLightEffectByAtmospher(data->volumeLightEffectByAtmospher);
 			light->SetVolumetricScatteringIntensity(data->volumetricScatteringIntensity);
@@ -492,6 +494,7 @@ void RenderSystem::ProcessLight(std::shared_ptr<Render::Render3DFrameData> frame
 				renderdata->light->SetShadowDistance(data->shadowDistance);
 				renderdata->light->SetCascadeSplitLambda(data->cascadeSplitLambda);
 				renderdata->renderCube = renderLight.renderCube;
+				renderdata->entityId = entity.getId();
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();
 				context->type = VKRenderContext::RenderContextType::DirLight;
