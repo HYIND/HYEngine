@@ -22,6 +22,7 @@ struct HitInfo {
     float t;
     MaterialData materialdata;
     vec3 prevPosition;      // 命中点上一帧的世界位置（见 HitPayLoad）
+    float coneLodBase;      // Ray Cone 里与锥宽、贴图分辨率无关的部分（见 HitPayLoad）
 };
 
 struct HitPayLoad {
@@ -34,6 +35,7 @@ struct HitPayLoad {
     uint materialIndex;
     bool isHit;
     vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
+    float coneLodBase;      // Ray Cone：0.5·log2(UV 面积 / 世界面积) - log2|n_geo · d|（见 ClosestHit.rchit）
 };
 
 layout(location = 0) rayPayloadEXT HitPayLoad payload;
@@ -160,6 +162,29 @@ vec3 ImportanceSampleGGX(float roughness, vec3 normal, vec3 viewDir, vec2 random
 void getPBRProperties(MaterialData material, vec2 uv, inout PBRProperties prop)
 {
     getPBRProperties(material, uv, prop.albedo, prop.metallic, prop.roughness, prop.ambientOcclusion);
+}
+
+void getPBRPropertiesLod(MaterialData material, vec2 uv, float coneLod, inout PBRProperties prop)
+{
+    getPBRPropertiesLod(material, uv, coneLod, prop.albedo, prop.metallic, prop.roughness, prop.ambientOcclusion);
+}
+
+// ---------------- Ray Cone ----------------
+// 每条光线看成一个锥：起点宽度 W、扩散角 γ。走过距离 t 后命中处锥宽 W + γ·t。
+// 「严格版」：反弹后 γ 不变（不按 BRDF 波瓣加宽），下一段从命中处的锥宽接着走。
+// 命中点的 mip：coneLod = log2(锥宽) + hit.coneLodBase，每张贴图再加自己的分辨率（MaterialTextureDef 的 *Lod 函数）。
+
+// 屏幕像素对应的锥扩散角：2·tan(fovY/2) / 高度。projection[1][1] = 1/tan(fovY/2)（Vulkan 下翻过符号，取绝对值）
+float rayConePixelSpread(mat4 projection, float imageHeight)
+{
+    return 2.0 / (abs(projection[1][1]) * max(imageHeight, 1.0));
+}
+
+// 光线命中后：锥宽推进到命中处，返回这个命中点给材质函数用的 coneLod
+float rayConeAdvance(inout float coneWidth, float coneSpread, HitInfo hit)
+{
+    coneWidth += coneSpread * abs(hit.t);
+    return log2(max(coneWidth, 1e-8)) + hit.coneLodBase;
 }
 
 vec3 CalcContribute_UniformSample(vec3 light, vec3 lightPos, vec3 fragPos, vec3 fragNormal)
@@ -290,6 +315,7 @@ bool traceScene(Ray ray, inout HitInfo hit)
         hit.t = payload.t;
         hit.materialdata = materials[payload.materialIndex];
         hit.prevPosition = payload.prevPosition;
+        hit.coneLodBase = payload.coneLodBase;
     }
 
     return payload.isHit;

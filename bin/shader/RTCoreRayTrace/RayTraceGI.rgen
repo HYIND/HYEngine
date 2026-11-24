@@ -50,6 +50,8 @@ vec3 traceRay(
     uint maxBounce, 
     uint sampleId,
     float lobeRandom,           // 第一次反弹选镜面 / 漫反射用的随机数（tracePath 里分层生成）
+    float coneSpread,           // Ray Cone 扩散角（像素对应的角度，严格版：各次反弹不变）
+    float coneWidth0,           // Ray Cone 在起点（G-buffer 表面）处的宽度
     out bool firstSpecular,     // 第一次反弹走的是不是镜面
     inout float firstHitT,      // 第一次反弹的命中距离；没打中几何时不改，调用方给 tMax
     inout vec3 firstHitMotion   // 第一次反弹命中点的世界空间运动（上一帧 - 本帧）；没打中时不改
@@ -62,6 +64,7 @@ vec3 traceRay(
     int hitCount = 0;
 
     float throughput = 1.0f;
+    float coneWidth = coneWidth0;
 
     uint seedbase = uint(gl_LaunchIDEXT.x) * 197u 
             + uint(gl_LaunchIDEXT.y) * 927u
@@ -135,12 +138,13 @@ vec3 traceRay(
 
         if (!captureCube)
         {
-            //计算该点光照颜色
-            getPBRProperties(hit.materialdata, hit.texCoords, prop);
+            // 计算该点光照颜色。光追里没有导数，按 Ray Cone 显式选 mip
+            float coneLod = rayConeAdvance(coneWidth, coneSpread, hit);
+            getPBRPropertiesLod(hit.materialdata, hit.texCoords, coneLod, prop);
 
-            vec3 normal = calculateNormal(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords);
+            vec3 normal = calculateNormalLod(hit.materialdata, hit.normal, mat3(hit.tangent, hit.bitangent, hit.normal), hit.texCoords, coneLod);
 
-            vec3 emission = calculateEmission(hit.materialdata, hit.texCoords);
+            vec3 emission = calculateEmissionLod(hit.materialdata, hit.texCoords, coneLod);
             vec3 lightingColor = CalcLightingWithShadowRay(ray.origin, hit.position, normal, prop);
             colors[hitCount] = lightingColor + emission;
 
@@ -181,6 +185,8 @@ void tracePath(
     PBRProperties prop,
     uint maxBounce,
     uint sampleCount,
+    float coneSpread,
+    float coneWidth0,
     out vec3 diffuseOut,
     out vec3 specularOut,
     out float specularHitDistance,
@@ -207,7 +213,7 @@ void tracePath(
         bool isSpecular = false;
         float firstHitT = tMax;
         vec3 firstHitMotion = vec3(0.0);
-        vec3 c = traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, lobeRandom, isSpecular, firstHitT, firstHitMotion);
+        vec3 c = traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, lobeRandom, coneSpread, coneWidth0, isSpecular, firstHitT, firstHitMotion);
         if (isSpecular)
         {
             specularSum += c;
@@ -268,10 +274,15 @@ void main()
     HitInfo firstHit;
     calculateFirstHitInfo(firstHit, uv);
 
+    // Ray Cone 初始锥：扩散角 = 这张输出图上一个像素对应的角度，起点宽度 = 该像素在 G-buffer 表面上的覆盖宽度
+    float coneSpread = rayConePixelSpread(camera.projection, float(imageSize.y));
+    float coneWidth0 = coneSpread * distance(camera.position, firstHit.position);
+
     vec3 diffuseColor, specularColor;
     float specularHitDistance;
     vec4 specularHitMotion;
     tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount),
+        coneSpread, coneWidth0,
         diffuseColor, specularColor, specularHitDistance, specularHitMotion);
     diffuseColor *= GIIntensity;
     specularColor *= GIIntensity;

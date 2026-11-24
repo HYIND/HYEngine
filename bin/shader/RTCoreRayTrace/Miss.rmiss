@@ -11,6 +11,7 @@ struct HitPayLoad {
     uint materialIndex;
     bool isHit;
     vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
+    float coneLodBase;      // Ray Cone：0.5·log2(UV 面积 / 世界面积) - log2|n_geo · d|（见 ClosestHit.rchit）
 };
 
 layout(location = 0) rayPayloadInEXT HitPayLoad payload;

@@ -32,6 +32,7 @@ struct HitPayLoad {
     uint materialIndex;
     bool isHit;
     vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
+    float coneLodBase;      // Ray Cone：0.5·log2(UV 面积 / 世界面积) - log2|n_geo · d|，rgen 再加 log2(锥宽) 和贴图分辨率
 };
 
 layout(location = 0) rayPayloadInEXT HitPayLoad payload;
@@ -61,6 +62,27 @@ vec3 lerpVec3(vec3 v0, vec3 v1, vec3 v2, vec3 bary)
 vec2 lerpVec2(vec2 v0, vec2 v1, vec2 v2, vec3 bary)
 {
     return v0 * bary.x + v1 * bary.y + v2 * bary.z;
+}
+
+// Ray Cone 里只和这个三角形有关的部分（与锥宽、贴图分辨率无关）：
+//   0.5·log2(UV 面积 / 世界面积)：每单位世界长度对应多少 UV 长度
+//   - log2|n_geo · d|：斜着打到表面时覆盖面被拉长
+// UV 退化（整个三角形同一个 UV）时光栅化的导数是 0、读 mip 0，这里给一个很小的值让它同样落到 mip 0。
+float rayConeLodBase(mat4 model, Vertex v0, Vertex v1, Vertex v2)
+{
+    mat3 model3 = mat3(model);
+    vec3 worldCross = cross(model3 * (v1.position - v0.position), model3 * (v2.position - v0.position));
+    float worldArea2 = length(worldCross);
+
+    vec2 uv1 = v1.texCoords - v0.texCoords;
+    vec2 uv2 = v2.texCoords - v0.texCoords;
+    float uvArea2 = abs(uv1.x * uv2.y - uv2.x * uv1.y);
+
+    if (worldArea2 <= 1e-12 || uvArea2 <= 1e-12)
+        return -64.0;
+
+    float cosTheta = abs(dot(worldCross / worldArea2, normalize(gl_WorldRayDirectionEXT)));
+    return 0.5 * log2(uvArea2 / worldArea2) - log2(max(cosTheta, 1e-2));
 }
 
 void main() 
@@ -114,4 +136,5 @@ void main()
     payload.materialIndex = instanceInfo.materialIndex;    // 材质索引
     payload.isHit = true;
     payload.prevPosition = prevWorldPos;
+    payload.coneLodBase = rayConeLodBase(instanceInfo.model, v0, v1, v2);
 }

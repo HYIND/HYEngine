@@ -95,3 +95,67 @@ vec3 calculateEmission(MaterialData material, vec2 uv)
             texture(materialTextures[nonuniformEXT(material.texture_emissive)], uv).rgb * material.emissionStrength
             :material.emissionColor * material.emissionStrength;
 }
+
+// ---------------- 光追用：显式 LOD（Ray Cone） ----------------
+// 光追着色器里没有屏幕空间导数，texture() 等于一直读 mip 0。这里按 Ray Cone 算出的 coneLod 选 mip：
+//   coneLod = log2(命中处锥宽) + 0.5·log2(UV 面积 / 世界面积) - log2|n_geo · d|   （与贴图分辨率无关，rgen 里算好）
+//   每张贴图再加 0.5·log2(w·h)，得到这张贴图的 mip 级别。负值被硬件截到 0，超出的截到最后一级。
+// 光栅化继续用上面不带 Lod 的版本。
+float materialTextureLod(uint textureIndex, float coneLod)
+{
+	ivec2 size = textureSize(materialTextures[nonuniformEXT(textureIndex)], 0);
+	return coneLod + 0.5 * log2(float(max(size.x, 1)) * float(max(size.y, 1)));
+}
+
+vec4 sampleMaterialTextureLod(uint textureIndex, vec2 uv, float coneLod)
+{
+	return textureLod(materialTextures[nonuniformEXT(textureIndex)], uv, materialTextureLod(textureIndex, coneLod));
+}
+
+vec3 calculateNormalLod(MaterialData material, vec3 vertexNormal, mat3 TBN, vec2 uv, float coneLod)
+{
+	return material.texture_normal_count > 0 ?
+		normalize(TBN * normalize(sampleMaterialTextureLod(material.texture_normal, uv, coneLod).rgb * 2.0 - 1.0))
+		: normalize(vertexNormal);
+}
+
+vec3 calculateAlbedoLod(MaterialData material, vec2 uv, float coneLod)
+{
+	return material.texture_albedo_count > 0 ?
+		sampleMaterialTextureLod(material.texture_albedo, uv, coneLod).rgb * material.albedo
+		: material.albedo;
+}
+
+// 通道约定与 getPBRProperties 一致：metallicroughness 贴图 .b = metallic、.g = roughness
+void getPBRPropertiesLod(MaterialData material, vec2 uv, float coneLod, inout vec3 albedo, inout float metallic, inout float roughness, inout float ambientOcclusion)
+{
+	albedo = calculateAlbedoLod(material, uv, coneLod);
+
+	ambientOcclusion = material.texture_ao_count > 0 ?
+		sampleMaterialTextureLod(material.texture_ao, uv, coneLod).r
+		: material.ambientOcclusion;
+
+	if (material.texture_metallicroughness_count > 0)
+	{
+		vec2 values = sampleMaterialTextureLod(material.texture_metallicroughness, uv, coneLod).bg;
+		metallic = values.x;
+		roughness = values.y;
+	}
+	else
+	{
+		metallic = material.texture_metallic_count > 0 ?
+			sampleMaterialTextureLod(material.texture_metallic, uv, coneLod).b
+			: material.metallic;
+
+		roughness = material.texture_roughness_count > 0 ?
+			sampleMaterialTextureLod(material.texture_roughness, uv, coneLod).g
+			: material.roughness;
+	}
+}
+
+vec3 calculateEmissionLod(MaterialData material, vec2 uv, float coneLod)
+{
+	return material.texture_emissive_count > 0 ?
+		sampleMaterialTextureLod(material.texture_emissive, uv, coneLod).rgb * material.emissionStrength
+		: material.emissionColor * material.emissionStrength;
+}

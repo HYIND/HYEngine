@@ -37,33 +37,26 @@ bool ddgiShadowed(vec3 origin, vec3 dir, float tMax)
 
 // 命中点的简化材质：探针只存 8×8 的辐照度，命中点只需要漫反射相关的量。
 //   * 只读 albedo、metallic（算 kD）、自发光；不读法线贴图（用插值的顶点法线）、AO、粗糙度；
-//   * 固定读第 DDGI_HIT_TEXTURE_LOD 级 mip（光追里没有导数，texture() 等于读 mip 0，发散光线的缓存命中很差）。
+//   * mip 按 Ray Cone 选（光追里没有导数，texture() 等于读 mip 0，发散光线的缓存命中很差）：
+//     每条探针光线代表 4π / 光线数 的立体角，锥从探针中心（宽度 0）出发，见 main。
 //     textureLod 会把超出的级数截到纹理的最后一级，没有 mip 的纹理就是 mip 0。
-// metallic 的通道与 MaterialTextureDef.comp 的 getPBRProperties 保持一致（metallicroughness 取 .g），
-// 否则探针看到的金属度和光栅化 / 反射不一样。
-#ifndef DDGI_HIT_TEXTURE_LOD
-#define DDGI_HIT_TEXTURE_LOD 3.0
-#endif
-
-void ddgiHitMaterial(MaterialData material, vec2 uv, out vec3 diffuseColor, out vec3 emission)
+// metallic 的通道与 MaterialTextureDef.comp 的 getPBRProperties 保持一致（metallicroughness 贴图 .b = metallic、
+// .g = roughness，glTF 约定），否则探针看到的金属度和光栅化 / 反射不一样。
+void ddgiHitMaterial(MaterialData material, vec2 uv, float coneLod, out vec3 diffuseColor, out vec3 emission)
 {
-    vec3 albedo = material.texture_albedo_count > 0
-        ? textureLod(materialTextures[nonuniformEXT(material.texture_albedo)], uv, DDGI_HIT_TEXTURE_LOD).rgb * material.albedo
-        : material.albedo;
+    vec3 albedo = calculateAlbedoLod(material, uv, coneLod);
 
     float metallic;
     if (material.texture_metallicroughness_count > 0)
-        metallic = textureLod(materialTextures[nonuniformEXT(material.texture_metallicroughness)], uv, DDGI_HIT_TEXTURE_LOD).g;
+        metallic = sampleMaterialTextureLod(material.texture_metallicroughness, uv, coneLod).b;
     else if (material.texture_metallic_count > 0)
-        metallic = textureLod(materialTextures[nonuniformEXT(material.texture_metallic)], uv, DDGI_HIT_TEXTURE_LOD).b;
+        metallic = sampleMaterialTextureLod(material.texture_metallic, uv, coneLod).b;
     else
         metallic = material.metallic;
 
     diffuseColor = albedo * (1.0 - metallic);
 
-    emission = material.texture_emissive_count > 0
-        ? textureLod(materialTextures[nonuniformEXT(material.texture_emissive)], uv, DDGI_HIT_TEXTURE_LOD).rgb * material.emissionStrength
-        : material.emissionColor * material.emissionStrength;
+    emission = calculateEmissionLod(material, uv, coneLod);
 }
 
 float ddgiLightAttenuation(float dist, float radius)
@@ -172,8 +165,13 @@ void main()
         {
             hitDistance = hit.t;
 
+            // Ray Cone：每条光线代表 4π / 光线数 的立体角，扩散角取它的平方根；锥从探针中心出发（宽度 0）
+            float coneSpread = sqrt(4.0 * PI / float(DDGI_RAY_GRID * DDGI_RAY_GRID));
+            float coneWidth = 0.0;
+            float coneLod = rayConeAdvance(coneWidth, coneSpread, hit);
+
             vec3 diffuseColor, emission;
-            ddgiHitMaterial(hit.materialdata, hit.texCoords, diffuseColor, emission);
+            ddgiHitMaterial(hit.materialdata, hit.texCoords, coneLod, diffuseColor, emission);
             vec3 hitNormal = normalize(hit.normal);
 
             radiance = ddgiDiffuseDirectLighting(hit.position, hitNormal, diffuseColor) + emission;
