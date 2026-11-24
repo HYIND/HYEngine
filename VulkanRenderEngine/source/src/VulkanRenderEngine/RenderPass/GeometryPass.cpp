@@ -3,6 +3,31 @@
 #include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 
+namespace
+{
+	// optimal tiling 下同时支持颜色附件、采样、storage（见 GeometryPass.h 的说明）才用 preferred，否则回退
+	vk::Format PickGBufferFormat(vk::Format preferred, vk::Format fallback)
+	{
+		const auto physicalDevice = VKCONTEXT->GetDevice()->GetPhysicalDevice();
+		const vk::FormatFeatureFlags features = physicalDevice.getFormatProperties(preferred).optimalTilingFeatures;
+		const vk::FormatFeatureFlags required =
+			vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eStorageImage;
+		return (features & required) == required ? preferred : fallback;
+	}
+}
+
+vk::Format GeometryPass::GetMotionVectorFormat()
+{
+	static const vk::Format format = PickGBufferFormat(vk::Format::eR16G16Sfloat, vk::Format::eR16G16B16A16Sfloat);
+	return format;
+}
+
+vk::Format GeometryPass::GetEmissionFormat()
+{
+	static const vk::Format format = PickGBufferFormat(vk::Format::eB10G11R11UfloatPack32, vk::Format::eR16G16B16A16Sfloat);
+	return format;
+}
+
 GeometryPass::GeometryPass(
 	const std::string& staticMeshVertexShaderPath,
 	const std::string& staticMeshFragmentShaderPath,
@@ -23,8 +48,8 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
+		config.AddColorAttachment(GetMotionVectorFormat());		// gMotionVector
+		config.AddColorAttachment(GetEmissionFormat());			// gEmission
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 
@@ -53,8 +78,8 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(vk::Format::eR8G8B8A8Unorm);
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
-		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
+		config.AddColorAttachment(GetMotionVectorFormat());		// gMotionVector
+		config.AddColorAttachment(GetEmissionFormat());			// gEmission
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 

@@ -88,7 +88,7 @@ void main()
     vec3 worldNormal = normalize(texture(gNormal, TexCoords).rgb);
 
     vec3 viewFragPos = (camera.view * vec4(worldFragPos, 1.0f)).xyz;
-    vec3 viewNormal = normalize(mat3(transpose(inverse(camera.view))) * normalize(worldNormal));
+    vec3 viewNormal = normalize(camera.invTransView * worldNormal);
 
     vec3 randomVec = normalize(texture(texNoise, TexCoords * noiseScale).xyz);
 

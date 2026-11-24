@@ -936,11 +936,12 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto gPosition = resbuilder.CreateTexture(width, height, vk::Format::eR32G32B32A32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gPosition");
 	auto gNormal = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gNormal");
 	auto gDepthStencil = resbuilder.CreateTexture(width, height, vk::Format::eD24UnormS8Uint, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gDepthStencil");
-	auto gMotionVector = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMotionVector");
+	// 运动矢量只用 .xy、自发光只用 .rgb：格式由 GeometryPass 统一决定（管线的附件格式必须一致），设备不支持时回退 RGBA16F
+	auto gMotionVector = resbuilder.CreateTexture(width, height, GeometryPass::GetMotionVectorFormat(), vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMotionVector");
 
 	auto gAlbedoOpacity = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gAlbedoOpacity");
 	auto gMetallicRoughness = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMetallicRoughness");
-	auto gEmission = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
+	auto gEmission = resbuilder.CreateTexture(width, height, GeometryPass::GetEmissionFormat(), vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
 
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
 	// RTR / RTGI：按 2/3 分辨率追踪、时域累积、空域滤波（rtLowRes 的 Temp / Persistent），
