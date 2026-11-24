@@ -21,7 +21,11 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 // 边缘判断用几何法线（gPosition.w，不含法线贴图）：法线贴图的细节不是几何边缘，用它会在凹凸表面上零星退回单点、出现块状；
 // 重新调制的 N·V 用 gNormal（与光追端去调制时一致）。
 // 低分辨率像素的几何取自全分辨率 GBuffer 在其中心 UV 处的值，与光追 / 降噪时用的完全一致。
-// mode：0 = 不调制（未去调制的软件光追）；1 = 路径追踪（漫反射 + 镜面反射率）；2 = 镜面反射率。
+// mode：0 = 不调制（未去调制的软件光追）；1 = 路径追踪（漫反射 + 镜面反射率）；2 = 镜面反射率；
+//       3 = 拆成两路的路径追踪：lowResImage 是漫反射、lowResSpecularImage 是镜面，分别乘各自的反射率再相加；
+//       4 = 同 3 但不调制（未去调制的软件光追），两路直接相加。
+// 两路用同一套上采样权重。输入的 alpha 可能是命中距离（镜面信号），输出的 alpha 固定写 1。
+// 输出分辨率可以和输入相同（SSR / SSGI 只用它做重新调制 / 两路合成）。
 // 天空像素写 0。
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -31,6 +35,7 @@ layout (binding = 4) uniform sampler2D depthMap;
 layout (binding = 5) uniform sampler2D gAlbedoOpacity;
 layout (binding = 6) uniform sampler2D gMetallicRoughness;
 layout (binding = 7) uniform sampler2D gPosition;
+layout (binding = 8) uniform sampler2D lowResSpecularImage;    // 只在 mode 3 / 4 时读
 
 layout (push_constant) uniform Param {
     uint mode;
@@ -65,9 +70,13 @@ void main()
     ivec2 base = ivec2(floor(lowPos));
     vec2 f = lowPos - vec2(base);
 
-    vec4 sum = vec4(0.0);
+    bool split = mode == 3u || mode == 4u;
+
+    vec3 sum = vec3(0.0);
+    vec3 specularSum = vec3(0.0);
     float weightSum = 0.0;
-    vec4 fallback = vec4(0.0);
+    vec3 fallback = vec3(0.0);
+    vec3 specularFallback = vec3(0.0);
     float bestScore = 1e30;
 
     for (int i = 0; i < 4; ++i)
@@ -83,7 +92,8 @@ void main()
         vec4 tapPosition = textureLod(gPosition, tapUV, 0.0);
         vec3 tapP = tapPosition.xyz;
         vec3 tapN = UnpackGeometryNormal(tapPosition.w);
-        vec4 tapColor = texelFetch(lowResImage, tap, 0);
+        vec3 tapColor = texelFetch(lowResImage, tap, 0).rgb;
+        vec3 tapSpecular = split ? texelFetch(lowResSpecularImage, tap, 0).rgb : vec3(0.0);
 
         float planeDistance = abs(dot(N, tapP - P));
         float normalDot = max(dot(N, tapN), 0.0);
@@ -94,6 +104,7 @@ void main()
                 * pow(normalDot, 32.0);
 
         sum += tapColor * w;
+        specularSum += tapSpecular * w;
         weightSum += w;
 
         float score = planeDistance / planeScale + (1.0 - normalDot) * 8.0;
@@ -101,22 +112,29 @@ void main()
         {
             bestScore = score;
             fallback = tapColor;
+            specularFallback = tapSpecular;
         }
     }
 
-    vec4 color = weightSum > 1e-4 ? sum / weightSum : fallback;
+    vec3 color = weightSum > 1e-4 ? sum / weightSum : fallback;
+    vec3 specular = weightSum > 1e-4 ? specularSum / weightSum : specularFallback;
 
-    if (mode != 0u)
+    if (mode == 1u || mode == 2u || mode == 3u)
     {
         vec3 albedo = texelFetch(gAlbedoOpacity, coord, 0).rgb;
         vec2 mr = texelFetch(gMetallicRoughness, coord, 0).rg;
         vec3 shadingN = normalize(texelFetch(gNormal, coord, 0).xyz);
         float NdotV = clamp(dot(shadingN, normalize(camera.position - P)), 0.0, 1.0);
-        vec3 reflectance = mode == 1u
-            ? IndirectDemodulationPathTracing(albedo, mr.x, mr.y, NdotV)
-            : IndirectDemodulationSpecular(albedo, mr.x, mr.y, NdotV);
-        color.rgb *= reflectance;
+        if (mode == 1u)
+            color *= IndirectDemodulationPathTracing(albedo, mr.x, mr.y, NdotV);
+        else if (mode == 2u)
+            color *= IndirectDemodulationSpecular(albedo, mr.x, mr.y, NdotV);
+        else
+            color = color * IndirectDemodulationDiffuse(albedo, mr.x)
+                  + specular * IndirectDemodulationSpecular(albedo, mr.x, mr.y, NdotV);
     }
+    else if (mode == 4u)
+        color += specular;
 
-    imageStore(outputImage, coord, color);
+    imageStore(outputImage, coord, vec4(color, 1.0));
 }

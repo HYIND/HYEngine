@@ -530,6 +530,21 @@ void Graph::SetPassEnabled(const std::string& name, bool enabled) {
 	}
 }
 
+uint32_t Graph::InheritPersistentResources(Graph& old)
+{
+	if (&old == this)
+		return 0;
+	uint32_t count = 0;
+	for (auto* pass : _passes)
+	{
+		for (const auto& res : pass->GetPersistents())
+			count += _resManager.AdoptTexture(old._resManager, res.resource) ? 1u : 0u;
+		for (const auto& res : pass->GetPersistentOptions())
+			count += _resManager.AdoptTexture(old._resManager, res.resource) ? 1u : 0u;
+	}
+	return count;
+}
+
 void Graph::CleanGraphIdleResource()
 {
 	auto time = Tool::GetTimestampSecond();

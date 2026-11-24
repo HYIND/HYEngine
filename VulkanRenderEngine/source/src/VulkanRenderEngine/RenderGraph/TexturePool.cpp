@@ -1,5 +1,6 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderGraph/TexturePool.h"
+#include <algorithm>
 
 using namespace RenderGraph;
 
@@ -59,6 +60,33 @@ void TexturePool::ReleaseTexture(const TextureHandle& handle) {
 
 	auto key = GenerateKey(handle.GetDesc());
 	_idleTextures[key].push_back(IdleInfo{ handle ,Tool::GetTimestampSecond() });
+}
+
+TextureSlot TexturePool::TakeTexture(const TextureHandle& handle)
+{
+	auto it = _textures.find(handle);
+	if (it == _textures.end())
+		return TextureSlot();
+	TextureSlot slot = std::move(it->second);
+	_textures.erase(it);
+
+	// 防御：如果它也在空闲队列里（正常的持久资源不会），一并去掉
+	auto idle = _idleTextures.find(GenerateKey(handle.GetDesc()));
+	if (idle != _idleTextures.end())
+	{
+		auto& deque = idle->second;
+		deque.erase(std::remove_if(deque.begin(), deque.end(), [&](const IdleInfo& info) { return info.handle == handle; }), deque.end());
+	}
+	return slot;
+}
+
+TextureHandle TexturePool::AddTexture(const TextureDesc& desc, TextureSlot slot)
+{
+	if (!slot.IsValid())
+		return TextureHandle();
+	TextureHandle handle(_nextId++, desc);
+	_textures[handle] = std::move(slot);
+	return handle;
 }
 
 TexKey TexturePool::GenerateKey(const TextureDesc& desc) const

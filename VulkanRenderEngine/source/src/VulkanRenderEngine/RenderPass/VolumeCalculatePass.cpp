@@ -455,3 +455,8 @@ void VolumeCalculatePass::SetTAAEnable(bool enable) const
 		_firstDrawTemporal = true;
 }
 
+void VolumeCalculatePass::OnResize(uint32_t width, uint32_t height)
+{
+	// 渲染图按新尺寸重建，历史纹理是新分配的（内容未定义）：下一帧先清历史
+	_firstDrawTemporal = true;
+}

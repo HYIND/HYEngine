@@ -32,6 +32,24 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 // 沿「历史 → 均值」方向裁剪到盒子上（clip，不是逐通道 clamp，不会改变色相）。
 // 原来是 11×11 的逐通道 min/max（121 次采样）：单样本光追噪声下这个范围几乎是 [0, 最亮的 firefly]，拦不住拖影；alpha 也被一起钳了。
 // varianceClipGamma <= 0 时不裁剪（只靠几何检测）。γ 越小拖影越少、但噪声大的信号（GI）历史越容易被拉回当前帧、越不收敛。
+//
+// 裁剪（改过两次）：原来是当前帧原始信号 3×3 邻域的均值 ± γ·σ —— 每像素只有 1 ~ 3 个样本，σ 基本是噪声，
+//   γ 小时满屏随机裁剪（闪 / 雪花），γ 大时等于不裁；色块边缘 3×3 横跨两侧。
+// 现在（ReLAX 的做法）：这里另外累积一份只保留几帧的「快速历史」写到 fastOutputImage，
+//   下一个 Pass（TemporalHistoryClamp.comp）用快速历史的 3×3 邻域统计做盒子（快速历史已经平均过几帧，噪声小得多），
+//   把这里的累积结果裁进盒子；超出盒子多时同时缩短历史长度（anti-lag），光照 / 反射内容变化后几帧就能跟上。
+//
+// 镜面信号（signalType == 1：RTR / SSR，以及 RTGI / SSGI 拆出来的镜面那一路）：
+//   输入的 alpha 是第一次反弹的命中距离（没打中几何 = tMax，没有镜面采样 = 0）。反射内容并不跟着反射面动，
+//   它的运动像镜子后面的虚像：沿视线在表面后方「命中距离」处。按表面的运动矢量取历史，镜头一动反射就糊。
+//   这里额外做一次虚像重投影，按粗糙度在两者之间分配（光滑 → 虚像，粗糙 → 表面）：
+//     * 虚像的历史坐标 = 表面的历史坐标 + 上一帧相机下虚像与表面的屏幕位置差。表面部分沿用运动矢量，
+//       位置差只取决于上一帧相机，投影里的抖动等也被抵消；
+//     * 虚像历史点只要求还在同一个反射面上（法线 + 平面距离），不比世界距离（虚像对应的是镜面上的另一个点），
+//       另外比较命中距离（历史 alpha 里是累积的命中距离），挡住反射内容本身的变化；
+//     * 虚像位置用表面历史上累积的命中距离（时域稳定）；
+//     * 表面、虚像两种重投影都比命中距离（软判定），没通过的部分不拿另一种顶替，历史长度按通过比例连续缩短。
+//   局限：虚像位置用的是当前帧的相机与命中距离，反射里的物体自己在动时（命中点的运动）不处理。
 layout (binding = 0) uniform Params
 {
     uint maxAccumulateCount;
@@ -41,6 +59,14 @@ layout (binding = 0) uniform Params
     float motionWeightScale;
     float varianceClipGamma;
     uint debugMode;            // Scene3DRenderOption::DenoiseDebugMode，0 = 关闭
+    uint signalType;           // 0 = 普通信号（表面重投影），1 = 镜面信号（表面 + 虚像重投影，alpha 是命中距离）
+    float hitDistanceThreshold;    // 虚像历史的命中距离相对容差（再随粗糙度放宽）
+    float virtualRoughnessStart;   // 粗糙度 <= 它：全部用虚像重投影
+    float virtualRoughnessEnd;     // 粗糙度 >= 它：全部用表面重投影
+    float fastHistoryLength;       // 快速历史（裁剪盒子的中心）最多累积几帧
+    uint fastHistoryValid;         // 0 = fastHistoryTexture 里没有有效内容（第一次 / 尺寸变了），快速历史从当前帧重新开始
+    float specularMinAccumulate;   // 镜面信号：最光滑的表面最多累积几帧（随粗糙度过渡到 maxAccumulateCount）
+    float specularParallaxScale;   // 镜面信号：按视差缩短历史的灵敏度倒数，<= 0 关闭（见混合部分）
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -57,11 +83,18 @@ layout (binding = 11) uniform sampler2D prevNormalMap;
 layout (binding = 12) uniform sampler2D prevDepthMap;
 // 调试热力图（debugMode != 0 时写；正常输出不受影响）。颜色含义见 RenderOption.h 的 DenoiseDebugMode
 layout (binding = 13, rgba16f) uniform image2D debugImage;
+// 粗糙度（.g），只在镜面信号时读
+layout (binding = 14) uniform sampler2D metallicRoughnessMap;
+// 快速历史（与历史同尺寸）：rgb = 颜色，a = 已累积帧数。上一帧的读，这一帧的写（两张图乒乓，由 C++ 端管理）
+layout (binding = 15) uniform sampler2D fastHistoryTexture;
+layout (binding = 16, rgba16f) uniform image2D fastOutputImage;
 
 const uint kDebugHistoryLength = 1u;
 const uint kDebugRejectReason = 2u;
 const uint kDebugClipAmount = 3u;
 const uint kDebugHistoryWeight = 4u;
+
+const uint kSignalSpecular = 1u;
 
 const float kSkyDepth = 0.99994;
 
@@ -109,7 +142,8 @@ vec3 DebugHeat(float t)
 
 void StoreDebug(ivec2 coord, vec3 color)
 {
-    if (debugMode != 0u)
+    // 裁剪量 / 历史长度视图由历史裁剪 Pass（TemporalHistoryClamp.comp）写：历史长度要显示 anti-lag 之后的值
+    if (debugMode != 0u && debugMode != kDebugClipAmount && debugMode != kDebugHistoryLength)
         imageStore(debugImage, coord, vec4(color, 1.0));
 }
 
@@ -126,6 +160,166 @@ void StoreWithoutHistory(ivec2 coord, vec4 color, float M1, float M2)
 {
     imageStore(outputImage, coord, color);
     imageStore(outputMoments, coord, vec4(M1, M2, GetVariance(M1, M2), 1));
+    imageStore(fastOutputImage, coord, vec4(color.rgb, 1.0));
+}
+
+// 当前帧命中距离：3×3 邻域里有效值（> 0）的中位数。
+// 单像素的命中距离噪声很大：GGX 波瓣里有的样本打中近处、有的打中远处，有的没打中（= tMax，比真实距离大几个数量级），
+// 平均值会被一个没打中的样本拉偏几十倍，逐帧跳变，命中距离判定就一直不通过（站着不动也大片发黄、画面闪）。中位数不受这些离群值影响
+float GetHitDistance(ivec2 coord, ivec2 size)
+{
+    float values[9];
+    int count = 0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            float h = texelFetch(rawTexture, clamp(coord + ivec2(x, y), ivec2(0), size - 1), 0).a;
+            if (h > 0.0)
+            {
+                // 插入排序
+                int k = count;
+                while (k > 0 && values[k - 1] > h)
+                {
+                    values[k] = values[k - 1];
+                    --k;
+                }
+                values[k] = h;
+                ++count;
+            }
+        }
+    }
+    if (count == 0)
+        return 0.0;
+    return (count & 1) != 0 ? values[count / 2] : 0.5 * (values[count / 2 - 1] + values[count / 2]);
+}
+
+struct HistorySample
+{
+    vec4 color;         // 按通过的点归一化
+    vec3 moments;       // M1, M2, 历史长度
+    float weight;       // 通过检测的双线性权重之和（0 ~ 1）
+    vec3 reason;        // 调试：拒绝原因（按第一个不通过的检测记一次）
+    float trackHit;     // 几何检测通过的点上累积的命中距离（不受命中距离判定影响），给虚像定位用；没有为 0
+    vec4 fast;          // 同样的点上的快速历史（rgb 颜色，a 帧数），按通过权重归一化
+    float hitConfidence;    // 几何检测通过的点里，命中距离也通过的比例（没做命中距离判定 / 没有点通过几何检测时为 1）
+};
+
+HistorySample EmptyHistory(vec3 reason)
+{
+    HistorySample s;
+    s.color = vec4(0.0);
+    s.moments = vec3(0.0);
+    s.weight = 0.0;
+    s.reason = reason;
+    s.trackHit = 0.0;
+    s.fast = vec4(0.0);
+    s.hitConfidence = 1.0;
+    return s;
+}
+
+// 在 historyUV 处按 2×2 双线性取历史，每个点单独做几何一致性检测：
+//   法线 / 平面距离（同一个表面）总是比；
+//   checkPosition：世界距离（表面重投影用；虚像重投影对应的是镜面上的另一个点，不比）；
+//   hitCheck：命中距离判定的强度（0 = 不比，1 = 完全比；镜面信号用，反射内容本身变了就对不上；软判定）
+HistorySample ReprojectHistory(vec2 historyUV, bool checkPosition, float hitCheck,
+    vec3 currentWorldPos, vec3 currentNormal, vec3 n,
+    float planeTolerance, float positionTolerance,
+    float hitDistance, float hitTolerance)
+{
+    // 边界检查（上一帧没有这个位置）
+    if (any(lessThanEqual(historyUV, vec2(0.0))) || any(greaterThanEqual(historyUV, vec2(1.0))))
+        return EmptyHistory(vec3(1.0));     // 白 = 出屏幕
+
+    HistorySample s = EmptyHistory(vec3(0.0));
+    float trackSum = 0.0;
+    float trackWeight = 0.0;
+    float geometryWeight = 0.0;     // 几何检测通过的权重（命中距离判定之前）
+
+    ivec2 historySize = textureSize(historyColorTexture, 0);
+    vec2 historyPos = historyUV * vec2(historySize) - 0.5;
+    ivec2 historyBase = ivec2(floor(historyPos));
+    vec2 historyFrac = historyPos - vec2(historyBase);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        ivec2 offset = ivec2(i & 1, i >> 1);
+        ivec2 tap = historyBase + offset;
+        vec2 bil = mix(1.0 - historyFrac, historyFrac, vec2(offset));
+        float w = bil.x * bil.y;
+        if (w <= 0.0)
+            continue;
+
+        if (any(lessThan(tap, ivec2(0))) || any(greaterThanEqual(tap, historySize)))
+        {
+            s.reason += vec3(1.0) * w;                      // 白 = 出屏幕
+            continue;
+        }
+
+        vec2 tapUV = (vec2(tap) + 0.5) / vec2(historySize);
+        if (textureLod(prevDepthMap, tapUV, 0.0).r >= kSkyDepth)
+        {
+            s.reason += vec3(1.0, 0.0, 1.0) * w;            // 品红 = 历史是天空
+            continue;
+        }
+
+        vec4 tapPosition = textureLod(prevPositionMap, tapUV, 0.0);
+        vec3 tapPos = tapPosition.xyz;
+        vec3 tapNormal = UnpackGeometryNormal(tapPosition.w);
+        vec4 tapColor = texelFetch(historyColorTexture, tap, 0);
+
+        // 平面距离：同一平面上的点无论相隔多远、视角多斜都是 0，只有换了表面（前后遮挡）才会大
+        vec3 d = currentWorldPos - tapPos;
+        bool normalValid = dot(currentNormal, tapNormal) > normalThreshold;
+        bool depthValid = abs(dot(n, d)) < planeTolerance;
+        // 世界距离：兜住同一平面上但重投影错位太远的情况（运动矢量误差）
+        bool positionValid = !checkPosition || dot(d, d) < positionTolerance * positionTolerance;
+        if (!normalValid || !depthValid || !positionValid)
+        {
+            s.reason += (!normalValid ? vec3(1.0, 0.0, 0.0)         // 红 = 法线
+                      : !depthValid  ? vec3(0.0, 1.0, 0.0)          // 绿 = 平面距离
+                      :                vec3(0.0, 0.0, 1.0)) * w;    // 蓝 = 世界距离
+            continue;
+        }
+
+        if (tapColor.a > 0.0)
+        {
+            trackSum += tapColor.a * w;
+            trackWeight += w;
+        }
+        geometryWeight += w;
+
+        if (hitCheck > 0.0 && tapColor.a > 0.0)
+        {
+            // 命中距离：历史 alpha 是累积的命中距离，反射内容变了（物体移进 / 移出、前后移动、遮挡变化）就对不上。
+            // 软判定：误差在容差内权重 1，到 2 倍容差平滑降到 0（硬阈值在命中距离有噪声时会逐帧跳变，画面闪）
+            float hitScale = max(max(tapColor.a, hitDistance), 1e-3);
+            float hitError = abs(tapColor.a - hitDistance) / max(hitTolerance * hitScale, 1e-5);
+            float hitWeight = mix(1.0, 1.0 - smoothstep(1.0, 2.0, hitError), hitCheck);
+            s.reason += vec3(1.0, 1.0, 0.0) * w * (1.0 - hitWeight);    // 黄 = 命中距离（暗黄 = 部分通过）
+            w *= hitWeight;
+            if (w <= 0.0)
+                continue;
+        }
+
+        s.reason += vec3(0.12) * w;                         // 灰 = 通过
+        vec4 tapMoments = texelFetch(historyMomentTexture, tap, 0);
+        s.color += tapColor * w;
+        s.moments += vec3(tapMoments.xy, tapMoments.w) * w;
+        if (fastHistoryValid != 0u)
+            s.fast += texelFetch(fastHistoryTexture, tap, 0) * w;
+        s.weight += w;
+    }
+
+    if (s.weight > 0.0)
+    {
+        s.color /= s.weight;
+        s.moments /= s.weight;
+        s.fast /= s.weight;
+    }
+    s.trackHit = trackWeight > 0.0 ? trackSum / trackWeight : 0.0;
+    s.hitConfidence = geometryWeight > 0.0 ? s.weight / geometryWeight : 1.0;
+    return s;
 }
 
 void main() 
@@ -151,20 +345,23 @@ void main()
         return;
     }
 
+    bool specularSignal = signalType == kSignalSpecular;
+
+    // 镜面信号：命中距离取邻域平均，也作为本帧写进历史的命中距离
+    float hitDistance = 0.0;
+    if (specularSignal)
+    {
+        hitDistance = GetHitDistance(coord, imageSize);
+        if (hitDistance > 0.0)
+            currentColor.a = hitDistance;
+    }
+
     vec4 currentPosition = texture(positionMap, currentUV);
     vec3 currentWorldPos = currentPosition.xyz;
     vec3 currentNormal = UnpackGeometryNormal(currentPosition.w);
 
     vec2 motionVector = clamp(texture(motionMap, currentUV).xy, -1, 1);
     vec2 historyUV = currentUV - motionVector;
-
-    // 边界检查（如果上一帧没这个像素，直接返回当前帧）
-    if (any(lessThanEqual(historyUV, vec2(0.0))) || any(greaterThanEqual(historyUV, vec2(1.0))))
-    {
-        StoreWithoutHistory(coord, currentColor, currentM1, currentM2);
-        StoreDebugWithoutHistory(coord, vec3(1.0));     // 白 = 出屏幕
-        return;
-    }
 
     // 当前点的视深与一个全分辨率像素在该深度上的覆盖尺寸（GBuffer 是全分辨率、最近点采样，量化误差按全分辨率算）
     float viewDepth = max(abs((camera.view * vec4(currentWorldPos, 1.0)).z), camera.nearPlane);
@@ -180,62 +377,67 @@ void main()
     float planeTolerance = depthThreshold * viewDepth + pixelWorld;
     float positionTolerance = positiondistThreshold + (1.0 + 2.0 * texelRatio) * pixelWorld / max(NdotV, 0.1);
 
-    // ---------------- 2×2 双线性重投影，逐点检测 ----------------
-    vec2 historyPos = historyUV * vec2(historySize) - 0.5;
-    ivec2 historyBase = ivec2(floor(historyPos));
-    vec2 historyFrac = historyPos - vec2(historyBase);
+    // 镜面信号：粗糙度决定表面 / 虚像两种重投影的比例，也用来放宽命中距离容差
+    float roughness = specularSignal ? clamp(texture(metallicRoughnessMap, currentUV).g, 0.0, 1.0) : 1.0;
+    // 越粗糙，命中距离在样本之间差得越多，容差跟着放宽
+    float hitTolerance = hitDistanceThreshold * (1.0 + 2.0 * roughness);
+    // 命中距离判定只对较光滑的表面做：粗糙表面的反射本来就糊，命中距离在波瓣里变化大、判定只会误伤；
+    // 当前帧邻域里没有镜面样本（hitDistance = 0）时无从判断，不比
+    // 默认关闭（hitDistanceThreshold = 0）：反射内容的边缘（近处物体 / 远处背景交界）命中距离逐帧在两侧之间跳，
+    // 判定也跟着跳，边缘一直闪。反射内容变化（物体移动）改由历史裁剪 Pass 的快速历史 anti-lag 处理
+    float hitCheck = (specularSignal && hitDistance > 0.0 && hitDistanceThreshold > 0.0) ? 1.0 - smoothstep(0.1, 0.45, roughness) : 0.0;
 
-    vec4 historyColor = vec4(0.0);
-    vec3 historyMoments = vec3(0.0);     // M1, M2, 历史长度
-    float historyWeight = 0.0;
-    vec3 debugReason = vec3(0.0);        // 拒绝原因（按第一个不通过的检测记一次）
+    // ---------------- 重投影：表面（运动矢量） ----------------
+    // 镜面信号在表面重投影上也比命中距离：反射内容变了（镜头不动、反射里的物体在动时，表面和虚像取的是同一个历史点），
+    // 表面历史一样是错的。当前帧邻域里没有镜面样本时无从判断，不比
+    HistorySample surfaceHistory = ReprojectHistory(historyUV, true, hitCheck,
+        currentWorldPos, currentNormal, n, planeTolerance, positionTolerance, hitDistance, hitTolerance);
 
-    for (int i = 0; i < 4; ++i)
+    // ---------------- 重投影：虚像（只有镜面信号） ----------------
+    // 虚像位置用的命中距离：优先取表面历史上累积的命中距离（时域稳定，不受命中距离判定影响）。单帧的命中距离噪声很大，
+    // 直接用会让虚像的历史坐标逐帧抖动、落到别的表面上（拒绝原因里红 / 绿闪烁）。
+    // 当前帧没有镜面样本（路径追踪的镜面那一路，hitDistance = 0）时也能靠累积值做虚像重投影
+    float trackingHit = surfaceHistory.trackHit > 0.0 ? surfaceHistory.trackHit : hitDistance;
+    float virtualAmount = 0.0;
+    vec2 virtualMotion = motionVector;
+    HistorySample virtualHistory = EmptyHistory(vec3(0.0));
+    // 表面重投影对反射内容的角度误差（弧度 / 帧）：虚像与表面在上一帧相机下的屏幕位置差换算成视角。
+    // 镜头不动、或反射离表面很近（命中距离≈0）时为 0；给按视差缩短历史用
+    float surfaceSpecularError = 0.0;
+    if (specularSignal && trackingHit > 0.0)
     {
-        ivec2 offset = ivec2(i & 1, i >> 1);
-        ivec2 tap = historyBase + offset;
-        vec2 bil = mix(1.0 - historyFrac, historyFrac, vec2(offset));
-        float w = bil.x * bil.y;
-        if (w <= 0.0)
-            continue;
+        virtualAmount = 1.0 - smoothstep(virtualRoughnessStart, max(virtualRoughnessEnd, virtualRoughnessStart + 1e-3), roughness);
 
-        if (any(lessThan(tap, ivec2(0))) || any(greaterThanEqual(tap, historySize)))
+        vec3 viewDir = normalize(currentWorldPos - camera.position);
+        vec3 virtualPos = currentWorldPos + viewDir * trackingHit;
+        vec4 prevSurfaceClip = prevcamera.projView * vec4(currentWorldPos, 1.0);
+        vec4 prevVirtualClip = prevcamera.projView * vec4(virtualPos, 1.0);
+        if (prevSurfaceClip.w > 1e-5 && prevVirtualClip.w > 1e-5)
         {
-            debugReason += vec3(1.0) * w;                   // 白 = 出屏幕
-            continue;
+            vec2 delta = (prevVirtualClip.xy / prevVirtualClip.w - prevSurfaceClip.xy / prevSurfaceClip.w) * 0.5;
+            // UV 差 → NDC 差（×2）→ 视角（÷ 投影缩放，小角度近似）
+            surfaceSpecularError = length(vec2(2.0 * delta.x / max(abs(prevcamera.projection[0][0]), 1e-4),
+                                              2.0 * delta.y / max(abs(prevcamera.projection[1][1]), 1e-4)));
+            if (virtualAmount > 0.0)
+            {
+                vec2 virtualHistoryUV = historyUV + delta;
+                virtualMotion = currentUV - virtualHistoryUV;
+                // 命中距离判定和「当前帧」的命中距离比；当前帧邻域里没有镜面样本时无从判断，不比
+                virtualHistory = ReprojectHistory(virtualHistoryUV, false, hitCheck,
+                    currentWorldPos, currentNormal, n, planeTolerance, positionTolerance, hitDistance, hitTolerance);
+            }
         }
-
-        vec2 tapUV = (vec2(tap) + 0.5) / vec2(historySize);
-        if (textureLod(prevDepthMap, tapUV, 0.0).r >= kSkyDepth)
-        {
-            debugReason += vec3(1.0, 0.0, 1.0) * w;         // 品红 = 历史是天空
-            continue;
-        }
-
-        vec4 tapPosition = textureLod(prevPositionMap, tapUV, 0.0);
-        vec3 tapPos = tapPosition.xyz;
-        vec3 tapNormal = UnpackGeometryNormal(tapPosition.w);
-
-        // 平面距离：同一平面上的点无论相隔多远、视角多斜都是 0，只有换了表面（前后遮挡）才会大
-        vec3 d = currentWorldPos - tapPos;
-        bool normalValid = dot(currentNormal, tapNormal) > normalThreshold;
-        bool depthValid = abs(dot(n, d)) < planeTolerance;
-        // 世界距离：兜住同一平面上但重投影错位太远的情况（运动矢量误差）
-        bool positionValid = dot(d, d) < positionTolerance * positionTolerance;
-        if (!normalValid || !depthValid || !positionValid)
-        {
-            debugReason += (!normalValid ? vec3(1.0, 0.0, 0.0)      // 红 = 法线
-                         : !depthValid  ? vec3(0.0, 1.0, 0.0)       // 绿 = 平面距离
-                         :                vec3(0.0, 0.0, 1.0)) * w; // 蓝 = 世界距离
-            continue;
-        }
-
-        debugReason += vec3(0.12) * w;                      // 灰 = 通过
-        vec4 tapMoments = texelFetch(historyMomentTexture, tap, 0);
-        historyColor += texelFetch(historyColorTexture, tap, 0) * w;
-        historyMoments += vec3(tapMoments.xy, tapMoments.w) * w;
-        historyWeight += w;
+        else if (virtualAmount > 0.0)
+            virtualHistory = EmptyHistory(vec3(1.0));
     }
+
+    // 两部分各按自己的比例 × 通过权重混合。没通过的部分不拿另一种重投影的历史顶替
+    // （镜头不动时两种重投影取的是同一个历史点，顶替等于没拒绝，反射里的运动物体就拖影），
+    // 镜面信号的历史长度按通过的比例连续缩短（软判定 + 稳定的虚像定位，不会像硬阈值那样整段跳变）
+    float virtualShare = virtualAmount * virtualHistory.weight;
+    float surfaceShare = (1.0 - virtualAmount) * surfaceHistory.weight;
+    float historyWeight = surfaceShare + virtualShare;
+    vec3 debugReason = mix(surfaceHistory.reason, virtualHistory.reason, virtualAmount);
 
     // 通过的点权重太小（只剩一个边角点）时不可信，按没有历史处理
     if (historyWeight < 0.01)
@@ -245,66 +447,70 @@ void main()
         return;
     }
 
-    historyColor /= historyWeight;
-    historyMoments /= historyWeight;
+    vec4 historyColor = (surfaceHistory.color * surfaceShare + virtualHistory.color * virtualShare) / historyWeight;
+    vec3 historyMoments = (surfaceHistory.moments * surfaceShare + virtualHistory.moments * virtualShare) / historyWeight;
     float historyM1 = historyMoments.x;
     float historyM2 = historyMoments.y;
     float historyLength = historyMoments.z;
-
-    // ---------------- 方差裁剪（YCoCg，3×3 邻域） ----------------
-    float debugClip = 0.0;      // 历史离盒子中心多少个半径（> 1 才会被裁剪）
-    if (varianceClipGamma > 0.0)
+    // 镜面信号：反射内容变了（命中距离对不上的比例大）才缩短历史。只有一小部分点没通过（噪声、反射里的边缘）时不缩短，
+    // 只重新归一化权重 —— 原来按通过权重逐帧相乘，权重 0.8 就把历史长度压在 5 帧左右，画面一直是噪的、在闪
+    if (specularSignal)
     {
-        vec3 m1 = vec3(0.0);
-        vec3 m2 = vec3(0.0);
-        for (int y = -1; y <= 1; ++y)
-        {
-            for (int x = -1; x <= 1; ++x)
-            {
-                ivec2 sampleCoord = clamp(coord + ivec2(x, y), ivec2(0), imageSize - 1);
-                vec3 c = RGBToYCoCg(texelFetch(rawTexture, sampleCoord, 0).rgb);
-                m1 += c;
-                m2 += c * c;
-            }
-        }
-        m1 /= 9.0;
-        m2 /= 9.0;
-        vec3 sigma = sqrt(max(m2 - m1 * m1, vec3(0.0)));
-
-        vec3 historyYCoCg = RGBToYCoCg(historyColor.rgb);
-        vec3 extent = varianceClipGamma * sigma;
-        vec3 unit = abs(historyYCoCg - m1) / max(extent, vec3(1e-5));
-        debugClip = max(unit.x, max(unit.y, unit.z));
-
-        vec3 clipped = ClipToAABB(historyYCoCg, m1, extent);
-        historyColor.rgb = max(YCoCgToRGB(clipped), vec3(0.0));
+        float hitConfidence = mix(surfaceHistory.hitConfidence, virtualHistory.hitConfidence, virtualAmount);
+        historyLength *= smoothstep(0.0, 0.6, hitConfidence);
     }
 
+    // ---------------- 快速历史 ----------------
+    // 和慢速历史同一组重投影点、同样的权重。帧数不超过慢速历史（慢速历史被清掉 / 重置时快速历史也跟着重新开始）
+    vec4 historyFast = (surfaceHistory.fast * surfaceShare + virtualHistory.fast * virtualShare) / historyWeight;
+    float fastFrames = max(fastHistoryLength, 1.0);
+    float fastPrevLength = fastHistoryValid != 0u ? clamp(min(historyFast.a, historyLength), 0.0, fastFrames - 1.0) : 0.0;
+    vec3 fastColor = mix(currentColor.rgb, historyFast.rgb, fastPrevLength / (fastPrevLength + 1.0));
+    float fastLength = fastPrevLength + 1.0;
+    imageStore(fastOutputImage, coord, vec4(fastColor, fastLength));
+
+    // 方差裁剪在下一个 Pass（TemporalHistoryClamp.comp）里做：要用本帧快速历史的 3×3 邻域，这里还没写完
+
     // ---------------- 混合 ----------------
-    float blendLength = min(historyLength + 1.0, float(max(maxAccumulateCount, 1u)));
+    // 镜面信号按粗糙度限制最多累积的帧数（specularMinAccumulate > 0 时）。默认关闭：
+    // 每像素只有 1 ~ 2 个 GGX 样本，粗糙度 0.1 ~ 0.3 的表面噪声并不小，限制在 8 ~ 20 帧时光滑表面一直闪；拖影交给裁剪的 anti-lag
+    float maxLength = float(max(maxAccumulateCount, 1u));
+    if (specularSignal && specularMinAccumulate > 0.0)
+        maxLength = mix(min(max(specularMinAccumulate, 1.0), maxLength), maxLength, smoothstep(0.05, 0.5, roughness));
+
+    // 按视差缩短镜面历史（ReBLUR 的思路）：静止时视差为 0，历史可以拉满（不闪）；镜头移动时，表面重投影取到的反射
+    // 每帧偏 surfaceSpecularError 弧度，累积 N 帧偏 N 倍，超过波瓣宽度就糊 / 拖影，所以上限 ≈ scale × 波瓣半角 / 每帧误差。
+    // 波瓣半角按 GGX（alpha = roughness²）取 75% 能量的近似。虚像重投影对静态反射是准的，这部分不限制；两部分按比例调和
+    if (specularSignal && specularParallaxScale > 0.0)
+    {
+        float alpha = roughness * roughness;
+        float lobeHalfAngle = atan(alpha * 3.0);
+        float framesSurface = maxLength / (1.0 + surfaceSpecularError * maxLength / max(specularParallaxScale * lobeHalfAngle, 1e-4));
+        float framesSpecular = 1.0 / ((1.0 - virtualAmount) / max(framesSurface, 1.0) + virtualAmount / maxLength);
+        maxLength = clamp(framesSpecular, 1.0, maxLength);
+    }
+    float blendLength = min(historyLength + 1.0, maxLength);
     float historyBlendFactor = (blendLength - 1.0) / blendLength;
 
-    float motionPixels = length(motionVector * vec2(imageSize));
+    // 镜面信号按实际用到的运动（表面 / 虚像按比例）衰减
+    float motionPixels = length(mix(motionVector, virtualMotion, virtualAmount) * vec2(imageSize));
     float motionAttenuation = exp(-max(motionWeightScale, 0.0) * motionPixels);
     historyBlendFactor *= motionAttenuation;
-    float finalAccumulateLength = min(historyLength * motionAttenuation + 1.0, float(max(maxAccumulateCount, 1u)));
+    float finalAccumulateLength = min(historyLength * motionAttenuation + 1.0, maxLength);
 
     vec4 finalColor = mix(currentColor, historyColor, historyBlendFactor);
+    // 命中距离累积得快一些（最多保留 80% 历史），反射内容变化后命中距离检测能尽快对上；
+    // 这一帧没有命中距离（邻域里都没有镜面样本）时沿用历史，不往 0 衰减
+    if (specularSignal)
+        finalColor.a = hitDistance > 0.0 ? mix(hitDistance, historyColor.a, min(historyBlendFactor, 0.8)) : historyColor.a;
     float finalM1 = mix(currentM1, historyM1, historyBlendFactor);
     float finalM2 = mix(currentM2, historyM2, historyBlendFactor);
 
     imageStore(outputImage, coord, finalColor);
     imageStore(outputMoments, coord, vec4(finalM1, finalM2, GetVariance(finalM1, finalM2), finalAccumulateLength));
 
-    if (debugMode == kDebugHistoryLength)
-    {
-        float maxLength = float(max(maxAccumulateCount, 2u));
-        StoreDebug(coord, finalAccumulateLength <= 1.0 ? vec3(0.0) : DebugHeat((finalAccumulateLength - 1.0) / (maxLength - 1.0)));
-    }
-    else if (debugMode == kDebugRejectReason)
+    if (debugMode == kDebugRejectReason)
         StoreDebug(coord, debugReason);
-    else if (debugMode == kDebugClipAmount)
-        StoreDebug(coord, debugClip <= 1.0 ? vec3(0.06) : DebugHeat((debugClip - 1.0) / 3.0));
     else if (debugMode == kDebugHistoryWeight)
         StoreDebug(coord, DebugHeat(historyWeight));
 }

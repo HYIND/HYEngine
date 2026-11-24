@@ -21,13 +21,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
+		float luminanceFactor = 4.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
 		float motionWeightScale = 0.0;
-		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
+		float varianceClipGamma = 2.0;		// 时域历史裁剪：本帧快速历史（6 帧）3×3 邻域均值 ± γ·σ，超出时同时缩短历史（anti-lag）；<= 0 关闭。拖影明显调小（1 ~ 1.5），噪点多调大（3）
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
@@ -43,13 +43,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 0.8;
-		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
+		float luminanceFactor = 4.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
 		float motionWeightScale = 0.0;
-		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
+		float varianceClipGamma = 2.0;		// 时域历史裁剪：本帧快速历史（6 帧）3×3 邻域均值 ± γ·σ，超出时同时缩短历史（anti-lag）；<= 0 关闭。拖影明显调小（1 ~ 1.5），噪点多调大（3）
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
@@ -66,13 +66,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
+		float luminanceFactor = 4.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
 		float motionWeightScale = 0.0;
-		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
+		float varianceClipGamma = 2.0;		// 时域历史裁剪：本帧快速历史（6 帧）3×3 邻域均值 ± γ·σ，超出时同时缩短历史（anti-lag）；<= 0 关闭。拖影明显调小（1 ~ 1.5），噪点多调大（3）
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
@@ -91,13 +91,13 @@ struct Scene3DRenderOption
 
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
-		float luminanceFactor = 8.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
+		float luminanceFactor = 4.0;		// SVGF 的 σ_l：方差标准差的倍数（不是绝对亮度），见 Filter/Atrous-BilateralFilter.comp
 
 		float depthThreshold = 0.02;
 		float positiondistThreshold = 0.05;
 		float normalThreshold = 0.988;
 		float motionWeightScale = 0.0;
-		float varianceClipGamma = 8.0;		// 时域历史裁剪：当前帧 3×3 邻域 YCoCg 均值 ± γ·σ；<= 0 关闭。GI 噪声大，觉得收敛慢可调到 3~4
+		float varianceClipGamma = 2.0;		// 时域历史裁剪：本帧快速历史（6 帧）3×3 邻域均值 ± γ·σ，超出时同时缩短历史（anti-lag）；<= 0 关闭。拖影明显调小（1 ~ 1.5），噪点多调大（3）
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;

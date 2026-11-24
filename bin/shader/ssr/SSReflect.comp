@@ -50,6 +50,7 @@ layout (binding = 14) uniform sampler2D IBLBrdfLUT;
 #define OnlyIBLHelper
 #include "shader/Helper/lightingHelper.comp"
 #include "shader/ssr/SSGIGeneral.comp"
+#include "shader/Filter/IndirectDemodulation.comp"
 
 // DDGI（与 DDGIApply 同一份图集 / UBO / 体积表），HitDiffuseMode != 2 时不绑定
 #define DDGI_UBO_BINDING 15
@@ -86,7 +87,8 @@ vec3 traceRay(
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce, 
-    uint sampleId    
+    uint sampleId,
+    inout float firstHitT       // 第一次反弹的命中距离；没打中几何时不改，调用方给 tMax
 )
 {
     vec2 imageSize = textureSize(colorMap, 0);
@@ -144,6 +146,9 @@ vec3 traceRay(
             }
         }
 
+        if (depth == 0u && !captureCube)
+            firstHitT = distance(hitPosition, ray.origin);
+
         if (!captureCube)
         {
 	        getPBRProperties(uv, prop);
@@ -200,13 +205,27 @@ vec3 tracePath(
     vec3 fragPos, vec3 fragNormal, 
     PBRProperties prop,
     uint maxBounce,
-    uint sampleCount
+    uint sampleCount,
+    out float hitDistance
 ) 
 {
     vec3 totalIndirect = vec3(0.0);
+    float hitSum = 0.0;
+    float hitSamples = 0.0;
 
     for (uint i = 0; i < sampleCount; i++)
-        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i);
+    {
+        float firstHitT = tMax;
+        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, firstHitT);
+        if (firstHitT < tMax)
+        {
+            hitSum += firstHitT;
+            hitSamples += 1.0;
+        }
+    }
+
+    // 命中距离（时域累积的虚像重投影用）：打中的样本取平均；都没打中时为 tMax（环境 / 屏幕外，按无穷远处理）
+    hitDistance = hitSamples > 0.0 ? hitSum / hitSamples : max(tMax, 1e-3);
 
     return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
 }
@@ -245,13 +264,21 @@ void main()
             // 镜面合成只收镜面：不追踪的像素只回退 IBL 镜面，漫反射由漫反射合成 / LightingPass 负责
             vec3 unusedDiffuse, color;
             CalculateIBLLightingSplit(viewDir, fragNormal, prop, IBLDiffuse, IBLPrefilter, IBLBrdfLUT, unusedDiffuse, color);
+            // 去调制（与追踪路径同一个除数），降噪后由 IndirectUpsample（mode 2）乘回
+            color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(fragNormal, -viewDir), 0.0, 1.0));
             color = clamp(color, vec3(0.f), vec3(1000.f));
-            imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+            // 只有环境反射：虚像在无穷远（命中距离 = tMax）
+            imageStore(outputImage, pixelCoord, vec4(color, max(tMax, 1e-3)));
         }
         return;
     }
 
-    vec3 color = tracePath(camera.position, fragPos, fragNormal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), SampleRayCount));
+    float hitDistance = 0.0;
+    vec3 color = tracePath(camera.position, fragPos, fragNormal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), SampleRayCount), hitDistance);
+    // 去调制：除以接收面的镜面反射率（与 RTR 一致），降噪只处理入射光照，时域历史和纹理无关（虚像重投影取到的是镜面上的另一个点）；
+    // 降噪后由 IndirectUpsample（mode 2，同分辨率）乘回
+    color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(fragNormal, normalize(camera.position - fragPos)), 0.0, 1.0));
     color = clamp(color, vec3(0.f), vec3(1000.f));
-    imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+    // alpha：第一次反弹的命中距离（TemporalAccumulate 的镜面信号）
+    imageStore(outputImage, pixelCoord, vec4(color, hitDistance));
 }

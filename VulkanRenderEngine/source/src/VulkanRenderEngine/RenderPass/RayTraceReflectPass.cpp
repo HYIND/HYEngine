@@ -308,7 +308,9 @@ bool RayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper
 		.normalThreshold = state.option.rayTraceReflectParams.normalThreshold,
 		.motionWeightScale = state.option.rayTraceReflectParams.motionWeightScale,
 		.varianceClipGamma = state.option.rayTraceReflectParams.varianceClipGamma,
-		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect)
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect),
+		// 镜面信号：光追端把第一次反弹的命中距离写在 alpha 里，时域累积额外做虚像重投影（反射内容移动时不糊）
+		.signalType = static_cast<uint32_t>(TemporalAccumulate::SignalType::Specular)
 	};
 
 	_temporalAccumulate.Execute(
@@ -327,7 +329,8 @@ bool RayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper
 		data.temporalAccumulateHistoryMomentTexture,
 		params,
 		state.camera.curUBO,
-		state.camera.prevUBO
+		state.camera.prevUBO,
+		data.gMetallicRoughness
 	);
 
 	cmd->SubmitToQueue();
@@ -433,4 +436,10 @@ bool RayTraceReflectPass::BindGeneralData(ComputeBindingRecord& binding)
 		&& bindSSBO(BindingPoint{ .binding = 2,.set = 0 }, _buffers->GetMeshmatData())
 		&& bindSSBO(BindingPoint{ .binding = 3,.set = 0 }, _buffers->GetWorldBVHNode())
 		&& bindSSBO(BindingPoint{ .binding = 4,.set = 0 }, _buffers->GetMeshBVHNode());
+}
+
+void RayTraceReflectPass::OnResize(uint32_t width, uint32_t height)
+{
+	// 渲染图按新尺寸重建，历史纹理是新分配的（内容未定义）：下一帧先清历史
+	_firstDrawTemporal = true;
 }

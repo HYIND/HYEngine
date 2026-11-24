@@ -111,6 +111,7 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	data.temporalAccumulateColorTexture = ctx.GetTemp(1);
 	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
 	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
+	data.denoisedTexture = ctx.GetTemp(4);
 
 	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
 	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
@@ -134,13 +135,16 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 
 	if (!DrawSpatialDenoising(cmd, data, state)) return;
 
-	// 降噪调试：用时域累积的调试热力图覆盖输出，最终合成时替换场景颜色显示
+	// 降噪调试：用时域累积的调试热力图覆盖输出（不重新调制），最终合成时替换场景颜色显示
 	if (auto debugTexture = _temporalAccumulate.GetDebugTexture(); debugTexture && data.outPutTexture)
 	{
 		Texture2D::CopyTextureAsync(cmd, debugTexture, data.outPutTexture);
 		if (cmd->IsRecording())
 			cmd->SubmitToQueue();
+		return;
 	}
+
+	DrawRemodulate(cmd, data, state);
 }
 
 void SSRPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -357,7 +361,9 @@ bool SSRPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandB
 		.normalThreshold = state.option.ssrTraceParams.normalThreshold,
 		.motionWeightScale = state.option.ssrTraceParams.motionWeightScale,
 		.varianceClipGamma = state.option.ssrTraceParams.varianceClipGamma,
-		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::SSR)
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::SSR),
+		// 镜面信号：SSReflect.comp 把第一次反弹的命中距离写在 alpha 里，时域累积额外做虚像重投影
+		.signalType = static_cast<uint32_t>(TemporalAccumulate::SignalType::Specular)
 	};
 
 	_temporalAccumulate.Execute(
@@ -376,7 +382,8 @@ bool SSRPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandB
 		data.temporalAccumulateHistoryMomentTexture,
 		params,
 		state.camera.curUBO,
-		state.camera.prevUBO
+		state.camera.prevUBO,
+		data.gMetallicRoughness
 	);
 
 	cmd->SubmitToQueue();
@@ -387,7 +394,7 @@ bool SSRPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandB
 bool SSRPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
 	auto& source = data.temporalAccumulateColorTexture;
-	auto& target = data.outPutTexture;
+	auto& target = data.denoisedTexture;
 	auto& moment = data.temporalAccumulateMomentTexture;
 
 	if (!source || source->IsEmpty())
@@ -419,4 +426,35 @@ bool SSRPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuf
 	cmd->SubmitToQueue();
 
 	return true;
+}
+
+bool SSRPass::DrawRemodulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+{
+	// SSReflect.comp 已除以镜面反射率（与 RTR 一致），这里乘回（同分辨率，联合双边上采样退化为逐像素）
+	if (!data.denoisedTexture || data.denoisedTexture->IsEmpty() || !data.outPutTexture || data.outPutTexture->IsEmpty())
+		return false;
+
+	_remodulate.Execute(
+		cmd,
+		data.denoisedTexture,
+		data.gPosition,
+		data.gNormal,
+		data.gDepthStencil,
+		data.gAlbedoOpacity,
+		data.gMetallicRoughness,
+		data.outPutTexture,
+		IndirectUpsample::Remodulation::Specular,
+		state.camera.curUBO,
+		state.camera.prevUBO
+	);
+
+	cmd->SubmitToQueue();
+
+	return true;
+}
+
+void SSRPass::OnResize(uint32_t width, uint32_t height)
+{
+	// 渲染图按新尺寸重建，历史纹理是新分配的（内容未定义）：下一帧先清历史
+	_firstDrawTemporal = true;
 }

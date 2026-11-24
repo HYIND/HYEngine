@@ -29,39 +29,51 @@ namespace
 		FlagMember flag;
 		const char* note;				// 面板顶部的说明，可为 nullptr
 		bool (*draw)(Scene3DRenderOption&);
+		bool (*reset)(Scene3DRenderOption&);	// 「重置全部参数」：这个模块的参数整体恢复默认值（含参数里的开关）
 		float defaultHeight;
 		Scene3DRenderOption::DenoiseDebugTarget denoiseTarget = Scene3DRenderOption::DenoiseDebugTarget::None;	// 有降噪调试的面板
 	};
 
-	// 参数绘制沿用原来 Options 里的 PropertiesHelper::DrawData（通用反射绘制 / DDGI 的手写特化）
+	// 参数绘制：PropertiesHelper::DrawDataResettable（通用反射绘制 + 逐字段「重置」，DDGI 是手写特化）
 	constexpr size_t kPanelCount = 11;
 	const std::array<PanelDesc, kPanelCount> kPanels = { {
 		{ "Transparent", "半透明", 0, "drawTransparent", &Flags::drawTransparent, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.transparentParams); }, 160.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.transparentParams); },
+			[](Scene3DRenderOption& o) { o.transparentParams = {}; return true; }, 160.0f },
 		{ "SSAO", "SSAO", 0, nullptr, nullptr, "SSAO 没有单独的开关，始终开启",
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.ssaoParams); }, 180.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.ssaoParams); },
+			[](Scene3DRenderOption& o) { o.ssaoParams = {}; return true; }, 180.0f },
 
 		{ "Atmosphere", "大气", 1, "atmosphereOn", &Flags::atmosphereOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.atmosphereParams); }, 380.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.atmosphereParams); },
+			[](Scene3DRenderOption& o) { o.atmosphereParams = {}; return true; }, 380.0f },
 		{ "ExponentialHeightFog", "指数高度雾", 1, "exponentialHeightFogOn", &Flags::exponentialHeightFogOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.exponentialHeightFogParams); }, 330.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.exponentialHeightFogParams); },
+			[](Scene3DRenderOption& o) { o.exponentialHeightFogParams = {}; return true; }, 330.0f },
 		{ "VolumetricCloud", "体积云", 1, "volumetricCloudOn", &Flags::volumetricCloudOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.volumetricCloudParams); }, 560.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.volumetricCloudParams); },
+			[](Scene3DRenderOption& o) { o.volumetricCloudParams = {}; return true; }, 560.0f },
 
 		{ "SSR", "屏幕空间反射（SSR）", 2, "ssrOn", &Flags::ssrOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.ssrTraceParams); }, 520.0f, Scene3DRenderOption::DenoiseDebugTarget::SSR },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.ssrTraceParams); },
+			[](Scene3DRenderOption& o) { o.ssrTraceParams = {}; return true; }, 520.0f, Scene3DRenderOption::DenoiseDebugTarget::SSR },
 		{ "SSGI", "屏幕空间 GI（SSGI）", 2, "ssgiOn", &Flags::ssgiOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.ssgiTraceParams); }, 560.0f, Scene3DRenderOption::DenoiseDebugTarget::SSGI },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.ssgiTraceParams); },
+			[](Scene3DRenderOption& o) { o.ssgiTraceParams = {}; return true; }, 560.0f, Scene3DRenderOption::DenoiseDebugTarget::SSGI },
 
 		{ "RayTraceGeneral", "光追通用", 3, nullptr, nullptr, "光追反射 / 光追 GI / DDGI 共用：进入加速结构的物体离相机的最大距离",
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.rayTraceGeneralParams); }, 180.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.rayTraceGeneralParams); },
+			[](Scene3DRenderOption& o) { o.rayTraceGeneralParams = {}; return true; }, 180.0f },
 		{ "RayTraceReflect", "光追反射（RTR）", 3, "rayTraceReflectOn", &Flags::rayTraceReflectOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.rayTraceReflectParams); }, 500.0f, Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.rayTraceReflectParams); },
+			[](Scene3DRenderOption& o) { o.rayTraceReflectParams = {}; return true; }, 500.0f, Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect },
 		{ "RayTraceGI", "光追 GI（RTGI）", 3, "rayTraceGIOn", &Flags::rayTraceGIOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.rayTraceGIParams); }, 520.0f, Scene3DRenderOption::DenoiseDebugTarget::RayTraceGI },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.rayTraceGIParams); },
+			[](Scene3DRenderOption& o) { o.rayTraceGIParams = {}; return true; }, 520.0f, Scene3DRenderOption::DenoiseDebugTarget::RayTraceGI },
 
 		{ "DDGI", "DDGI", 4, "ddgiOn", &Flags::ddgiOn, nullptr,
-			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawData(o.ddgiParams); }, 560.0f },
+			[](Scene3DRenderOption& o) { return PropertiesHelper::DrawDataResettable(o.ddgiParams); },
+			[](Scene3DRenderOption& o) { o.ddgiParams = {}; return true; }, 560.0f },
 	} };
 
 	// PostProcessFlags 里没有参数面板、但有别的窗口可以打开的开关
@@ -154,6 +166,31 @@ namespace
 
 		if (desc.note)
 			ImGui::TextDisabled("%s", desc.note);
+
+		// 这个模块的参数整体回到默认值（含参数里的开关，如 DDGI 相机跟随、体积雾）。
+		// 模块的启用开关（PostProcessFlags）和调试开关（DDGI 探针可视化等）不属于参数，不动。
+		// 默认值 = RenderOption.h 里的初始值。先确认，免得误点
+		if (desc.reset)
+		{
+			if (ImGui::SmallButton("重置全部参数"))
+				ImGui::OpenPopup("ResetAllParams");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("把「%s」的全部参数恢复为默认值（启用开关不变）", desc.title);
+			if (ImGui::BeginPopup("ResetAllParams"))
+			{
+				ImGui::Text("把「%s」的全部参数恢复为默认值？", desc.title);
+				ImGui::TextDisabled("参数里的开关一起恢复；模块的启用开关不变。");
+				if (ImGui::Button("重置"))
+				{
+					changed |= desc.reset(option);
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("取消"))
+					ImGui::CloseCurrentPopup();
+				ImGui::EndPopup();
+			}
+		}
 
 		ImGui::Separator();
 
@@ -345,7 +382,7 @@ namespace
 			ImGui::TextWrapped("当前像素按运动矢量找到上一帧的位置后，取周围 2×2 个历史采样点逐一做几何检测，判断它们是不是同一个表面。每个采样点按第一个没通过的检测上色，再按双线性权重混合。用来查「这里为什么没有历史」：闪烁、噪点一直不收敛、边缘一直糊。");
 			break;
 		case DenoiseMode::ClipAmount:
-			ImGui::TextWrapped("方差裁剪：用当前帧 3×3 邻域颜色的均值 ± γ·σ 构成一个颜色盒子，历史颜色落在盒子外就被拉回到盒子边上。它能抑制拖影和鬼影，但裁得太多，累积的历史就白费了，噪点会变多。");
+			ImGui::TextWrapped("方差裁剪：另外累积一份只保留 6 帧的「快速历史」，用它在 3×3 邻域里的均值 ± γ·σ 构成颜色盒子，长历史落在盒子外就被拉回到盒子边上，超出得越多历史长度越往 6 帧缩（anti-lag）。快速历史已经平均过几帧，盒子不会跟着单帧噪声乱跳；变化后几帧内就能跟上，所以能压住拖影。");
 			break;
 		case DenoiseMode::HistoryWeight:
 			ImGui::TextWrapped("2×2 重投影里通过检测的采样点的双线性权重之和，也就是这一帧真正能用上的历史比例。和「拒绝原因」是同一件事的两种看法：这里看「用上了多少」，拒绝原因看「为什么没用上」。");
@@ -365,7 +402,10 @@ namespace
 			LegendSwatch(ImVec4(0.12f, 0.12f, 0.12f, 1.0f), "灰：通过，历史可用");
 			LegendSwatch(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), Format("红：法线差太大（normalThreshold = %.3f，越接近 1 越严格）", p.normalThreshold));
 			LegendSwatch(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), Format("绿：平面距离超出，换了表面 / 前后遮挡（depthThreshold = %.3f，按视深比例）", p.depthThreshold));
-			LegendSwatch(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), Format("蓝：世界距离超出，多半是运动矢量误差（positiondistThreshold = %.3f）", p.positiondistThreshold));
+			LegendSwatch(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), Format("蓝：世界距离超出，多半是运动矢量误差（positiondistThreshold = %.3f；只用于表面重投影）", p.positiondistThreshold));
+			LegendSwatch(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "黄：命中距离对不上（镜面信号的命中距离判定，默认关闭，所以一般看不到；反射内容的变化改由裁剪的 anti-lag 处理）");
+			ImGui::TextDisabled("镜面信号（RTR / SSR）的颜色按粗糙度混合了表面重投影（光滑 → 少）与虚像重投影（光滑 → 多）两部分；"
+				"没通过的部分不用另一种顶替。");
 			LegendSwatch(ImVec4(1.0f, 0.0f, 1.0f, 1.0f), "品红：历史位置上一帧是天空");
 			LegendSwatch(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "白：重投影到了屏幕外（镜头转动时画面边缘）");
 			break;
@@ -389,6 +429,8 @@ namespace
 		case DenoiseMode::HistoryLength:
 			BulletWrapped("画面静止几秒后应该整片变红；一直停在蓝、绿，说明历史总被重置，切到「拒绝原因」看是哪项检测没通过。");
 			BulletWrapped("物体边缘、刚露出来的区域（去遮挡）短一圈是正常的。");
+			BulletWrapped("镜面信号（RTR / SSR、GI 的镜面那一路）：镜头移动时按反射的视差压低历史上限 —— 反射离表面越远、表面越粗糙（用表面重投影的部分越多）压得越多；"
+				"光滑表面用虚像重投影，基本不受影响。停下来后逐帧涨回。");
 			if (p.motionWeightScale > 0.0f)
 				BulletWrapped(Format("一移动镜头就整片变短：motionWeightScale（当前 %.3f）会按运动的像素数衰减历史，调小或设为 0 可以减轻。", p.motionWeightScale));
 			else
@@ -402,7 +444,7 @@ namespace
 			break;
 		case DenoiseMode::ClipAmount:
 			BulletWrapped("运动物体的拖尾、光照突变的地方发红是正常的，说明裁剪在起作用。");
-			BulletWrapped(Format("画面静止时也大片发红：varianceClipGamma（当前 %.2f）偏小，裁剪太狠，可以调大；拖影明显就调小。", p.varianceClipGamma));
+			BulletWrapped(Format("画面静止时也大片发红：varianceClipGamma（当前 %.2f）偏小，裁剪太狠，可以调大；拖影明显就调小（1 ~ 1.5）。色块 / 明暗边缘一圈发红是正常的。", p.varianceClipGamma));
 			if (p.varianceClipGamma <= 0.0f)
 				TextWrappedColored(kDenoiseWarnColor, "varianceClipGamma ≤ 0，方差裁剪已关闭，这个视图会是整片暗灰。");
 			break;
@@ -494,6 +536,10 @@ namespace
 				}
 			}
 		}
+
+		if (desc.denoiseTarget == DenoiseTarget::RayTraceGI || desc.denoiseTarget == DenoiseTarget::SSGI)
+			ImGui::TextDisabled("路径追踪拆成了漫反射 / 镜面两路分别降噪，这里显示的是漫反射那一路；"
+				"镜面那一路与 RTR / SSR 用同一套虚像重投影，可以在它们的面板里看。");
 
 		DrawDenoiseModeExplanation(debug.mode, GetTemporalParamsInfo(option, desc.denoiseTarget));
 

@@ -44,6 +44,18 @@ public:
 
 	static void SetNextPropertyFieldWidth(float maxWidth, float fraction = 0.5f);
 
+	// ── 恢复默认值（渲染参数面板用）──
+	// 默认值 = 参数结构的默认构造（T{}，即 RenderOption.h 里的成员初始值）。bool 是功能开关，不参与重置。
+	// 逐字段绘制；非 bool 字段的值与默认值不同时，后面显示「重置」小按钮（悬停显示默认值）
+	template<typename T>
+	static bool DrawDataResettable(T& data);
+	// 整体恢复为默认值（T{}，含 bool 开关）。返回是否有改动
+	template<typename T>
+	static bool ResetValues(T& data);
+	// 值与默认值不同时，在同一行画一个「重置」小按钮；点了就恢复默认值并返回 true。bool 不画
+	template<typename V>
+	static bool ResetButton(const char* id, V& value, const V& defaultValue);
+
 private:
 	static std::unordered_map<ComponentTypeID, DrawFunction>& GetCustomDrawRegistry();
 

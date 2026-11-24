@@ -13,6 +13,9 @@ public:
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state) { return true; }			// Excute前预判断是否需要执行Execute，但不影响FrameBegin，FrameEnd
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state) = 0;	// 执行渲染
 	virtual void FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state) {};								// 每帧结束时，可执行清理任务，按照pass执行顺序，逆序调度
+	// 渲染分辨率变了：渲染图已按新尺寸重建，尺寸相关的资源（含 Persistent 历史）都是新分配、内容未定义的。
+	// 带时域历史的 Pass 在这里标记下一帧清历史。在渲染停止时调用，不会和 FrameBegin / Execute 并发
+	virtual void OnResize(uint32_t width, uint32_t height) {};
 
 protected:
 	bool _enabled = true;

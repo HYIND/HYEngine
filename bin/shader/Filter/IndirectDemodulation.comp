@@ -42,6 +42,12 @@ vec3 IndirectDemodulationPathTracing(vec3 albedo, float metallic, float roughnes
     return max(d, vec3(kIndirectDemodulationEpsilon));
 }
 
+// 路径追踪拆成漫反射 / 镜面两路时漫反射那一路的除数（镜面那一路用 IndirectDemodulationSpecular）
+vec3 IndirectDemodulationDiffuse(vec3 albedo, float metallic)
+{
+    return max(IndirectDiffuseReflectance(albedo, metallic), vec3(kIndirectDemodulationEpsilon));
+}
+
 // RTR：只有镜面
 vec3 IndirectDemodulationSpecular(vec3 albedo, float metallic, float roughness, float NdotV)
 {

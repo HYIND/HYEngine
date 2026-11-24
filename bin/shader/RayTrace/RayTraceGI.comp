@@ -45,6 +45,8 @@ layout (binding = 12) uniform sampler2D depthMap;
 layout (binding = 13) uniform sampler2D atlasShadowMap;
 layout (binding = 14) uniform sampler2D SSAOMap;
 layout (binding = 15) uniform samplerCube cubeMap;
+// 路径追踪拆成两路：outputImage = 漫反射（alpha 1），outputSpecularImage = 镜面（alpha = 第一次反弹的命中距离）
+layout(binding = 16, rgba16f) uniform image2D outputSpecularImage;
 
 const float RussianRouletteFactor = 0.8f;
 
@@ -53,9 +55,13 @@ vec3 traceRay(
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce, 
-    uint sampleId
+    uint sampleId,
+    float lobeRandom,           // 第一次反弹选镜面 / 漫反射用的随机数（tracePath 里分层生成）
+    out bool firstSpecular,     // 第一次反弹走的是不是镜面
+    inout float firstHitT       // 第一次反弹的命中距离；没打中几何时不改，调用方给 tMax
 ) 
 {
+    firstSpecular = false;
 
     vec3 colors[Max_Bounce_limit + 1];
     vec3 contributeFacts[Max_Bounce_limit + 1];
@@ -83,7 +89,14 @@ vec3 traceRay(
 
         // 根据材质，随机选取走高光采样还是漫反射采样
         float p_spec = calc_P_Spec(prop);
-        bool spec = (pcg_float(seed * 7476405u + 2891453u) < p_spec);
+        // 第一次反弹的波瓣概率限制在 [0.25, 0.75]（纯金属没有漫反射，直接取 1）：拆成两路后各自单独降噪，
+        // 概率太小的那一路几乎每帧都没有样本、偶尔来一个就是 1/p 倍的亮点，累积后在画面上闪烁。
+        // 任何 (0, 1) 的概率都是无偏的（权重除以同一个 p_spec），只是方差分配不同（NRD 的建议）
+        if (depth == 0u)
+            p_spec = prop.metallic >= 0.99 ? 1.0 : clamp(p_spec, 0.25, 0.75);
+        bool spec = (depth == 0u ? lobeRandom : pcg_float(seed * 7476405u + 2891453u)) < p_spec;
+        if (depth == 0u)
+            firstSpecular = spec;
         if (spec)
         {
             // GGX重要性采样specular
@@ -119,6 +132,9 @@ vec3 traceRay(
             CalcBDRFDiffuse(prop.albedo, prop.metallic, diffuse);
             contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
         }
+
+        if (depth == 0u && !captureCube)
+            firstHitT = distance(hit.position, ray.origin);
 
         if (!captureCube)
         {
@@ -167,20 +183,55 @@ vec3 traceRay(
     return vec3(0.f);
 }
 
-vec3 tracePath(
+void tracePath(
     vec3 viewPos, 
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce,
-    uint sampleCount
+    uint sampleCount,
+    out vec3 diffuseOut,
+    out vec3 specularOut,
+    out float specularHitDistance
     ) 
 {
-    vec3 totalIndirect = vec3(0.0);
+    // 按第一次反弹选的波瓣拆成漫反射 / 镜面两路（各自降噪，镜面那一路做虚像重投影）。
+    // 每个样本的权重已经除过 p_spec / (1 - p_spec)，两路都除以总样本数，相加就是原来的估计。
+    // 第一次反弹的波瓣分层选：每个像素一个随机偏移，样本 i 用 fract(偏移 + i / N)。单个样本仍是均匀分布（无偏），
+    // 但一个像素里镜面样本数固定在 N·p_spec 上下 1 个以内，镜面那一路不容易整片没有样本
+    uint pixelSeed = uint(gl_GlobalInvocationID.x) * 197u + uint(gl_GlobalInvocationID.y) * 927u + uint(frameIndex) * 777u;
+    float lobeOffset = pcg_float(pixelSeed * 5871943u + 1442695u);
+
+    vec3 diffuseSum = vec3(0.0);
+    vec3 specularSum = vec3(0.0);
+    float hitSum = 0.0;
+    float hitSamples = 0.0;
+    float specularSamples = 0.0;
 
     for (uint i = 0; i < sampleCount; i++) 
-        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i);
+    {
+        float lobeRandom = fract(lobeOffset + float(i) / float(max(sampleCount, 1u)));
+        bool isSpecular = false;
+        float firstHitT = tMax;
+        vec3 c = traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, lobeRandom, isSpecular, firstHitT);
+        if (isSpecular)
+        {
+            specularSum += c;
+            specularSamples += 1.0;
+            if (firstHitT < tMax)
+            {
+                hitSum += firstHitT;
+                hitSamples += 1.0;
+            }
+        }
+        else
+            diffuseSum += c;
+    }
 
-    return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
+    float invCount = sampleCount > 0u ? 1.0 / float(sampleCount) : 0.0;
+    diffuseOut = diffuseSum * invCount;
+    specularOut = specularSum * invCount;
+    // 镜面命中距离：打中几何的镜面样本取平均；有镜面样本但都没打中时为 tMax；这一帧没有镜面样本为 0（时域累积取邻域）
+    specularHitDistance = hitSamples > 0.0 ? hitSum / hitSamples : (specularSamples > 0.0 ? max(tMax, 1e-3) : 0.0);
 }
 
 void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
@@ -220,8 +271,13 @@ void main()
     HitInfo firstHit;
     calculateFirstHitInfo(firstHit, uv);
 
-    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
-    color *= GIIntensity;
-    color = clamp(color, vec3(0.f), vec3(1000.f));
-    imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+    vec3 diffuseColor, specularColor;
+    float specularHitDistance;
+    tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount),
+        diffuseColor, specularColor, specularHitDistance);
+    // 软件光追不去调制：上采样时两路直接相加（IndirectUpsample.comp mode 4）
+    diffuseColor = clamp(diffuseColor * GIIntensity, vec3(0.f), vec3(1000.f));
+    specularColor = clamp(specularColor * GIIntensity, vec3(0.f), vec3(1000.f));
+    imageStore(outputImage, pixelCoord, vec4(diffuseColor, 1.0));
+    imageStore(outputSpecularImage, pixelCoord, vec4(specularColor, specularHitDistance));
 }

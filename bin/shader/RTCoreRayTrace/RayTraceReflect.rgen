@@ -73,7 +73,8 @@ vec3 traceRay(
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce, 
-    uint sampleId
+    uint sampleId,
+    inout float firstHitT       // 第一次反弹的命中距离；没打中几何（取环境 / 没取到）时不改（调用方给 tMax）
 ) 
 {
 
@@ -117,6 +118,9 @@ vec3 traceRay(
             // 计算该点向前一个点高光传递贡献
             contributeFacts[hitCount] = CalcContribute_GGXSample(fragNormal, normalize(viewPos - ray.origin), ray.direction, prop.albedo, prop.metallic, prop.roughness);
         }
+
+        if (depth == 0u && !captureCube)
+            firstHitT = distance(hit.position, ray.origin);
 
         if (!captureCube)
         {
@@ -176,13 +180,27 @@ vec3 tracePath(
     vec3 fragPos, vec3 fragNormal,
     PBRProperties prop,
     uint maxBounce,
-    uint sampleCount
+    uint sampleCount,
+    out float hitDistance
     ) 
 {
     vec3 totalIndirect = vec3(0.0);
+    float hitSum = 0.0;
+    float hitSamples = 0.0;
 
     for (uint i = 0; i < sampleCount; i++) 
-        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i);
+    {
+        float firstHitT = tMax;
+        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, firstHitT);
+        if (firstHitT < tMax)
+        {
+            hitSum += firstHitT;
+            hitSamples += 1.0;
+        }
+    }
+
+    // 命中距离（时域累积的虚像重投影用）：打中几何的样本取平均；都没打中时为 tMax（环境在无穷远，只剩相机旋转）
+    hitDistance = hitSamples > 0.0 ? hitSum / hitSamples : max(tMax, 1e-3);
 
     return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
 }
@@ -235,7 +253,8 @@ void main()
             // 去调制（与追踪路径同一个除数），全分辨率上采样时乘回
             color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(fragNormal, -viewDir), 0.0, 1.0));
             color = clamp(color, vec3(0.f), vec3(1000.f));
-            imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+            // 只有环境反射：虚像在无穷远（命中距离 = tMax）
+            imageStore(outputImage, pixelCoord, vec4(color, max(tMax, 1e-3)));
         }
         return;
     }
@@ -243,10 +262,12 @@ void main()
     HitInfo firstHit;
     calculateFirstHitInfo(firstHit, uv);
 
-    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount));
+    float hitDistance = 0.0;
+    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount), hitDistance);
     // 去调制：除以接收面的镜面反射率，降噪只处理入射光照；全分辨率上采样时乘回（IndirectUpsample.comp）
     vec3 viewToFrag = normalize(camera.position - texture(gPosition, uv).rgb);
     color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(firstHit.normal, viewToFrag), 0.0, 1.0));
     color = clamp(color, vec3(0.f), vec3(1000.f));
-    imageStore(outputImage, pixelCoord, vec4(color, 1.0));
+    // alpha：第一次反弹的命中距离（TemporalAccumulate 的镜面信号）
+    imageStore(outputImage, pixelCoord, vec4(color, hitDistance));
 }

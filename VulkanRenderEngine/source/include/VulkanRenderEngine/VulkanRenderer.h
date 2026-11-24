@@ -187,6 +187,33 @@ private:
 
     std::unique_ptr<RenderGraph::Graph> _sceneRenderGraph;
 
+    // 场景渲染图的 Pass：第一次构建渲染图时创建，resize 按新尺寸重建渲染图时挂到新图上复用
+    struct ScenePasses
+    {
+        std::shared_ptr<RenderPassBase> atmospherePreCalculate, skyboxPreCalculate, hzb, lightingShadowDepth, geometry, ssao, lighting, skyBox;
+        std::shared_ptr<RenderPassBase> rayTraceGeneral, rayTraceReflect, rayTraceGI, ssr, ssgi;
+        std::shared_ptr<RenderPassBase> ddgiUpdate, ddgiBlend, ddgiApply, ddgiProbeDraw;
+        std::shared_ptr<RenderPassBase> indirectDiffuseCombin, indirectSpecularCombin, indirectPathTracingCombin, combinIndirectLighting;
+        std::shared_ptr<RenderPassBase> lightDraw, volumeCalculate, transparent, effect, autoExposure;
+        uint32_t hzbMaxLevel = 1;
+
+        template<typename F>
+        void ForEach(F&& f)
+        {
+            for (auto* pass : {
+                &atmospherePreCalculate, &skyboxPreCalculate, &hzb, &lightingShadowDepth, &geometry, &ssao, &lighting, &skyBox,
+                &rayTraceGeneral, &rayTraceReflect, &rayTraceGI, &ssr, &ssgi,
+                &ddgiUpdate, &ddgiBlend, &ddgiApply, &ddgiProbeDraw,
+                &indirectDiffuseCombin, &indirectSpecularCombin, &indirectPathTracingCombin, &combinIndirectLighting,
+                &lightDraw, &volumeCalculate, &transparent, &effect, &autoExposure })
+            {
+                if (*pass)
+                    f(**pass);
+            }
+        }
+    };
+    std::unique_ptr<ScenePasses> _scenePasses;
+
     Scene3DRenderOption _option;
 
     std::shared_ptr<DDGIDebugChannel> _ddgiDebugChannel;

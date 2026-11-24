@@ -311,12 +311,119 @@ bool PropertiesHelper::DrawComponent(T& comp)
 	return anyChanged;
 }
 
+namespace PropertiesResetDetail
+{
+	template<typename V, typename = void>
+	struct Comparable : std::false_type {};
+	template<typename V>
+	struct Comparable<V, std::void_t<decltype(std::declval<const V&>() != std::declval<const V&>())>> : std::true_type {};
+
+	template<typename V>
+	std::string FormatValue(const V& v)
+	{
+		char buf[128] = {};
+		if constexpr (std::is_same_v<V, float> || std::is_same_v<V, double>)
+			std::snprintf(buf, sizeof(buf), "%.6g", static_cast<double>(v));
+		else if constexpr (std::is_enum_v<V>)
+			std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(static_cast<std::underlying_type_t<V>>(v)));
+		else if constexpr (std::is_integral_v<V> && std::is_signed_v<V>)
+			std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(v));
+		else if constexpr (std::is_integral_v<V>)
+			std::snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(v));
+		else if constexpr (std::is_same_v<V, glm::vec2>)
+			std::snprintf(buf, sizeof(buf), "(%.4g, %.4g)", double(v.x), double(v.y));
+		else if constexpr (std::is_same_v<V, glm::vec3>)
+			std::snprintf(buf, sizeof(buf), "(%.4g, %.4g, %.4g)", double(v.x), double(v.y), double(v.z));
+		else if constexpr (std::is_same_v<V, glm::vec4>)
+			std::snprintf(buf, sizeof(buf), "(%.4g, %.4g, %.4g, %.4g)", double(v.x), double(v.y), double(v.z), double(v.w));
+		else if constexpr (std::is_same_v<V, glm::uvec3>)
+			std::snprintf(buf, sizeof(buf), "(%u, %u, %u)", v.x, v.y, v.z);
+		else if constexpr (std::is_same_v<V, glm::ivec3>)
+			std::snprintf(buf, sizeof(buf), "(%d, %d, %d)", v.x, v.y, v.z);
+		else if constexpr (std::is_same_v<V, std::string>)
+			return v;
+		return buf;
+	}
+}
+
+template<typename V>
+bool PropertiesHelper::ResetButton(const char* id, V& value, const V& defaultValue)
+{
+	if constexpr (std::is_same_v<V, bool>)
+	{
+		return false;	// 开关不重置
+	}
+	else
+	{
+		if constexpr (PropertiesResetDetail::Comparable<V>::value)
+		{
+			if (!(value != defaultValue))
+				return false;	// 已经是默认值，不显示按钮
+		}
+		ImGui::SameLine();
+		ImGui::PushID(id);
+		const bool clicked = ImGui::SmallButton("重置");
+		ImGui::PopID();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("恢复默认值：%s", PropertiesResetDetail::FormatValue(defaultValue).c_str());
+		if (!clicked)
+			return false;
+		value = defaultValue;
+		return true;
+	}
+}
+
+template<typename T>
+bool PropertiesHelper::DrawDataResettable(T& data)
+{
+	// 自定义反射 / 空结构没有逐字段的默认值可比，退回普通绘制（手写面板的特化见下面 DDGIParams）
+	if constexpr (has_reflector<T>::value || std::is_empty_v<T>)
+	{
+		return DrawComponent(data);
+	}
+	else
+	{
+		bool anyChanged = false;
+		T defaults{};
+		const auto fields = rfl::fields<T>();
+		if constexpr (std::tuple_size_v<decltype(fields)> > 0)
+		{
+			auto view = rfl::to_view(data);
+			auto defaultView = rfl::to_view(defaults);
+			[&] <std::size_t... I>(std::index_sequence<I...>) {
+				((anyChanged |= [&]() -> bool {
+					const std::string& field_name = std::get<I>(fields).name();
+					auto* ptr = view.template get<I>();
+					auto* defaultPtr = defaultView.template get<I>();
+					if constexpr (std::is_pointer_v<decltype(ptr)>) {
+						bool c = DrawPropertyField<T>(field_name, ptr);
+						if (PropertyUI<T>::GetWidget(field_name) != PropertyWidget::Const)
+							c |= ResetButton(field_name.c_str(), *ptr, *defaultPtr);
+						return c;
+					}
+					return false;
+					}()), ...);
+			}(std::make_index_sequence<fields.size()>{});
+		}
+		return anyChanged;
+	}
+}
+
+template<typename T>
+bool PropertiesHelper::ResetValues(T& data)
+{
+	// 整体赋默认值：带自定义反射的结构（如 DDGIParams）逐字段遍历不到，这样也能重置
+	data = T{};
+	return true;
+}
+
 // DDGI 参数面板。手写是为了在级联关闭时把级联参数置灰，并给出提示。
 // 探针来源：跟随相机的级联（这里）+ 场景里的 DDGIVolumeComponent（实体组件），两者可以叠加。
 template<>
 inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 {
 	bool changed = false;
+	const Scene3DRenderOption::DDGIParams d{};		// 默认值（「重置」按钮用；开关不重置）
 
 	// ── 跟随相机的级联 ──
 	changed |= ImGui::Checkbox("cascadeEnable（跟随相机）", &p.cascadeEnable);
@@ -333,6 +440,7 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 		p.cascadeLevels = static_cast<uint32_t>(levels);
 		changed = true;
 	}
+	changed |= ResetButton("cascadeLevels", p.cascadeLevels, d.cascadeLevels);
 
 	SetNextPropertyFieldWidth(250.0f, 0.6f);
 	if (ImGui::DragFloat3("cascadeBaseSpacing", glm::value_ptr(p.cascadeBaseSpacing), 0.05f, 0.25f, 16.0f))
@@ -342,6 +450,7 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("第 0 级的探针间距，之后每级翻倍");
+	changed |= ResetButton("cascadeBaseSpacing", p.cascadeBaseSpacing, d.cascadeBaseSpacing);
 
 	int counts[3] = { int(p.cascadeCounts.x), int(p.cascadeCounts.y), int(p.cascadeCounts.z) };
 	SetNextPropertyFieldWidth(250.0f, 0.6f);
@@ -350,6 +459,7 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 		p.cascadeCounts = glm::uvec3(glm::clamp(glm::ivec3(counts[0], counts[1], counts[2]), glm::ivec3(1), glm::ivec3(255)));
 		changed = true;
 	}
+	changed |= ResetButton("cascadeCounts", p.cascadeCounts, d.cascadeCounts);
 
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("cascadeFadeCells", &p.cascadeFadeCells, 0.05f, 0.01f, 8.0f))
@@ -359,6 +469,7 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("级与级之间（以及级联外沿）的过渡宽度，单位：格");
+	changed |= ResetButton("cascadeFadeCells", p.cascadeFadeCells, d.cascadeFadeCells);
 	changed |= ImGui::Checkbox("cascadeAutoRelocate", &p.cascadeAutoRelocate);
 
 	{
@@ -382,25 +493,31 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 		changed = true;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("采样点沿法线外推（米），抑制自遮挡与薄墙漏光。\n建议 spacing 的 0.1~0.3 倍。");
+	changed |= ResetButton("normalBias", p.normalBias, d.normalBias);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("viewBias", &p.viewBias, 0.01f, 0.0f, 2.0f))
 		changed = true;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("采样点朝观察者方向外推（米），与 normalBias 配合抑制掠射角漏光。\n建议 spacing 的 0.1~0.3 倍。");
+	changed |= ResetButton("viewBias", p.viewBias, d.viewBias);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("maxRayDistance", &p.maxRayDistance, 0.5f, 0.5f, 500.0f))
 		changed = true;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("探针光线最远距离，超过视为看到天空。室外场景要调大");
+	changed |= ResetButton("maxRayDistance", p.maxRayDistance, d.maxRayDistance);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("backfaceThreshold", &p.backfaceThreshold, 0.05f, 0.001f, 8.0f))
 		changed = true;
+	changed |= ResetButton("backfaceThreshold", p.backfaceThreshold, d.backfaceThreshold);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("skyIntensity", &p.skyIntensity, 0.02f, 0.0f, 8.0f))
 		changed = true;
+	changed |= ResetButton("skyIntensity", p.skyIntensity, d.skyIntensity);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("energy", &p.energy, 0.02f, 0.0f, 8.0f))
 		changed = true;
+	changed |= ResetButton("energy", p.energy, d.energy);
 
 	// ── 更新与时域 ──
 	int budget = static_cast<int>(p.updateBudget);
@@ -412,17 +529,27 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("每帧最多更新的探针数（上限 GlobalConfig::DDGIUpdateBudget = %u）。\n按距离分给各体积：近处更新勤、远处慢；新出现的探针优先", GlobalConfig::DDGIUpdateBudget);
+	changed |= ResetButton("updateBudget", p.updateBudget, d.updateBudget);
 
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("hysteresis", &p.hysteresis, 0.005f, 0.0f, 0.98f))
 		changed = true;
+	changed |= ResetButton("hysteresis", p.hysteresis, d.hysteresis);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("lightChangeThreshold", &p.lightChangeThreshold, 0.01f, 0.0f, 2.0f))
 		changed = true;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("探针平均亮度的相对变化超过该值（且超出跨帧噪声）时临时降低 hysteresis，\n开关灯时快速跟上。0 = 关闭。");
+	changed |= ResetButton("lightChangeThreshold", p.lightChangeThreshold, d.lightChangeThreshold);
 
 	return changed;
+}
+
+// DDGI 面板是手写的（级联置灰 / 提示），「重置」按钮直接写在上面的 DrawComponent 里
+template<>
+inline bool PropertiesHelper::DrawDataResettable(Scene3DRenderOption::DDGIParams& p)
+{
+	return DrawComponent(p);
 }
 
 template<>

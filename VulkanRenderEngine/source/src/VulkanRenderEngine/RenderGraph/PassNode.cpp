@@ -73,7 +73,7 @@ PassNode& PassNode::Before(PassNode* node)
 	return *this;
 }
 
-PassNode& PassNode::SetRenderPass(std::unique_ptr<RenderPassBase>&& pass)
+PassNode& PassNode::SetRenderPass(std::shared_ptr<RenderPassBase> pass)
 {
 	_render = std::move(pass);
 	return *this;

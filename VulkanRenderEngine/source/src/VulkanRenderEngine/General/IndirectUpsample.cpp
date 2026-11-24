@@ -24,6 +24,7 @@ IndirectUpsample::IndirectUpsample(const std::string& shaderPath)
 		.AddUnifromTexture(5)		// albedo
 		.AddUnifromTexture(6)		// metallic / roughness
 		.AddUnifromTexture(7)		// 位置
+		.AddUnifromTexture(8)		// 低分辨率镜面（拆成两路时）
 		.AddPushConstant(sizeof(UpsamplePushConstant));
 
 	if (config.Validate())
@@ -41,7 +42,8 @@ void IndirectUpsample::Execute(
 	const std::shared_ptr<Texture2D>& outputImage,
 	Remodulation mode,
 	std::shared_ptr<UniformBlock>& curCameraUBO,
-	std::shared_ptr<UniformBlock>& prevCameraUBO
+	std::shared_ptr<UniformBlock>& prevCameraUBO,
+	const std::shared_ptr<Texture2D>& lowResSpecularImage
 )
 {
 	if (!cmd || !lowResImage || lowResImage->IsEmpty() || !outputImage || outputImage->IsEmpty())
@@ -51,6 +53,13 @@ void IndirectUpsample::Execute(
 
 	// 低分辨率结果刚被空域滤波以 storage 写完：强制一道写 → 读的屏障（同为 GENERAL 时绑定不会自动发）
 	lowResImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	const bool split = mode == Remodulation::DiffuseSpecular || mode == Remodulation::DiffuseSpecularAdd;
+	const bool hasSpecular = split && lowResSpecularImage && !lowResSpecularImage->IsEmpty();
+	if (hasSpecular)
+		lowResSpecularImage->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+	// 镜面图缺失（资源没配好）时不调制、只输出第一路，避免读到未绑定的资源
+	if (split && !hasSpecular)
+		mode = Remodulation::None;
 	outputImage->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	ComputeBindingRecord binding;
@@ -62,6 +71,7 @@ void IndirectUpsample::Execute(
 	binding.SetUniformTexture(albedoMap, vk::ImageAspectFlagBits::eColor, 5);
 	binding.SetUniformTexture(metallicRoughnessMap, vk::ImageAspectFlagBits::eColor, 6);
 	binding.SetUniformTexture(positionMap, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetUniformTexture(hasSpecular ? lowResSpecularImage : lowResImage, vk::ImageAspectFlagBits::eColor, 8);
 
 	UpsamplePushConstant pc{ .mode = static_cast<uint32_t>(mode) };
 	_pipeline.SetPushConstants(cmd, &pc, sizeof(pc));

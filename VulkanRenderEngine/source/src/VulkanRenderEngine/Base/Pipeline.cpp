@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <unordered_map>
 
 static std::tuple<std::string, bool> ReadFromFile(const std::string& path)
 {
@@ -249,6 +251,52 @@ shaderc::SpvCompilationResult CompileSourceCodeToSPIRV(const std::string& source
 }
 
 
+// SPIR-V 内存缓存（只在本进程内有效，不落盘）。
+// 键 = shader 阶段 + 展开 include、插入宏之后的最终源码，编译选项固定，所以：
+//   * 同一个 shader 用同样的宏被多个 Pass / 多个实例创建时（TemporalAccumulate、À-trous、上采样、combin 等）只编译一次；
+//   * 改了 shader 或它 include 的文件、换了宏，源码不同，自然重新编译，不会拿到旧结果。
+// 编译失败的结果不缓存（下次还会再报错）。多线程创建管线时同一个键可能被同时编译一次，结果一样，后写的覆盖。
+namespace
+{
+	struct SpirvCache
+	{
+		std::mutex mutex;
+		std::unordered_map<std::string, std::vector<uint32_t>> entries;
+	};
+
+	SpirvCache& GetSpirvCache()
+	{
+		static SpirvCache cache;
+		return cache;
+	}
+
+	std::string MakeSpirvCacheKey(ShaderType type, const std::string& finalSource)
+	{
+		std::string key = std::to_string(static_cast<int>(type));
+		key.push_back('\n');
+		key += finalSource;
+		return key;
+	}
+
+	bool FindCachedSpirv(const std::string& key, std::vector<uint32_t>& code)
+	{
+		auto& cache = GetSpirvCache();
+		std::lock_guard lock(cache.mutex);
+		auto it = cache.entries.find(key);
+		if (it == cache.entries.end())
+			return false;
+		code = it->second;
+		return true;
+	}
+
+	void StoreCachedSpirv(std::string key, const std::vector<uint32_t>& code)
+	{
+		auto& cache = GetSpirvCache();
+		std::lock_guard lock(cache.mutex);
+		cache.entries[std::move(key)] = code;
+	}
+}
+
 static bool ProcessFileToSPIRV(const std::string& path, std::vector<uint32_t>& code, ShaderType type, const std::map<std::string, std::string>& defines = {})
 {
 	auto [sourceCode, readResult] = ReadFromFile(path);
@@ -258,6 +306,10 @@ static bool ProcessFileToSPIRV(const std::string& path, std::vector<uint32_t>& c
 	sourceCode = RemoveComments(sourceCode);
 	sourceCode = PreProcessInclude(sourceCode, path);
 	sourceCode = InsertDefinesAfterVersionAdvanced(sourceCode, defines);
+
+	auto cacheKey = MakeSpirvCacheKey(type, sourceCode);
+	if (FindCachedSpirv(cacheKey, code))
+		return true;
 
 	auto result = CompileSourceCodeToSPIRV(sourceCode, type, path);
 
@@ -270,6 +322,7 @@ static bool ProcessFileToSPIRV(const std::string& path, std::vector<uint32_t>& c
 
 	// 返回 SPIR-V 字节码
 	code.assign(result.cbegin(), result.cend());
+	StoreCachedSpirv(std::move(cacheKey), code);
 	return true;
 };
 
@@ -280,6 +333,9 @@ static bool ProcessCodeToSPIRV(const std::string& source, std::vector<uint32_t>&
 	sourceCode = PreProcessInclude(sourceCode);
 	sourceCode = InsertDefinesAfterVersionAdvanced(sourceCode, defines);
 
+	auto cacheKey = MakeSpirvCacheKey(type, sourceCode);
+	if (FindCachedSpirv(cacheKey, code))
+		return true;
 
 	static const std::string path = "DefaultPath";
 	auto result = CompileSourceCodeToSPIRV(sourceCode, type, path);
@@ -293,6 +349,7 @@ static bool ProcessCodeToSPIRV(const std::string& source, std::vector<uint32_t>&
 
 	// 返回 SPIR-V 字节码
 	code.assign(result.cbegin(), result.cend());
+	StoreCachedSpirv(std::move(cacheKey), code);
 	return true;
 };
 

@@ -48,7 +48,9 @@ namespace RenderGraph
 		PassNode& Before(PassNode* node);
 
 		// 逻辑设定
-		PassNode& SetRenderPass(std::unique_ptr<RenderPassBase>&& pass);
+		// 共享所有权：渲染图按新尺寸重建时同一个 Pass 对象挂到新图上继续用（不重新创建、不重新编译 shader）
+		PassNode& SetRenderPass(std::shared_ptr<RenderPassBase> pass);
+		const std::shared_ptr<RenderPassBase>& GetRenderPass() const { return _render; }
 
 		const std::string& GetName() const;
 
@@ -120,7 +122,7 @@ namespace RenderGraph
 		uint32_t _dependency = 0;
 		std::vector<uint32_t> _nextIndexs;
 
-		std::unique_ptr<RenderPassBase> _render;
+		std::shared_ptr<RenderPassBase> _render;
 
 		int _index = -1;
 		int _batch = -1;

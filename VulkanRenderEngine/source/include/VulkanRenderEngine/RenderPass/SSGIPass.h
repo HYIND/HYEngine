@@ -4,6 +4,8 @@
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
 #include "VulkanRenderEngine/General/TemporalAccumulate.h"
+#include "VulkanRenderEngine/General/IndirectSignalDenoiser.h"
+#include "VulkanRenderEngine/General/IndirectUpsample.h"
 
 class SSGIPass :public RenderPassBase
 {
@@ -13,6 +15,7 @@ public:
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void OnResize(uint32_t width, uint32_t height) override;	// 历史纹理按新尺寸重新分配，下一帧清历史
 
 private:
 	struct FrameRenderData
@@ -35,31 +38,29 @@ private:
 		std::shared_ptr<Texture2D> hzbDepthMap;
 		std::shared_ptr<Texture2D> ssaoTexture;
 
-		std::shared_ptr<Texture2D> originTexture;
 		std::shared_ptr<Texture2D> outPutTexture;
 
-		std::shared_ptr<Texture2D> temporalAccumulateColorTexture;
-		std::shared_ptr<Texture2D> temporalAccumulateMomentTexture;
-		std::shared_ptr<Texture2D> spatialDenoisingTempTexture;
-
-		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
-		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
+		// 路径追踪拆成漫反射 / 镜面两路，各自的追踪结果与降噪资源（全分辨率）；
+		// 降噪后重新调制并相加写到 outPutTexture（IndirectUpsample 同分辨率，DiffuseSpecular）
+		IndirectSignalDenoiser::Textures diffuse;
+		IndirectSignalDenoiser::Textures specular;
 	};
 
 	bool DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
-	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
-	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawDenoise(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawCombine(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 	void SetEnable(bool enable) const;
 
 private:
 	ComputePipeline _ssgiShader;
 
-	mutable bool _firstDrawTemporal;
 	mutable bool _enable;
 
 	std::shared_ptr<UniformBlock> _SSGIParamsUBO;
 
-	TemporalAccumulate _temporalAccumulate;
-	AtrousBilateralFilter _spatialDenoisingFilter;
+	// 漫反射 / 镜面两路各一套时域 + 空域降噪（镜面那一路做虚像重投影）。SetEnable 是 const，要能重置历史
+	mutable IndirectSignalDenoiser _diffuseDenoiser;
+	mutable IndirectSignalDenoiser _specularDenoiser;
+	IndirectUpsample _combine;		// 同分辨率：两路分别乘回反射率再相加
 };

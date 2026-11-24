@@ -20,7 +20,6 @@ struct RayTraceParams
 
 RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath)
 	:
-	_firstDrawTemporal(true),
 	_enable(false)
 {
 
@@ -51,7 +50,8 @@ RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath)
 			.AddUnifromTexture(12)
 			.AddUnifromTexture(13)
 			.AddUnifromTexture(14)
-			.AddUnifromTexture(15);
+			.AddUnifromTexture(15)
+			.AddStorageImage(16);		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -90,14 +90,19 @@ void RayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 
 	data.gDepthStencil = ctx.GetFrameLocal(0);
 
-	data.originTexture = ctx.GetTemp(0);
-	data.temporalAccumulateColorTexture = ctx.GetTemp(1);
-	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
-	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
-	data.denoisedTexture = ctx.GetTemp(4);
-
-	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
-	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
+	// Temp 0 ~ 4：漫反射（追踪 / 时域颜色 / 时域矩 / 空域乒乓 / 空域结果），5 ~ 9：镜面，顺序相同
+	// Persistent 0 ~ 1：漫反射历史（颜色 / 矩），2 ~ 3：镜面历史
+	auto bindSignal = [&](IndirectSignalDenoiser::Textures& tex, uint32_t tempBase, uint32_t persistentBase) {
+		tex.origin = ctx.GetTemp(tempBase + 0);
+		tex.temporalColor = ctx.GetTemp(tempBase + 1);
+		tex.temporalMoment = ctx.GetTemp(tempBase + 2);
+		tex.spatialTemp = ctx.GetTemp(tempBase + 3);
+		tex.output = ctx.GetTemp(tempBase + 4);
+		tex.historyColor = ctx.GetPersitent(persistentBase + 0);
+		tex.historyMoment = ctx.GetPersitent(persistentBase + 1);
+	};
+	bindSignal(data.diffuse, 0, 0);
+	bindSignal(data.specular, 5, 2);
 
 	data.outPutTexture = ctx.GetOutput(0);
 
@@ -105,16 +110,7 @@ void RayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 
 	if (!DrawRayTraceGI(cmd, data, registry, state)) return;
 
-	if (!DrawTemporalAccumulate(cmd, data, state)) return;
-
-	if (data.temporalAccumulateColorTexture && data.temporalAccumulateHistoryColorTexture)
-		Texture2D::CopyTextureAsync(cmd, data.temporalAccumulateColorTexture, data.temporalAccumulateHistoryColorTexture);
-	if (data.temporalAccumulateMomentTexture && data.temporalAccumulateHistoryMomentTexture)
-		Texture2D::CopyTextureAsync(cmd, data.temporalAccumulateMomentTexture, data.temporalAccumulateHistoryMomentTexture);
-	if (cmd->IsRecording())
-		cmd->SubmitToQueue();
-
-	if (!DrawSpatialDenoising(cmd, data, state)) return;
+	if (!DrawDenoise(cmd, data, state)) return;
 
 	if (!DrawUpsample(cmd, data, state)) return;
 
@@ -151,9 +147,10 @@ void RayTraceGIPass::SetGeneralBuffer(std::shared_ptr<RayTraceGeneralBuffer> buf
 
 bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	auto& target = data.originTexture;
+	auto& target = data.diffuse.origin;
+	auto& specularTarget = data.specular.origin;
 
-	if (!target || target->IsEmpty())
+	if (!target || target->IsEmpty() || !specularTarget || specularTarget->IsEmpty())
 		return false;
 
 	auto size = target->GetSize();
@@ -167,6 +164,8 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 		.setBaseMipLevel(0)
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+	specularTarget->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+	cmd->clearColorImage(specularTarget->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 
 	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
@@ -208,6 +207,7 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 	binding.SetUniformBlock(paramsUBO, 6);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetStorageImage(specularTarget, vk::ImageAspectFlagBits::eColor, 16);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);
 	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 10);
@@ -227,131 +227,74 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 	return true;
 }
 
-bool RayTraceGIPass::DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
+bool RayTraceGIPass::DrawDenoise(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
-	auto& source = data.originTexture;
-	auto& target = data.temporalAccumulateColorTexture;
-	auto& moment = data.temporalAccumulateMomentTexture;
+	const auto& giParams = state.option.rayTraceGIParams;
 
-	if (!source
-		|| source->IsEmpty()
-		|| !target
-		|| target->IsEmpty()
-		|| !moment
-		|| moment->IsEmpty()
-		)
-		return false;
+	IndirectSignalDenoiser::GBuffer gbuffer{
+		.position = data.gPosition,
+		.normal = data.gNormal,
+		.depth = data.gDepthStencil,
+		.motionVector = data.gMotionVector,
+		.prevPosition = data.gPrevPosition,
+		.prevNormal = data.gPrevNormal,
+		.prevDepth = data.gPrevDepthStencil,
+		.metallicRoughness = data.gMetallicRoughness
+	};
 
-	if (_firstDrawTemporal)
-	{
-		vk::ClearColorValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-		vk::ClearColorValue clearMoments = { 0.0f, 0.0f, 0.0f, 0.0f };
-		vk::ImageSubresourceRange range;
-		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1)
-			.setBaseMipLevel(0)
-			.setLevelCount(1);
-		cmd->clearColorImage(data.temporalAccumulateHistoryColorTexture->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
-		cmd->clearColorImage(data.temporalAccumulateHistoryMomentTexture->GetImage(), vk::ImageLayout::eGeneral, clearMoments, range);
-		_firstDrawTemporal = false;
-	}
-
-	TemporalAccumulate::Params params{
-		.maxAccumulateCount = state.option.rayTraceGIParams.maxAccumulateCount,
-		.depthThreshold = state.option.rayTraceGIParams.depthThreshold,
-		.positiondistThreshold = state.option.rayTraceGIParams.positiondistThreshold,
-		.normalThreshold = state.option.rayTraceGIParams.normalThreshold,
-		.motionWeightScale = state.option.rayTraceGIParams.motionWeightScale,
-		.varianceClipGamma = state.option.rayTraceGIParams.varianceClipGamma,
+	TemporalAccumulate::Params diffuseParams{
+		.maxAccumulateCount = giParams.maxAccumulateCount,
+		.depthThreshold = giParams.depthThreshold,
+		.positiondistThreshold = giParams.positiondistThreshold,
+		.normalThreshold = giParams.normalThreshold,
+		.motionWeightScale = giParams.motionWeightScale,
+		.varianceClipGamma = giParams.varianceClipGamma,
+		// 降噪调试看漫反射那一路（GI 的主体）
 		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceGI)
 	};
 
-	_temporalAccumulate.Execute(
-		cmd,
-		source,
-		data.gPosition,
-		data.gNormal,
-		data.gDepthStencil,
-		data.gMotionVector,
-		data.gPrevPosition,
-		data.gPrevNormal,
-		data.gPrevDepthStencil,
-		target,
-		moment,
-		data.temporalAccumulateHistoryColorTexture,
-		data.temporalAccumulateHistoryMomentTexture,
-		params,
-		state.camera.curUBO,
-		state.camera.prevUBO
-	);
+	// 镜面那一路：alpha 是第一次反弹的命中距离，时域累积额外做虚像重投影
+	TemporalAccumulate::Params specularParams = diffuseParams;
+	specularParams.debugMode = 0;
+	specularParams.signalType = static_cast<uint32_t>(TemporalAccumulate::SignalType::Specular);
 
-	cmd->SubmitToQueue();
-
-	return true;
-}
-
-bool RayTraceGIPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
-{
-	auto& source = data.temporalAccumulateColorTexture;
-	auto& target = data.denoisedTexture;
-	auto& moment = data.temporalAccumulateMomentTexture;
-
-	if (!source || source->IsEmpty())
-		return false;
-
-	if (!target || target->IsEmpty())
-		return false;
-
-	AtrousBilateralFilter::Params params{
-		.normalFactor = state.option.rayTraceGIParams.normalFactor,
-		.depthFactor = state.option.rayTraceGIParams.depthFactor,
-		.luminanceFactor = state.option.rayTraceGIParams.luminanceFactor
+	AtrousBilateralFilter::Params filterParams{
+		.normalFactor = giParams.normalFactor,
+		.depthFactor = giParams.depthFactor,
+		.luminanceFactor = giParams.luminanceFactor
 	};
 
-	_spatialDenoisingFilter.Execute(
-		cmd,
-		source,
-		data.gNormal,
-		data.gDepthStencil,
-		moment,
-		target,
-		data.spatialDenoisingTempTexture,
-		params,
-		state.camera.curUBO,
-		state.camera.prevUBO,
-		state.option.rayTraceGIParams.filterCount
-	);
-
-	cmd->SubmitToQueue();
-
-	return true;
+	if (!_diffuseDenoiser.Execute(cmd, gbuffer, data.diffuse, diffuseParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO))
+		return false;
+	return _specularDenoiser.Execute(cmd, gbuffer, data.specular, specularParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO);
 }
-
 
 bool RayTraceGIPass::DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)
 {
-	// 低分辨率降噪结果 → 全分辨率输出：联合双边上采样（按平面距离 / 法线拒绝跨边缘的点）。
-	// 软件光追没有去调制，只做边缘感知的上采样
-	if (!data.denoisedTexture || data.denoisedTexture->IsEmpty() || !data.outPutTexture || data.outPutTexture->IsEmpty())
+	// 低分辨率降噪结果（漫反射 + 镜面两路）→ 全分辨率输出：联合双边上采样（按平面距离 / 法线拒绝跨边缘的点），两路用同一套权重。
+	// 软件光追没有去调制（RayTrace/RayTraceGI.comp），两路直接相加
+	const auto& diffuse = data.diffuse.output;
+	const auto& specular = data.specular.output;
+	if (!diffuse || diffuse->IsEmpty() || !specular || specular->IsEmpty() || !data.outPutTexture || data.outPutTexture->IsEmpty())
 		return false;
 
-	// 降噪调试：上采样时域累积的调试热力图代替降噪结果（不重新调制），最终合成时替换场景颜色显示
-	auto debugTexture = _temporalAccumulate.GetDebugTexture();
+	// 降噪调试：上采样漫反射那一路的调试热力图代替降噪结果（不重新调制），最终合成时替换场景颜色显示
+	auto debugTexture = _diffuseDenoiser.GetDebugTexture();
 	const bool debugView = debugTexture != nullptr;
 
 	_upsample.Execute(
 		cmd,
-		debugView ? debugTexture : data.denoisedTexture,
+		debugView ? debugTexture : diffuse,
 		data.gPosition,
 		data.gNormal,
 		data.gDepthStencil,
 		data.gAlbedoOpacity,
 		data.gMetallicRoughness,
 		data.outPutTexture,
-		debugView ? IndirectUpsample::Remodulation::None : IndirectUpsample::Remodulation::None,
+		debugView ? IndirectUpsample::Remodulation::None : IndirectUpsample::Remodulation::DiffuseSpecularAdd,
 		state.camera.curUBO,
-		state.camera.prevUBO
+		state.camera.prevUBO,
+		specular
 	);
 
 	cmd->SubmitToQueue();
@@ -370,7 +313,10 @@ void RayTraceGIPass::SetEnable(bool enable) const
 		return;
 	_enable = enable;
 	if (_enable)
-		_firstDrawTemporal = true;
+	{
+		_diffuseDenoiser.ResetHistory();
+		_specularDenoiser.ResetHistory();
+	}
 }
 
 bool RayTraceGIPass::BindGeneralData(ComputeBindingRecord& binding)
@@ -390,4 +336,11 @@ bool RayTraceGIPass::BindGeneralData(ComputeBindingRecord& binding)
 		&& bindSSBO(BindingPoint{ .binding = 2,.set = 0 }, _buffers->GetMeshmatData())
 		&& bindSSBO(BindingPoint{ .binding = 3,.set = 0 }, _buffers->GetWorldBVHNode())
 		&& bindSSBO(BindingPoint{ .binding = 4,.set = 0 }, _buffers->GetMeshBVHNode());
+}
+
+void RayTraceGIPass::OnResize(uint32_t width, uint32_t height)
+{
+	// 渲染图按新尺寸重建，历史纹理是新分配的（内容未定义）：下一帧先清历史
+	_diffuseDenoiser.ResetHistory();
+	_specularDenoiser.ResetHistory();
 }

@@ -4,6 +4,7 @@
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/General/AtrousBilateralFilter.h"
 #include "VulkanRenderEngine/General/TemporalAccumulate.h"
+#include "VulkanRenderEngine/General/IndirectUpsample.h"
 
 class DDGISharedState;
 
@@ -15,6 +16,7 @@ public:
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void OnResize(uint32_t width, uint32_t height) override;	// 历史纹理按新尺寸重新分配，下一帧清历史
 
 	void SetSharedState(std::shared_ptr<DDGISharedState> sharedState);	// 命中点采样 DDGI 用
 
@@ -44,6 +46,7 @@ private:
 		std::shared_ptr<Texture2D> temporalAccumulateColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateMomentTexture;
 		std::shared_ptr<Texture2D> spatialDenoisingTempTexture;
+		std::shared_ptr<Texture2D> denoisedTexture;			// 空域滤波结果（已去调制），乘回镜面反射率后写到 outPutTexture
 
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;
@@ -56,6 +59,7 @@ private:
 	bool DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	bool DrawTemporalAccumulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 	bool DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
+	bool DrawRemodulate(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state);
 
 	void SetEnable(bool enable) const;
 
@@ -70,4 +74,5 @@ private:
 
 	TemporalAccumulate _temporalAccumulate;
 	AtrousBilateralFilter _spatialDenoisingFilter;
+	IndirectUpsample _remodulate;		// 同分辨率：乘回镜面反射率
 };

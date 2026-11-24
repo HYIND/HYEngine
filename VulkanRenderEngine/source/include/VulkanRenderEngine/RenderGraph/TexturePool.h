@@ -23,8 +23,14 @@ namespace RenderGraph
 
 		void CleanupIdleTextures();
 
-	private:
+		// 把一张在用的纹理整个移出池子（不进空闲队列），用于转交给别的池子
+		TextureSlot TakeTexture(const TextureHandle& handle);
+		// 收下一张已经创建好的纹理（另一个池子 TakeTexture 出来的），按 desc 登记
+		TextureHandle AddTexture(const TextureDesc& desc, TextureSlot slot);
+
 		TexKey GenerateKey(const TextureDesc& desc) const;
+
+	private:
 		TextureHandle FetchIdleTexture(const TexKey& key);
 
 	private:

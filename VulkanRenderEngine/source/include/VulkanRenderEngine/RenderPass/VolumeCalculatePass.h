@@ -16,6 +16,7 @@ public:
 	virtual ~VolumeCalculatePass() = default;
 	virtual bool ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state);
 	virtual void FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state);
+	virtual void OnResize(uint32_t width, uint32_t height) override;	// 历史纹理按新尺寸重新分配，下一帧清历史
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 

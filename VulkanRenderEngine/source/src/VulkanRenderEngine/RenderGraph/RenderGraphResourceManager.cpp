@@ -85,6 +85,39 @@ void ResourceManager::ReleaseTexture(const RenderGraphResource& res, const std::
 }
 
 
+bool ResourceManager::AdoptTexture(ResourceManager& other, const RenderGraphResource& res)
+{
+	if (&other == this || res.type != ResourceType::Texture)
+		return false;
+	auto desc = std::get_if<TextureDesc>(&res.desc);
+	if (!desc)
+		return false;
+
+	{
+		LockGuard guard(_texturesMutex);
+		if (_textures.find(res.name) != _textures.end())
+			return false;
+	}
+
+	TextureSlot slot;
+	{
+		LockGuard guard(other._texturesMutex);
+		auto it = other._textures.find(res.name);
+		if (it == other._textures.end())
+			return false;
+		if (other._texPool.GenerateKey(it->second.GetDesc()) != _texPool.GenerateKey(*desc))
+			return false;
+		slot = other._texPool.TakeTexture(it->second);
+		other._textures.erase(it);
+	}
+	if (!slot.IsValid())
+		return false;
+
+	LockGuard guard(_texturesMutex);
+	_textures[res.name] = _texPool.AddTexture(*desc, std::move(slot));
+	return true;
+}
+
 void ResourceManager::CleanupIdleResource()
 {
 	LockGuard guard(_texturesMutex);

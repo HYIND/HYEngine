@@ -367,7 +367,9 @@ bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKW
 		.normalThreshold = state.option.rayTraceReflectParams.normalThreshold,
 		.motionWeightScale = state.option.rayTraceReflectParams.motionWeightScale,
 		.varianceClipGamma = state.option.rayTraceReflectParams.varianceClipGamma,
-		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect)
+		.debugMode = state.option.denoiseDebug.ModeFor(Scene3DRenderOption::DenoiseDebugTarget::RayTraceReflect),
+		// 镜面信号：光追端把第一次反弹的命中距离写在 alpha 里，时域累积额外做虚像重投影（反射内容移动时不糊）
+		.signalType = static_cast<uint32_t>(TemporalAccumulate::SignalType::Specular)
 	};
 
 	_temporalAccumulate.Execute(
@@ -386,7 +388,8 @@ bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKW
 		data.temporalAccumulateHistoryMomentTexture,
 		params,
 		state.camera.curUBO,
-		state.camera.prevUBO
+		state.camera.prevUBO,
+		data.gMetallicRoughness
 	);
 
 	cmd->SubmitToQueue();
@@ -492,4 +495,10 @@ bool RTCoreRayTraceReflectPass::BindAccelerationStructure(RayTracingBindingRecor
 	binding.SetStorageBlock(skinnedVertexBlock ? skinnedVertexBlock : IndirectDrawManager::Instance()->GetVertexBlock(), 4);
 
 	return true;
+}
+
+void RTCoreRayTraceReflectPass::OnResize(uint32_t width, uint32_t height)
+{
+	// 渲染图按新尺寸重建，历史纹理是新分配的（内容未定义）：下一帧先清历史
+	_firstDrawTemporal = true;
 }

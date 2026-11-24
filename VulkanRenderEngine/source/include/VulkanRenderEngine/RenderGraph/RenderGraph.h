@@ -71,6 +71,11 @@ namespace RenderGraph
 
 		void CleanGraphIdleResource();
 
+		// 按新尺寸重建渲染图后调用：本图各 Pass 声明的 Persistent / PersistentOption 资源，
+		// 旧图里有同名且描述一致的（尺寸无关的资源，如 DDGI 图集）连同内容接手过来；尺寸变了的不接手，用新的。
+		// 返回接手的数量
+		uint32_t InheritPersistentResources(Graph& old);
+
 		// 编译后的结构（节点名 / 依赖 / batch），给渲染性能面板画节点图
 		std::shared_ptr<const RenderGraphProfileLayout> GetProfileLayout() const { return _profileLayout; }
 

@@ -20,6 +20,10 @@ namespace RenderGraph
 		std::shared_ptr<Texture3D> GetVolume(const RenderGraphResource& res, const std::string& prefix);
 		void ReleaseTexture(const RenderGraphResource& res, const std::string& prefix);
 
+		// 从 other 接手一张没有前缀的资源（Persistent）：other 里有同名、且描述（尺寸 / 格式 / 采样）与 res 一致的纹理时，
+		// 连同内容转到这里，返回 true；没有、描述不同或这里已经有同名资源时什么都不做
+		bool AdoptTexture(ResourceManager& other, const RenderGraphResource& res);
+
 		void CleanupIdleResource();
 	private:
 		TexturePool _texPool;
