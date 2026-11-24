@@ -95,10 +95,7 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 	data.atlasShadowMap = ctx.GetInput(4);
 	data.ssaoMap = ctx.GetInput(5);
 	data.gMotionVector = ctx.GetInput(6);
-	data.gPrevPosition = ctx.GetInput(7);
-	data.gPrevNormal = ctx.GetInput(8);
-	data.gPrevDepthStencil = ctx.GetInput(9);
-	data.hzbDepthMap = ctx.GetInput(10);
+	data.hzbDepthMap = ctx.GetInput(7);
 
 	// DDGI 图集（可选持久资源：DDGI 从没执行过时为空；是否使用由下面的 ddgiEnable 决定）
 	data.ddgiIrradianceAtlas = ctx.GetOptionalPersitent(0);
@@ -115,6 +112,9 @@ void SSRPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::Fra
 
 	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
 	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
+	data.gPrevPosition = ctx.GetPersitent(2);
+	data.gPrevNormal = ctx.GetPersitent(3);
+	data.gPrevDepthStencil = ctx.GetPersitent(4);
 
 	data.outPutTexture = ctx.GetOutput(0);
 

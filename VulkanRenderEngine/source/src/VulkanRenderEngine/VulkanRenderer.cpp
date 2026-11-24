@@ -891,6 +891,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 		auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
 
+		auto gBufferHistoryCopyPass = std::make_unique<GBufferHistoryCopyPass>();
+
 		auto passes = std::make_unique<ScenePasses>();
 		passes->hzbMaxLevel = hzbPass->GetMaxLevel();
 		passes->atmospherePreCalculate = std::move(atmospherePreCalculatePass);
@@ -920,6 +922,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		passes->transparent = std::move(transparentPass);
 		passes->effect = std::move(effectPass);
 		passes->autoExposure = std::move(autoExposurePass);
+		passes->gBufferHistoryCopy = std::move(gBufferHistoryCopyPass);
 		_scenePasses = std::move(passes);
 	}
 	auto& P = *_scenePasses;
@@ -977,10 +980,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto indirectPathTracing_Output = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "indirectPathTracing_Output");
 	auto atlasShadowMap = resbuilder.CreateVariableTexture(vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "atlasShadow");
 
-	auto gPrevPosition = resbuilder.CreateTexture(gPosition, "gPrevPosition");
-	auto gPrevNormal = resbuilder.CreateTexture(gNormal, "gPrevNormal");
-	auto gPrevDepthStencil = resbuilder.CreateTexture(gDepthStencil, "gPrevDepthStencil");
-
+	// 上一帧的 G-Buffer（持久资源）：RTR / RTGI / SSR / SSGI / VolumeLut 声明成 Persistent 直接读（追加在各自 Persistent 列表末尾），
+	// 都读完之后由 gBufferHistoryCopyNode 把本帧的结果拷进来，给下一帧用
 	auto gPositionHistory = resbuilder.CreateTexture(gPosition, "gPositionHistory");
 	auto gNormalHistory = resbuilder.CreateTexture(gNormal, "gNormalHistory");
 	auto gDepthStencilHistory = resbuilder.CreateTexture(gDepthStencil, "gDepthStencilHistory");
@@ -1021,6 +1022,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 	// 体积：Lut 只依赖几何 / SSAO / 阴影 / 大气预计算，和光照那一段并行；Combine 在不透明完成后合成
 	auto volumeLutNode = _sceneRenderGraph->AddNode("volumeLutNode");
 	auto volumeCombineNode = _sceneRenderGraph->AddNode("volumeCombineNode");
+	// G-Buffer 历史：读历史的节点都执行完后，把本帧的 gPosition / gNormal / gDepthStencil 拷进历史
+	auto gBufferHistoryCopyNode = _sceneRenderGraph->AddNode("gBufferHistoryCopyNode");
 	// 后处理
 	auto postProcessFence = _sceneRenderGraph->AddFence("postProcessFence");
 	postProcessFence->After(transprantFence);
@@ -1067,15 +1070,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gAlbedoOpacity ,graphicsWriteLayout },
 			ResourceData{ gMetallicRoughness ,graphicsWriteLayout },
 			ResourceData{ gMotionVector ,graphicsWriteLayout },
-			ResourceData{ gEmission ,graphicsWriteLayout },
-			ResourceData{ gPrevPosition ,transferWriteLayout },
-			ResourceData{ gPrevNormal ,transferWriteLayout },
-			ResourceData{ gPrevDepthStencil ,transferWriteLayout }
-		)
-		.Persistent(
-			ResourceData{ gPositionHistory ,transferReadLayout },
-			ResourceData{ gNormalHistory ,transferReadLayout },
-			ResourceData{ gDepthStencilHistory ,transferReadLayout }
+			ResourceData{ gEmission ,graphicsWriteLayout }
 		)
 		.After(hzbNode, preCalculateNode)
 		.Before(lightingNode)
@@ -1118,8 +1113,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity, computeReadLayout },
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut,computeReadLayout },
-			ResourceData{ gMotionVector, computeReadLayout },
-			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
+			ResourceData{ gMotionVector, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ rtLowRes("rayTraceReflect_Temp1"), computeWriteLayout },
@@ -1138,7 +1132,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Output(ResourceData{ rayTraceReflect_Output, computeWriteLayout })
 		.Persistent(
 			ResourceData{ rtLowRes("rayTraceReflect_historyColorTexture"), computeReadLayout },
-			ResourceData{ rtLowRes("rayTraceReflect_historyMomentTexture"), computeReadLayout }
+			ResourceData{ rtLowRes("rayTraceReflect_historyMomentTexture"), computeReadLayout },
+			// 上一帧的 G-Buffer（Persistent 2 ~ 4）
+			ResourceData{ gPositionHistory, computeReadLayout },
+			ResourceData{ gNormalHistory, computeReadLayout },
+			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode, ddgiBlendNode)
 		.Before(opaqueFence)
@@ -1148,8 +1146,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Input(
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
-			ResourceData{ gMotionVector, computeReadLayout },
-			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
+			ResourceData{ gMotionVector, computeReadLayout }
 		)
 		.Temp(
 			ResourceData{ rtLowRes("rayTraceGI_Temp1"), computeWriteLayout },
@@ -1170,7 +1167,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ rtLowRes("rayTraceGI_historyColorTexture"), computeReadLayout },
 			ResourceData{ rtLowRes("rayTraceGI_historyMomentTexture"), computeReadLayout },
 			ResourceData{ rtLowRes("rayTraceGI_specHistoryColorTexture"), computeReadLayout },
-			ResourceData{ rtLowRes("rayTraceGI_specHistoryMomentTexture"), computeReadLayout }
+			ResourceData{ rtLowRes("rayTraceGI_specHistoryMomentTexture"), computeReadLayout },
+			// 上一帧的 G-Buffer（Persistent 4 ~ 6）
+			ResourceData{ gPositionHistory, computeReadLayout },
+			ResourceData{ gNormalHistory, computeReadLayout },
+			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode)
 		.Before(opaqueFence)
@@ -1181,7 +1182,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
 			ResourceData{ gMotionVector, computeReadLayout },
-			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
 			ResourceData{ hzbMinDepthMap, computeReadLayout }
 		)
 		// 命中点的漫反射间接光采样 DDGI（可选持久资源：DDGI 从没执行过时为空，不会因此分配）
@@ -1201,7 +1201,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 		.Output(ResourceData{ ssr_Output, computeWriteLayout })
 		.Persistent(
 			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyColorTexture"), computeReadLayout },
-			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyMomentTexture"), computeReadLayout }
+			ResourceData{ resbuilder.CreateTexture(ssr_Output, "ssrPass_historyMomentTexture"), computeReadLayout },
+			// 上一帧的 G-Buffer（Persistent 2 ~ 4）
+			ResourceData{ gPositionHistory, computeReadLayout },
+			ResourceData{ gNormalHistory, computeReadLayout },
+			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode, ddgiBlendNode)
 		.Before(opaqueFence)
@@ -1212,7 +1216,6 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout }, ResourceData{ gAlbedoOpacity,computeReadLayout },
 			ResourceData{ gMetallicRoughness, computeReadLayout }, ResourceData{ atlasShadowMap, computeReadLayout }, ResourceData{ ssaoOutPut, computeReadLayout },
 			ResourceData{ gMotionVector, computeReadLayout },
-			ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout },
 			ResourceData{ hzbMinDepthMap, computeReadLayout },
 			ResourceData{ ssaoOutPut, computeReadLayout }
 		)
@@ -1235,7 +1238,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyColorTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_historyMomentTexture"), computeReadLayout },
 			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_specHistoryColorTexture"), computeReadLayout },
-			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_specHistoryMomentTexture"), computeReadLayout }
+			ResourceData{ resbuilder.CreateTexture(ssgi_Output, "ssgiPass_specHistoryMomentTexture"), computeReadLayout },
+			// 上一帧的 G-Buffer（Persistent 4 ~ 6）
+			ResourceData{ gPositionHistory, computeReadLayout },
+			ResourceData{ gNormalHistory, computeReadLayout },
+			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
 		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode)
 		.Before(opaqueFence)
@@ -1358,8 +1365,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 			.Input(
 				ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout },
 				ResourceData{ atlasShadowMap, computeReadLayout },
-				ResourceData{ gMotionVector, computeReadLayout },
-				ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
+				ResourceData{ gMotionVector, computeReadLayout }
 			)
 			.Output(
 				ResourceData{ volumeScatterColor, computeWriteLayout },
@@ -1368,7 +1374,11 @@ void VulkanRenderer::InitSceneRenderGraph()
 			)
 			.Temp(ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_TAAScatterColorTexture"), computeReadLayout })
 			.Persistent(
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_HistoryScatterColorTexture"), computeReadLayout }
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_HistoryScatterColorTexture"), computeReadLayout },
+				// 上一帧的 G-Buffer（Persistent 1 ~ 3）
+				ResourceData{ gPositionHistory, computeReadLayout },
+				ResourceData{ gNormalHistory, computeReadLayout },
+				ResourceData{ gDepthStencilHistory, computeReadLayout }
 			)
 			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
 			.After(atmospherePreCalculateNode, lightingShadowDepthNode, geometryNode)
@@ -1386,6 +1396,17 @@ void VulkanRenderer::InitSceneRenderGraph()
 			.After(opaqueFence, volumeLutNode)
 			.Before(transprantFence);
 	}
+
+	// 把本帧的 gPosition / gNormal / gDepthStencil 拷进历史
+	gBufferHistoryCopyNode->SetRenderPass(P.gBufferHistoryCopy)
+		.Input(ResourceData{ gPosition, transferReadLayout }, ResourceData{ gNormal, transferReadLayout })
+		.Persistent(
+			ResourceData{ gPositionHistory, transferWriteLayout },
+			ResourceData{ gNormalHistory, transferWriteLayout },
+			ResourceData{ gDepthStencilHistory, transferWriteLayout }
+		)
+		.After(opaqueFence, volumeLutNode)
+		.FrameLocal(ResourceData{ gDepthStencil, transferReadLayout });
 
 	transparentNode->SetRenderPass(P.transparent)
 		.Input(ResourceData{ atlasShadowMap, graphicsReadLayout })

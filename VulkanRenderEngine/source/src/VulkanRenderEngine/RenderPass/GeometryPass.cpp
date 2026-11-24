@@ -139,14 +139,6 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	auto gMotionVector = ctx.GetOutput(4);
 	auto gEmission = ctx.GetOutput(5);
 
-	auto gPrevPosition = ctx.GetOutput(6);
-	auto gPrevNormal = ctx.GetOutput(7);
-	auto gPrevDepthStencil = ctx.GetOutput(8);
-
-	auto gPositionHistory = ctx.GetPersitent(0);
-	auto gNormalHistory = ctx.GetPersitent(1);
-	auto gDepthStencilHistory = ctx.GetPersitent(2);
-
 	auto cmd = cmdCtx.GetCmd();
 
 	gPosition->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
@@ -167,10 +159,28 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 
 	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
 
-	Texture2D::CopyTextureAsync(cmd, gPositionHistory, gPrevPosition);
-	Texture2D::CopyTextureAsync(cmd, gNormalHistory, gPrevNormal);
-	Texture2D::CopyTextureAsync(cmd, gDepthStencilHistory, gPrevDepthStencil);
+	if (cmd->IsRecording())
+		cmd->SubmitToQueue();
+}
 
+void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
+{}
+
+void GBufferHistoryCopyPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
+{
+	auto gPosition = ctx.GetInput(0);
+	auto gNormal = ctx.GetInput(1);
+	auto gDepthStencil = ctx.GetFrameLocal(0);
+
+	auto gPositionHistory = ctx.GetPersitent(0);
+	auto gNormalHistory = ctx.GetPersitent(1);
+	auto gDepthStencilHistory = ctx.GetPersitent(2);
+
+	auto cmd = cmdCtx.GetCmd();
+	if (!cmd)
+		return;
+
+	// CopyTextureAsync 自己把源 / 目标切到 TransferSrc / TransferDst；下一帧读历史的 Pass 按各自声明的布局再切回去
 	Texture2D::CopyTextureAsync(cmd, gPosition, gPositionHistory);
 	Texture2D::CopyTextureAsync(cmd, gNormal, gNormalHistory);
 	Texture2D::CopyTextureAsync(cmd, gDepthStencil, gDepthStencilHistory);
@@ -178,9 +188,6 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
 }
-
-void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
-{}
 
 bool GeometryPass::SetupStaticBufferData(
 	const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,

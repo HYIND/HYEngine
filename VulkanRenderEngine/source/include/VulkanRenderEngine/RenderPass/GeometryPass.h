@@ -57,3 +57,15 @@ private:
 	// 没有上一帧顶点缓冲时占位用的假缓冲（重投影关闭时 shader 不会读它）
 	std::shared_ptr<VertexBufferBlock> _dummySkinnedVertexBuffer;
 };
+
+// G-Buffer 历史的收尾拷贝：把本帧的 gPosition / gNormal / gDepthStencil 拷进三张历史纹理（Persistent），给下一帧的时域累积用。
+// 读历史的 Pass（RTR / RTGI / SSR / SSGI / VolumeLut）直接把历史纹理声明成 Persistent，在本 Pass 之前读到的就是上一帧的内容。
+// 渲染图不按 Persistent 推导依赖，执行顺序由 VulkanRenderer 里的节点声明手动指定。
+//   Input 0 ~ 1：gPosition / gNormal；FrameLocal 0：gDepthStencil；Persistent 0 ~ 2：对应的三张历史
+class GBufferHistoryCopyPass :public RenderPassBase
+{
+public:
+	GBufferHistoryCopyPass() = default;
+
+	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state) override;
+};

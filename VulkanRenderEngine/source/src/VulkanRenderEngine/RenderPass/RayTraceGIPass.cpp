@@ -84,14 +84,14 @@ void RayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGra
 	data.atlasShadowMap = ctx.GetInput(4);
 	data.ssaoMap = ctx.GetInput(5);
 	data.gMotionVector = ctx.GetInput(6);
-	data.gPrevPosition = ctx.GetInput(7);
-	data.gPrevNormal = ctx.GetInput(8);
-	data.gPrevDepthStencil = ctx.GetInput(9);
+	data.gPrevPosition = ctx.GetPersitent(4);
+	data.gPrevNormal = ctx.GetPersitent(5);
+	data.gPrevDepthStencil = ctx.GetPersitent(6);
 
 	data.gDepthStencil = ctx.GetFrameLocal(0);
 
 	// Temp 0 ~ 4：漫反射（追踪 / 时域颜色 / 时域矩 / 空域乒乓 / 空域结果），5 ~ 9：镜面，顺序相同
-	// Persistent 0 ~ 1：漫反射历史（颜色 / 矩），2 ~ 3：镜面历史
+	// Persistent 0 ~ 1：漫反射历史（颜色 / 矩），2 ~ 3：镜面历史，4 ~ 6：上一帧 G-Buffer
 	auto bindSignal = [&](IndirectSignalDenoiser::Textures& tex, uint32_t tempBase, uint32_t persistentBase) {
 		tex.origin = ctx.GetTemp(tempBase + 0);
 		tex.temporalColor = ctx.GetTemp(tempBase + 1);

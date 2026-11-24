@@ -256,9 +256,6 @@ void VolumeLutPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGrap
 	data.gNormal = ctx.GetInput(1);
 	data.atlasShadowMap = ctx.GetInput(2);
 	data.gMotionVector = ctx.GetInput(3);
-	data.gPrevPosition = ctx.GetInput(4);
-	data.gPrevNormal = ctx.GetInput(5);
-	data.gPrevDepthStencil = ctx.GetInput(6);
 	data.gDepthStencil = ctx.GetFrameLocal(0);
 
 	data.scatterColor = ctx.GetOutput(0);
@@ -267,6 +264,9 @@ void VolumeLutPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGrap
 
 	data.taaScatterColor = ctx.GetTemp(0);
 	data.taaHistoryScatterColor = ctx.GetPersitent(0);
+	data.gPrevPosition = ctx.GetPersitent(1);
+	data.gPrevNormal = ctx.GetPersitent(2);
+	data.gPrevDepthStencil = ctx.GetPersitent(3);
 
 	auto cmd = cmdCtx.GetCmd();
 
