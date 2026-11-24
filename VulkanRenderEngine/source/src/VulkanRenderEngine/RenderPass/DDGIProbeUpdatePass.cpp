@@ -169,9 +169,11 @@ void DDGIProbeUpdatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 
 	_rayTraceShader.Bind(cmd, binding);
 	auto regionData = _rayTraceShader.GetSBTData();
+	// 一维 launch：x = 光线槽位（warp 一定是连续 32 个槽位，配合 DDGIUniforms.comp 的槽位排列，方向紧凑），
+	// z = 更新列表里的第几个探针。rgen 按 (槽位 % RayGrid, 槽位 / RayGrid) 写 rayData，布局不变
 	cmd->traceRaysKHR(
 		regionData.raygenRegion, regionData.missRegion, regionData.hitRegion, regionData.callableRegion,
-		DDGIAtlasLayout::RayGridSize, DDGIAtlasLayout::RayGridSize, frame.updateCount
+		DDGIAtlasLayout::RaysPerProbe, 1, frame.updateCount
 	);
 
 	cmd->SubmitToQueue();

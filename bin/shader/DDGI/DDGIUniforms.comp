@@ -138,9 +138,42 @@ ivec3 ddgiWorldCell(uint v, ivec3 c)
     return ddgiVolumes[v].originCell.xyz + c;
 }
 
-vec3 ddgiProbeRayDirection(uint rayIndex, mat3 rotation)
+// 探针光线的「槽位 → 球面 Fibonacci 下标」排列（只换哪个线程追哪个方向，256 个方向本身不变）。
+// 原来槽位 i 直接追第 i 个 Fibonacci 方向：相邻下标经度差 137.5°（黄金角），连续 32 条光线是绕球一整圈的纬度带，
+// 一个 warp 里方向最大夹角平均 ~129°，BVH 遍历、命中材质、阴影光线全都发散。
+// 重排后连续 32 个槽位是球面上一块紧凑的区域（离线按主轴递归二分得到）：
+//   warp 内方向最大夹角平均 ~84°（理论下限约 83°），两两平均夹角 68° → 39°。
+// 排列在槽位层面做，DDGIProbeUpdate.rgen 和 DDGIBlend.comp 都只经过这个函数取方向，两边自动一致，rayData 布局不变。
+// 每帧的随机旋转作用在整个球上，相邻方向旋转后仍相邻。
+// 打包：每个 uint 存 4 个 8 位下标，槽位 k 在第 k/4 个 uint 的第 (k%4) 个字节。
+#if DDGI_RAY_COUNT == 256
+const uint kDDGIRayOrder[64] = uint[](
+    0x677C916Fu, 0x385A5245u, 0x4D622B40u, 0x4855333Bu, 0x505D7294u, 0x6A7F778Cu, 0xAEA1D0C3u, 0x8499A6BBu,
+    0xD8CBBEB6u, 0xA987B19Cu, 0x826DA48Fu, 0x58437A65u, 0xB4C1C9D6u, 0xAC979F8Au, 0xB9C6E3CEu, 0xE0D3DBE8u,
+    0xC2D7CFDCu, 0xF9F4E4ECu, 0xE1EED9E6u, 0xF6FEE9F1u, 0xF3EBD1DEu, 0xF8F0FBFDu, 0xFFFAFCF7u, 0xF2E5F5EDu,
+    0xB5CAA8BDu, 0xD2C59BB0u, 0x8EA3796Cu, 0x5F748196u, 0xDAEFE7DFu, 0xEADDCDE2u, 0x899EB8ABu, 0xD5C8C0B3u,
+    0x54476176u, 0x4C3F372Au, 0x2215321Du, 0x18202510u, 0x5C719386u, 0x697E8BA0u, 0x3A2D4F64u, 0x4257354Au,
+    0x120A1A0Du, 0x05000803u, 0x02040F07u, 0x212E140Cu, 0x131B0B06u, 0x3023283Du, 0x0E160109u, 0x111E1926u,
+    0xBAADA5C7u, 0x906E8398u, 0xBFD49DB2u, 0xCCC4AAB7u, 0x6B8DA2AFu, 0x95808873u, 0x59447B66u, 0x515E2F3Cu,
+    0x634E5678u, 0x27344941u, 0x9A85BCA7u, 0x705B927Du, 0x17241F2Cu, 0x311C3946u, 0x75606853u, 0x3E4B2936u
+);
+
+uint ddgiRayFibonacciIndex(uint slot)
 {
-    return normalize(rotation * ddgiSphericalFibonacci(float(rayIndex), float(DDGI_RAY_COUNT)));
+    return (kDDGIRayOrder[slot >> 2u] >> ((slot & 3u) * 8u)) & 0xFFu;
+}
+#else
+// 光线数不是 256 时没有现成的排列表，退回原来的顺序
+uint ddgiRayFibonacciIndex(uint slot)
+{
+    return slot;
+}
+#endif
+
+// slot：光线槽位（rayData tile 内 y·DDGI_RAY_GRID + x，DDGIBlend 的 gl_LocalInvocationIndex）
+vec3 ddgiProbeRayDirection(uint slot, mat3 rotation)
+{
+    return normalize(rotation * ddgiSphericalFibonacci(float(ddgiRayFibonacciIndex(slot)), float(DDGI_RAY_COUNT)));
 }
 
 #ifdef DDGI_PROBE_INFO_BINDING

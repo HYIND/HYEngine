@@ -1,8 +1,11 @@
 #version 460
 #extension GL_EXT_ray_tracing : enable
 
-// DDGI 探针光线追踪。launch = (RayGrid, RayGrid, 本帧更新数)：xy 为光线下标，z 为更新列表里的第几个探针。
-// 每个线程追踪一条光线，结果写进 rayData 的第 z 个 tile：rgb = 命中点出射辐亮度，a = 命中距离（负值 = 背面命中）。
+// DDGI 探针光线追踪。launch = (光线数, 1, 本帧更新数)：x 为光线槽位，z 为更新列表里的第几个探针。
+// launch 做成一维：warp 一定是连续的 32 个槽位（二维 launch 时 warp 怎么切分由驱动决定），
+// 配合 ddgiProbeRayDirection 里的槽位排列，一个 warp 追的是球面上一块紧凑的方向。
+// 每个线程追踪一条光线，结果写进 rayData 的第 z 个 tile 的 (槽位 % RayGrid, 槽位 / RayGrid)（与 DDGIBlend 的读法一致）：
+// rgb = 命中点出射辐亮度，a = 命中距离（负值 = 背面命中）。
 // 命中点只算漫反射：直接光 + 自发光 + 上一帧 DDGI（多次反弹，只采一个体积）。材质按简化路径读（见 ddgiHitMaterial）。
 // 图集原地更新：这里在混合之前执行，读到的正好是上一帧的结果；新进入体积的格子已被 DDGIReset.comp 清零（n = 0，采样时跳过）。
 // 探针位置 = 格子中心 + 偏移（手动锁定 / 上一帧自动重定位的结果）。
@@ -132,6 +135,10 @@ void main()
     if (rayTileIndex >= ddgiUpdateCount())
         return;
 
+    uint raySlot = gl_LaunchIDEXT.x;
+    if (raySlot >= uint(DDGI_RAY_COUNT))
+        return;
+
     uint slot = ddgiUpdateList[rayTileIndex];
     uint v = ddgiFindVolume(slot);
     if (v == DDGI_INVALID)
@@ -140,8 +147,7 @@ void main()
     ivec3 local = ddgiSlotLocal(v, slot);
     vec4 prevData = texelFetch(ddgiProbeDataTex, ddgiTileOrigin(slot, 1u), 0);
 
-    uint rayIndex = gl_LaunchIDEXT.y * uint(DDGI_RAY_GRID) + gl_LaunchIDEXT.x;
-    vec3 dir = ddgiProbeRayDirection(rayIndex, ddgiRandomRotation(ddgiFrameIndex()));
+    vec3 dir = ddgiProbeRayDirection(raySlot, ddgiRandomRotation(ddgiFrameIndex()));
 
     Ray ray;
     ray.origin = ddgiCellCenter(v, local) + ddgiCurrentOffset(v, slot, prevData);
@@ -187,5 +193,6 @@ void main()
     }
 
     ivec2 tile = ddgiTileOrigin(rayTileIndex, uint(DDGI_RAY_GRID));
-    imageStore(rayData, tile + ivec2(gl_LaunchIDEXT.xy), vec4(radiance, hitDistance));
+    ivec2 texel = ivec2(int(raySlot % uint(DDGI_RAY_GRID)), int(raySlot / uint(DDGI_RAY_GRID)));
+    imageStore(rayData, tile + texel, vec4(radiance, hitDistance));
 }
