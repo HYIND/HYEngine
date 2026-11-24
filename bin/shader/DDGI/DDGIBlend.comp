@@ -222,6 +222,32 @@ void main()
     bool overwrite = sOverwrite > 0.5;
 
     // 2) 辐照度：余弦卷积
+#if (DDGI_RAY_COUNT % (DDGI_IRR_INNER * DDGI_IRR_INNER)) == 0
+    // 每个内层 texel 由 DDGI_IRR_SPLIT 个相邻线程分担（8×8 内层、256 线程时为 4 个），各算 1/4 的光线（按步长交错取，
+    // 各份方向分布均匀、工作量相近），部分和先写进 sRedMin（归约在 ddgiUpdateProbe 之前已用完，这里复用、不加 shared），
+    // 深度做完后再由前 64 个线程合并、混合、写图集。
+    // 原来只有前 64 个线程算辐照度（每个 256 条光线）再接着算深度，warp 0/1 干两份活、其余 warp 在 barrier 上等。
+    const uint DDGI_IRR_TEXELS = uint(DDGI_IRR_INNER * DDGI_IRR_INNER);
+    const uint DDGI_IRR_SPLIT = uint(DDGI_RAY_COUNT) / DDGI_IRR_TEXELS;
+    {
+        uint texel = t / DDGI_IRR_SPLIT;
+        uint part = t % DDGI_IRR_SPLIT;
+        ivec2 local2 = ivec2(int(texel) % DDGI_IRR_INNER, int(texel) / DDGI_IRR_INNER);
+        vec3 n = ddgiOctDecode((vec2(local2) + 0.5) / float(DDGI_IRR_INNER));
+
+        vec3 sum = vec3(0.0);
+        float wsum = 0.0;
+        for (uint k = part; k < uint(DDGI_RAY_COUNT); k += DDGI_IRR_SPLIT)
+        {
+            float w = dot(n, sDir[k]);
+            if (w <= 0.0)
+                continue;
+            sum += sRay[k].rgb * w;
+            wsum += w;
+        }
+        sRedMin[t] = vec4(sum, wsum);
+    }
+#else
     if (t < uint(DDGI_IRR_INNER * DDGI_IRR_INNER))
     {
         ivec2 local2 = ivec2(int(t) % DDGI_IRR_INNER, int(t) / DDGI_IRR_INNER);
@@ -245,6 +271,7 @@ void main()
         sIrr[t] = irr;
         imageStore(irradianceAtlas, irrTile + ivec2(1) + local2, vec4(irr, 1.0));
     }
+#endif
 
     // 3) 深度：cos^50 加权的一阶 / 二阶矩
     if (t < uint(DDGI_DEPTH_INNER * DDGI_DEPTH_INNER))
@@ -288,6 +315,27 @@ void main()
     }
 
     barrier();
+
+#if (DDGI_RAY_COUNT % (DDGI_IRR_INNER * DDGI_IRR_INNER)) == 0
+    // 2') 辐照度：合并各线程的部分和，与旧值混合，写图集和 sIrr（边框要用，所以后面再隔一个 barrier）
+    if (t < DDGI_IRR_TEXELS)
+    {
+        vec4 acc = vec4(0.0);
+        for (uint p = 0u; p < DDGI_IRR_SPLIT; ++p)
+            acc += sRedMin[t * DDGI_IRR_SPLIT + p];
+        ivec2 local2 = ivec2(int(t) % DDGI_IRR_INNER, int(t) / DDGI_IRR_INNER);
+
+        vec3 irr = acc.w > 1e-6 ? acc.rgb / acc.w : vec3(0.0);
+        if (!overwrite)
+            irr = mix(imageLoad(irradianceAtlas, irrTile + ivec2(1) + local2).rgb, irr, alphaIrr);
+        irr = max(irr, vec3(0.0));      // R11G11B10 没有符号位
+
+        sIrr[t] = irr;
+        imageStore(irradianceAtlas, irrTile + ivec2(1) + local2, vec4(irr, 1.0));
+    }
+
+    barrier();
+#endif
 
     // 5) 边框：先深度、再辐照度，每个线程最多一个 texel
     const int depthBorderCount = 4 * DDGI_DEPTH_TILE - 4;
