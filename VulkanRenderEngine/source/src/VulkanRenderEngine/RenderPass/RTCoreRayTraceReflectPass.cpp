@@ -79,7 +79,8 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 			.AddStorageBuffer(20)		// DDGI 体积表
 			.AddUnifromTexture(21)		// DDGI 辐照度图集
 			.AddUnifromTexture(22)		// DDGI 深度图集
-			.AddUnifromTexture(23);		// DDGI probeData
+			.AddUnifromTexture(23)		// DDGI probeData
+			.AddStorageImage(24);		// 第一次反弹命中点的运动（时域累积的虚像重投影）
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -123,6 +124,7 @@ void RTCoreRayTraceReflectPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx
 	data.temporalAccumulateMomentTexture = ctx.GetTemp(2);
 	data.spatialDenoisingTempTexture = ctx.GetTemp(3);
 	data.denoisedTexture = ctx.GetTemp(4);
+	data.hitMotionTexture = ctx.GetTemp(5);
 
 	data.temporalAccumulateHistoryColorTexture = ctx.GetPersitent(0);
 	data.temporalAccumulateHistoryMomentTexture = ctx.GetPersitent(1);
@@ -210,6 +212,11 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 		.setLevelCount(1);
 	cmd->clearColorImage(target->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+	if (!data.hitMotionTexture || data.hitMotionTexture->IsEmpty())
+		return false;
+	data.hitMotionTexture->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+	cmd->clearColorImage(data.hitMotionTexture->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+	data.hitMotionTexture->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	auto& binding = registry.Get<RayTracingBindingRecord>("binding");
 
@@ -294,6 +301,7 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 	binding.SetUniformBlock(paramsUBO, 6);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
+	binding.SetStorageImage(data.hitMotionTexture, vk::ImageAspectFlagBits::eColor, 24);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);
 	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 10);
@@ -389,7 +397,8 @@ bool RTCoreRayTraceReflectPass::DrawTemporalAccumulate(const std::shared_ptr<VKW
 		params,
 		state.camera.curUBO,
 		state.camera.prevUBO,
-		data.gMetallicRoughness
+		data.gMetallicRoughness,
+		data.hitMotionTexture		// 命中点运动：反射里的物体在动时虚像跟着移动
 	);
 
 	cmd->SubmitToQueue();
@@ -412,7 +421,8 @@ bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWra
 	AtrousBilateralFilter::Params params{
 		.normalFactor = state.option.rayTraceReflectParams.normalFactor,
 		.depthFactor = state.option.rayTraceReflectParams.depthFactor,
-		.luminanceFactor = state.option.rayTraceReflectParams.luminanceFactor
+		.luminanceFactor = state.option.rayTraceReflectParams.luminanceFactor,
+		.specularMode = 1
 	};
 
 	_spatialDenoisingFilter.Execute(
@@ -426,7 +436,8 @@ bool RTCoreRayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWra
 		params,
 		state.camera.curUBO,
 		state.camera.prevUBO,
-		state.option.rayTraceReflectParams.filterCount
+		state.option.rayTraceReflectParams.filterCount,
+		data.gMetallicRoughness		// 镜面信号：按粗糙度 / 命中距离限制滤波半径
 	);
 
 	cmd->SubmitToQueue();

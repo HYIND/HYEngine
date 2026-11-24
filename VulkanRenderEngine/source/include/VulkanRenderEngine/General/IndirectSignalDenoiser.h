@@ -30,6 +30,7 @@ public:
 		std::shared_ptr<Texture2D> output;				// 空域滤波结果
 		std::shared_ptr<Texture2D> historyColor;		// 历史颜色（Persistent）
 		std::shared_ptr<Texture2D> historyMoment;		// 历史矩（Persistent）
+		std::shared_ptr<Texture2D> hitMotion;			// 可选：镜面信号第一次反弹命中点的运动（硬件光追，Temp）
 
 		bool Valid() const
 		{
@@ -86,7 +87,8 @@ public:
 			temporalParams,
 			curCameraUBO,
 			prevCameraUBO,
-			gbuffer.metallicRoughness
+			gbuffer.metallicRoughness,
+			textures.hitMotion
 		);
 		cmd->SubmitToQueue();
 
@@ -106,7 +108,8 @@ public:
 			filterParams,
 			curCameraUBO,
 			prevCameraUBO,
-			filterCount
+			filterCount,
+			gbuffer.metallicRoughness
 		);
 		cmd->SubmitToQueue();
 

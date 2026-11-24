@@ -50,6 +50,8 @@ layout (binding = 18) uniform sampler2D IBLBrdfLUT;
 layout (binding = 21) uniform sampler2D ddgiIrradianceTex;
 layout (binding = 22) uniform sampler2D ddgiDepthTex;
 layout (binding = 23) uniform sampler2D ddgiProbeDataTex;
+// 第一次反弹命中点的世界空间运动（上一帧位置 - 本帧位置），xyz = 运动，w = 1 有效 / 0 没打中物体。时域累积按它重投影虚像
+layout(binding = 24, rgba16f) uniform image2D outputHitMotionImage;
 #include "shader/DDGI/DDGISample.comp"
 
 const float RussianRouletteFactor = 0.8f;
@@ -74,7 +76,8 @@ vec3 traceRay(
     PBRProperties prop,
     uint maxBounce, 
     uint sampleId,
-    inout float firstHitT       // 第一次反弹的命中距离；没打中几何（取环境 / 没取到）时不改（调用方给 tMax）
+    inout float firstHitT,      // 第一次反弹的命中距离；没打中几何（取环境 / 没取到）时不改（调用方给 tMax）
+    inout vec3 firstHitMotion   // 第一次反弹命中点的世界空间运动（上一帧 - 本帧）；没打中时不改
 ) 
 {
 
@@ -120,7 +123,10 @@ vec3 traceRay(
         }
 
         if (depth == 0u && !captureCube)
+        {
             firstHitT = distance(hit.position, ray.origin);
+            firstHitMotion = hit.prevPosition - hit.position;
+        }
 
         if (!captureCube)
         {
@@ -181,26 +187,31 @@ vec3 tracePath(
     PBRProperties prop,
     uint maxBounce,
     uint sampleCount,
-    out float hitDistance
+    out float hitDistance,
+    out vec4 hitMotion
     ) 
 {
     vec3 totalIndirect = vec3(0.0);
     float hitSum = 0.0;
     float hitSamples = 0.0;
+    vec3 motionSum = vec3(0.0);
 
     for (uint i = 0; i < sampleCount; i++) 
     {
         float firstHitT = tMax;
-        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, firstHitT);
+        vec3 firstHitMotion = vec3(0.0);
+        totalIndirect += traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, firstHitT, firstHitMotion);
         if (firstHitT < tMax)
         {
             hitSum += firstHitT;
             hitSamples += 1.0;
+            motionSum += firstHitMotion;
         }
     }
 
     // 命中距离（时域累积的虚像重投影用）：打中几何的样本取平均；都没打中时为 tMax（环境在无穷远，只剩相机旋转）
     hitDistance = hitSamples > 0.0 ? hitSum / hitSamples : max(tMax, 1e-3);
+    hitMotion = hitSamples > 0.0 ? vec4(motionSum / hitSamples, 1.0) : vec4(0.0);
 
     return sampleCount > 0 ?  totalIndirect / float(sampleCount) : vec3(0.f);
 }
@@ -255,6 +266,7 @@ void main()
             color = clamp(color, vec3(0.f), vec3(1000.f));
             // 只有环境反射：虚像在无穷远（命中距离 = tMax）
             imageStore(outputImage, pixelCoord, vec4(color, max(tMax, 1e-3)));
+            imageStore(outputHitMotionImage, pixelCoord, vec4(0.0));
         }
         return;
     }
@@ -263,11 +275,13 @@ void main()
     calculateFirstHitInfo(firstHit, uv);
 
     float hitDistance = 0.0;
-    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount), hitDistance);
+    vec4 hitMotion = vec4(0.0);
+    vec3 color = tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount), hitDistance, hitMotion);
     // 去调制：除以接收面的镜面反射率，降噪只处理入射光照；全分辨率上采样时乘回（IndirectUpsample.comp）
     vec3 viewToFrag = normalize(camera.position - texture(gPosition, uv).rgb);
     color /= IndirectDemodulationSpecular(prop.albedo, prop.metallic, prop.roughness, clamp(dot(firstHit.normal, viewToFrag), 0.0, 1.0));
     color = clamp(color, vec3(0.f), vec3(1000.f));
     // alpha：第一次反弹的命中距离（TemporalAccumulate 的镜面信号）
     imageStore(outputImage, pixelCoord, vec4(color, hitDistance));
+    imageStore(outputHitMotionImage, pixelCoord, hitMotion);
 }

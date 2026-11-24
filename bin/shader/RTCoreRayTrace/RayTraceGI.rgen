@@ -38,6 +38,8 @@ layout (binding = 14) uniform sampler2D SSAOMap;
 layout (binding = 15) uniform samplerCube cubeMap;
 // 路径追踪拆成两路：outputImage = 漫反射（alpha 1），outputSpecularImage = 镜面（alpha = 第一次反弹的命中距离）
 layout(binding = 16, rgba16f) uniform image2D outputSpecularImage;
+// 镜面那一路第一次反弹命中点的世界空间运动（上一帧位置 - 本帧位置），w = 1 有效。时域累积按它重投影虚像
+layout(binding = 17, rgba16f) uniform image2D outputSpecularHitMotionImage;
 
 const float RussianRouletteFactor = 0.8f;
 
@@ -49,7 +51,8 @@ vec3 traceRay(
     uint sampleId,
     float lobeRandom,           // 第一次反弹选镜面 / 漫反射用的随机数（tracePath 里分层生成）
     out bool firstSpecular,     // 第一次反弹走的是不是镜面
-    inout float firstHitT       // 第一次反弹的命中距离；没打中几何时不改，调用方给 tMax
+    inout float firstHitT,      // 第一次反弹的命中距离；没打中几何时不改，调用方给 tMax
+    inout vec3 firstHitMotion   // 第一次反弹命中点的世界空间运动（上一帧 - 本帧）；没打中时不改
 ) 
 {
     firstSpecular = false;
@@ -125,7 +128,10 @@ vec3 traceRay(
         }
 
         if (depth == 0u && !captureCube)
+        {
             firstHitT = distance(hit.position, ray.origin);
+            firstHitMotion = hit.prevPosition - hit.position;
+        }
 
         if (!captureCube)
         {
@@ -177,7 +183,8 @@ void tracePath(
     uint sampleCount,
     out vec3 diffuseOut,
     out vec3 specularOut,
-    out float specularHitDistance
+    out float specularHitDistance,
+    out vec4 specularHitMotion
     ) 
 {
     // 按第一次反弹选的波瓣拆成漫反射 / 镜面两路（各自降噪，镜面那一路做虚像重投影）。
@@ -191,6 +198,7 @@ void tracePath(
     vec3 specularSum = vec3(0.0);
     float hitSum = 0.0;
     float hitSamples = 0.0;
+    vec3 motionSum = vec3(0.0);
     float specularSamples = 0.0;
 
     for (uint i = 0; i < sampleCount; i++) 
@@ -198,7 +206,8 @@ void tracePath(
         float lobeRandom = fract(lobeOffset + float(i) / float(max(sampleCount, 1u)));
         bool isSpecular = false;
         float firstHitT = tMax;
-        vec3 c = traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, lobeRandom, isSpecular, firstHitT);
+        vec3 firstHitMotion = vec3(0.0);
+        vec3 c = traceRay(viewPos, fragPos, fragNormal, prop, maxBounce, i, lobeRandom, isSpecular, firstHitT, firstHitMotion);
         if (isSpecular)
         {
             specularSum += c;
@@ -207,6 +216,7 @@ void tracePath(
             {
                 hitSum += firstHitT;
                 hitSamples += 1.0;
+                motionSum += firstHitMotion;
             }
         }
         else
@@ -218,6 +228,7 @@ void tracePath(
     specularOut = specularSum * invCount;
     // 镜面命中距离：打中几何的镜面样本取平均；有镜面样本但都没打中时为 tMax；这一帧没有镜面样本为 0（时域累积取邻域）
     specularHitDistance = hitSamples > 0.0 ? hitSum / hitSamples : (specularSamples > 0.0 ? max(tMax, 1e-3) : 0.0);
+    specularHitMotion = hitSamples > 0.0 ? vec4(motionSum / hitSamples, 1.0) : vec4(0.0);
 }
 
 void calculateFirstHitInfo(inout HitInfo info, vec2 uv)
@@ -259,8 +270,9 @@ void main()
 
     vec3 diffuseColor, specularColor;
     float specularHitDistance;
+    vec4 specularHitMotion;
     tracePath(camera.position, firstHit.position, firstHit.normal, prop, clamp(maxBounce, uint(1) , uint(Max_Bounce_limit)), max(uint(1), sampleRayCount),
-        diffuseColor, specularColor, specularHitDistance);
+        diffuseColor, specularColor, specularHitDistance, specularHitMotion);
     diffuseColor *= GIIntensity;
     specularColor *= GIIntensity;
     // 去调制：两路分别除以接收面的漫反射率 / 镜面反射率，降噪只处理入射光照；全分辨率上采样时乘回（IndirectUpsample.comp mode 3）
@@ -272,4 +284,5 @@ void main()
     specularColor = clamp(specularColor, vec3(0.f), vec3(1000.f));
     imageStore(outputImage, pixelCoord, vec4(diffuseColor, 1.0));
     imageStore(outputSpecularImage, pixelCoord, vec4(specularColor, specularHitDistance));
+    imageStore(outputSpecularHitMotionImage, pixelCoord, specularHitMotion);
 }

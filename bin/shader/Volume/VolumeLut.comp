@@ -58,7 +58,20 @@ bool InDirShadow(DirLight light, vec3 fragPos)
 	if (!light.castShadow)
         return false;
 
-    DirLightCascade cascade = GetCascade(camera.view * vec4(fragPos, 1.0f), light.cascadeFirst, light.cascadeCount);
+    // 超出阴影距离按无阴影处理；渐隐段用逐像素、逐帧变化的阈值抖动，交给后面的 TAA 平均成平滑过渡
+    vec4 fragPosViewSpace = camera.view * vec4(fragPos, 1.0f);
+    float shadowFade = DirLightShadowDistanceFade(light, abs(fragPosViewSpace.z));
+    if (shadowFade <= 0.0)
+        return false;
+    if (shadowFade < 1.0)
+    {
+        vec2 noisePixel = vec2(gl_GlobalInvocationID.xy) + float(JitterSeed % 64u) * 5.588238;
+        float noise = fract(52.9829189 * fract(dot(noisePixel, vec2(0.06711056, 0.00583715))));
+        if (noise >= shadowFade)
+            return false;
+    }
+
+    DirLightCascade cascade = GetCascade(fragPosViewSpace, light.cascadeFirst, light.cascadeCount);
     vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(fragPos, 1.0);
     float shadow = DirLightFastShadowCalculation(fragPosLightSpace, atlasShadowMap, 
                                                 vec2(cascade.atlasX, cascade.atlasY),

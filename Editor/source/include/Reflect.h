@@ -197,6 +197,8 @@ namespace rfl {
 			float luxIntensity = 3.5f;
 
 			uint32_t cascadeLevel = __LightDataDefault::__default_cascadeLevel;	//阴影级联
+			float shadowDistance = __LightDataDefault::__default_shadowDistance;			// 阴影距离（米）
+			float cascadeSplitLambda = __LightDataDefault::__default_cascadeSplitLambda;	// 级联切分比例 0 均匀 ~ 1 对数
 		};
 
 		using SrcType = DirectionalLightData;
@@ -211,7 +213,9 @@ namespace rfl {
 				.castShadow = src.castShadow,
 				.shadowMapSize = src.shadowMapSize,
 				.luxIntensity = src.luxIntensity,
-				.cascadeLevel = src.cascadeLevel
+				.cascadeLevel = src.cascadeLevel,
+				.shadowDistance = src.shadowDistance,
+				.cascadeSplitLambda = src.cascadeSplitLambda
 			};
 		}
 
@@ -225,6 +229,8 @@ namespace rfl {
 			src.shadowMapSize = ref.shadowMapSize;
 			src.luxIntensity = ref.luxIntensity;
 			src.cascadeLevel = ref.cascadeLevel;
+			src.shadowDistance = std::max(ref.shadowDistance, 1.0f);
+			src.cascadeSplitLambda = std::clamp(ref.cascadeSplitLambda, 0.0f, 1.0f);
 		}
 	};
 

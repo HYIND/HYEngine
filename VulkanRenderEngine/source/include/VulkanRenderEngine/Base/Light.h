@@ -59,17 +59,23 @@ public:
 	void SetDirection(float x, float y, float z);
 	void SetIntensity(float lux);
 	void SetCascadeLevel(uint32_t level);
+	void SetShadowDistance(float distance);
+	void SetCascadeSplitLambda(float lambda);
 
 	glm::vec3 GetDirection() const;
 	float GetIntensity() const;
 	glm::mat4 GetLightSpaceMatrix() const;
 	glm::mat4 GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& projection, const glm::mat4& view, glm::vec3* center = nullptr, float* radius = nullptr) const;
 	uint32_t GetCascadeLevel() const;
+	float GetShadowDistance() const;
+	float GetCascadeSplitLambda() const;
 
 private:
 	glm::vec3 _direction;
 	float _luxIntensity = 1000.f;
 	uint32_t _cascadeLevel;	//阴影级联
+	float _shadowDistance = 200.0f;		// 阴影距离（米），和相机远平面无关
+	float _cascadeSplitLambda = 0.75f;	// 级联切分比例：0 均匀 ~ 1 对数
 };
 
 class PointLight :public Light

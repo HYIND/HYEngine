@@ -489,6 +489,8 @@ void RenderSystem::ProcessLight(std::shared_ptr<Render::Render3DFrameData> frame
 				renderdata->light = std::make_shared<DirLight>(direction, data->color, data->luxIntensity);
 				setLightBaseParams(renderdata->light.get(), data);
 				renderdata->light->SetCascadeLevel(data->cascadeLevel);
+				renderdata->light->SetShadowDistance(data->shadowDistance);
+				renderdata->light->SetCascadeSplitLambda(data->cascadeSplitLambda);
 				renderdata->renderCube = renderLight.renderCube;
 
 				auto context = std::make_shared<VKRenderContext::RenderContext>();

@@ -17,7 +17,14 @@ struct alignas(16) DirLightMetaInfo {
 	uint32_t volumeLightEnable = 0;
 	uint32_t volumeLightEffectByAtmospher = 0;
 	float volumetricScatteringIntensity;
+
+	// 阴影距离渐隐区间（相机视空间深度，米）：深度 <= start 完整阴影，>= end 不算阴影，中间渐隐。
+	// 阴影距离没有被相机远平面截断时两者都设成极大值，即不渐隐（远平面以外本来就看不到）。
+	// 和 lightingssboDef.comp 的 DirLight 对齐：volumetricScatteringIntensity 在 52，这两个在 56 / 60，结构体仍是 64 字节
+	float shadowFadeStart = 3.0e38f;
+	float shadowFadeEnd = 3.0e38f;
 };
+static_assert(sizeof(DirLightMetaInfo) == 64);
 
 struct alignas(16) DirLightCascadeInfo {
 	alignas(16) glm::mat4 lightSpaceMatrix;
@@ -90,13 +97,17 @@ static inline void writePaddingCount(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	ssbo->WriteDataAsync(cmd, &padding, sizeof(padding), 0);
 };
 
+// 阴影距离最后这一段做渐隐，避免在阴影距离处出现一条硬边
+constexpr float kDirShadowFadeRatio = 0.1f;
+
 static void SetupDirLightData(
 	std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 	std::shared_ptr<StorageBlock>& meta_ssbo,
 	std::shared_ptr<StorageBlock>& cascade_ssbo,
 	std::shared_ptr<StorageBlock>& cascadeDstances_ssbo,
 	const std::vector<std::shared_ptr<DirLightInfo>>& dirLights,
-	const std::shared_ptr<AtlasMap>& atlasShadowMap
+	const std::shared_ptr<AtlasMap>& atlasShadowMap,
+	float cameraFarPlane
 )
 {
 
@@ -151,6 +162,17 @@ static void SetupDirLightData(
 				dirLightCascadeInfos.append_range(cascadeInfos);
 
 			cascadeOffset += metainfo.cascadeCount;
+
+			// 阴影距离比相机远平面近时，最后一级的远端就是阴影距离：在它前面的 10% 渐隐到无阴影
+			if (!info->cascades.empty())
+			{
+				const float shadowFar = info->cascades.back().cascadePlaneDistance;
+				if (shadowFar < cameraFarPlane)
+				{
+					metainfo.shadowFadeEnd = shadowFar;
+					metainfo.shadowFadeStart = shadowFar * (1.0f - kDirShadowFadeRatio);
+				}
+			}
 		}
 		else
 		{
@@ -275,11 +297,13 @@ static std::vector<CascadeSplit> CalculateCascadeSplit(
 	float nearPlane,
 	float farPlane,
 	uint32_t cascadeCount,
-	float lambda = 0.65f // lambda控制对数/均匀混合，0.5常用
+	float lambda = 0.75f // lambda 控制对数 / 均匀混合：0 均匀，1 对数
 )
 {
 	if (cascadeCount <= 0)
 		return {};
+
+	lambda = std::clamp(lambda, 0.0f, 1.0f);
 
 	std::vector<CascadeSplit> splits;
 	splits.reserve(cascadeCount);
@@ -535,8 +559,13 @@ void LightShadowDepthPass::CalculateShadowAtlas(RenderState& state, AtlasMap& at
 				break;
 		}
 
+		// 阴影距离和相机远平面分开：级联只在 [near, min(far, 阴影距离)] 内切分，
+		// 远平面再大也不会把近处级联拉远。超出阴影距离的部分在 shader 里按无阴影处理
 		float aspect = fabs(state.camera.projection[1][1] / state.camera.projection[0][0]);
-		auto cascadeSplit = CalculateCascadeSplit(state.camera.fov, aspect, state.camera.nearPlane, state.camera.farPlane, info->cascades.size());
+		const float nearPlane = state.camera.nearPlane;
+		const float shadowFar = std::max(std::min(state.camera.farPlane, light->GetShadowDistance()), nearPlane * 2.0f);
+		auto cascadeSplit = CalculateCascadeSplit(state.camera.fov, aspect, nearPlane, shadowFar,
+			info->cascades.size(), light->GetCascadeSplitLambda());
 
 		for (int i = 0; i < cascadeSplit.size(); i++)
 		{
@@ -587,7 +616,7 @@ struct DrawParams {
 
 void LightShadowDepthPass::SetupLightingData(SelfContext& ctx, std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state)
 {
-	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, ctx.ssbo_dirLightCascadeDistances, state.lights.dirLightInfos, ctx.atlas);
+	SetupDirLightData(cmd, ctx.ssbo_dirLightMeta, ctx.ssbo_dirLightCascade, ctx.ssbo_dirLightCascadeDistances, state.lights.dirLightInfos, ctx.atlas, state.camera.farPlane);
 	SetupPointLightData(cmd, ctx.ssbo_pointLightMeta, state.lights.pointLightInfos, ctx.atlas);
 	SetupSpotLightData(cmd, ctx.ssbo_spotLightMeta, state.lights.spotLightInfos, ctx.atlas);
 }

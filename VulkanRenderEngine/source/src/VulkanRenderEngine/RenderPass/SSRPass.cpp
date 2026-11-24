@@ -406,7 +406,8 @@ bool SSRPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuf
 	AtrousBilateralFilter::Params params{
 		.normalFactor = state.option.ssrTraceParams.normalFactor,
 		.depthFactor = state.option.ssrTraceParams.depthFactor,
-		.luminanceFactor = state.option.ssrTraceParams.luminanceFactor
+		.luminanceFactor = state.option.ssrTraceParams.luminanceFactor,
+		.specularMode = 1
 	};
 
 	_spatialDenoisingFilter.Execute(
@@ -420,7 +421,8 @@ bool SSRPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::VKCommandBuf
 		params,
 		state.camera.curUBO,
 		state.camera.prevUBO,
-		state.option.ssrTraceParams.filterCount
+		state.option.ssrTraceParams.filterCount,
+		data.gMetallicRoughness		// 镜面信号：按粗糙度 / 命中距离限制滤波半径
 	);
 
 	cmd->SubmitToQueue();

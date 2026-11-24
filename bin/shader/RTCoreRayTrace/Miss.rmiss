@@ -10,6 +10,7 @@ struct HitPayLoad {
     float t;
     uint materialIndex;
     bool isHit;
+    vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
 };
 
 layout(location = 0) rayPayloadInEXT HitPayLoad payload;

@@ -34,6 +34,7 @@ public:
 		uint32_t fastHistoryValid = 0;			// 内部填写（快速历史图有没有有效内容），调用方不用管
 		float specularMinAccumulate = 0.0f;		// 镜面信号：最光滑的表面最多累积几帧（粗糙度 0.05 → 0.5 过渡到 maxAccumulateCount）；<= 0 不限制（默认）
 		float specularParallaxScale = 1.0f;		// 镜面信号：按视差缩短历史，历史期间允许反射偏移几个波瓣半角；越大越不缩（拖影多），<= 0 关闭
+		uint32_t hitMotionValid = 0;			// 内部填写（有没有传 hitMotionMap），调用方不用管
 		float antilagStrength = 1.0f;			// 超出裁剪盒子时缩短历史的力度（不进 UBO，给历史裁剪 Pass 的 push constant）
 	};
 
@@ -59,7 +60,8 @@ public:
 		const Params& params,
 		std::shared_ptr<UniformBlock>& curCameraUBO,
 		std::shared_ptr<UniformBlock>& prevCameraUBO,
-		const std::shared_ptr<Texture2D>& metallicRoughnessMap = nullptr	// Specular 时读粗糙度；其他信号可以不给
+		const std::shared_ptr<Texture2D>& metallicRoughnessMap = nullptr,	// Specular 时读粗糙度；其他信号可以不给
+		const std::shared_ptr<Texture2D>& hitMotionMap = nullptr			// Specular：第一次反弹命中点的世界空间运动（硬件光追提供），没有就按静止处理
 	);
 
 	// 上一次 Execute 的调试热力图（与输出同尺寸，RGBA16F）；那一次 debugMode 为 0 时返回空

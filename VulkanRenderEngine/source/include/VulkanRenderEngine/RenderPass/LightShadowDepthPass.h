@@ -106,8 +106,6 @@ private:
 		GraphicsBindingRecord& shader_SkinnedMesh_Binding
 	);
 
-	void NewFunction(LightShadowDepthPass::SelfContext& ctx, std::shared_ptr<UniformBlock>& sideParamsUBO, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, DynamicRenderInfo& renderInfo, std::vector<DynamicViewport>& viewPorts, bool& hasClear, vk::ClearAttachment& clearAttachment, std::vector<vk::ClearRect>& clearRects, std::shared_ptr<IndirectDrawManager>& manager, LightShadowDepthPass::PreRecordData& data);
-
 private:
 	std::shared_ptr<GraphicsPipeline> _dirLightShadowDepthStaticMeshShader;
 	std::shared_ptr<GraphicsPipeline> _pointLightShadowDepthStaticMeshShader;

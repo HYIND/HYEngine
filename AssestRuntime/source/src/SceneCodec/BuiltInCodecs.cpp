@@ -1667,6 +1667,8 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                     { "volumeLightEffectByAtmospher", d->volumeLightEffectByAtmospher },
                     { "castShadow", d->castShadow },
                     { "cascadeLevel", d->cascadeLevel },
+                    { "shadowDistance", d->shadowDistance },
+                    { "cascadeSplitLambda", d->cascadeSplitLambda },
                     { "shadowMapSize", d->shadowMapSize }
                 };
                 break;
@@ -1757,6 +1759,9 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 d.volumeLightEffectByAtmospher = data.value("volumeLightEffectByAtmospher", false);
                 d.castShadow = data.at("castShadow").get<bool>();
                 d.cascadeLevel = data.at("cascadeLevel").get<uint32_t>();
+                // 旧场景没有这两个字段，用默认值
+                d.shadowDistance = data.value("shadowDistance", __LightDataDefault::__default_shadowDistance);
+                d.cascadeSplitLambda = data.value("cascadeSplitLambda", __LightDataDefault::__default_cascadeSplitLambda);
                 d.shadowMapSize = data.at("shadowMapSize").get<uint32_t>();
 
                 light = RenderLight(d);

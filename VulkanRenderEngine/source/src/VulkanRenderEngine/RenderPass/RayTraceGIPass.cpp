@@ -266,7 +266,10 @@ bool RayTraceGIPass::DrawDenoise(const std::shared_ptr<VKWrapper::VKCommandBuffe
 
 	if (!_diffuseDenoiser.Execute(cmd, gbuffer, data.diffuse, diffuseParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO))
 		return false;
-	return _specularDenoiser.Execute(cmd, gbuffer, data.specular, specularParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO);
+	// 镜面那一路：按粗糙度 / 命中距离限制空域滤波半径（光滑表面的反射不被抹糊）
+	AtrousBilateralFilter::Params specularFilterParams = filterParams;
+	specularFilterParams.specularMode = 1;
+	return _specularDenoiser.Execute(cmd, gbuffer, data.specular, specularParams, specularFilterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO);
 }
 
 bool RayTraceGIPass::DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)

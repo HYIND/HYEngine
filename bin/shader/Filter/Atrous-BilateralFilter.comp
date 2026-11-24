@@ -18,6 +18,10 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 //     越往后方差越小、亮度边缘越严，避免后面大步长的轮次把细节抹平；
 //   * B3 样条核权重 h 参与加权（原来算了 kernelWeight 却没乘进去，等于 5×5 盒式核）。
 // 方差图：R32F，>= 0 为方差，-1 为天空（预滤波时跳过）。
+// 镜面信号（specularMode = 1）：滤波半径按反射的模糊程度限制 —— 反射波瓣在屏幕上的尺寸
+//   ≈ 波瓣半角 × 命中距离 / (视深 + 命中距离) × 视深 / 像素覆盖尺寸（虚像离相机越远、表面越光滑越小），
+//   每个采样点再乘 exp(-(像素距离 / 半径)²)。光滑表面的反射基本不被空域抹糊，粗糙表面不受影响。
+//   命中距离取输入的 alpha（时域累积后的命中距离）。
 
 const float h[5] = float[](
     1.0 / 16.0,
@@ -32,6 +36,8 @@ layout (binding = 0) uniform Params
     float normalFactor;
     float depthFactor;
     float luminanceFactor;     // σ_l，SVGF 推荐 4。是方差标准差的倍数，不是绝对亮度
+    uint specularMode;         // 1 = 镜面信号：按粗糙度 / 命中距离限制滤波半径
+    float specularRadiusScale; // 镜面信号的半径倍数（越大越糊、越干净）
 };
 
 layout (binding = 1, rgba16f) uniform image2D curPassImage;
@@ -41,6 +47,7 @@ layout (binding = 4) uniform sampler2D depthMap;
 layout (binding = 5) uniform sampler2D momentTexture;     // 不再使用（方差改由 binding 6 逐轮传递），保留绑定
 layout (binding = 6) uniform sampler2D varianceIn;
 layout (binding = 7, r32f) uniform image2D varianceOut;
+layout (binding = 8) uniform sampler2D metallicRoughnessMap;    // 只在 specularMode = 1 时读（.g = 粗糙度）
 
 layout (push_constant) uniform Param{
     int curPassIndex;
@@ -133,6 +140,18 @@ void main()
     float centerVariance = max(texelFetch(varianceIn, coord, 0).r, 0.0);
     float sigmaL = luminanceFactor * sqrt(FilteredVariance(coord, imageSize) + 1e-10) + 1e-6;
 
+    // 镜面信号：反射在屏幕上的模糊半径（像素）。没打中物体（命中距离 = tMax）时退化为波瓣半角 / 像素视角
+    float specularRadius = 1e6;
+    if (specularMode != 0u)
+    {
+        float roughness = clamp(textureLod(metallicRoughnessMap, uvCenter, 0.0).g, 0.0, 1.0);
+        float alpha = roughness * roughness;
+        float lobeTan = alpha * 1.73;   // GGX 约 75% 能量的半角
+        float hitDist = max(centerColor.a, 0.0);
+        float pixelWorld = 2.0 * centerZ / max(abs(camera.projection[1][1]) * float(imageSize.y), 1e-6);
+        specularRadius = max(specularRadiusScale * lobeTan * hitDist / (centerZ + hitDist + 1e-4) * centerZ / max(pixelWorld, 1e-6), 1.0);
+    }
+
     vec4 total = vec4(0.0);
     float totalWeight = 0.0;
     float totalVariance = 0.0;
@@ -163,6 +182,11 @@ void main()
             float luminanceWeight = exp(-abs(centerLuminance - GetLuminance(sampleColor.rgb)) / sigmaL);
 
             float weight = kernelWeight * geometryWeight * luminanceWeight;
+            if (specularMode != 0u && (x != 0 || y != 0))
+            {
+                float r = length(vec2(stepCoord)) / specularRadius;
+                weight *= exp(-r * r);
+            }
 
             total += sampleColor * weight;
             totalVariance += sampleVariance * weight * weight;

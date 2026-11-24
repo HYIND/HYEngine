@@ -40,6 +40,7 @@ AtrousBilateralFilter::AtrousBilateralFilter(const std::string& atrousComputeSha
 		.AddUnifromTexture(5)
 		.AddUnifromTexture(6)		// 上一轮方差
 		.AddStorageImage(7)			// 本轮方差
+		.AddUnifromTexture(8)		// metallic / roughness（镜面信号）
 		.AddPushConstant(sizeof(PushConstant));
 
 	if (config.Validate())
@@ -66,7 +67,8 @@ void AtrousBilateralFilter::Execute(
 	const Params& params,
 	std::shared_ptr<UniformBlock>& curCameraUBO,
 	std::shared_ptr<UniformBlock>& prevCameraUBO,
-	uint32_t filterCount
+	uint32_t filterCount,
+	const std::shared_ptr<Texture2D>& metallicRoughnessMap
 )
 {
 	if (filterCount <= 0)
@@ -90,8 +92,13 @@ void AtrousBilateralFilter::Execute(
 
 	auto imageSize = outputImage->GetSize();
 
-	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
-	paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
+	// 镜面模式缺粗糙度图时退回普通滤波
+	Params shaderParams = params;
+	if (!metallicRoughnessMap || metallicRoughnessMap->IsEmpty())
+		shaderParams.specularMode = 0;
+
+	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(shaderParams));
+	paramsUBO->WriteDataAsync(cmd, &shaderParams, sizeof(shaderParams));
 
 	const uint32_t groupX = (imageSize.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X;
 	const uint32_t groupY = (imageSize.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y;
@@ -120,6 +127,7 @@ void AtrousBilateralFilter::Execute(
 	binding.SetUniformTexture(normalMap, vk::ImageAspectFlagBits::eColor, 3);
 	binding.SetUniformTexture(depthMap, vk::ImageAspectFlagBits::eDepth, 4);
 	binding.SetUniformTexture(momentsMap, vk::ImageAspectFlagBits::eColor, 5);
+	binding.SetUniformTexture(shaderParams.specularMode != 0 ? metallicRoughnessMap : normalMap, vk::ImageAspectFlagBits::eColor, 8);
 
 	PushConstant pc_params{ .curPassIndex = 0 };
 

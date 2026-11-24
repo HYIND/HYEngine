@@ -131,6 +131,16 @@ void DirLight::SetCascadeLevel(uint32_t level)
 	_cascadeLevel = std::max(1u, level);
 }
 
+void DirLight::SetShadowDistance(float distance)
+{
+	_shadowDistance = std::max(distance, 1.0f);
+}
+
+void DirLight::SetCascadeSplitLambda(float lambda)
+{
+	_cascadeSplitLambda = std::clamp(lambda, 0.0f, 1.0f);
+}
+
 glm::vec3 DirLight::GetDirection() const {
 	return _direction;
 }
@@ -188,17 +198,25 @@ glm::mat4 DirLight::GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& camer
 	aabb.min = aabbCenter - aabbHalfSize;
 	aabb.max = aabbCenter + aabbHalfSize;
 
-	constexpr float zScale = 10.0f;
-	float delta = aabb.max.z - aabb.min.z;
-	float middle = aabb.min.z + delta / 2.0f;
-	aabb.min.z = middle - delta * zScale / 2.0f;
-	aabb.max.z = middle + delta * zScale / 2.0f;
+	// 深度范围（光源视空间，lookAt 朝 _direction，所以 +z 指向光源）：
+	//   * 背光一侧只要盖住切片本身（接收者都在切片里），留一点余量给法线偏移；
+	//   * 朝光一侧要盖住「切片外、但能把影子投进切片」的遮挡物。它和切片大小无关——
+	//     原来按切片厚度的倍数算，近处级联切得越细，朝光一侧越短，太阳低时高墙 / 树会被近平面裁掉、
+	//     也会被 GPU 视锥剔除掉，影子凭空消失，而且随相机角度变化（切片在光方向上的厚度随角度变）。
+	//   正交投影 + D32F 的深度是线性的，范围拉到几百米精度也只有亚毫米级，不需要省。
+	constexpr float kMinCasterDistance = 500.0f;	// 朝光一侧至少覆盖的距离（米）
+	const float delta = aabb.max.z - aabb.min.z;
+	const float casterExtend = std::max({ delta * 5.0f, _shadowDistance * 2.0f, kMinCasterDistance });
+	const float receiverPad = std::max(delta * 0.5f, 1.0f);
+	const float nearZ = aabb.max.z + casterExtend;	// 朝光一侧（深度 0）
+	const float farZ = aabb.min.z - receiverPad;		// 背光一侧（深度 1）
 
 	// 构建正交投影矩阵
+	// glm::ortho（右手、深度 0~1）把视空间 z = -zNear 映射到 0、z = -zFar 映射到 1，所以传入取负的距离
 	glm::mat4 lightProjection = vkOrtho(
 		aabb.min.x, aabb.max.x,
 		aabb.min.y, aabb.max.y,
-		aabb.min.z, aabb.max.z
+		-nearZ, -farZ
 	);
 
 
@@ -214,6 +232,16 @@ glm::mat4 DirLight::GetLightSpaceMatrixWithFrustumCorners(const glm::mat4& camer
 uint32_t DirLight::GetCascadeLevel() const
 {
 	return _cascadeLevel;
+}
+
+float DirLight::GetShadowDistance() const
+{
+	return _shadowDistance;
+}
+
+float DirLight::GetCascadeSplitLambda() const
+{
+	return _cascadeSplitLambda;
 }
 
 PointLight::~PointLight()				// 析构函数

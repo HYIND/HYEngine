@@ -21,9 +21,11 @@ struct alignas(16) InstanceInfo
 
 	uint32_t skinned;				// 1 = 蒙皮网格：顶点要去本帧的蒙皮顶点缓冲里取（否则从静态顶点块里取）
 	uint32_t skinnedVertexOffset;	// 该网格在本帧蒙皮顶点缓冲里的起始顶点
+
+	alignas(16) glm::mat4 prevModel;	// 上一帧的模型矩阵：命中点上一帧位置（反射时域累积的运动重投影）
 };
 
-static_assert(sizeof(InstanceInfo) == 208, "InstanceInfo 布局要和 ClosestHit.rchit 里的同名结构保持一致");
+static_assert(sizeof(InstanceInfo) == 272, "InstanceInfo 布局要和 ClosestHit.rchit / DDGIClosestHit.rchit 里的同名结构保持一致");
 
 // 关掉后：顶点 / 索引块换地址时不再重建全部静态 BLAS（见 UpdateBlasData）。出问题时改成 true 对比原来的行为。
 static constexpr bool kRebuildBlasWhenGeometryBufferMoves = false;
@@ -776,6 +778,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 		info.vertexOffset = meta.vertexOffset;
 		info.skinned = 0;
 		info.skinnedVertexOffset = 0;
+		info.prevModel = item.prevTransform;
 
 		vk::AccelerationStructureInstanceKHR tlasInstance;
 		tlasInstance
@@ -894,6 +897,7 @@ bool RTCoreRayTraceGeneralPass::SetupGeneralBuffer(RenderState& state)
 			info.vertexOffset = 0;										// 蒙皮网格不用静态顶点块
 			info.skinned = 1;
 			info.skinnedVertexOffset = skinnedRequests[i].vertexStart;
+			info.prevModel = item.prevTransform;
 
 			vk::AccelerationStructureInstanceKHR tlasInstance;
 			tlasInstance

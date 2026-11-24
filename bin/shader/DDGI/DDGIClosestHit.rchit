@@ -23,6 +23,7 @@ struct InstanceInfo {
     uint vertexOffset;
     uint skinned;
     uint skinnedVertexOffset;
+    mat4 prevModel;             // 与 ClosestHit.rchit 一致（DDGI 不用）
 };
 
 struct HitPayLoad {
@@ -34,6 +35,7 @@ struct HitPayLoad {
     float t;
     uint materialIndex;
     bool isHit;
+    vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
 };
 
 layout(location = 0) rayPayloadInEXT HitPayLoad payload;
@@ -118,4 +120,5 @@ void main()
     payload.t = backFace ? -gl_HitTEXT : gl_HitTEXT;
     payload.materialIndex = instanceInfo.materialIndex;
     payload.isHit = true;
+    payload.prevPosition = worldPos;    // DDGI 不需要运动信息
 }

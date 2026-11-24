@@ -71,6 +71,19 @@ DirLightCascade GetCascade(vec4 fragPosViewSpace, int cascadeFirst, int cascadeC
 	return dirLightCascadeData.info[end - 1];
 }
 
+// 方向光阴影的距离权重：1 = 完整阴影，0 = 不算阴影。
+// 超出阴影距离的点不再落到最后一级级联里（那里采样会被夹到子图边缘，出现拉长的条纹），
+// 阴影距离末尾一段平滑渐隐。没有分到任何级联（图集放不下）时也按无阴影处理。
+// viewDepth 是相机视空间深度的绝对值，和 GetCascade 的判断一致
+float DirLightShadowDistanceFade(DirLight light, float viewDepth)
+{
+	if (!light.castShadow || light.cascadeCount <= 0 || viewDepth >= light.shadowFadeEnd)
+		return 0.0;
+	if (viewDepth <= light.shadowFadeStart)
+		return 1.0;
+	return 1.0 - smoothstep(light.shadowFadeStart, light.shadowFadeEnd, viewDepth);
+}
+
 float SamplerAtlasMap(vec2 subTexPos, sampler2D atlasMap, vec2 atlasSize, vec2 subStart, vec2 subSize)
 {
 	vec2 subPixelPos = subTexPos * subSize;
@@ -361,12 +374,17 @@ vec3 CalcDirLight(DirLight light, sampler2D atlasMap, vec3 normal, vec3 fragPos,
 	if (light.castShadow)
 	{
 		vec3 shiftedPos = NormalBias(fragPos, normalize(light.direction), normal, 0.1);
-		DirLightCascade cascade = GetCascade(cameraView * vec4(shiftedPos, 1.0f), light.cascadeFirst, light.cascadeCount);
-		vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
-		shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
-												vec2(cascade.atlasX, cascade.atlasY),
-												vec2(cascade.atlasWidth, cascade.atlasHeight));
-		shadow = clamp(shadow, 0.f, 1.f);
+		vec4 shiftedPosViewSpace = cameraView * vec4(shiftedPos, 1.0f);
+		float shadowFade = DirLightShadowDistanceFade(light, abs(shiftedPosViewSpace.z));
+		if (shadowFade > 0.0)
+		{
+			DirLightCascade cascade = GetCascade(shiftedPosViewSpace, light.cascadeFirst, light.cascadeCount);
+			vec4 fragPosLightSpace = cascade.lightSpaceMatrix * vec4(shiftedPos, 1.0);
+			shadow = DirLightShadowCalculation(fragPosLightSpace, atlasMap, 
+													vec2(cascade.atlasX, cascade.atlasY),
+													vec2(cascade.atlasWidth, cascade.atlasHeight));
+			shadow = clamp(shadow, 0.f, 1.f) * shadowFade;
+		}
 	}
 
 	vec3 radiance = light.color * light.luxIntensity;

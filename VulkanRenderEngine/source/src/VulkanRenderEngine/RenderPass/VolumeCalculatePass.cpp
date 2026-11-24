@@ -281,13 +281,14 @@ void VolumeCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	data.exponentialHeightFogEnable = exponentialHeightFogEnable;
 	data.volumeFogEnable = volumeFogEnable;
 	data.cloudEnable = cloudEnable;
+	data.scatterFiltered = atmoEnable || volumeFogEnable || cloudEnable;
 
 	auto cmd = cmdCtx.GetCmd();
 
 	DrawLut(cmd, registry, state, data);
 
-	SetTAAEnable(atmoEnable || volumeFogEnable || cloudEnable);
-	if (atmoEnable || volumeFogEnable || cloudEnable)
+	SetTAAEnable(data.scatterFiltered);
+	if (data.scatterFiltered)
 	{
 		if (!DrawTAAFilter(cmd, state, data))
 			return;
@@ -434,7 +435,8 @@ void VolumeCalculatePass::CombinVolume(
 	{
 		binding.SetUniformTexture(state.skyAtmosphereParams.skyViewLut, vk::ImageAspectFlagBits::eColor, 6);
 	}
-	if (data.atmoEnable || data.volumeFogEnable)
+	// 跑了滤波就读滤波后的散射；只开非体积高度雾时散射全是 0，没跑滤波，读原始散射（滤波结果是未定义的 Temp）
+	if (data.scatterFiltered)
 		binding.SetUniformTexture(data.taaGaussScatterColorTexture, vk::ImageAspectFlagBits::eColor, 7);
 	else
 		binding.SetUniformTexture(data.tempScatterColor, vk::ImageAspectFlagBits::eColor, 7);

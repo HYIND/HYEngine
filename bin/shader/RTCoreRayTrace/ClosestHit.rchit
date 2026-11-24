@@ -19,6 +19,7 @@ struct InstanceInfo {
     uint vertexOffset;
     uint skinned;               // 1 = 蒙皮网格，顶点要去蒙皮顶点缓冲里取
     uint skinnedVertexOffset;   // 该网格在蒙皮顶点缓冲里的起始顶点
+    mat4 prevModel;             // 上一帧的模型矩阵（第一次出现时等于 model）
 };
 
 struct HitPayLoad {
@@ -30,6 +31,7 @@ struct HitPayLoad {
     float t;
     uint materialIndex;
     bool isHit;
+    vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
 };
 
 layout(location = 0) rayPayloadInEXT HitPayLoad payload;
@@ -92,7 +94,10 @@ void main()
     // 重心坐标
     vec3 bary = vec3(1.0 - attrib.x - attrib.y, attrib.x, attrib.y);
 
-    vec3 worldPos = vec3(instanceInfo.model * vec4(lerpVec3(v0.position, v1.position, v2.position, bary), 1.0));
+    vec3 localPos = lerpVec3(v0.position, v1.position, v2.position, bary);
+    vec3 worldPos = vec3(instanceInfo.model * vec4(localPos, 1.0));
+    // 上一帧位置：同一个局部点用上一帧的模型矩阵变换。蒙皮网格只算整体（模型矩阵）的运动，不含骨骼形变
+    vec3 prevWorldPos = vec3(instanceInfo.prevModel * vec4(localPos, 1.0));
 
     // 插值法线、切线、副切线
     vec3 localTangent   = normalize(lerpVec3(v0.tangent,   v1.tangent,   v2.tangent,   bary));
@@ -108,4 +113,5 @@ void main()
     payload.t = gl_HitTEXT;     // 命中距离
     payload.materialIndex = instanceInfo.materialIndex;    // 材质索引
     payload.isHit = true;
+    payload.prevPosition = prevWorldPos;
 }

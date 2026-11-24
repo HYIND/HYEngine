@@ -49,6 +49,10 @@ private:
 		bool exponentialHeightFogEnable = false;
 		bool volumeFogEnable = false;
 		bool cloudEnable = false;
+
+		// 散射图是否需要 TAA + 高斯滤波（大气 / 体积雾 / 体积云任一开启时散射才有噪声）。
+		// Execute 决定跑不跑滤波、CombinVolume 决定读哪张散射图，都只看这一个值，避免两处条件不一致
+		bool scatterFiltered = false;
 	};
 
 	void DrawLut(std::shared_ptr<RenderGraph::PassFrameCmd>& cmd,RenderGraph::FrameDataRegistry& registry,RenderState& state,FrameRenderData& data);

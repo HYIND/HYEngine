@@ -1119,7 +1119,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ rtLowRes("rayTraceReflect_Temp2"), computeWriteLayout },
 			ResourceData{ rtLowRes("rayTraceReflect_Temp3"), computeWriteLayout },
 			ResourceData{ rtLowRes("rayTraceReflect_Temp4"), computeWriteLayout },
-			ResourceData{ rtLowRes("rayTraceReflect_Temp5"), computeWriteLayout }		// 空域滤波结果，上采样的输入
+			ResourceData{ rtLowRes("rayTraceReflect_Temp5"), computeWriteLayout },		// 空域滤波结果，上采样的输入
+			ResourceData{ rtLowRes("rayTraceReflect_HitMotion"), computeWriteLayout }	// 第一次反弹命中点的运动（硬件光追）
 		)
 		// 命中点的漫反射间接光采样 DDGI（可选持久资源：DDGI 从没执行过时为空，不会因此分配）
 		.PersistentOption(
@@ -1154,7 +1155,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 			ResourceData{ rtLowRes("rayTraceGI_SpecTemp2"), computeWriteLayout },
 			ResourceData{ rtLowRes("rayTraceGI_SpecTemp3"), computeWriteLayout },
 			ResourceData{ rtLowRes("rayTraceGI_SpecTemp4"), computeWriteLayout },
-			ResourceData{ rtLowRes("rayTraceGI_SpecTemp5"), computeWriteLayout }
+			ResourceData{ rtLowRes("rayTraceGI_SpecTemp5"), computeWriteLayout },
+			ResourceData{ rtLowRes("rayTraceGI_SpecHitMotion"), computeWriteLayout }	// 镜面那一路命中点的运动（硬件光追，Temp 10）
 		)
 		.Output(ResourceData{ rayTraceGI_Output, computeWriteLayout })
 		.Persistent(

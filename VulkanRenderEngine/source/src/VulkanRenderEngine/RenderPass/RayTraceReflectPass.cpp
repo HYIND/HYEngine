@@ -353,7 +353,8 @@ bool RayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::
 	AtrousBilateralFilter::Params params{
 		.normalFactor = state.option.rayTraceReflectParams.normalFactor,
 		.depthFactor = state.option.rayTraceReflectParams.depthFactor,
-		.luminanceFactor = state.option.rayTraceReflectParams.luminanceFactor
+		.luminanceFactor = state.option.rayTraceReflectParams.luminanceFactor,
+		.specularMode = 1
 	};
 
 	_spatialDenoisingFilter.Execute(
@@ -367,7 +368,8 @@ bool RayTraceReflectPass::DrawSpatialDenoising(const std::shared_ptr<VKWrapper::
 		params,
 		state.camera.curUBO,
 		state.camera.prevUBO,
-		state.option.rayTraceReflectParams.filterCount
+		state.option.rayTraceReflectParams.filterCount,
+		data.gMetallicRoughness		// 镜面信号：按粗糙度 / 命中距离限制滤波半径
 	);
 
 	cmd->SubmitToQueue();

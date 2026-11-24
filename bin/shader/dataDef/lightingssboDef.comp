@@ -12,6 +12,10 @@ struct DirLight {
 	bool volumeLightEnable;
 	bool volumeLightEffectByAtmospher;
 	float volumetricScatteringIntensity;
+
+	// 阴影距离渐隐（相机视空间深度）：<= start 完整阴影，>= end 不算阴影
+	float shadowFadeStart;
+	float shadowFadeEnd;
 };
 
 struct DirLightCascade

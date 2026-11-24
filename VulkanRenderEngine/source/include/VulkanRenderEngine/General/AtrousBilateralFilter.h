@@ -11,6 +11,8 @@ public:
 		float normalFactor = 128.0;
 		float depthFactor = 1.0;
 		float luminanceFactor = 4.0;
+		uint32_t specularMode = 0;			// 1 = 镜面信号：按粗糙度 / 命中距离（输入 alpha）限制滤波半径，需要 metallicRoughnessMap
+		float specularRadiusScale = 1.0f;	// 镜面信号的半径倍数
 	};
 
 public:
@@ -31,7 +33,8 @@ public:
 		const Params& params,
 		std::shared_ptr<UniformBlock>& curCameraUBO,
 		std::shared_ptr<UniformBlock>& prevCameraUBO,
-		uint32_t filterCount
+		uint32_t filterCount,
+		const std::shared_ptr<Texture2D>& metallicRoughnessMap = nullptr	// specularMode = 1 时读粗糙度
 	);
 
 private:

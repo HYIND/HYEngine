@@ -49,7 +49,8 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 //       另外比较命中距离（历史 alpha 里是累积的命中距离），挡住反射内容本身的变化；
 //     * 虚像位置用表面历史上累积的命中距离（时域稳定）；
 //     * 表面、虚像两种重投影都比命中距离（软判定），没通过的部分不拿另一种顶替，历史长度按通过比例连续缩短。
-//   局限：虚像位置用的是当前帧的相机与命中距离，反射里的物体自己在动时（命中点的运动）不处理。
+//   反射里的物体自己在动：硬件光追会输出第一次反弹命中点的运动（hitMotionTexture），虚像位置跟着镜像移动；
+//   SSR / 软件光追没有这个信息，按静止处理。
 layout (binding = 0) uniform Params
 {
     uint maxAccumulateCount;
@@ -67,6 +68,7 @@ layout (binding = 0) uniform Params
     uint fastHistoryValid;         // 0 = fastHistoryTexture 里没有有效内容（第一次 / 尺寸变了），快速历史从当前帧重新开始
     float specularMinAccumulate;   // 镜面信号：最光滑的表面最多累积几帧（随粗糙度过渡到 maxAccumulateCount）
     float specularParallaxScale;   // 镜面信号：按视差缩短历史的灵敏度倒数，<= 0 关闭（见混合部分）
+    uint hitMotionValid;           // 镜面信号：1 = hitMotionTexture 有效（命中点运动，只有硬件光追提供）
 };
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -88,6 +90,8 @@ layout (binding = 14) uniform sampler2D metallicRoughnessMap;
 // 快速历史（与历史同尺寸）：rgb = 颜色，a = 已累积帧数。上一帧的读，这一帧的写（两张图乒乓，由 C++ 端管理）
 layout (binding = 15) uniform sampler2D fastHistoryTexture;
 layout (binding = 16, rgba16f) uniform image2D fastOutputImage;
+// 镜面信号：第一次反弹命中点的世界空间运动（上一帧位置 - 本帧位置），w = 1 有效（与 rawTexture 同尺寸）
+layout (binding = 17) uniform sampler2D hitMotionTexture;
 
 const uint kDebugHistoryLength = 1u;
 const uint kDebugRejectReason = 2u;
@@ -192,6 +196,26 @@ float GetHitDistance(ivec2 coord, ivec2 size)
     if (count == 0)
         return 0.0;
     return (count & 1) != 0 ? values[count / 2] : 0.5 * (values[count / 2 - 1] + values[count / 2]);
+}
+
+// 命中点运动：3×3 邻域里有效值的平均（单像素只有 1 ~ 2 个样本，有的打中运动物体、有的打中背景）
+vec3 GetHitMotion(ivec2 coord, ivec2 size)
+{
+    vec3 sum = vec3(0.0);
+    float count = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            vec4 m = texelFetch(hitMotionTexture, clamp(coord + ivec2(x, y), ivec2(0), size - 1), 0);
+            if (m.w > 0.5)
+            {
+                sum += m.xyz;
+                count += 1.0;
+            }
+        }
+    }
+    return count > 0.0 ? sum / count : vec3(0.0);
 }
 
 struct HistorySample
@@ -410,6 +434,13 @@ void main()
 
         vec3 viewDir = normalize(currentWorldPos - camera.position);
         vec3 virtualPos = currentWorldPos + viewDir * trackingHit;
+        // 命中点运动（反射里的物体在动）：虚像是命中点关于反射面的镜像，命中点移动 D，虚像移动 D 关于平面的镜像。
+        // 没有运动信息（SSR / 软件光追 / 没打中物体）时按静止处理
+        if (hitMotionValid != 0u)
+        {
+            vec3 hitMotion = GetHitMotion(coord, imageSize);
+            virtualPos += hitMotion - 2.0 * dot(hitMotion, n) * n;
+        }
         vec4 prevSurfaceClip = prevcamera.projView * vec4(currentWorldPos, 1.0);
         vec4 prevVirtualClip = prevcamera.projView * vec4(virtualPos, 1.0);
         if (prevSurfaceClip.w > 1e-5 && prevVirtualClip.w > 1e-5)

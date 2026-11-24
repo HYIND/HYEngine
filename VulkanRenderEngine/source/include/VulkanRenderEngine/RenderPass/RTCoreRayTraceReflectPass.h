@@ -54,7 +54,8 @@ private:
 		std::shared_ptr<Texture2D> temporalAccumulateColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateMomentTexture;
 		std::shared_ptr<Texture2D> spatialDenoisingTempTexture;
-		std::shared_ptr<Texture2D> denoisedTexture;			// 空域滤波结果（低分辨率），再联合双边上采样到 outPutTexture（全分辨率）
+		std::shared_ptr<Texture2D> denoisedTexture;
+		std::shared_ptr<Texture2D> hitMotionTexture;		// 第一次反弹命中点的世界空间运动（低分辨率，Temp 5）			// 空域滤波结果（低分辨率），再联合双边上采样到 outPutTexture（全分辨率）
 
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryColorTexture;
 		std::shared_ptr<Texture2D> temporalAccumulateHistoryMomentTexture;

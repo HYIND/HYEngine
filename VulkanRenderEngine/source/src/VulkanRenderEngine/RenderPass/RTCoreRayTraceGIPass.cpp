@@ -60,7 +60,8 @@ RTCoreRayTraceGIPass::RTCoreRayTraceGIPass(
 			.AddUnifromTexture(13)
 			.AddUnifromTexture(14)
 			.AddUnifromTexture(15)
-			.AddStorageImage(16);		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddStorageImage(16)		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddStorageImage(17);		// 镜面那一路第一次反弹命中点的运动
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -112,6 +113,7 @@ void RTCoreRayTraceGIPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Ren
 	};
 	bindSignal(data.diffuse, 0, 0);
 	bindSignal(data.specular, 5, 2);
+	data.specular.hitMotion = ctx.GetTemp(10);		// 镜面那一路命中点的运动（硬件光追才有）
 
 	data.outPutTexture = ctx.GetOutput(0);
 
@@ -178,6 +180,12 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 	cmd->clearColorImage(specularTarget->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
 	target->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 	specularTarget->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+	auto& hitMotion = data.specular.hitMotion;
+	if (!hitMotion || hitMotion->IsEmpty())
+		return false;
+	hitMotion->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+	cmd->clearColorImage(hitMotion->GetImage(), vk::ImageLayout::eGeneral, clearColor, range);
+	hitMotion->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
 
 	auto& binding = registry.Get<RayTracingBindingRecord>("binding");
 
@@ -220,6 +228,7 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 	binding.SetUniformBlock(paramsUBO, 6);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetStorageImage(specularTarget, vk::ImageAspectFlagBits::eColor, 16);
+	binding.SetStorageImage(hitMotion, vk::ImageAspectFlagBits::eColor, 17);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);
 	binding.SetUniformTexture(data.gAlbedoOpacity, vk::ImageAspectFlagBits::eColor, 10);
@@ -279,7 +288,10 @@ bool RTCoreRayTraceGIPass::DrawDenoise(const std::shared_ptr<VKWrapper::VKComman
 
 	if (!_diffuseDenoiser.Execute(cmd, gbuffer, data.diffuse, diffuseParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO))
 		return false;
-	return _specularDenoiser.Execute(cmd, gbuffer, data.specular, specularParams, filterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO);
+	// 镜面那一路：按粗糙度 / 命中距离限制空域滤波半径（光滑表面的反射不被抹糊）
+	AtrousBilateralFilter::Params specularFilterParams = filterParams;
+	specularFilterParams.specularMode = 1;
+	return _specularDenoiser.Execute(cmd, gbuffer, data.specular, specularParams, specularFilterParams, giParams.filterCount, state.camera.curUBO, state.camera.prevUBO);
 }
 
 bool RTCoreRayTraceGIPass::DrawUpsample(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, FrameRenderData& data, RenderState& state)

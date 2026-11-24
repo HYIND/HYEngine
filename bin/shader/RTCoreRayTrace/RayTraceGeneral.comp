@@ -21,6 +21,7 @@ struct HitInfo {
     vec2 texCoords;
     float t;
     MaterialData materialdata;
+    vec3 prevPosition;      // 命中点上一帧的世界位置（见 HitPayLoad）
 };
 
 struct HitPayLoad {
@@ -32,6 +33,7 @@ struct HitPayLoad {
     float t;
     uint materialIndex;
     bool isHit;
+    vec3 prevPosition;      // 命中点上一帧的世界位置（物体运动；反射的时域累积用）。没有运动信息时等于 position
 };
 
 layout(location = 0) rayPayloadEXT HitPayLoad payload;
@@ -287,6 +289,7 @@ bool traceScene(Ray ray, inout HitInfo hit)
         hit.texCoords = payload.texCoords;
         hit.t = payload.t;
         hit.materialdata = materials[payload.materialIndex];
+        hit.prevPosition = payload.prevPosition;
     }
 
     return payload.isHit;

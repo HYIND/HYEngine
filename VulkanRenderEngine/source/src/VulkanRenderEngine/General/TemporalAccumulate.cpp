@@ -56,7 +56,8 @@ TemporalAccumulate::TemporalAccumulate(const std::string& temporalAccumulateShad
 		.AddStorageImage(13)		// 调试热力图
 		.AddUnifromTexture(14)		// metallic / roughness（镜面信号的虚像重投影按粗糙度分配）
 		.AddUnifromTexture(15)		// 快速历史（上一帧）
-		.AddStorageImage(16);		// 快速历史（这一帧）
+		.AddStorageImage(16)		// 快速历史（这一帧）
+		.AddUnifromTexture(17);		// 命中点运动（镜面信号，可选）
 
 	if (config.Validate())
 		_pipeline.Create(config);
@@ -80,7 +81,8 @@ void TemporalAccumulate::Execute(
 	const Params& params,
 	std::shared_ptr<UniformBlock>& curCameraUBO,
 	std::shared_ptr<UniformBlock>& prevCameraUBO,
-	const std::shared_ptr<Texture2D>& metallicRoughnessMap
+	const std::shared_ptr<Texture2D>& metallicRoughnessMap,
+	const std::shared_ptr<Texture2D>& hitMotionMap
 )
 {
 	auto size = outputColorImage->GetSize();
@@ -102,6 +104,8 @@ void TemporalAccumulate::Execute(
 
 	Params shaderParams = params;
 	shaderParams.fastHistoryValid = _fastValid ? 1u : 0u;
+	const bool hasHitMotion = hitMotionMap && !hitMotionMap->IsEmpty() && params.signalType == static_cast<uint32_t>(SignalType::Specular);
+	shaderParams.hitMotionValid = hasHitMotion ? 1u : 0u;
 
 	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(shaderParams));
 	paramsUBO->WriteDataAsync(cmd, &shaderParams, sizeof(shaderParams));
@@ -156,6 +160,8 @@ void TemporalAccumulate::Execute(
 	binding.SetUniformTexture(metallicRoughnessMap ? metallicRoughnessMap : normalMap, vk::ImageAspectFlagBits::eColor, 14);
 	binding.SetUniformTexture(fastRead, vk::ImageAspectFlagBits::eColor, 15);
 	binding.SetStorageImage(fastWrite, vk::ImageAspectFlagBits::eColor, 16);
+	// 没有命中点运动时拿法线图占位（shader 在 hitMotionValid 为 0 时不读）
+	binding.SetUniformTexture(hasHitMotion ? hitMotionMap : normalMap, vk::ImageAspectFlagBits::eColor, 17);
 
 	_pipeline.Bind(cmd, binding);
 	cmd->dispatch((size.x + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (size.y + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
