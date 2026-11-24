@@ -194,7 +194,7 @@ private:
         std::shared_ptr<RenderPassBase> rayTraceGeneral, rayTraceReflect, rayTraceGI, ssr, ssgi;
         std::shared_ptr<RenderPassBase> ddgiUpdate, ddgiBlend, ddgiApply, ddgiProbeDraw;
         std::shared_ptr<RenderPassBase> indirectDiffuseCombin, indirectSpecularCombin, indirectPathTracingCombin, combinIndirectLighting;
-        std::shared_ptr<RenderPassBase> lightDraw, volumeCalculate, transparent, effect, autoExposure;
+        std::shared_ptr<RenderPassBase> lightDraw, volumeLut, volumeCombine, transparent, effect, autoExposure;
         uint32_t hzbMaxLevel = 1;
 
         template<typename F>
@@ -205,7 +205,7 @@ private:
                 &rayTraceGeneral, &rayTraceReflect, &rayTraceGI, &ssr, &ssgi,
                 &ddgiUpdate, &ddgiBlend, &ddgiApply, &ddgiProbeDraw,
                 &indirectDiffuseCombin, &indirectSpecularCombin, &indirectPathTracingCombin, &combinIndirectLighting,
-                &lightDraw, &volumeCalculate, &transparent, &effect, &autoExposure })
+                &lightDraw, &volumeLut, &volumeCombine, &transparent, &effect, &autoExposure })
             {
                 if (*pass)
                     f(**pass);

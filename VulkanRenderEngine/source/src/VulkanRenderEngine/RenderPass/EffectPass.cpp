@@ -6,13 +6,13 @@
 #include "VulkanRenderEngine/Base/Effect.h"
 #include "VulkanRenderEngine/Base/Material.h"
 
+#include <algorithm>
+#include <execution>
+#include <tuple>
+
 
 namespace
 {
-	std::shared_ptr<Material> GetParticleMaterial(const BaseParticleProperties& properties)
-	{
-		return properties.renderInfo.HasMaterial() ? properties.renderInfo.material : nullptr;
-	}
 
 	void AddParticleVertexInput(GraphicsPipelineConfig& config)
 	{
@@ -231,13 +231,80 @@ EffectPass::EffectPass(
 
 bool EffectPass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
-	return !state.objects.sceneStaticRenderData.effectItems.empty();
+	for (auto& frame : state.objects.sceneStaticRenderData.particleFrames)
+	{
+		if (frame && !frame->batches.empty())
+			return true;
+	}
+	return false;
+}
+
+namespace
+{
+	// 网格在局部空间的包围半径（所有子网格 AABB 角点到原点的最大距离）
+	float MeshBoundRadius(const std::shared_ptr<StaticModel>& model)
+	{
+		float radius = 0.0f;
+		if (!model)
+			return radius;
+		for (auto& info : model->GetMeshInfos())
+		{
+			if (!info.mesh)
+				continue;
+			AABB aabb = info.mesh->GetAABB();
+			radius = std::max(radius, glm::length(glm::max(glm::abs(aabb.min), glm::abs(aabb.max))));
+		}
+		return radius;
+	}
+}
+
+const EffectPass::ModelGeometry* EffectPass::GetModelGeometry(const std::shared_ptr<StaticModel>& model)
+{
+	if (!model)
+		return nullptr;
+
+	auto indirectManager = IndirectDrawManager::Instance();
+
+	// 几何区间只在第一次用到这个模型（或它某个子网格的版本变了）时取一次
+	uint32_t modelVersion = 0;
+	for (auto& info : model->GetMeshInfos())
+	{
+		if (info.mesh)
+			modelVersion += info.mesh->GetVerticesIndicesVsrsion();
+	}
+
+	auto cached = _modelGeometries.find(model.get());
+	if (cached == _modelGeometries.end() || cached->second.version != modelVersion)
+	{
+		ModelGeometry geometry;
+		geometry.version = modelVersion;
+		geometry.localRadius = MeshBoundRadius(model);
+
+		for (auto& info : model->GetMeshInfos())
+		{
+			if (!info.mesh)
+				continue;
+
+			IndirectDrawMeta meta;
+			if (!indirectManager->GetIndirectDrawMeta(*info.mesh, meta) || meta.indexCount == 0)
+				continue;
+
+			ModelSubMeshGeometry subMesh;
+			subMesh.indexCount = meta.indexCount;
+			subMesh.firstIndex = meta.firstIndex;
+			subMesh.vertexOffset = meta.vertexOffset;
+			subMesh.material = info.material;
+			geometry.subMeshes.push_back(std::move(subMesh));
+		}
+
+		cached = _modelGeometries.insert_or_assign(model.get(), std::move(geometry)).first;
+	}
+	return &cached->second;
 }
 
 void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
 	auto& drawGroups = registry.Get<std::vector<DrawGroup>>("Groups");
-	auto& modelGeometries = registry.Get<std::unordered_map<const StaticModel*, ModelGeometry>>("ModelGeometries");;
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
@@ -274,13 +341,12 @@ void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderStat
 		setupUnitMesh(_sphereModel, _sphereIndexCount, _sphereFirstIndex, _sphereVertexOffset);
 		setupUnitMesh(_cubeModel, _cubeIndexCount, _cubeFirstIndex, _cubeVertexOffset);
 
+		_quadRadius = MeshBoundRadius(_quadModel);
+		_sphereRadius = MeshBoundRadius(_sphereModel);
+		_cubeRadius = MeshBoundRadius(_cubeModel);
+
 		_unitMeshRegistered = (_quadIndexCount > 0 && _sphereIndexCount > 0 && _cubeIndexCount > 0);
 	}
-
-	// 按「网格区间 + 有没有材质 + 混合模式」分组：同一组粒子在 SSBO 里连续，一次 drawIndexed 就能画完。
-	// 材质下标是逐实例的，所以同一组里可以有多个不同材质的粒子。
-	using GroupKey = std::tuple<uint32_t /*indexCount*/, uint32_t /*firstIndex*/, int32_t /*vertexOffset*/, bool /*hasMaterial*/, bool /*alphaBlend*/>;
-	std::map<GroupKey, std::vector<ParticleInstance>> groupedInstances;
 
 	std::unordered_map<const Material*, uint32_t> materialIndexCache;
 	auto resolveMaterialIndex = [&](const std::shared_ptr<Material>& material, uint32_t& materialIndex) -> bool
@@ -302,198 +368,172 @@ void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderStat
 			return true;
 		};
 
-	for (auto& item : state.objects.sceneStaticRenderData.effectItems)
+	// 一个批次 = 渲染参数相同的一段连续粒子。网格区间 / 材质下标 / 剔除都按批次做，不再逐粒子分类
+	struct SubDraw
 	{
-		if (!item)
+		uint32_t indexCount = 0;
+		uint32_t firstIndex = 0;
+		int32_t vertexOffset = 0;
+		const std::shared_ptr<Material>* material = nullptr;
+		float localRadius = 0.0f;
+	};
+	struct PendingGroup
+	{
+		const ParticleRenderParticle* source = nullptr;
+		uint32_t count = 0;
+		uint32_t mask = 0;
+		uint32_t flags = 0;
+		uint32_t materialIndex = 0xffffffffu;
+		DrawGroup group;
+	};
+
+	std::vector<PendingGroup> pending;
+	std::vector<SubDraw> subDraws;
+	for (auto& frame : state.objects.sceneStaticRenderData.particleFrames)
+	{
+		if (!frame)
 			continue;
-		if (item->effectType != EffectType::Particle)
-			continue;	// 激光束等其它特效暂不处理
 
-		auto properties = std::static_pointer_cast<BaseParticleProperties>(item);
-		if (!properties)
-			continue;
-
-		const auto& renderInfo = properties->renderInfo;
-		const bool alphaBlend = properties->blendMode == ParticleBlendMode::AlphaBlend;
-
-		ParticleInstance instance;
-		instance.position = properties->position;
-		instance.extentX = properties->scale.x;
-		instance.extentY = properties->scale.y;
-		instance.roll = 0.0f;
-		instance.mask = static_cast<uint32_t>(renderInfo.mask);
-		instance.flags = 0u;
-		instance.color = glm::vec4(properties->baseColor, properties->opacity);
-		instance.scale = properties->scale;
-		instance.materialIndex = 0xffffffffu;
-		instance.rotation = glm::vec4(properties->rotation.x, properties->rotation.y, properties->rotation.z, properties->rotation.w);
-
-		if (renderInfo.mesh)
+		for (const ParticleRenderBatch& batch : frame->batches)
 		{
-			switch (renderInfo.meshType)
-			{
-			case ParticleMeshType::Custom:
-			{
-				if (!renderInfo.model)
-					continue;
-
-				const StaticModel* modelKey = renderInfo.model.get();
-
-				// 几何区间只在第一次用到这个模型（或它某个子网格的版本变了）时取一次
-				uint32_t modelVersion = 0;
-				for (auto& info : renderInfo.model->GetMeshInfos())
-				{
-					if (info.mesh)
-						modelVersion += info.mesh->GetVerticesIndicesVsrsion();
-				}
-
-				auto cachedModel = modelGeometries.find(modelKey);
-				if (cachedModel == modelGeometries.end() || cachedModel->second.version != modelVersion)
-				{
-					ModelGeometry geometry;
-					geometry.version = modelVersion;
-
-					auto& meshInfos = renderInfo.model->GetMeshInfos();
-					for (auto& info : meshInfos)
-					{
-						if (!info.mesh)
-							continue;
-
-						IndirectDrawMeta meta;
-						if (!indirectManager->GetIndirectDrawMeta(*info.mesh, meta) || meta.indexCount == 0)
-							continue;
-
-						ModelSubMeshGeometry subMesh;
-						subMesh.indexCount = meta.indexCount;
-						subMesh.firstIndex = meta.firstIndex;
-						subMesh.vertexOffset = meta.vertexOffset;
-						subMesh.material = info.material;
-						geometry.subMeshes.push_back(std::move(subMesh));
-					}
-
-					cachedModel = modelGeometries.insert_or_assign(modelKey, std::move(geometry)).first;
-				}
-
-				for (auto& subMesh : cachedModel->second.subMeshes)
-				{
-					ParticleInstance meshInstance = instance;
-					meshInstance.flags |= PARTICLE_FLAG_MESH;
-
-					bool hasMaterial = false;
-					uint32_t materialIndex = 0;
-					if (resolveMaterialIndex(subMesh.material, materialIndex))
-					{
-						meshInstance.materialIndex = materialIndex;
-						meshInstance.flags |= PARTICLE_FLAG_MATERIAL;
-						hasMaterial = true;
-					}
-
-					groupedInstances[GroupKey{ subMesh.indexCount, subMesh.firstIndex, subMesh.vertexOffset, hasMaterial, alphaBlend }].push_back(meshInstance);
-				}
-
-				continue;
-			}
-			case ParticleMeshType::Cube:
-			{
-				if (_cubeIndexCount == 0)
-					continue;
-
-				instance.flags |= PARTICLE_FLAG_MESH;
-
-				bool hasMaterial = false;
-				if (std::shared_ptr<Material> material = GetParticleMaterial(*properties))
-				{
-					uint32_t materialIndex = 0;
-					if (resolveMaterialIndex(material, materialIndex))
-					{
-						instance.materialIndex = materialIndex;
-						instance.flags |= PARTICLE_FLAG_MATERIAL;
-						hasMaterial = true;
-					}
-				}
-
-				groupedInstances[GroupKey{ _cubeIndexCount, _cubeFirstIndex, _cubeVertexOffset, hasMaterial, alphaBlend }].push_back(instance);
-				break;
-			}
-
-			case ParticleMeshType::Sphere:
-			{
-				if (_sphereIndexCount == 0)
-					continue;
-
-				instance.flags |= PARTICLE_FLAG_MESH;
-
-				bool hasMaterial = false;
-				if (std::shared_ptr<Material> material = GetParticleMaterial(*properties))
-				{
-					uint32_t materialIndex = 0;
-					if (resolveMaterialIndex(material, materialIndex))
-					{
-						instance.materialIndex = materialIndex;
-						instance.flags |= PARTICLE_FLAG_MATERIAL;
-						hasMaterial = true;
-					}
-				}
-
-				groupedInstances[GroupKey{ _sphereIndexCount, _sphereFirstIndex, _sphereVertexOffset, hasMaterial, alphaBlend }].push_back(instance);
-				break;
-			}
-
-			default:
-				continue;
-			}
-
-			continue;
-		}
-		else
-		{
-			if (_quadIndexCount == 0)
+			if (batch.particleCount == 0 || batch.firstParticle + batch.particleCount > frame->particles.size())
 				continue;
 
-			bool hasMaterial = false;
-			if (std::shared_ptr<Material> material = GetParticleMaterial(*properties))
+			const ParticleRenderInfo& renderInfo = batch.renderInfo;
+			subDraws.clear();
+			if (!renderInfo.mesh)
 			{
+				if (_quadIndexCount > 0)
+					subDraws.push_back(SubDraw{ _quadIndexCount, _quadFirstIndex, _quadVertexOffset, &renderInfo.material, _quadRadius });
+			}
+			else
+			{
+				switch (renderInfo.meshType)
+				{
+				case ParticleMeshType::Cube:
+					if (_cubeIndexCount > 0)
+						subDraws.push_back(SubDraw{ _cubeIndexCount, _cubeFirstIndex, _cubeVertexOffset, &renderInfo.material, _cubeRadius });
+					break;
+				case ParticleMeshType::Sphere:
+					if (_sphereIndexCount > 0)
+						subDraws.push_back(SubDraw{ _sphereIndexCount, _sphereFirstIndex, _sphereVertexOffset, &renderInfo.material, _sphereRadius });
+					break;
+				case ParticleMeshType::Custom:
+					if (const ModelGeometry* geometry = GetModelGeometry(renderInfo.model))
+					{
+						for (auto& subMesh : geometry->subMeshes)
+							subDraws.push_back(SubDraw{ subMesh.indexCount, subMesh.firstIndex, subMesh.vertexOffset, &subMesh.material, geometry->localRadius });
+					}
+					break;
+				default:
+					break;
+				}
+			}
+			if (subDraws.empty())
+				continue;
+
+			// 视锥剔除：粒子中心包围盒按「最大尺寸 × 网格包围半径」外扩
+			float localRadius = 0.0f;
+			for (auto& subDraw : subDraws)
+				localRadius = std::max(localRadius, subDraw.localRadius);
+			const glm::vec3 inflate(batch.maxExtent * localRadius);
+			AABB bounds(batch.centerMin - inflate, batch.centerMax + inflate);
+			if (!state.camera.frustum.IsAABBOnFrustum(bounds))
+				continue;
+
+			const bool alphaBlend = batch.blendMode == ParticleBlendMode::AlphaBlend;
+			for (auto& subDraw : subDraws)
+			{
+				PendingGroup group;
+				group.source = frame->particles.data() + batch.firstParticle;
+				group.count = batch.particleCount;
+				group.mask = static_cast<uint32_t>(renderInfo.mask);
+				group.flags = renderInfo.mesh ? PARTICLE_FLAG_MESH : 0u;
+
 				uint32_t materialIndex = 0;
-				if (resolveMaterialIndex(material, materialIndex))
+				const bool hasMaterial = subDraw.material && resolveMaterialIndex(*subDraw.material, materialIndex);
+				if (hasMaterial)
 				{
-					instance.materialIndex = materialIndex;
-					instance.flags |= PARTICLE_FLAG_MATERIAL;
-					hasMaterial = true;
+					group.materialIndex = materialIndex;
+					group.flags |= PARTICLE_FLAG_MATERIAL;
 				}
+
+				group.group.material = hasMaterial;
+				group.group.alphaBlend = alphaBlend;
+				group.group.instanceCount = batch.particleCount;
+				group.group.indexCount = subDraw.indexCount;
+				group.group.firstIndex = subDraw.firstIndex;
+				group.group.vertexOffset = subDraw.vertexOffset;
+				pending.push_back(group);
 			}
-
-			groupedInstances[GroupKey{ _quadIndexCount, _quadFirstIndex, _quadVertexOffset, hasMaterial, alphaBlend }].push_back(instance);
 		}
-
 	}
 
-	if (groupedInstances.empty())
+	if (pending.empty())
 		return;
 
-	std::vector<ParticleInstance> instances;
-	instances.reserve(1024);
-	for (auto& [key, group] : groupedInstances)
-		instances.insert(instances.end(), group.begin(), group.end());
+	// 网格区间 / 有无材质 / 混合模式相同的批次排到一起，实例连续，合并成一次 drawIndexed
+	//（材质下标是逐实例的，不同材质可以在同一次绘制里）
+	auto drawKey = [](const PendingGroup& g)
+		{
+			return std::make_tuple(g.group.alphaBlend, g.group.material, g.group.indexCount, g.group.firstIndex, g.group.vertexOffset);
+		};
+	std::sort(pending.begin(), pending.end(), [&](const PendingGroup& a, const PendingGroup& b) { return drawKey(a) < drawKey(b); });
 
-	uint32_t firstInstance = 0;
-	for (auto& [key, group] : groupedInstances)
+	uint32_t totalInstances = 0;
+	for (auto& group : pending)
 	{
-		const auto [indexCount, firstIndex, vertexOffset, hasMaterial, alphaBlend] = key;
+		group.group.firstInstance = totalInstances;
+		totalInstances += group.count;
 
-		DrawGroup drawGroup;
-		drawGroup.material = hasMaterial;
-		drawGroup.alphaBlend = alphaBlend;
-		drawGroup.firstInstance = firstInstance;
-		drawGroup.instanceCount = static_cast<uint32_t>(group.size());
-		drawGroup.indexCount = indexCount;
-		drawGroup.firstIndex = firstIndex;
-		drawGroup.vertexOffset = vertexOffset;
-		drawGroups.push_back(drawGroup);
-		firstInstance += static_cast<uint32_t>(group.size());
+		if (!drawGroups.empty())
+		{
+			DrawGroup& last = drawGroups.back();
+			const bool sameDraw = last.alphaBlend == group.group.alphaBlend && last.material == group.group.material
+				&& last.indexCount == group.group.indexCount && last.firstIndex == group.group.firstIndex && last.vertexOffset == group.group.vertexOffset
+				&& last.firstInstance + last.instanceCount == group.group.firstInstance;
+			if (sameDraw)
+			{
+				last.instanceCount += group.count;
+				continue;
+			}
+		}
+		drawGroups.push_back(group.group);
 	}
 
+	// 逐实例填 GPU 布局，各组写自己那段，互不重叠
+	_instanceScratch.resize(totalInstances);
+	std::for_each(std::execution::par, pending.begin(), pending.end(),
+		[this](const PendingGroup& group)
+		{
+			ParticleInstance* dst = _instanceScratch.data() + group.group.firstInstance;
+			for (uint32_t i = 0; i < group.count; ++i)
+			{
+				const ParticleRenderParticle& particle = group.source[i];
+				ParticleInstance& instance = dst[i];
+				instance.position = particle.position;
+				instance.extentX = particle.scale.x;
+				instance.extentY = particle.scale.y;
+				instance.roll = 0.0f;
+				instance.mask = group.mask;
+				instance.flags = group.flags;
+				instance.color = glm::vec4(particle.color, particle.opacity);
+				instance.scale = particle.scale;
+				instance.materialIndex = group.materialIndex;
+				instance.rotation = glm::vec4(particle.rotation.x, particle.rotation.y, particle.rotation.z, particle.rotation.w);
+			}
+		});
+
 	auto cmd = VKCONTEXT->GetCommandBuffer();
-	_instanceBuffer->WriteDataAsync(cmd, instances.data(), instances.size() * sizeof(ParticleInstance));
+	// 容量按 1.5 倍增长：粒子数上涨期间不至于每帧都按精确大小重建 buffer。
+	// remainData = false：旧内容马上被这一帧整体覆盖，不需要先拷过去（旧 buffer 走 Retire 延迟销毁）
+	const uint64_t requiredBytes = uint64_t(totalInstances) * sizeof(ParticleInstance);
+	if (requiredBytes > _instanceBuffer->GetSize())
+	{
+		const uint64_t grownBytes = std::max<uint64_t>(requiredBytes, _instanceBuffer->GetSize() + _instanceBuffer->GetSize() / 2);
+		_instanceBuffer->SetSizeAsync(cmd, grownBytes, false);
+	}
+	_instanceBuffer->WriteDataAsync(cmd, _instanceScratch.data(), requiredBytes);
 	cmd->SubmitNowAndWait();
 }
 

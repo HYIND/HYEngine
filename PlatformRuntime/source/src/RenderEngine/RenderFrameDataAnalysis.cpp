@@ -80,6 +80,13 @@ namespace Render
 					state.objects.sceneStaticRenderData.effectItems.push_back(ptr->properties);
 				break;
 			}
+			case RenderContextType::ParticleBatch:
+			{
+				auto ptr = std::static_pointer_cast<ParticleBatchRenderData>(context->data);
+				if (ptr && ptr->frame && !ptr->frame->batches.empty())
+					state.objects.sceneStaticRenderData.particleFrames.push_back(ptr->frame);
+				break;
+			}
 			default:
 				break;
 			}

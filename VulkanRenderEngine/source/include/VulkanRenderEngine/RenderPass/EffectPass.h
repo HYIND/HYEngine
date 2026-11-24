@@ -68,8 +68,16 @@ private:
 	struct ModelGeometry
 	{
 		uint32_t version = 0;
+		float localRadius = 0.0f;		// 局部空间包围半径（剔除用）
 		std::vector<ModelSubMeshGeometry> subMeshes;
 	};
+
+	// 自定义模型的几何区间缓存（跨帧，按子网格版本失效）
+	const ModelGeometry* GetModelGeometry(const std::shared_ptr<StaticModel>& model);
+	std::unordered_map<const StaticModel*, ModelGeometry> _modelGeometries;
+
+	// 每帧实例的 CPU 暂存（复用，避免每帧重新分配）
+	std::vector<ParticleInstance> _instanceScratch;
 
 	uint32_t _quadIndexCount = 0;
 	uint32_t _quadFirstIndex = 0;
@@ -82,6 +90,11 @@ private:
 	uint32_t _cubeIndexCount = 0;
 	uint32_t _cubeFirstIndex = 0;
 	int32_t _cubeVertexOffset = 0;
+
+	// 内置网格的局部包围半径（剔除用，注册网格时从 AABB 算）
+	float _quadRadius = 0.7072f;
+	float _sphereRadius = 0.5f;
+	float _cubeRadius = 0.8661f;
 
 	std::vector<std::shared_ptr<StaticModel>> _frameModels;
 };

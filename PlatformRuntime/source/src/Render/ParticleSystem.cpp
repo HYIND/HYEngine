@@ -4,28 +4,33 @@
 #include "Helper/Tools.h"
 #include <algorithm>
 #include <execution>
+#include <iterator>
 
 namespace
 {
-	glm::mat4 MakeParticleTransform(const glm::vec3& position, const glm::quat& rotation, const glm::vec3& scale)
+	// 粒子数超过这个值才并行（小发射器串行更快，省掉线程调度）
+	constexpr std::size_t kParallelThreshold = 512;
+
+	template<typename It, typename F>
+	void ForEachMaybeParallel(It first, It last, F&& f)
 	{
-		return glm::translate(glm::mat4(1.0f), position)
-			* glm::toMat4(rotation)
-			* glm::scale(glm::mat4(1.0f), scale);
+		if (static_cast<std::size_t>(std::distance(first, last)) >= kParallelThreshold)
+			std::for_each(std::execution::par, first, last, f);
+		else
+			std::for_each(first, last, f);
 	}
 
-	inline void AdvanceParticle(Particle& particle, float deltaTime, float deltaSecond)
+	inline void AdvanceParticle(ParticleState& particle, float deltaTime, float deltaSecond)
 	{
-		BaseParticleProperties* properties = particle.properties.get();
-
+		// 取裸指针调用：不拷 shared_ptr，省掉每个粒子每帧 6 次原子引用计数
 		glm::vec3 localAccl(0.f);
 		glm::vec3 worldAccl(0.f);
-		if (auto updater = particle.opacityUpdater) properties->opacity = updater->update(&particle, deltaTime);
-		if (auto updater = particle.baseColorUpdater) properties->baseColor = updater->update(&particle, deltaTime);
-		if (auto updater = particle.scaleUpdater) particle.scale = updater->update(&particle, deltaTime);
-		if (auto updater = particle.rotationUpdater) particle.rotation = updater->update(&particle, deltaTime);
-		if (auto updater = particle.localAccelerationUpdater) localAccl = updater->update(&particle, deltaTime);
-		if (auto updater = particle.worldAccelerationUpdater) worldAccl = updater->update(&particle, deltaTime);
+		if (auto* updater = particle.opacityUpdater.get()) particle.opacity = updater->update(particle, deltaTime);
+		if (auto* updater = particle.baseColorUpdater.get()) particle.baseColor = updater->update(particle, deltaTime);
+		if (auto* updater = particle.scaleUpdater.get()) particle.scale = updater->update(particle, deltaTime);
+		if (auto* updater = particle.rotationUpdater.get()) particle.rotation = updater->update(particle, deltaTime);
+		if (auto* updater = particle.localAccelerationUpdater.get()) localAccl = updater->update(particle, deltaTime);
+		if (auto* updater = particle.worldAccelerationUpdater.get()) worldAccl = updater->update(particle, deltaTime);
 
 		glm::vec3 accl = worldAccl;
 		if (localAccl != glm::vec3(0.f))
@@ -33,15 +38,10 @@ namespace
 
 		particle.velocity += accl * deltaSecond;
 		particle.position += particle.velocity * deltaSecond;
-
-		properties->position = particle.position;
-		properties->rotation = particle.rotation;
-		properties->scale = particle.scale;
 	}
 }
 
 ParticleSystem::ParticleSystem()
-	:m_MaxParticles(50000), _particlesPool(3000, 10000)
 {}
 
 void ParticleSystem::update(float deltaTime)
@@ -49,106 +49,103 @@ void ParticleSystem::update(float deltaTime)
 	//auto start = Tool::GetTimestampMircoseconds();
 	UpdateParticle(deltaTime);
 	EmitParticle(deltaTime);
-	//std::cout << std::format("ParticleSystem upadte cost {}us, Particle number = {}\n", Tool::GetTimestampMircoseconds() - start, _particles.size());
+	BuildFrameData();
+	//std::cout << std::format("ParticleSystem upadte cost {}us, Particle number = {}\n", Tool::GetTimestampMircoseconds() - start, _particleCount);
 }
 
 void ParticleSystem::UpdateParticle(float deltaTime)
 {
 	const float deltaSecond = deltaTime / 1000.f;
 
-	std::for_each(std::execution::par_unseq, _particles.begin(), _particles.end(),
-		[deltaTime, deltaSecond](Particle* particle)
-		{
-			particle->lifeTime -= deltaSecond;
-			if (particle->lifeTime <= 0.f || !particle->properties)
-				return;
-
-			AdvanceParticle(*particle, deltaTime, deltaSecond);
-		}
-	);
-
-	// 2) 一趟就地压缩：活着的按原顺序往前挤，死的当场归还池子。
-	//    （原来 partition 之后还要再 par_unseq 遍历一遍尾部做回收。）
-	std::size_t writeIndex = 0;
-	const std::size_t count = _particles.size();
-	for (std::size_t readIndex = 0; readIndex < count; ++readIndex)
+	_particleCount = 0;
+	for (auto& [id, emitter] : _emitters)
 	{
-		Particle* particle = _particles[readIndex];
-		if (particle && particle->lifeTime > 0.f)
-		{
-			_particles[writeIndex++] = particle;
-			continue;
-		}
+		auto& particles = emitter.particles;
+		ForEachMaybeParallel(particles.begin(), particles.end(),
+			[deltaTime, deltaSecond](ParticleState& particle)
+			{
+				particle.lifeTime -= deltaSecond;
+				if (particle.lifeTime <= 0.f)
+					return;
 
-		if (particle)
-			_particlesPool.ReleaseData(particle);
+				AdvanceParticle(particle, deltaTime, deltaSecond);
+			});
+
+		// 就地压缩：erase_if 保持存活粒子的相对顺序（批次按顺序切分，顺序不能乱）
+		std::erase_if(particles, [](const ParticleState& particle) { return particle.lifeTime <= 0.f; });
+		_particleCount += particles.size();
 	}
-
-	_particles.resize(writeIndex);
 }
 
 void ParticleSystem::EmitParticle(float deltaTime)
 {
-	float deltaSceond = deltaTime / 1000.f;
+	const float deltaSecond = deltaTime / 1000.f;
 
-	_emitTasks.clear();
-	_emitSlots.clear();
-
-	// 本帧的粒子预算：上限减掉存活粒子数，由各发射器按顺序领取。
-	const std::size_t aliveCount = _particles.size();
-	_emitBudget = aliveCount >= static_cast<std::size_t>(m_MaxParticles) ? 0 : static_cast<std::size_t>(m_MaxParticles) - aliveCount;
+	for (auto& [id, emitter] : _emitters)
+		emitter.seen = false;
 
 	std::vector<Entity> entities = m_world->getEntitiesWith<ParticleEmitter, Transform>();
 	for (auto& entity : entities)
 	{
 		auto& trans = entity.getComponent<Transform>();
 		auto& emitter = entity.getComponent<ParticleEmitter>();
+
+		auto& container = _emitters[entity.getId()];
+		container.seen = true;
+		container.visible = emitter.visible;
+
 		if (!emitter.enable)
 			continue;
 
-		Emit(trans, emitter, deltaSceond);
+		// 预算按发射器各自独立：上限减掉这个发射器当前存活的粒子数，发射器之间互不挤占
+		auto& particles = container.particles;
+		const std::size_t maxParticles = static_cast<std::size_t>(std::max(emitter.emitterParams.maxParticles, 0));
+		const std::size_t budget = particles.size() >= maxParticles ? 0 : maxParticles - particles.size();
+
+		// 预算为 0 时也要调用：发射累加器、突发计数照常推进，被截掉的部分丢弃（和改之前一致）
+		const std::size_t count = ComputeEmitCount(emitter, deltaSecond, budget);
+		if (count == 0)
+			continue;
+
+		const std::size_t start = particles.size();
+		particles.resize(start + count);
+
+		const glm::mat4 emitterMatrix = trans.GetMatrix();
+		const EmitterParams& params = emitter.emitterParams;
+		ForEachMaybeParallel(particles.begin() + start, particles.end(),
+			[&trans, &emitterMatrix, &params](ParticleState& particle)
+			{
+				InitParticle(particle, trans, emitterMatrix, params);
+			});
+
+		_particleCount += count;
 	}
 
-	if (_emitTasks.empty())
-		return;
-
-	std::for_each(std::execution::par, _emitTasks.begin(), _emitTasks.end(),
-		[](const std::function<void()>& task) { task(); });
-
-	_particles.reserve(aliveCount + _emitSlots.size());
-	_particles.append_range(std::move(_emitSlots));
-	_emitSlots.clear();
+	// 发射器已经删掉、粒子也死光了的，回收容器
+	std::erase_if(_emitters, [](const auto& entry) { return !entry.second.seen && entry.second.particles.empty(); });
 }
 
-void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, float deltaSceond)
+std::size_t ParticleSystem::ComputeEmitCount(ParticleEmitter& emitter, float deltaSceond, std::size_t budget)
 {
 	auto& params = emitter.emitterParams;
 	auto& state = emitter.emitterState;
 
 	if (!params.IsVaild())
-		return;
+		return 0;
 
-	auto pushEmitTasks = [&](int count)
+	std::size_t count = 0;
+	auto request = [&](int amount)
 		{
-			if (_emitBudget <= 0)
+			if (amount <= 0 || budget == 0)
 				return;
-
-			for (int i = 0; i < count && _emitBudget > 0; i++)
-			{
-				_emitBudget--;
-
-				const std::size_t slot = _emitSlots.size();
-				_emitSlots.push_back(nullptr);
-				_emitTasks.emplace_back([this, &transform, &params, slot]()
-					{
-						EmitTaskBody(transform, params, slot);
-					});
-			}
+			const std::size_t n = std::min<std::size_t>(static_cast<std::size_t>(amount), budget);
+			budget -= n;
+			count += n;
 		};
 
 	state.timeAccumulator += deltaSceond;
 	if (state.timeAccumulator < params.warmupTime)
-		return;
+		return 0;
 
 	auto shouldEmitBurst = [&]()->bool { return params.burstAmount > 0 && (state.burstCountAccumulator <= params.burstCount || params.burstCount == 0); };
 	if (shouldEmitBurst())
@@ -156,7 +153,7 @@ void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, 
 		state.burstTimeAccumulator += deltaSceond;
 		if (state.burstTimeAccumulator > params.burstInterval)
 		{
-			pushEmitTasks(params.burstAmount);
+			request(params.burstAmount);
 			state.burstTimeAccumulator -= params.burstInterval;
 			state.burstCountAccumulator++;
 		}
@@ -173,67 +170,128 @@ void ParticleSystem::Emit(const Transform& transform, ParticleEmitter& emitter, 
 	const uint32_t emitCount = static_cast<uint32_t>(state.emitAmountAccumulator);
 	if (emitCount > 0)
 	{
-		pushEmitTasks(emitCount);
+		request(static_cast<int>(emitCount));
 		state.emitAmountAccumulator -= static_cast<float>(emitCount);
 	}
+
+	return count;
 }
 
-void ParticleSystem::EmitTaskBody(const Transform& transform, const EmitterParams& params, std::size_t slot)
+void ParticleSystem::InitParticle(ParticleState& particle, const Transform& transform, const glm::mat4& emitterMatrix, const EmitterParams& params)
 {
-	const glm::mat4 emitterMatrix = transform.GetMatrix();
-
 	glm::vec3 particleInitPosition = params.posGenerator->generate();
 	glm::vec3 particleInitDirection = params.dirGenerator->generate(particleInitPosition, transform);
 	glm::quat particleInitQuat = params.rotGenerator->generate(particleInitPosition, particleInitDirection, transform);
 
-	Particle* particle = _particlesPool.AllocateData();
-	if (!particle)
+	particle.rotation = particleInitQuat;
+	particle.scale = params.scaleGenerator->generate();
+	particle.velocity = particleInitDirection * params.speedGenerator->generate();
+	particle.lifeTime = params.lifeTimeGenerator->generate();
+	particle.maxLifeTime = particle.lifeTime;
+	// 位置偏移生成器会读速度（RadialPositionOffsetGenerator），所以放在速度之后
+	particle.position = emitterMatrix * glm::vec4(particleInitPosition + (params.posOffsetGenerator ? params.posOffsetGenerator->generate(particle) : glm::vec3(0)), 1.0f);
+
+	if (params.opacityUpdater) particle.opacityUpdater = params.opacityUpdater->Clone();
+	if (params.baseColorUpdater) particle.baseColorUpdater = params.baseColorUpdater->Clone();
+	if (params.scaleUpdater) particle.scaleUpdater = params.scaleUpdater->Clone();
+	if (params.rotationUpdater) particle.rotationUpdater = params.rotationUpdater->Clone();
+	if (params.localAccelerationUpdater) particle.localAccelerationUpdater = params.localAccelerationUpdater->Clone();
+	if (params.worldAccelerationUpdater) particle.worldAccelerationUpdater = params.worldAccelerationUpdater->Clone();
+
+	particle.baseColor = params.colorGenerator->generate();
+	particle.opacity = std::clamp(params.opacityGenerator->generate(), 0.f, 1.f);
+	particle.blendMode = params.blendMode;
+	particle.renderInfo = MakeParticleRenderInfo(params.renderer);
+
+	// Init 会读初始颜色 / 不透明度 / 缩放，必须在它们都设好之后
+	particle.InitUpdater();
+}
+
+void ParticleSystem::BuildFrameData()
+{
+	struct BuildJob
+	{
+		const EmitterParticles* emitter = nullptr;
+		uint32_t offset = 0;
+		std::vector<ParticleRenderBatch> batches;
+	};
+
+	std::vector<BuildJob> jobs;
+	jobs.reserve(_emitters.size());
+	uint32_t total = 0;
+	for (auto& [id, emitter] : _emitters)
+	{
+		if (!emitter.visible || emitter.particles.empty())
+			continue;
+		jobs.push_back(BuildJob{ .emitter = &emitter, .offset = total });
+		total += static_cast<uint32_t>(emitter.particles.size());
+	}
+
+	if (total == 0)
+	{
+		_frameData = nullptr;
 		return;
+	}
 
-	particle->rotation = particleInitQuat;
-	particle->scale = params.scaleGenerator->generate();
-	particle->velocity = particleInitDirection * params.speedGenerator->generate();
-	particle->lifeTime = params.lifeTimeGenerator->generate();
-	particle->maxLifeTime = particle->lifeTime;
-	particle->position = emitterMatrix * glm::vec4(particleInitPosition + (params.posOffsetGenerator ? params.posOffsetGenerator->generate(particle) : glm::vec3(0)), 1.0f);
+	auto frame = std::make_shared<ParticleFrameData>();
+	frame->particles.resize(total);
 
-	if (params.opacityUpdater) particle->opacityUpdater = params.opacityUpdater->Clone();
-	if (params.baseColorUpdater) particle->baseColorUpdater = params.baseColorUpdater->Clone();
-	if (params.scaleUpdater) particle->scaleUpdater = params.scaleUpdater->Clone();
-	if (params.rotationUpdater) particle->rotationUpdater = params.rotationUpdater->Clone();
-	if (params.localAccelerationUpdater) particle->localAccelerationUpdater = params.localAccelerationUpdater->Clone();
-	if (params.worldAccelerationUpdater) particle->worldAccelerationUpdater = params.worldAccelerationUpdater->Clone();
+	// 每个发射器各写自己那段，互不重叠，可以并行
+	std::for_each(std::execution::par, jobs.begin(), jobs.end(),
+		[&frame](BuildJob& job)
+		{
+			const auto& particles = job.emitter->particles;
+			ParticleRenderBatch* current = nullptr;
+			for (std::size_t i = 0; i < particles.size(); ++i)
+			{
+				const ParticleState& particle = particles[i];
 
-	particle->properties = std::make_shared<ParticleProperties>(params.colorGenerator->generate(), params.opacityGenerator->generate());
+				// 按渲染参数游程切分：平时一个发射器一个批次，改了网格 / 材质 / 混合模式后新旧粒子各一段
+				if (!current || current->blendMode != particle.blendMode || !current->renderInfo.SameBatch(particle.renderInfo))
+				{
+					ParticleRenderBatch batch;
+					batch.renderInfo = particle.renderInfo;
+					batch.blendMode = particle.blendMode;
+					batch.firstParticle = job.offset + static_cast<uint32_t>(i);
+					job.batches.push_back(std::move(batch));
+					current = &job.batches.back();
+				}
 
-	particle->properties->position = particle->position;
-	particle->properties->rotation = particle->rotation;
-	particle->properties->scale = particle->scale;
-	particle->properties->transform = MakeParticleTransform(particle->position, particle->rotation, particle->scale);
-	particle->properties->blendMode = params.blendMode;
-	particle->properties->renderInfo = MakeParticleRenderInfo(params.renderer);
+				ParticleRenderParticle& out = frame->particles[job.offset + i];
+				out.position = particle.position;
+				out.opacity = particle.opacity;
+				out.rotation = particle.rotation;
+				out.scale = particle.scale;
+				out.color = particle.baseColor;
 
-	particle->InitUpdater();
+				const glm::vec3 absScale = glm::abs(particle.scale);
+				const float extent = particle.renderInfo.mesh
+					? std::max(absScale.x, std::max(absScale.y, absScale.z))
+					: std::max(absScale.x, absScale.y);
 
-	_emitSlots[slot] = particle;
+				current->centerMin = glm::min(current->centerMin, particle.position);
+				current->centerMax = glm::max(current->centerMax, particle.position);
+				current->maxExtent = std::max(current->maxExtent, extent);
+				current->particleCount++;
+			}
+		});
+
+	std::size_t batchCount = 0;
+	for (auto& job : jobs)
+		batchCount += job.batches.size();
+	frame->batches.reserve(batchCount);
+	for (auto& job : jobs)
+		std::move(job.batches.begin(), job.batches.end(), std::back_inserter(frame->batches));
+
+	_frameData = std::move(frame);
 }
 
-const std::vector<Particle*>& ParticleSystem::GetParticles() const
+std::shared_ptr<const ParticleFrameData> ParticleSystem::GetFrameData() const
 {
-	return _particles;
+	return _frameData;
 }
 
-ParticlesPool::ParticlesPool(uint32_t InitResNum, uint32_t maxResNum)
-	:ResPool<Particle>(InitResNum, maxResNum)
-{}
-
-void ParticlesPool::ResetData(Particle* data)
+std::size_t ParticleSystem::GetParticleCount() const
 {
-	data->properties.reset();
-	data->opacityUpdater.reset();
-	data->baseColorUpdater.reset();
-	data->scaleUpdater.reset();
-	data->rotationUpdater.reset();
-	data->localAccelerationUpdater.reset();
-	data->worldAccelerationUpdater.reset();
+	return _particleCount;
 }

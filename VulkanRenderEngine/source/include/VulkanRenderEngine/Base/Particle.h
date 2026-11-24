@@ -7,6 +7,8 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "Effect.h"
+#include <limits>
+#include <vector>
 
 enum class ParticleBlendMode { Additive = 0, AlphaBlend = 1 };
 
@@ -43,6 +45,13 @@ struct ParticleRenderInfo
 	std::shared_ptr<StaticModel> model;						// 仅 mesh + Custom：用户模型
 
 	bool HasMaterial() const { return material != nullptr; }
+
+	// 能不能和另一个粒子画进同一个批次（网格 / 材质 / 模型 / 朝向 / 裁剪完全相同）
+	bool SameBatch(const ParticleRenderInfo& o) const
+	{
+		return mesh == o.mesh && facing == o.facing && mask == o.mask && meshType == o.meshType
+			&& material == o.material && model == o.model;
+	}
 };
 
 struct BaseParticleProperties :public BaseEffectProperties
@@ -84,4 +93,40 @@ struct ParticleProperties final :public BaseParticleProperties
 	virtual std::shared_ptr<BaseEffectProperties> Clone() const override {
 		return std::make_shared<ParticleProperties>(*this);
 	}
+};
+
+// ============================================================
+//  粒子系统每帧产出的渲染数据：整帧只读，由 ParticleSystem 生成、以 shared_ptr 交给渲染
+// ============================================================
+
+// 一个粒子在渲染侧需要的数据（按值连续存放）
+struct ParticleRenderParticle
+{
+	glm::vec3 position = glm::vec3(0.0f);
+	float opacity = 1.0f;
+	glm::quat rotation = glm::identity<glm::quat>();
+	glm::vec3 scale = glm::vec3(1.0f);
+	glm::vec3 color = glm::vec3(1.0f);
+};
+
+// 一段渲染参数相同、在 particles 里连续的粒子。正常情况下一个发射器一个批次，
+// 运行中改了发射器的网格 / 材质 / 混合模式后，新旧粒子共存的那段时间会切成多个批次
+struct ParticleRenderBatch
+{
+	ParticleRenderInfo renderInfo;
+	ParticleBlendMode blendMode = ParticleBlendMode::Additive;
+	uint32_t firstParticle = 0;
+	uint32_t particleCount = 0;
+
+	// 剔除用：粒子中心的包围盒 + 最大尺寸（billboard 取 max(scale.x, scale.y)，mesh 取 scale 最大分量）。
+	// 渲染侧乘上网格自身的包围半径再外扩，得到保守包围盒
+	glm::vec3 centerMin = glm::vec3(std::numeric_limits<float>::max());
+	glm::vec3 centerMax = glm::vec3(std::numeric_limits<float>::lowest());
+	float maxExtent = 0.0f;
+};
+
+struct ParticleFrameData
+{
+	std::vector<ParticleRenderParticle> particles;
+	std::vector<ParticleRenderBatch> batches;
 };

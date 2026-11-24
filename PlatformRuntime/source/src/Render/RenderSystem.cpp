@@ -77,7 +77,12 @@ bool RenderableBaseModule::SetVisiable(const Entity& entity, const std::string& 
 	}
 	else if (field == "particle")
 	{
-		comp = entity.tryGetComponent<Particle>();
+		// 粒子不是实体上的组件（由 ParticleSystem 按发射器存放）：控制这个发射器的粒子渲不渲染，模拟照常进行
+		auto* emitter = entity.tryGetComponent<ParticleEmitter>();
+		if (!emitter)
+			return false;
+		emitter->visible = value;
+		return true;
 	}
 	else if (field == "skybox")
 	{
@@ -559,45 +564,20 @@ void RenderSystem::ProcessParticle(std::shared_ptr<Render::Render3DFrameData> fr
 	if (!particleSystem)
 		return;
 
-	auto& particles = particleSystem->GetParticles();
-	if (particles.empty())
+	// 整帧粒子只读数据由 ParticleSystem::update 生成，这里只包一层交给渲染
+	auto frame = particleSystem->GetFrameData();
+	if (!frame || frame->batches.empty())
 		return;
 
-	uint32_t tempSlotCount = 0;
-	std::vector<std::shared_ptr<VKRenderContext::RenderContext>> temp;
+	auto renderdata = std::make_shared<VKRenderContext::ParticleBatchRenderData>();
+	renderdata->frame = std::move(frame);
 
-	std::vector<std::function<void()>> tasks;
-	tasks.reserve(particles.size());
-
-	for (std::size_t particleIndex = 0; particleIndex < particles.size(); particleIndex++)
-	{
-		auto& particle = particles[particleIndex];
-		if (!particle || !particle->visible || !particle->properties)
-			continue;
-
-		tasks.emplace_back([&particles, &temp, particleIndex, slot = tempSlotCount++]()
-			{
-				auto renderdata = std::make_shared<VKRenderContext::EffectRenderData>();
-				renderdata->properties = particles[particleIndex]->properties->Clone();
-
-				auto context = std::make_shared<VKRenderContext::RenderContext>();
-				context->type = VKRenderContext::RenderContextType::Effect;
-				context->data = renderdata;
-
-				temp[slot] = std::move(context);
-			});
-	}
-
-	if (tasks.empty())
-		return;
-
-	temp.resize(tasks.size());
-
-	std::for_each(std::execution::par, tasks.begin(), tasks.end(),
-		[](const std::function<void()>& task) { task(); });
+	auto context = std::make_shared<VKRenderContext::RenderContext>();
+	context->type = VKRenderContext::RenderContextType::ParticleBatch;
+	context->data = std::move(renderdata);
 
 	LockGuard guard(_Scene3D_SpinLock);
-	framebuffer->Scene3D_Contexts.append_range(temp);
+	framebuffer->Scene3D_Contexts.push_back(std::move(context));
 }
 
 void RenderSystem::ProcessLaserBeam(std::shared_ptr<Render::Render3DFrameData> framebuffer, Entity maincamera)

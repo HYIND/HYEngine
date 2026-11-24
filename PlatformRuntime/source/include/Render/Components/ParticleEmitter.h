@@ -18,13 +18,25 @@ struct IRotationUpdater;
 struct IAccelerationUpdater;
 struct IAccelerationUpdater;
 
-struct Particle :public Renderable
+// 一个粒子的状态，由 ParticleSystem 按发射器、按值连续存放（std::vector<ParticleState>）。
+// updater 仍按粒子各 Clone 一份（发射后再改发射器参数，已发射的粒子不受影响）
+struct ParticleState
 {
 	glm::vec3 position = glm::vec3(0.f);
 	glm::quat rotation = glm::identity<glm::quat>();
 	glm::vec3 scale = glm::vec3(1.0f);
 
 	glm::vec3 velocity = glm::vec3(0.f);
+
+	glm::vec3 baseColor = glm::vec3(1.0f);
+	float opacity = 1.0f;
+
+	float lifeTime = 0.f;
+	float maxLifeTime = 0.f;
+
+	// 发射时从发射器拷一份
+	ParticleBlendMode blendMode = ParticleBlendMode::Additive;
+	ParticleRenderInfo renderInfo;
 
 	std::shared_ptr<IOpacityUpdater> opacityUpdater;
 	std::shared_ptr<IBaseColorUpdater> baseColorUpdater;
@@ -34,22 +46,7 @@ struct Particle :public Renderable
 	std::shared_ptr<IAccelerationUpdater> localAccelerationUpdater;
 	std::shared_ptr<IAccelerationUpdater> worldAccelerationUpdater;
 
-	float lifeTime;
-	float maxLifeTime;
-
-	std::shared_ptr<BaseParticleProperties> properties;
-
 	void InitUpdater();
-
-	virtual void OnRemove(const Entity& e) {
-		opacityUpdater.reset();
-		baseColorUpdater.reset();
-		scaleUpdater.reset();
-		rotationUpdater.reset();
-		localAccelerationUpdater.reset();
-		worldAccelerationUpdater.reset();
-		properties.reset();
-	}
 };
 
 // Color生成器接口
@@ -272,7 +269,7 @@ struct FixedSpeedGenerator : ISpeedGenerator {
 };
 
 struct IPositionOffsetGenerator {
-	virtual glm::vec3 generate(Particle* particle) const = 0;
+	virtual glm::vec3 generate(ParticleState& particle) const = 0;
 	virtual std::shared_ptr<IPositionOffsetGenerator> Clone() const = 0;
 	virtual ~IPositionOffsetGenerator() = default;
 };
@@ -280,13 +277,13 @@ struct IPositionOffsetGenerator {
 struct FixedPositionOffsetGenerator :public IPositionOffsetGenerator {
 	glm::vec3 offset;
 	FixedPositionOffsetGenerator(const glm::vec3& offset) :offset(offset) {}
-	glm::vec3 generate(Particle* particle) const override { return offset; }
+	glm::vec3 generate(ParticleState& particle) const override { return offset; }
 	std::shared_ptr<IPositionOffsetGenerator> Clone() const override { return std::make_shared<FixedPositionOffsetGenerator>(offset); }
 };
 
 struct RadialPositionOffsetGenerator :public IPositionOffsetGenerator {
 	RadialPositionOffsetGenerator() {}
-	glm::vec3 generate(Particle* particle) const override { return ((glm::length(particle->velocity) * glm::length(particle->velocity)) / 60.f) * glm::vec3(1, 0, 0); }
+	glm::vec3 generate(ParticleState& particle) const override { return ((glm::length(particle.velocity) * glm::length(particle.velocity)) / 60.f) * glm::vec3(1, 0, 0); }
 	std::shared_ptr<IPositionOffsetGenerator> Clone() const override { return std::make_shared<RadialPositionOffsetGenerator>(); }
 };
 
@@ -294,25 +291,25 @@ struct RadialPositionOffsetGenerator :public IPositionOffsetGenerator {
 struct IRotationUpdater
 {
 	virtual std::shared_ptr<IRotationUpdater> Clone() = 0;
-	virtual void Init(Particle* particle) {};
-	virtual glm::quat update(Particle* particle, float deltaTime) = 0;
+	virtual void Init(ParticleState& particle) {};
+	virtual glm::quat update(ParticleState& particle, float deltaTime) = 0;
 	virtual ~IRotationUpdater() = default;
 };
 
 struct FollowVelocityRotationUpdater :public IRotationUpdater
 {
 	std::shared_ptr<IRotationUpdater> Clone() override { return std::make_shared<FollowVelocityRotationUpdater>(); }
-	glm::quat update(Particle* part, float deltaTime) override {
-		if (glm::length2(part->velocity) > 0.f)
-			return Tool::SafeQuatLookAt(glm::normalize(part->velocity));
-		return part->rotation;
+	glm::quat update(ParticleState& part, float deltaTime) override {
+		if (glm::length2(part.velocity) > 0.f)
+			return Tool::SafeQuatLookAt(glm::normalize(part.velocity));
+		return part.rotation;
 	}
 };
 
 struct IAccelerationUpdater {
 	virtual std::shared_ptr<IAccelerationUpdater> Clone() = 0;
-	virtual void Init(Particle* particle) {};
-	virtual glm::vec3 update(Particle*, float deltaTime) = 0;
+	virtual void Init(ParticleState& particle) {};
+	virtual glm::vec3 update(ParticleState&, float deltaTime) = 0;
 	virtual ~IAccelerationUpdater() = default;
 };
 
@@ -320,7 +317,7 @@ struct NoneAccelerationUpdater :public IAccelerationUpdater
 {
 	NoneAccelerationUpdater() {}
 	std::shared_ptr<IAccelerationUpdater> Clone() override { return std::make_shared<NoneAccelerationUpdater>(); }
-	glm::vec3 update(Particle* part, float deltaTime) override { return glm::vec3(0.f); }
+	glm::vec3 update(ParticleState& part, float deltaTime) override { return glm::vec3(0.f); }
 };
 
 struct FiexedAccelerationUpdater :public IAccelerationUpdater
@@ -328,14 +325,14 @@ struct FiexedAccelerationUpdater :public IAccelerationUpdater
 	glm::vec3 acceleration = glm::vec3(0);
 	FiexedAccelerationUpdater(const glm::vec3& acceleration) :acceleration(acceleration) {}
 	std::shared_ptr<IAccelerationUpdater> Clone() override { return std::make_shared<FiexedAccelerationUpdater>(acceleration); }
-	glm::vec3 update(Particle* part, float deltaTime) override { return acceleration; }
+	glm::vec3 update(ParticleState& part, float deltaTime) override { return acceleration; }
 };
 
 struct GravityAccelerationUpdater :public FiexedAccelerationUpdater
 {
 	GravityAccelerationUpdater() :FiexedAccelerationUpdater(glm::vec3(0, -9.8, 0)) {}
 	std::shared_ptr<IAccelerationUpdater> Clone() override { return std::make_shared<GravityAccelerationUpdater>(); }
-	glm::vec3 update(Particle* part, float deltaTime) override { return acceleration; }
+	glm::vec3 update(ParticleState& part, float deltaTime) override { return acceleration; }
 };
 
 struct LinearAccelerationUpdater :public IAccelerationUpdater
@@ -346,10 +343,10 @@ struct LinearAccelerationUpdater :public IAccelerationUpdater
 	LinearAccelerationUpdater(const glm::vec3& accelerationDir, float initAccelerationValue, float goalAccelerationValue)
 		:accelerationDir(glm::normalize(accelerationDir)), initAccelerationValue(initAccelerationValue), goalAccelerationValue(goalAccelerationValue) {}
 	std::shared_ptr<IAccelerationUpdater> Clone() override { return std::make_shared<LinearAccelerationUpdater>(accelerationDir, initAccelerationValue, goalAccelerationValue); }
-	glm::vec3 update(Particle* part, float deltaTime) override {
+	glm::vec3 update(ParticleState& part, float deltaTime) override {
 		float t = 0.f;
-		if (part->maxLifeTime > 0.f && part->lifeTime > 0.f)
-			t = part->lifeTime / part->maxLifeTime;
+		if (part.maxLifeTime > 0.f && part.lifeTime > 0.f)
+			t = part.lifeTime / part.maxLifeTime;
 
 		return accelerationDir * Tool::LinearLerp(initAccelerationValue, goalAccelerationValue, 1.0 - t);
 	}
@@ -388,11 +385,11 @@ struct PerlinTurbulenceUpdater : public IAccelerationUpdater
 		return value;
 	}
 
-	glm::vec3 update(Particle* particle, float deltaTime) override {
+	glm::vec3 update(ParticleState& particle, float deltaTime) override {
 		time += deltaTime;
 
 		// 使用位置和时间的3D噪声
-		glm::vec3 noisePos = particle->position * frequency + glm::vec3(time * 1.5f) + offset;
+		glm::vec3 noisePos = particle.position * frequency + glm::vec3(time * 1.5f) + offset;
 
 		float noiseX = fbm(noisePos);
 		float noiseY = fbm(noisePos + glm::vec3(100.0f, 0.0f, 0.0f));
@@ -409,8 +406,8 @@ struct PerlinTurbulenceUpdater : public IAccelerationUpdater
 
 struct IOpacityUpdater {
 	virtual std::shared_ptr<IOpacityUpdater> Clone() = 0;
-	virtual void Init(Particle* particle) {};
-	virtual float update(Particle*, float deltaTime) = 0;
+	virtual void Init(ParticleState& particle) {};
+	virtual float update(ParticleState&, float deltaTime) = 0;
 	virtual ~IOpacityUpdater() = default;
 };
 
@@ -420,11 +417,11 @@ struct LinearOpacityUpdater :public IOpacityUpdater
 	float goalOpacity;
 	LinearOpacityUpdater(float goalOpacity) :goalOpacity(goalOpacity) {}
 	std::shared_ptr<IOpacityUpdater> Clone() override { return std::make_shared<LinearOpacityUpdater>(goalOpacity); }
-	void Init(Particle* particle) override { initOpacity = particle->properties->opacity; }
-	float update(Particle* particle, float deltaTime) override {
+	void Init(ParticleState& particle) override { initOpacity = particle.opacity; }
+	float update(ParticleState& particle, float deltaTime) override {
 		float t = 0.f;
-		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
-			t = particle->lifeTime / particle->maxLifeTime;
+		if (particle.maxLifeTime > 0.f && particle.lifeTime > 0.f)
+			t = particle.lifeTime / particle.maxLifeTime;
 
 		return Tool::LinearLerp(initOpacity, goalOpacity, 1.0 - t);
 	}
@@ -432,8 +429,8 @@ struct LinearOpacityUpdater :public IOpacityUpdater
 
 struct IBaseColorUpdater {
 	virtual std::shared_ptr<IBaseColorUpdater> Clone() = 0;
-	virtual void Init(Particle* particle) {};
-	virtual glm::vec3 update(Particle*, float deltaTime) = 0;
+	virtual void Init(ParticleState& particle) {};
+	virtual glm::vec3 update(ParticleState&, float deltaTime) = 0;
 	virtual ~IBaseColorUpdater() = default;
 };
 
@@ -443,11 +440,11 @@ struct LinearBaseColorUpdater :public IBaseColorUpdater
 	glm::vec3 goalColor;
 	LinearBaseColorUpdater(const glm::vec3& goalColor) :goalColor(goalColor) {}
 	std::shared_ptr<IBaseColorUpdater> Clone() override { return std::make_shared<LinearBaseColorUpdater>(goalColor); }
-	void Init(Particle* particle) override { initColor = particle->properties->baseColor; }
-	glm::vec3 update(Particle* particle, float deltaTime) override {
+	void Init(ParticleState& particle) override { initColor = particle.baseColor; }
+	glm::vec3 update(ParticleState& particle, float deltaTime) override {
 		float t = 0.f;
-		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
-			t = particle->lifeTime / particle->maxLifeTime;
+		if (particle.maxLifeTime > 0.f && particle.lifeTime > 0.f)
+			t = particle.lifeTime / particle.maxLifeTime;
 
 		return Tool::LinearLerp(initColor, goalColor, 1.0 - t);
 	}
@@ -469,10 +466,10 @@ struct FireColorUpdater : public IBaseColorUpdater
 		return std::make_shared<FireColorUpdater>(innerColor, midColor, outerColor);
 	}
 
-	glm::vec3 update(Particle* particle, float deltaTime) override {
+	glm::vec3 update(ParticleState& particle, float deltaTime) override {
 		float t = 0.f;
-		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
-			t = particle->lifeTime / particle->maxLifeTime;
+		if (particle.maxLifeTime > 0.f && particle.lifeTime > 0.f)
+			t = particle.lifeTime / particle.maxLifeTime;
 		else
 			return glm::vec3(0, 1, 0);
 
@@ -492,8 +489,8 @@ struct FireColorUpdater : public IBaseColorUpdater
 
 struct IScaleUpdater {
 	virtual std::shared_ptr<IScaleUpdater> Clone() = 0;
-	virtual void Init(Particle* particle) {};
-	virtual glm::vec3 update(Particle*, float deltaTime) = 0;
+	virtual void Init(ParticleState& particle) {};
+	virtual glm::vec3 update(ParticleState&, float deltaTime) = 0;
 	virtual ~IScaleUpdater() = default;
 };
 
@@ -503,11 +500,11 @@ struct LinearScaleUpdater :public IScaleUpdater
 	glm::vec3 goalScale;
 	LinearScaleUpdater(const glm::vec3& goalScale) :goalScale(goalScale) {}
 	std::shared_ptr<IScaleUpdater> Clone() override { return std::make_shared<LinearScaleUpdater>(goalScale); }
-	void Init(Particle* particle) override { initScale = particle->scale; }
-	glm::vec3 update(Particle* particle, float deltaTime) override {
+	void Init(ParticleState& particle) override { initScale = particle.scale; }
+	glm::vec3 update(ParticleState& particle, float deltaTime) override {
 		float t = 0.f;
-		if (particle->maxLifeTime > 0.f && particle->lifeTime > 0.f)
-			t = particle->lifeTime / particle->maxLifeTime;
+		if (particle.maxLifeTime > 0.f && particle.lifeTime > 0.f)
+			t = particle.lifeTime / particle.maxLifeTime;
 
 		return Tool::LinearLerp(initScale, goalScale, 1.0 - t);
 	}
@@ -592,6 +589,8 @@ struct EmitterParams
 	// ===== 发射速率 =====
 	float emitRate = 30.0f;						// 每秒发射粒子数
 	float emitRateJitter = 0.0f;				// 速率抖动比例（0~1）：本帧速率在 emitRate*(1±jitter) 内随机
+	// ===== 粒子上限 =====
+	int maxParticles = 10000;					// 这个发射器同时存活的粒子上限，达到后本帧多出来的发射直接丢弃（不补发）
 
 	// ===== 外观参数 =====
 
@@ -642,6 +641,7 @@ struct EmitterParams
 	{
 		emitRate = other.emitRate;
 		emitRateJitter = other.emitRateJitter;
+		maxParticles = other.maxParticles;
 
 		CloneShared(other.scaleGenerator, scaleGenerator);
 		CloneShared(other.colorGenerator, colorGenerator);
@@ -701,19 +701,21 @@ struct EmitterState
 struct ParticleEmitter :public IComponent
 {
 	bool enable = true;
+	bool visible = true;		// 运行时开关（不保存）：false 时这个发射器的粒子照常模拟但不渲染（Lua set_visible(e, "particle", v)）
 	EmitterParams emitterParams;
 	EmitterState emitterState;
 
 	ParticleEmitter() {};
 
 	ParticleEmitter(const ParticleEmitter& other)
-		: enable(other.enable), emitterParams(other.emitterParams), emitterState(other.emitterState) {}
+		: enable(other.enable), visible(other.visible), emitterParams(other.emitterParams), emitterState(other.emitterState) {}
 
 	ParticleEmitter& operator=(const ParticleEmitter& other)
 	{
 		if (this != &other)
 		{
 			enable = other.enable;
+			visible = other.visible;
 			emitterParams = other.emitterParams;
 			emitterState = other.emitterState;
 		}
@@ -726,15 +728,14 @@ struct ParticleEmitter :public IComponent
 	}
 };
 
-HY_DECLARE_ECS_TYPE(Particle, "hy.engine.component.Particle");
 HY_DECLARE_ECS_TYPE(ParticleEmitter, "hy.engine.component.ParticleEmitter");
 
-inline void Particle::InitUpdater()
+inline void ParticleState::InitUpdater()
 {
-	if (opacityUpdater) opacityUpdater->Init(this);
-	if (baseColorUpdater) baseColorUpdater->Init(this);
-	if (scaleUpdater) scaleUpdater->Init(this);
-	if (rotationUpdater) rotationUpdater->Init(this);
-	if (localAccelerationUpdater) localAccelerationUpdater->Init(this);
-	if (worldAccelerationUpdater) worldAccelerationUpdater->Init(this);
+	if (opacityUpdater) opacityUpdater->Init(*this);
+	if (baseColorUpdater) baseColorUpdater->Init(*this);
+	if (scaleUpdater) scaleUpdater->Init(*this);
+	if (rotationUpdater) rotationUpdater->Init(*this);
+	if (localAccelerationUpdater) localAccelerationUpdater->Init(*this);
+	if (worldAccelerationUpdater) worldAccelerationUpdater->Init(*this);
 }

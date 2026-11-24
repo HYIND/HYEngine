@@ -877,7 +877,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 		auto lightDrawPass = std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs");
 
-		auto volumeCalculatePass = std::make_unique<VolumeCalculatePass>("shader/Volume/VolumeLut.comp", "shader/Volume/VolumeCalculate.comp");
+		// 体积拆成 Lut（提前算散射 / 透射率）和 Combine（不透明完成后合成），两者共享本帧的 Lut 是否有效
+		auto volumeShared = std::make_shared<VolumePassShared>();
+		auto volumeLutPass = std::make_unique<VolumeLutPass>("shader/Volume/VolumeLut.comp", volumeShared);
+		auto volumeCombinePass = std::make_unique<VolumeCombinePass>("shader/Volume/VolumeCalculate.comp", volumeShared);
 
 		auto transparentPass = std::make_unique<TransparentPass>(
 			"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs",
@@ -912,7 +915,8 @@ void VulkanRenderer::InitSceneRenderGraph()
 		passes->indirectPathTracingCombin = std::move(indirectPathTracingCombinPass);
 		passes->combinIndirectLighting = std::move(combinIndirectLightingPass);
 		passes->lightDraw = std::move(lightDrawPass);
-		passes->volumeCalculate = std::move(volumeCalculatePass);
+		passes->volumeLut = std::move(volumeLutPass);
+		passes->volumeCombine = std::move(volumeCombinePass);
 		passes->transparent = std::move(transparentPass);
 		passes->effect = std::move(effectPass);
 		passes->autoExposure = std::move(autoExposurePass);
@@ -1013,8 +1017,10 @@ void VulkanRenderer::InitSceneRenderGraph()
 	auto transprantFence = _sceneRenderGraph->AddFence("transprantFence");
 	transprantFence->After(opaqueFence);
 
+	// 体积：Lut 只依赖几何 / SSAO / 阴影 / 大气预计算，和光照那一段并行；Combine 在不透明完成后合成
+	auto volumeLutNode = _sceneRenderGraph->AddNode("volumeLutNode");
+	auto volumeCombineNode = _sceneRenderGraph->AddNode("volumeCombineNode");
 	// 后处理
-	auto volumeCalculateNode = _sceneRenderGraph->AddNode("volumeCalculateNode");
 	auto postProcessFence = _sceneRenderGraph->AddFence("postProcessFence");
 	postProcessFence->After(transprantFence);
 
@@ -1341,33 +1347,49 @@ void VulkanRenderer::InitSceneRenderGraph()
 		auto volumeResolution = glm::u32vec2(width, height);
 		auto scatterColorRes = resbuilder.CreateTexture(volumeResolution, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
 		auto tramsmittanceRes = resbuilder.CreateTexture(volumeResolution, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "");
-		volumeCalculateNode->SetRenderPass(P.volumeCalculate)
+
+		// Lut 和 Combine 之间传递的三张图
+		auto volumeScatterColor = resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_ScatterColor");
+		auto volumeTramsmittance = resbuilder.CreateTexture(tramsmittanceRes, "volumeLutNode_Tramsmittance");
+		auto volumeGaussScatterColor = resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_GaussScatterColor");
+
+		volumeLutNode->SetRenderPass(P.volumeLut)
 			.Input(
 				ResourceData{ gPosition, computeReadLayout }, ResourceData{ gNormal, computeReadLayout },
 				ResourceData{ atlasShadowMap, computeReadLayout },
 				ResourceData{ gMotionVector, computeReadLayout },
 				ResourceData{ gPrevPosition ,computeReadLayout }, ResourceData{ gPrevNormal ,computeReadLayout }, ResourceData{ gPrevDepthStencil ,computeReadLayout }
 			)
-			.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-			.Temp(
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TempScatterColor"), computeWriteLayout },
-				ResourceData{ resbuilder.CreateTexture(tramsmittanceRes, "volumeCalculateNode_TempTramsmittance"), computeWriteLayout },
-				ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCalculateNode_TempSceneColor"), computeWriteLayout },
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAScatterColorTexture"), computeReadLayout },
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_TAAGaussScatterColorTexture"),computeReadLayout }
+			.Output(
+				ResourceData{ volumeScatterColor, computeWriteLayout },
+				ResourceData{ volumeTramsmittance, computeWriteLayout },
+				ResourceData{ volumeGaussScatterColor, computeReadLayout }
 			)
+			.Temp(ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_TAAScatterColorTexture"), computeReadLayout })
 			.Persistent(
-				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeCalculateNode_HistoryScatterColorTexture"), computeReadLayout }
+				ResourceData{ resbuilder.CreateTexture(scatterColorRes, "volumeLutNode_HistoryScatterColorTexture"), computeReadLayout }
 			)
 			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
-			.After(atmospherePreCalculateNode, opaqueFence)
+			.After(atmospherePreCalculateNode, lightingShadowDepthNode, geometryNode)
+			.Before(volumeCombineNode);
+
+		volumeCombineNode->SetRenderPass(P.volumeCombine)
+			.Input(
+				ResourceData{ volumeScatterColor, computeReadLayout },
+				ResourceData{ volumeTramsmittance, computeReadLayout },
+				ResourceData{ volumeGaussScatterColor, computeReadLayout }
+			)
+			.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
+			.Temp(ResourceData{ resbuilder.CreateTexture(sceneColorBuffer, "volumeCombineNode_TempSceneColor"), computeWriteLayout })
+			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
+			.After(opaqueFence, volumeLutNode)
 			.Before(transprantFence);
 	}
 
 	transparentNode->SetRenderPass(P.transparent)
 		.Input(ResourceData{ atlasShadowMap, graphicsReadLayout })
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
-		.After(opaqueFence, volumeCalculateNode)
+		.After(opaqueFence, volumeCombineNode)
 		.Before(effectNode, transprantFence)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "transparentNode_oitAccum"), graphicsWriteLayout },
@@ -1377,7 +1399,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 
 	effectNode->SetRenderPass(P.effect)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, graphicsWriteLayout })
-		.After(opaqueFence, volumeCalculateNode, transparentNode)
+		.After(opaqueFence, volumeCombineNode, transparentNode)
 		.Before(transprantFence)
 		.Temp(
 			ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "effectNode_oitAccum"), graphicsWriteLayout },
@@ -1728,32 +1750,32 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 		updateMesh(state->objects.sceneSkinnedRenderData.opaqueTwoSideItems);
 		updateMesh(state->objects.sceneSkinnedRenderData.transparentItems);
 
-		for (auto& item : state->objects.sceneStaticRenderData.effectItems)
-		{
-			if (!item || item->effectType != EffectType::Particle)
-				continue;
-
-			auto properties = std::static_pointer_cast<BaseParticleProperties>(item);
-			if (!properties)
-				continue;
-
-			const auto& renderInfo = properties->renderInfo;
-
-			auto& material = renderInfo.material;
-			if (material && material->GetNeedUpdateIndirectDraw())
-				willUpdateMaterials.insert(material.get());
-
-			if (renderInfo.mesh && renderInfo.model)
+		// 粒子用到的材质 / 自定义模型：按批次登记（一个批次内渲染参数相同，不用逐粒子看）
+		auto updateParticleRenderInfo = [&](const ParticleRenderInfo& renderInfo)
 			{
-				for (auto& info : renderInfo.model->GetMeshInfos())
-				{
-					if (info.mesh && info.mesh->GetNeedUpdateIndirectDraw())
-						willUpdateMeshs.insert(info.mesh.get());
+				auto& material = renderInfo.material;
+				if (material && material->GetNeedUpdateIndirectDraw())
+					willUpdateMaterials.insert(material.get());
 
-					if (info.material && info.material->GetNeedUpdateIndirectDraw())
-						willUpdateMaterials.insert(info.material.get());
+				if (renderInfo.mesh && renderInfo.model)
+				{
+					for (auto& info : renderInfo.model->GetMeshInfos())
+					{
+						if (info.mesh && info.mesh->GetNeedUpdateIndirectDraw())
+							willUpdateMeshs.insert(info.mesh.get());
+
+						if (info.material && info.material->GetNeedUpdateIndirectDraw())
+							willUpdateMaterials.insert(info.material.get());
+					}
 				}
-			}
+			};
+
+		for (auto& frame : state->objects.sceneStaticRenderData.particleFrames)
+		{
+			if (!frame)
+				continue;
+			for (auto& batch : frame->batches)
+				updateParticleRenderInfo(batch.renderInfo);
 		}
 	}
 

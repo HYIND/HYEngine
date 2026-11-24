@@ -1932,6 +1932,7 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
                 { "blendMode", GetParticleBlendModeName(p.blendMode) },
                 { "emitRate", p.emitRate },
                 { "emitRateJitter", p.emitRateJitter },
+                { "maxParticles", p.maxParticles },
                 { "burstAmount", p.burstAmount },
                 { "burstCount", p.burstCount },
                 { "burstInterval", p.burstInterval },
@@ -1970,6 +1971,9 @@ std::vector<NComponentCodec::ComponentCodec> NBuiltInCodecs::GenerateBuiltInCode
 
             ReadFloat(data, "emitRate", p.emitRate);
             ReadFloat(data, "emitRateJitter", p.emitRateJitter);
+            // 旧场景没有这个字段：保持默认值 10000
+            ReadInt(data, "maxParticles", p.maxParticles);
+            p.maxParticles = std::max(p.maxParticles, 0);
             ReadInt(data, "burstAmount", p.burstAmount);
             ReadInt(data, "burstCount", p.burstCount);
             ReadFloat(data, "burstInterval", p.burstInterval);

@@ -7,6 +7,7 @@
 #include "VulkanRenderEngine/Base/StaticModel.h"
 #include "VulkanRenderEngine/Base/SkinnedModel.h"
 #include "VulkanRenderEngine/Base/Effect.h"
+#include "VulkanRenderEngine/Base/Particle.h"
 #include "Helper/TripleBuffer.h"
 
 namespace VKRenderContext
@@ -38,6 +39,12 @@ namespace VKRenderContext
 	struct EffectRenderData :public BaseRenderData
 	{
 		std::shared_ptr<BaseEffectProperties> properties;
+	};
+
+	// 粒子系统一帧的全部粒子（一个 RenderContext 带过去，不再每个粒子一份）
+	struct ParticleBatchRenderData :public BaseRenderData
+	{
+		std::shared_ptr<const ParticleFrameData> frame;
 	};
 
 	struct StaticModelRenderData :public ModelRenderData
@@ -91,7 +98,8 @@ namespace VKRenderContext
 		DirLight,
 		PointLight,
 		SpotLight,
-		Effect
+		Effect,
+		ParticleBatch	// ParticleBatchRenderData
 	};
 
 	struct RenderContext

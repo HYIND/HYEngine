@@ -1230,6 +1230,11 @@ inline bool PropertiesHelper::DrawComponent<ParticleEmitter>(ParticleEmitter& co
 	changed |= ImGui::DragFloat("Emit Rate", &p.emitRate, 0.1f, 0.f, 10000.f);
 	ImGui::SetNextItemWidth(150.f);
 	changed |= ImGui::DragFloat("Rate Jitter", &p.emitRateJitter, 0.005f, 0.f, 1.f);
+	ImGui::SetNextItemWidth(150.f);
+	changed |= ImGui::DragInt("Max Particles", &p.maxParticles, 10.0f, 0, 1000000);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("这个发射器同时存活的粒子上限（默认 10000）。\n达到上限后本帧多出来的发射直接丢弃，不会补发");
+	p.maxParticles = std::max(p.maxParticles, 0);
 
 	ImGui::SetNextItemWidth(150.f);
 	changed |= ImGui::DragInt("Burst Amount", &p.burstAmount, 0.2f, 0, 100000);
