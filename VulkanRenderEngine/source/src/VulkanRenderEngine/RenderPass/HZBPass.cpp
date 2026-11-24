@@ -166,7 +166,9 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 	Frustum& frustum = state.camera.frustum;
 	auto& opaqueMeshes = state.objects.sceneStaticRenderData.opaqueItems;
 
-	std::vector<bool> frustumCullResult;
+	// 不用 vector<bool>：它按位压缩，相邻元素共用一个字，下面 par_unseq 并发写不同下标也会互相覆盖（数据竞争）。
+	// uint8_t 每个元素是独立的字节，并发写各自的下标没有问题
+	std::vector<uint8_t> frustumCullResult;
 	std::vector<uint32_t> frustumObjectIndex;
 	std::vector<AABB> frustumObjectMeshaabbs;
 	std::vector<glm::mat4> frustumObjectTransforms;
@@ -256,7 +258,8 @@ void HZBPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderState& 
 
 		if (!transparentMeshes.empty())
 		{
-			std::vector<bool> transparentCullResult(transparentMeshes.size(), false);
+			// 同上：并发写，不能用 vector<bool>
+			std::vector<uint8_t> transparentCullResult(transparentMeshes.size(), 0);
 			transparentObjectMeshaabbs.resize(transparentMeshes.size());
 
 			std::for_each(std::execution::par_unseq, transparentMeshes.begin(), transparentMeshes.end(),
@@ -462,7 +465,7 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	occlusionCullShaderBinding.SetUniformTexture(HZBMap, vk::ImageAspectFlagBits::eDepth, 5);
 
 	_occlusionCullShader->Bind(cmd, occlusionCullShaderBinding);
-	cmd->dispatch((allAabbs.size() + GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y, 1, 1);
+	cmd->dispatch((allAabbs.size() + GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y - 1) / (GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y), 1, 1);
 
 	// 内含隐式Submit
 	result_ssbo->GetBuffer()->Readback(cmd, cullResult.data(), cullResult.size() * sizeof(int));

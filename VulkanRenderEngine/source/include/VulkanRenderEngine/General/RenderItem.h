@@ -35,8 +35,6 @@ namespace VKRenderObjectData
 		std::vector<size_t> transparentItems_cullRenderIndex;
 
 		std::vector<std::shared_ptr<BaseEffectProperties>> effectItems;
-
-		// 粒子：每个粒子系统一份只读帧数据（EffectPass 读）
 		std::vector<std::shared_ptr<const ParticleFrameData>> particleFrames;
 	};
 
