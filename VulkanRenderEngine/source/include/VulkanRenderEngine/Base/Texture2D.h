@@ -29,7 +29,9 @@ public:
 
 public:
 	Texture2D(const std::string& filepath, const TextureConfig& config = {}, bool autoMipMaps = false);																				// 从文件加载纹理
-	Texture2D(uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm, const TextureConfig& config = {}, uint32_t maxLevel = 1);	// 创建空纹理
+	// 创建空纹理。createSampler = false：不建 VkSampler（GetSampler 返回空句柄）。
+	// 只适用于交给 ImGui 显示的贴图（ImGui 用它后端自己的采样器，例如编辑器缩略图）；不能交给 2D 渲染器 / 材质 / bindless 绑定
+	Texture2D(uint32_t width, uint32_t height, vk::Format format = vk::Format::eR8G8B8A8Unorm, const TextureConfig& config = {}, uint32_t maxLevel = 1, bool createSampler = true);
 	Texture2D(std::shared_ptr<SharedTexture> sharedTexture, const TextureConfig& config = {});			// 创建共享纹理
 
 	~Texture2D();
@@ -102,6 +104,7 @@ private:
 private:
 	std::shared_ptr<VKWrapper::BaseVKImage> _image;
 	std::shared_ptr<VKWrapper::VKSampler> _sampler;
+	bool _withoutSampler = false;		// 构造时选了不建采样器：之后改过滤 / 环绕也不建
 
 	mutable std::unordered_map<ImageViewInfo, std::shared_ptr<VKWrapper::VKImageView>> _levelImageViews;
 

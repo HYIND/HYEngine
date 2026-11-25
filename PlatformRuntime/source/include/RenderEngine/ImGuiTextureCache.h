@@ -35,6 +35,8 @@ public:
 
 	void BeginFrame();
 	ImTextureID Get(const std::shared_ptr<Texture2D>& texture);
+	// 立即不再缓存这张图（例如缩略图被淘汰）：描述符集照样推迟 releaseDelay 帧才真正释放，期间也继续持有贴图
+	void Remove(const std::shared_ptr<Texture2D>& texture);
 	void TransitionUsed(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd);
 
 	// backendAlive = false：后端已经销毁（描述符池跟着没了），只丢掉记录，不再调用 RemoveTexture
@@ -54,12 +56,19 @@ private:
 		uint64_t lastUsedFrame = 0;
 	};
 
-	void Release(VkDescriptorSet set);
+	// 推迟释放：GPU 可能还在用前几帧的描述符集，贴图也要跟着活到那时
+	void Release(VkDescriptorSet set, std::shared_ptr<Texture2D> texture);
 	void FlushPending(bool force);
 
 private:
 	std::unordered_map<const Texture2D*, Entry> _entries;
-	std::deque<std::pair<VkDescriptorSet, uint64_t>> _pending;	// (描述符集, 可以释放的帧号)
+	struct Pending
+	{
+		VkDescriptorSet set = VK_NULL_HANDLE;
+		uint64_t releaseFrame = 0;					// 到这一帧才可以释放
+		std::shared_ptr<Texture2D> texture;			// 描述符集引用着它的 image view，一起活到释放
+	};
+	std::deque<Pending> _pending;
 	std::vector<std::shared_ptr<Texture2D>> _usedThisFrame;
 	uint64_t _frame = 0;
 	uint32_t _releaseDelay = 3;

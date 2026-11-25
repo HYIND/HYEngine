@@ -177,13 +177,23 @@ namespace UI
 			}
 		}
 
+		// image / region 两个字段：background 块里、样式根上、节点上都可以写
+		void ReadImageFields(const Json& object, StyleFields& fields)
+		{
+			if (!object.is_object())
+				return;
+			if (object.contains("image") && object["image"].is_string())
+				fields.image = object["image"].get<std::string>();
+			if (object.contains("region") && object["region"].is_string())
+				fields.region = object["region"].get<std::string>();
+		}
+
 		// 从一段样式的 "background" 子对象里读背景字段。
 		void ReadBackgroundFields(const Json& background, StyleFields& fields)
 		{
 			if (!background.is_object())
 				return;
-			if (background.contains("texture") && background["texture"].is_string())
-				fields.texture = background["texture"].get<std::string>();
+			ReadImageFields(background, fields);
 			if (background.contains("tint"))
 			{
 				Vec4 tint;
@@ -208,6 +218,9 @@ namespace UI
 
 			if (object.contains("background"))
 				ReadBackgroundFields(object["background"], fields);
+			// 样式根上 / 状态里直接写 image、region（例如 "states": { "hover": { "region": "hover" } }）。
+			// 和 background 里的同时写时，根上的优先
+			ReadImageFields(object, fields);
 			if (object.contains("text"))
 				ReadTextFields(object["text"], fields);
 			if (object.contains("opacity") && object["opacity"].is_number())
@@ -234,17 +247,12 @@ namespace UI
 			return event;
 		}
 
-		// 节点自带的字段（texture / fit / color / textStyle）当作内联样式，优先级最高。
+		// 节点自带的字段（image / region / fit / color / textStyle）当作内联样式，优先级最高。
 		std::optional<StyleFields> ReadNodeInlineStyle(const Json& node)
 		{
 			StyleFields fields;
 			bool any = false;
 
-			if (node.contains("texture") && node["texture"].is_string())
-			{
-				fields.texture = node["texture"].get<std::string>();
-				any = true;
-			}
 			if (node.contains("fit") && node["fit"].is_string())
 			{
 				fields.fit = node["fit"].get<std::string>();
@@ -259,16 +267,17 @@ namespace UI
 					any = true;
 				}
 			}
-			// 节点自带的 background 块（tint / cornerRadius / texture / slice）同样算内联样式，
+			// 节点自带的 background 块（tint / cornerRadius / image / region / slice）同样算内联样式，
 			// 这样单文件 demo 不用为每种颜色单独建样式资产。
 			if (node.contains("background") && node["background"].is_object())
 			{
 				ReadBackgroundFields(node["background"], fields);
 				any = true;
 			}
-			if (node.contains("background") && node["background"].is_object())
+			// 节点上直接写的 image / region 优先于 background 块里的
+			if ((node.contains("image") && node["image"].is_string()) || (node.contains("region") && node["region"].is_string()))
 			{
-				ReadBackgroundFields(node["background"], fields);
+				ReadImageFields(node, fields);
 				any = true;
 			}
 			if (node.contains("textStyle"))
@@ -311,8 +320,10 @@ namespace UI
 				result.styleRef = node["style"].get<std::string>();
 			if (node.contains("text") && node["text"].is_string())
 				result.text = node["text"].get<std::string>();
-			if (node.contains("texture") && node["texture"].is_string())
-				result.texture = node["texture"].get<std::string>();
+			if (node.contains("image") && node["image"].is_string())
+				result.image = node["image"].get<std::string>();
+			if (node.contains("region") && node["region"].is_string())
+				result.region = node["region"].get<std::string>();
 
 			if (node.contains("rect") && node["rect"].is_object())
 			{
@@ -645,8 +656,10 @@ namespace UI
 					out << "  color=" << FormatVec4(*fields.color);
 				if (fields.tint)
 					out << "  tint=" << FormatVec4(*fields.tint);
-				if (fields.texture)
-					out << "  texture=" << *fields.texture;
+				if (fields.image)
+					out << "  image=" << *fields.image;
+				if (fields.region)
+					out << "  region=" << *fields.region;
 				if (fields.fit)
 					out << "  fit=" << *fields.fit;
 				if (fields.opacity)

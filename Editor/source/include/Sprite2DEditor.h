@@ -24,8 +24,6 @@ namespace Sprite2DEditor
 	// 占一块 maxSize 的区域画预览（会推进 ImGui 光标）
 	void DrawFramePreview(const Render2D::SpriteFrame& frame, const ImVec2& maxSize);
 
-	// 资产浏览器缩略图：Sprite（默认区域）/ Texture / AnimatedImage（按编辑器时钟播放）。拿不到时返回无效帧
-	Render2D::SpriteFrame GetAssetThumbnail(ProjectManager* projectManager, const AssetMeta& meta);
 
 	// 资产槽：显示当前引用、接受从资产浏览器拖进来的指定类型资产；返回是否改了。
 	// convertible 里的类型也能拖进来，但不直接填，交给 onConvert（例如贴图先生成精灵，导入完再填）

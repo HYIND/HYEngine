@@ -53,7 +53,8 @@ namespace Render
 
 		// 画一个图像引用（Sprite / Texture / 动图），支持 fit（fill / contain / cover / none）和九宫格；
 		// 返回是否画成（引用解析失败时调用方退回纯色块）
-		bool DrawImage(::ImDrawList* drawList, const std::string& reference, const UI::UiNode& node, const UI::StyleFields& style,
+		// region：Sprite 的区域名，为空或找不到就画整张图
+		bool DrawImage(::ImDrawList* drawList, const std::string& reference, const std::string& region, const UI::UiNode& node, const UI::StyleFields& style,
 			UI::UiInstanceState* instance, float x, float y, float w, float h, float scaleX, float scaleY, unsigned int color, float rounding);
 
 		// 把 EngineInputContext 里的鼠标/文字翻成 ImGuiIO 事件（坐标换算到渲染目标像素）。

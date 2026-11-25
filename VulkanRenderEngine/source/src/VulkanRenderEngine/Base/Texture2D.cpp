@@ -242,9 +242,10 @@ Texture2D::Texture2D(const std::string& filepath, const TextureConfig& config, b
 	LoadFromFile(filepath, autoMipMaps);
 }
 
-Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const TextureConfig& config, uint32_t level)
+Texture2D::Texture2D(uint32_t width, uint32_t height, vk::Format format, const TextureConfig& config, uint32_t level, bool createSampler)
 	: m_Width(width), m_Height(height), m_Format(format), m_MaxLevel(std::max(1u, level)), m_config(config)
 {
+	_withoutSampler = !createSampler;
 	CreateImage();
 	CreateImageView();
 	CreateSampler();
@@ -666,6 +667,9 @@ bool Texture2D::CreateImageView()
 bool Texture2D::CreateSampler()
 {
 	LockGuard guard(_mutex);
+
+	if (_withoutSampler)
+		return true;
 
 	vk::SamplerCreateInfo samplerInfo = {};
 	samplerInfo

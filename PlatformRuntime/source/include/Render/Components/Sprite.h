@@ -20,7 +20,7 @@ enum class SpriteDrawMode : uint32_t
 struct Sprite : public RenderBase2D
 {
 	AssetGUID spriteGuid;
-	std::string region;							// Sprite 里的区域名；为空用默认（第一个）区域
+	std::string region;							// Sprite 里的区域名；为空或找不到用整张图
 
 	glm::vec2 size = glm::vec2(0.0f);			// 世界尺寸；分量 <= 0 时按区域像素尺寸（1 像素 = 1 单位）
 	bool overridePivot = false;					// false：用资产区域里的轴心

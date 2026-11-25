@@ -4,6 +4,7 @@
 #include "Render/Components/ParticleEmitter.h"
 #include "PlatformRuntimeComponents.h"
 #include "Sprite2DEditor.h"
+#include "AssetThumbnails.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 #include <algorithm>
 #include <cstdio>
@@ -889,9 +890,19 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 						default: return "Texture";
 						}
 					};
+				// 贴图槽：40px 缩略图（和资产浏览器共用同一份、后台生成）+ 资产名 / 路径
 				for (const auto& [type, texture] : material->GetTextures())
-					if (texture)
-						drawAssetPath(textureName(type), texture->GetAssetGUID());
+				{
+					if (!texture)
+						continue;
+					ImGui::PushID(static_cast<int>(type));
+					AssetThumbnails::DrawThumbnailBox(assetManager, texture->GetAssetGUID(), 40.0f);
+					ImGui::SameLine();
+					ImGui::BeginGroup();
+					drawAssetPath(textureName(type), texture->GetAssetGUID());
+					ImGui::EndGroup();
+					ImGui::PopID();
+				}
 			}
 			ImGui::TreePop();
 		}
@@ -2230,11 +2241,11 @@ inline bool PropertiesHelper::DrawComponent<Sprite>(Sprite& comp, ProjectManager
 		auto asset = assetManager->LoadAsset(meta->guid);
 		auto sprite = asset ? asset->AsSprite() : nullptr;
 		const auto names = sprite ? sprite->GetRegionNames() : std::vector<std::string>{};
-		const std::string preview = comp.region.empty() ? std::string("（默认：第一个区域）") : comp.region;
+		const std::string preview = comp.region.empty() ? std::string("（整张图）") : comp.region;
 		SetNextPropertyFieldWidth(200.0f, 0.6f);
 		if (ImGui::BeginCombo("区域", preview.c_str()))
 		{
-			if (ImGui::Selectable("（默认：第一个区域）", comp.region.empty()))
+			if (ImGui::Selectable("（整张图）", comp.region.empty()))
 			{
 				comp.region.clear();
 				changed = true;
@@ -2251,7 +2262,7 @@ inline bool PropertiesHelper::DrawComponent<Sprite>(Sprite& comp, ProjectManager
 		}
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip("一张图里可以切出多块命名区域（序列帧、图集里的按钮等），这里选画哪一块");
 		if (!comp.region.empty() && sprite && !sprite->HasRegion(comp.region))
-			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "区域 \"%s\" 不存在，按默认区域画", comp.region.c_str());
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "区域 \"%s\" 不存在，按整张图画", comp.region.c_str());
 	}
 
 	const Render2D::SpriteFrame frame = comp.ResolveFrame();

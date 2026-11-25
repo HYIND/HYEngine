@@ -37,6 +37,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cwctype>
+#include <iostream>
 #include <mutex>
 #include <stdexcept>
 
@@ -990,127 +991,134 @@ const Render::Renderer3D* EngineRuntime::GetRenderer3D() const
 	return m_renderer->GetRenderer3D();
 }
 
-std::string EngineRuntime::FindImageFile(const std::string& path) const
+namespace
 {
-	namespace fs = std::filesystem;
-	std::error_code ec;
-	const fs::path reference(reinterpret_cast<const char8_t*>(path.c_str()));
-
-	auto existing = [&](const fs::path& candidate) -> std::string
+	// 按资产路径查资产库。库里的路径是导入时 fs::path::string() 的结果（Windows 上是反斜杠、系统代码页），
+	// .ui 里一般写正斜杠、UTF-8（编辑器"复制资产路径"复制出来的就是这种），几种写法都试一下
+	std::shared_ptr<AssetMeta> FindAssetMetaByPath(AssetDatabase& database, const std::string& reference)
+	{
+		std::vector<std::string> bases{ reference };
+		try
 		{
-			if (candidate.empty() || !fs::is_regular_file(candidate, ec))
-				return {};
-			const auto canonical = fs::weakly_canonical(candidate, ec);
-			const auto u8 = (ec ? candidate : canonical).u8string();
-			return std::string(u8.begin(), u8.end());
-		};
+			const std::string native = std::filesystem::path(reinterpret_cast<const char8_t*>(reference.c_str())).string();
+			if (native != reference)
+				bases.push_back(native);
+		}
+		catch (...) {}	// 不是合法 UTF-8 就只按原样查
 
-	// 只在工程目录内解析：工程不能依赖工程外的文件（不再找工作目录和它的上级目录），
-	// 写成绝对路径的也必须落在工程目录里
-	if (!m_project || !m_project->IsProjectOpen())
-		return {};
-
-	const auto projectPath = m_project->GetProjectFolderFullPath();
-	const fs::path projectRoot = fs::weakly_canonical(fs::path(reinterpret_cast<const char8_t*>(projectPath.c_str())), ec);
-	const std::string found = existing(reference.is_absolute() ? reference : projectRoot / reference);
-	if (found.empty())
-		return {};
-
-	auto lower = [](std::wstring s)
+		for (const auto& base : bases)
 		{
-			std::transform(s.begin(), s.end(), s.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
-			return s;
-		};
-	std::wstring root = lower(projectRoot.generic_wstring());
-	if (!root.empty() && root.back() != L'/')
-		root += L'/';
-	const std::wstring resolved = lower(fs::path(reinterpret_cast<const char8_t*>(found.c_str())).generic_wstring());
-	if (root.size() <= 1 || resolved.compare(0, root.size(), root) != 0)
-		return {};
-	return found;
+			std::string backslash = base;
+			std::replace(backslash.begin(), backslash.end(), '/', '\\');
+			std::string slash = base;
+			std::replace(slash.begin(), slash.end(), '\\', '/');
+			const std::string* candidates[] = { &base, &backslash, &slash };
+			for (const std::string* candidate : candidates)
+			{
+				if (auto found = database.GetAssetMetaByPath(*candidate))
+					return found;
+			}
+		}
+		return nullptr;
+	}
+
+	const char* AssetTypeName(AssetType type)
+	{
+		switch (type)
+		{
+		case AssetType::Texture: return "Texture";
+		case AssetType::Sprite: return "Sprite";
+		case AssetType::AnimatedImage: return "AnimatedImage";
+		case AssetType::Material: return "Material";
+		case AssetType::StaticMesh: return "StaticMesh";
+		case AssetType::StaticModel: return "StaticModel";
+		case AssetType::Scene: return "Scene";
+		case AssetType::Script: return "Script";
+		case AssetType::UiDocument: return "UiDocument";
+		case AssetType::UiStyle: return "UiStyle";
+		default: return "其他类型";
+		}
+	}
 }
 
-void EngineRuntime::ClearImageFileCache()
+// 把一个查到的 meta 变成可用的图像：类型对、资产能加载、贴图 / 帧真的加载出来了才算有效。
+// 无效时返回空，并在 why 里写原因
+Render2D::ImageSource EngineRuntime::LoadImageAsset(const AssetMeta& meta, std::string& why)
 {
-	std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
-	m_imageFileCache.clear();
-	m_imageFileMissing.clear();
+	const bool isSprite = meta.type == AssetType::Sprite || meta.type == AssetType::Texture;
+	const bool isAnimated = meta.type == AssetType::AnimatedImage;
+	if (!isSprite && !isAnimated)
+	{
+		why = std::string("类型是 ") + AssetTypeName(meta.type) + "，只能用 Sprite / Texture / AnimatedImage";
+		return {};
+	}
+
+	auto asset = m_project->LoadAsset(meta.guid);
+	if (!asset)
+	{
+		why = "资产加载失败";
+		return {};
+	}
+
+	Render2D::ImageSource source;
+	if (isSprite)
+	{
+		auto sprite = asset->AsSprite();
+		const auto texture = sprite ? sprite->GetTexture() : nullptr;
+		if (!texture || texture->IsEmpty())
+		{
+			why = std::string(AssetTypeName(meta.type)) + " 资产没有加载出贴图（原图丢失或解码失败）";
+			return {};
+		}
+		source.sprite = std::move(sprite);
+	}
+	else
+	{
+		auto animated = asset->AsAnimatedImage();
+		if (!animated || animated->GetFrameCount() == 0)
+		{
+			why = "AnimatedImage 资产没有加载出帧（原图丢失或解码失败）";
+			return {};
+		}
+		source.animated = std::move(animated);
+	}
+	return source;
 }
 
 Render2D::ImageSource EngineRuntime::ResolveImageReference(const std::string& reference)
 {
-	std::string assetPart, region;
-	Render2D::SplitImageReference(reference, assetPart, region);
-	if (assetPart.empty())
+	if (reference.empty() || !m_project || !m_project->IsProjectOpen())
 		return {};
 
-	// 1. 资产 GUID
-	if (m_project && m_project->IsProjectOpen())
-	{
-		auto database = m_project->GetDatabase();
-		if (auto meta = database ? database->GetAssetMetaByGuid(assetPart) : nullptr)
-		{
-			auto asset = m_project->LoadAsset(meta->guid);
-			if (!asset)
-				return {};
-
-			Render2D::ImageSource source;
-			source.region = region;
-			if (meta->type == AssetType::Sprite || meta->type == AssetType::Texture)
-				source.sprite = asset->AsSprite();
-			else if (meta->type == AssetType::AnimatedImage)
-				source.animated = asset->AsAnimatedImage();
-			return source;
-		}
-	}
-
-	// 2. 图片文件路径（UI 文档里常见的写法）
-	const std::string projectFolder = (m_project && m_project->IsProjectOpen()) ? m_project->GetProjectFolderFullPath() : std::string();
-	{
-		std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
-		if (m_imageFileCacheProject != projectFolder)
-		{
-			m_imageFileCache.clear();
-			m_imageFileMissing.clear();
-			m_imageFileCacheProject = projectFolder;
-		}
-		if (m_imageFileMissing.contains(assetPart))
-			return {};
-		if (auto it = m_imageFileCache.find(assetPart); it != m_imageFileCache.end())
-		{
-			auto source = it->second;
-			source.region = region;
-			return source;
-		}
-	}
-
-	Render2D::ImageSource source;
-	const std::string file = FindImageFile(assetPart);
-	if (!file.empty())
-	{
-		// 直接加载的图片用线性过滤、不做 sRGB 转换（和 UI 的颜色空间一致）
-		TextureConfig config;
-		config.minFilter = vk::Filter::eLinear;
-		config.magFilter = vk::Filter::eLinear;
-
-		std::string extension = std::filesystem::path(reinterpret_cast<const char8_t*>(file.c_str())).extension().string();
-		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-		if (extension == ".gif")
-			source.animated = Render2D::AnimatedImage::LoadFromFile(file, config);
-		else if (auto texture = std::make_shared<Texture2D>(file, config, false); texture && !texture->IsEmpty())
-			source.sprite = std::make_shared<Render2D::Sprite>(std::move(texture), std::vector<Render2D::SpriteRegion>{});
-	}
-
-	std::lock_guard<std::mutex> lock(m_imageFileCacheMutex);
-	if (!source.IsValid())
-	{
-		m_imageFileMissing[assetPart] = true;
+	auto database = m_project->GetDatabase();
+	if (!database)
 		return {};
+
+	std::string pathWhy, guidWhy;
+	if (auto meta = FindAssetMetaByPath(*database, reference))
+	{
+		auto source = LoadImageAsset(*meta, pathWhy);
+		if (source.IsValid())
+			return source;
 	}
-	m_imageFileCache[assetPart] = source;
-	source.region = region;
-	return source;
+	else
+	{
+		pathWhy = "资产库里没有这个资产路径";
+	}
+
+	if (auto meta = database->GetAssetMetaByGuid(reference))
+	{
+		auto source = LoadImageAsset(*meta, guidWhy);
+		if (source.IsValid())
+			return source;
+	}
+	else
+	{
+		guidWhy = "资产库里没有这个 GUID";
+	}
+
+	std::cerr << "[UI 图像] " << reference << "：找不到可用的图像资产。按资产路径：" << pathWhy << "；按 GUID：" << guidWhy << std::endl;
+	return {};
 }
 
 Render::Renderer2D* EngineRuntime::GetRenderer2D()

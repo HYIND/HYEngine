@@ -346,17 +346,22 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		textColor = ImGui::ColorConvertFloat4ToU32(ImVec4(color.r, color.g, color.b, color.a * opacity));
 	}
 
-	// 背景 / 图像：引用了图像（样式的 texture，或 image 节点自带的 texture）就画图，tint 作为染色；
+	// 背景 / 图像：引用了图像（样式里的 image，或节点自带的 image）就画图，tint 作为染色；
 	// 没有图像或解析失败时退回纯色块（tint）
 	bool imageDrawn = false;
 	if (node.type != "text")
 	{
-		const std::string& imageRef = (style->texture && !style->texture->empty()) ? *style->texture : node.texture;
+		// 区域跟着图走：图来自样式就用样式的 region（没写就是整张图）；图来自节点就用节点的 region。
+		// 样式里只写了 region（例如 hover 状态只换区域）时，在节点的图上换区域
+		static const std::string kNoRegion;
+		const bool styleHasImage = style->image && !style->image->empty();
+		const std::string& imageRef = styleHasImage ? *style->image : node.image;
+		const std::string& imageRegion = style->region ? *style->region : (styleHasImage ? kNoRegion : node.region);
 		if (!imageRef.empty())
 		{
 			const UI::Vec4 tint = style->tint ? *style->tint : UI::Vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
 			const ImU32 imageColor = ImGui::ColorConvertFloat4ToU32(ImVec4(tint.r, tint.g, tint.b, tint.a * opacity));
-			imageDrawn = DrawImage(drawList, imageRef, node, *style, instance, x, y, w, h, scaleX, scaleY, imageColor, rounding);
+			imageDrawn = DrawImage(drawList, imageRef, imageRegion, node, *style, instance, x, y, w, h, scaleX, scaleY, imageColor, rounding);
 		}
 	}
 
@@ -744,8 +749,6 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 			node.bind->format.empty() ? "%.0f" : node.bind->format.c_str(), static_cast<double>(boundState.value));
 		label = boundBuffer;
 	}
-	if (node.type == "button" && label.empty())
-		label = node.name;
 
 	if (node.type == "progress" && node.showPercent && label.empty())
 	{
@@ -784,7 +787,7 @@ void RendererUI::DrawNode(ImDrawList* drawList, const UI::UiNode& node, const UI
 		DrawNode(drawList, child, parsed, instance, scaleX, scaleY, offsetX, offsetY);
 }
 
-bool RendererUI::DrawImage(ImDrawList* drawList, const std::string& reference, const UI::UiNode& node, const UI::StyleFields& style,
+bool RendererUI::DrawImage(ImDrawList* drawList, const std::string& reference, const std::string& region, const UI::UiNode& node, const UI::StyleFields& style,
 	UI::UiInstanceState* instance, float x, float y, float w, float h, float scaleX, float scaleY, ImU32 color, float rounding)
 {
 	if (!m_currentImages || !m_textureCache || w <= 0.0f || h <= 0.0f)
@@ -805,7 +808,7 @@ bool RendererUI::DrawImage(ImDrawList* drawList, const std::string& reference, c
 		timeMs = m_uiTimeMs - start->second;
 	}
 
-	const Render2D::SpriteFrame frame = source.Evaluate(timeMs, node.imageLoop, node.imageSpeed);
+	const Render2D::SpriteFrame frame = source.Evaluate(timeMs, node.imageLoop, node.imageSpeed, region);
 	if (!frame.IsValid())
 		return false;
 

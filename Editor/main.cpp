@@ -7,6 +7,7 @@
 
 #include "ImguiLayout.h"
 #include "Sprite2DEditor.h"
+#include "AssetThumbnails.h"
 
 #include <stdio.h>
 #if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
@@ -433,6 +434,8 @@ int ImGuiMain()
 
 		auto editorApp = EditorApp::Instance();
 		auto projectManager = editorApp->GetProjectManager();
+		// 资产缩略图（独立模块）：检测工程切换、取消过期的排队任务、淘汰
+		AssetThumbnails::BeginFrame(projectManager);
 
 		ImguiLayout::DrawMainMenu(window, editorApp, projectManager);
 		ImguiLayout::DrawPlayControls(editorApp, projectManager);
@@ -484,6 +487,8 @@ int ImGuiMain()
 	}
 
 	// ==================== 清理 ====================
+	// 缩略图：先停掉后台任务（正在执行的等它做完），再等 GPU 空闲；贴图的描述符集在下面 TextureCache().Clear 里还回去
+	AssetThumbnails::Shutdown();
 	err = vkDeviceWaitIdle(g_Device);
 	check_vk_result(err);
 

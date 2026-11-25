@@ -52,7 +52,10 @@ namespace UI
 	struct StyleFields
 	{
 		// 背景
-		std::optional<std::string> texture;
+		// 图像：资产路径或 GUID（Sprite / Texture / AnimatedImage，静态图和动图都用它）
+		std::optional<std::string> image;
+		// Sprite 里的区域名；不写 = 整张图。跟着 image 走：哪一层写了 image，就用那一层的 region（见 MergeFields）
+		std::optional<std::string> region;
 		std::optional<Vec4> tint;
 		std::optional<Slice> slice;
 		std::optional<float> cornerRadius;
@@ -126,10 +129,12 @@ namespace UI
 		UiRect rect;
 
 		std::string text;
-		// 图像引用：Sprite / Texture / AnimatedImage 资产 GUID（可带 "#区域"），或工程内图片路径
-		std::string texture;
+		// 图像引用：资产路径或 GUID（Sprite / Texture / AnimatedImage）
+		std::string image;
+		// Sprite 里的区域名；为空 = 整张图
+		std::string region;
 
-		// texture 是动图时的播放方式（<= 0 无限循环；speed 为倍速）
+		// image 是动图时的播放方式（<= 0 无限循环；speed 为倍速）
 		int imageLoop = 0;
 		float imageSpeed = 1.0f;
 
@@ -236,7 +241,17 @@ namespace UI
 
 	inline void MergeFields(StyleFields &target, const StyleFields &overlay)
 	{
-		if (overlay.texture) target.texture = overlay.texture;
+		// 区域跟着图走：上层换了图，区域也一起换成上层的（上层没写区域就是整张图，不继承下层给别的图写的区域）；
+		// 上层只写了区域、没换图，就是在同一张图上换区域
+		if (overlay.image)
+		{
+			target.image = overlay.image;
+			target.region = overlay.region;
+		}
+		else if (overlay.region)
+		{
+			target.region = overlay.region;
+		}
 		if (overlay.tint) target.tint = overlay.tint;
 		if (overlay.slice) target.slice = overlay.slice;
 		if (overlay.cornerRadius) target.cornerRadius = overlay.cornerRadius;

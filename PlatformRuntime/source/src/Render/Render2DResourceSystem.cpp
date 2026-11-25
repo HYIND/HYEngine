@@ -5,7 +5,10 @@
 #include "Render/Components/Sprite.h"
 #include "Render/Components/AnimatedImagePlayer.h"
 
+#include <iostream>
+#include <set>
 #include <unordered_set>
+#include <utility>
 
 Render2DResourceSystem::Render2DResourceSystem()
 	: System("Render2DResource")
@@ -106,24 +109,46 @@ void Render2DResourceSystem::ResolveAnimatedImages()
 
 namespace
 {
-	void CollectNodeImages(const UI::UiNode& node, const UI::ParseResult& parsed, std::unordered_set<std::string>& out)
+	// 一处图像用法：图像引用 + 区域名（区域为空 = 整张图）
+	using ImageUse = std::pair<std::string, std::string>;
+
+	void AddUse(std::set<ImageUse>& out, const std::string& image, const std::string& region)
 	{
-		if (!node.texture.empty())
-			out.insert(node.texture);
+		if (!image.empty())
+			out.emplace(image, region);
+	}
+
+	// 和 RendererUI::DrawNode 选图的规则一致：图来自样式就用样式的 region，图来自节点就用节点的 region；
+	// 状态里只写了 region 时，是在基础态的图上换区域
+	void CollectNodeImages(const UI::UiNode& node, const UI::ParseResult& parsed, std::set<ImageUse>& out)
+	{
+		AddUse(out, node.image, node.region);
 
 		if (auto it = parsed.resolved.find(&node); it != parsed.resolved.end())
 		{
-			if (it->second.effective.texture && !it->second.effective.texture->empty())
-				out.insert(*it->second.effective.texture);
+			const UI::StyleFields& base = it->second.effective;
+			const bool baseHasImage = base.image && !base.image->empty();
+			const std::string baseImage = baseHasImage ? *base.image : node.image;
+			const std::string baseRegion = base.region ? *base.region : (baseHasImage ? std::string() : node.region);
+			AddUse(out, baseImage, baseRegion);
+
 			for (const auto& [state, fields] : it->second.states)
 			{
-				if (fields.texture && !fields.texture->empty())
-					out.insert(*fields.texture);
+				if (fields.image && !fields.image->empty())
+					AddUse(out, *fields.image, fields.region ? *fields.region : std::string());
+				else if (fields.region)
+					AddUse(out, baseImage, *fields.region);
 			}
 		}
 
 		for (const auto& child : node.children)
 			CollectNodeImages(child, parsed, out);
+	}
+
+	void WarnRegion(const UI::ParseResult& parsed, const ImageUse& use, const char* message)
+	{
+		std::cerr << "[UI 图像] " << parsed.document.sourcePath << "：image \"" << use.first << "\" 的 region \""
+			<< use.second << "\"" << message << std::endl;
 	}
 
 	bool HasStaleImage(const std::shared_ptr<const Render2D::UIImageTable>& table)
@@ -166,15 +191,31 @@ void Render2DResourceSystem::ResolveUIImages()
 		if (existing && existing->document == runtime.document && !HasStaleImage(existing->table))
 			continue;
 
-		std::unordered_set<std::string> references;
-		CollectNodeImages(runtime.document->document.root, *runtime.document, references);
+		std::set<ImageUse> uses;
+		CollectNodeImages(runtime.document->document.root, *runtime.document, uses);
 
 		auto table = std::make_shared<Render2D::UIImageTable>();
-		for (const auto& reference : references)
+		for (const auto& [reference, region] : uses)
 		{
+			if (table->contains(reference))
+				continue;
 			auto source = Resolve(reference);
 			if (source.IsValid())
 				table->emplace(reference, std::move(source));
+		}
+
+		// 区域名只在文档加载（换文档 / 动图资产过期）时检查一次，找不到的退回整张图
+		for (const auto& use : uses)
+		{
+			if (use.second.empty())
+				continue;
+			auto found = table->find(use.first);
+			if (found == table->end())
+				continue;	// 图本身没解析出来，Resolve 已经报过了
+			if (found->second.animated)
+				WarnRegion(*runtime.document, use, " 无效：动图没有区域，忽略");
+			else if (found->second.sprite && !found->second.sprite->HasRegion(use.second))
+				WarnRegion(*runtime.document, use, " 不存在，按整张图画");
 		}
 
 		if (existing)

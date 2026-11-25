@@ -1,5 +1,6 @@
 #include "Sprite2DEditor.h"
 
+#include "AssetThumbnails.h"
 #include "EditorApp.h"
 #include "SceneEditor.h"
 #include "CommonComponent.h"
@@ -148,26 +149,6 @@ namespace Sprite2DEditor
 		ImGui::Dummy(maxSize);
 	}
 
-	Render2D::SpriteFrame GetAssetThumbnail(ProjectManager* projectManager, const AssetMeta& meta)
-	{
-		if (!projectManager)
-			return {};
-		if (meta.type != AssetType::Sprite && meta.type != AssetType::AnimatedImage && meta.type != AssetType::Texture)
-			return {};
-
-		auto asset = projectManager->LoadAsset(meta.guid);
-		if (!asset)
-			return {};
-
-		if (meta.type == AssetType::AnimatedImage)
-		{
-			auto image = asset->AsAnimatedImage();
-			return image ? image->Evaluate(EditorTimeMs(), 0) : Render2D::SpriteFrame{};
-		}
-
-		auto sprite = asset->AsSprite();
-		return sprite ? sprite->Resolve() : Render2D::SpriteFrame{};
-	}
 
 	bool DrawAssetSlot(const char* label, AssetGUID& guid, std::initializer_list<AssetType> accepted, ProjectManager* projectManager,
 		std::initializer_list<AssetType> convertible, const std::function<void(const AssetMeta&)>& onConvert)
@@ -345,6 +326,7 @@ namespace
 			const std::string source = projectManager->GetProjectAssetFullPath(asset->GetPath());
 			if (asset->SetConfig(s_sprite.config, source) && projectManager->SaveAsset(s_sprite.guid))
 			{
+				AssetThumbnails::Invalidate(s_sprite.guid);
 				s_sprite.originRegions = asset->GetRegions();
 				s_sprite.message = "导入配置已应用并保存";
 			}
@@ -650,7 +632,10 @@ namespace
 			{
 				const std::string source = projectManager->GetProjectAssetFullPath(asset->GetDescription().GetPath());
 				if (asset->SetConfig(s_viewer.config, source) && projectManager->SaveAsset(s_viewer.guid))
+				{
+					AssetThumbnails::Invalidate(s_viewer.guid);
 					s_viewer.message = "已应用并保存（场景里的播放器下次解析时换成新图集）";
+				}
 				else
 					s_viewer.message = "应用失败";
 			}

@@ -22,11 +22,11 @@ bool ImGuiTextureCache::WantsNearest(const Texture2D& texture)
 	return texture.GetMagFilter() == vk::Filter::eNearest;
 }
 
-void ImGuiTextureCache::Release(VkDescriptorSet set)
+void ImGuiTextureCache::Release(VkDescriptorSet set, std::shared_ptr<Texture2D> texture)
 {
 	if (set == VK_NULL_HANDLE)
 		return;
-	_pending.emplace_back(set, _frame + _releaseDelay);
+	_pending.push_back(Pending{ set, _frame + _releaseDelay, std::move(texture) });
 }
 
 void ImGuiTextureCache::FlushPending(bool force)
@@ -35,9 +35,9 @@ void ImGuiTextureCache::FlushPending(bool force)
 		return;
 
 	LockGuard guard(VKCONTEXT->GetDescriptorPoolRequestMutex());
-	while (!_pending.empty() && (force || _pending.front().second <= _frame))
+	while (!_pending.empty() && (force || _pending.front().releaseFrame <= _frame))
 	{
-		ImGui_ImplVulkan_RemoveTexture(_pending.front().first);
+		ImGui_ImplVulkan_RemoveTexture(_pending.front().set);
 		_pending.pop_front();
 	}
 }
@@ -52,7 +52,7 @@ void ImGuiTextureCache::BeginFrame()
 	{
 		if (_frame - it->second.lastUsedFrame > _evictAfter)
 		{
-			Release(it->second.set);
+			Release(it->second.set, std::move(it->second.texture));
 			it = _entries.erase(it);
 		}
 		else
@@ -84,7 +84,7 @@ ImTextureID ImGuiTextureCache::Get(const std::shared_ptr<Texture2D>& texture)
 	// 贴图重建过（Resize 等）：旧描述符集指向旧 image view，换一个
 	if (entry.set != VK_NULL_HANDLE && entry.version != version)
 	{
-		Release(entry.set);
+		Release(entry.set, entry.texture);
 		entry.set = VK_NULL_HANDLE;
 	}
 
@@ -111,6 +111,17 @@ ImTextureID ImGuiTextureCache::Get(const std::shared_ptr<Texture2D>& texture)
 	return reinterpret_cast<ImTextureID>(entry.set);
 }
 
+void ImGuiTextureCache::Remove(const std::shared_ptr<Texture2D>& texture)
+{
+	if (!texture)
+		return;
+	auto it = _entries.find(texture.get());
+	if (it == _entries.end())
+		return;
+	Release(it->second.set, std::move(it->second.texture));
+	_entries.erase(it);
+}
+
 void ImGuiTextureCache::TransitionUsed(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd)
 {
 	if (!cmd)
@@ -127,7 +138,7 @@ void ImGuiTextureCache::Clear(bool backendAlive)
 	if (backendAlive)
 	{
 		for (auto& [key, entry] : _entries)
-			Release(entry.set);
+			Release(entry.set, std::move(entry.texture));
 		FlushPending(true);
 	}
 	_entries.clear();

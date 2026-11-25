@@ -4,6 +4,7 @@
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "CommonData/AssetGUIDDef.h"
 
+#include <functional>
 #include <mutex>
 
 // 2D 层（Renderer2D）与 UI 层（RendererUI）共用的图像资源。
@@ -40,6 +41,31 @@ namespace Render2D
 	// 按 2D 图像配置加载一张图片（不生成 mip），失败返回空
 	std::shared_ptr<Texture2D> LoadImageTexture(const std::string& fullPath, const TextureConfig& importConfig, std::string* error = nullptr);
 
+	// ---------- CPU 解码工具：只要像素、不建贴图的场合用（例如编辑器缩略图） ----------
+	struct ImageRGBA
+	{
+		uint32_t width = 0;
+		uint32_t height = 0;
+		std::vector<uint8_t> pixels;	// width * height * 4，RGBA8，非预乘 alpha
+	};
+	// 解码一张图片为 RGBA8：DDS 和引擎加载贴图一样走 DirectXTex（取第一层 mip / 第一张切片），GIF 取第一帧，其余走 stb
+	bool DecodeImageFile(const std::string& path, ImageRGBA& out, std::string* error = nullptr);
+
+	struct GifInfo
+	{
+		uint32_t width = 0;
+		uint32_t height = 0;
+		uint32_t frameCount = 0;
+	};
+	// 每合成一帧回调一次：整张画布 RGBA8（width * height * 4），回调返回后缓冲区会被复用；
+	// delayMs 已经按和浏览器一样的规则处理过（0 / 过短的按 100ms）。回调返回 false 时中止解码
+	using GifFrameCallback = std::function<bool(const uint8_t* rgba, uint32_t width, uint32_t height, float delayMs)>;
+	// 逐帧解码 GIF（不会把所有整帧都留在内存里）。info 在第一次回调之前就已经填好（帧数是预扫描得到的）
+	bool DecodeGifFile(const std::string& path, const GifFrameCallback& onFrame, GifInfo* info = nullptr, std::string* error = nullptr);
+
+	// RGBA8（非预乘 alpha）缩放，dst 需要 dstW * dstH * 4 字节
+	void ResizeRGBA(const uint8_t* src, uint32_t srcW, uint32_t srcH, uint8_t* dst, uint32_t dstW, uint32_t dstH);
+
 	class Sprite
 	{
 	public:
@@ -54,7 +80,7 @@ namespace Render2D
 		std::vector<std::string> GetRegionNames() const;
 		bool HasRegion(const std::string& name) const;
 
-		// 区域名为空或找不到时取第一个区域；一个区域都没有时整张贴图就是一帧
+		// 区域名为空或找不到时用整张贴图
 		SpriteFrame Resolve(const std::string& region = {}) const;
 
 		static SpriteFrame MakeFrame(const std::shared_ptr<Texture2D>& texture, const SpriteRegion* region);
@@ -81,9 +107,10 @@ namespace Render2D
 
 		// 解码动图并拼成图集（GIF；其它格式按单帧处理）。config 里只用采样过滤和 sRGB
 		static std::shared_ptr<AnimatedImage> LoadFromFile(const std::string& path, const TextureConfig& config, std::string* error = nullptr);
-		// 从已经合成好的 RGBA8 整帧构建（每帧 width * height * 4 字节）
+		// 从已经合成好的 RGBA8 整帧构建（每帧 width * height * 4 字节）。
+		// createSampler = false：图集页不建采样器，只能交给 ImGui 显示（编辑器缩略图），不能交给 2D 渲染器
 		static std::shared_ptr<AnimatedImage> FromFrames(const std::vector<const uint8_t*>& rgbaFrames, uint32_t width, uint32_t height,
-			const std::vector<float>& durationsMs, const TextureConfig& config, std::string* error = nullptr);
+			const std::vector<float>& durationsMs, const TextureConfig& config, std::string* error = nullptr, bool createSampler = true);
 
 		uint32_t GetFrameCount() const { return static_cast<uint32_t>(_frames.size()); }
 		const Frame& GetFrame(uint32_t index) const { return _frames[index]; }

@@ -112,11 +112,8 @@ public:
 	Render::Renderer2D* GetRenderer2D();
 	const Render::Renderer2D* GetRenderer2D() const;
 
-	// 2D 层和 UI 共用的图像引用解析：Sprite / Texture / AnimatedImage 资产 GUID（可带 "#区域"），
-	// 或工程内 / 工作目录下的图片文件路径（.gif 按动图加载）。线程安全
+	// 2D 层和 UI 共用的图像引用解析：只认资产（先资产路径、再 GUID；查到的必须类型对、能加载出来才算）
 	Render2D::ImageSource ResolveImageReference(const std::string& reference);
-	// 丢掉按文件路径直接加载的图片缓存（资产本身由 ProjectManager 管）
-	void ClearImageFileCache();
 
 	std::shared_ptr<AudioDevice> GetAudioDevice() const { return m_audioDevice; }
 
@@ -188,7 +185,8 @@ private:
 	void RegisterBaseSystems(World& world);
 	void BindVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
 	void SceneThreadLoop();
-	std::string FindImageFile(const std::string& path) const;
+	// 查到的 meta 是否是可用的图像：类型是 Sprite / Texture / AnimatedImage 且能加载出贴图 / 帧；无效时 why 写原因
+	Render2D::ImageSource LoadImageAsset(const AssetMeta& meta, std::string& why);
 
 	void UnloadModules(); // 只在 Shutdown 里用：模块必须在它们供给的场景销毁之后才卸载。
 
@@ -234,10 +232,4 @@ private:
 	float m_fixedDeltaMilliseconds = 16.0f;
 	// 世界时间膨胀系数。切场景时新建的 World 也要继承它，否则换场景会悄悄回到 1x。
 	float m_worldTimeScale = 1.0f;
-
-	// 按文件路径（非资产）加载的图片：键是规范化后的完整路径
-	std::mutex m_imageFileCacheMutex;
-	std::unordered_map<std::string, Render2D::ImageSource> m_imageFileCache;
-	std::unordered_map<std::string, bool> m_imageFileMissing;	// 找不到 / 加载失败的路径，避免每帧重试
-	std::string m_imageFileCacheProject;						// 缓存所属的工程目录，换工程就清空
 };

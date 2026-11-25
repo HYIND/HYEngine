@@ -151,6 +151,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Editor.h" />
+    <ClInclude Include="ImGuiColorTextEdit\TextEditor.h" />
     <ClInclude Include="Imgui\backend\imgui_impl_glfw.h" />
     <ClInclude Include="ImguiInit\VulkanInit.h" />
     <ClInclude Include="Imguizmo\GraphEditor.h" />
@@ -166,6 +167,8 @@
     <ClInclude Include="source\include\EditorTags.h" />
     <ClInclude Include="source\include\IconManager.h" />
     <ClInclude Include="source\include\Sprite2DEditor.h" />
+    <ClInclude Include="source\include\TextAssetEditor.h" />
+    <ClInclude Include="source\include\AssetThumbnails.h" />
     <ClInclude Include="source\include\ImguiLayout.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />
     <ClInclude Include="source\include\DDGIEditor.h" />
@@ -180,6 +183,9 @@
     <ClInclude Include="source\include\EditorGlfwInput.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ImGuiColorTextEdit\TextEditor.cpp">
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="Imgui\backend\imgui_impl_glfw.cpp" />
     <ClCompile Include="ImguiInit\VulkanInit.cpp" />
     <ClCompile Include="Imguizmo\GraphEditor.cpp" />
@@ -192,6 +198,8 @@
     <ClCompile Include="source\src\AssetImportPopup.cpp" />
     <ClCompile Include="source\src\IconManager.cpp" />
     <ClCompile Include="source\src\Sprite2DEditor.cpp" />
+    <ClCompile Include="source\src\TextAssetEditor.cpp" />
+    <ClCompile Include="source\src\AssetThumbnails.cpp" />
     <ClCompile Include="source\src\ImguiLayout.cpp" />
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
     <ClCompile Include="source\src\DDGIEditor.cpp" />

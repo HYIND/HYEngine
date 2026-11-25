@@ -10,6 +10,8 @@
 #include "RenderOptionPanels.h"
 #include "IconManager.h"
 #include "Sprite2DEditor.h"
+#include "TextAssetEditor.h"
+#include "AssetThumbnails.h"
 #include "Render/Systems/RenderSystem.h"
 #include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
@@ -20,6 +22,7 @@
 #include <cctype>
 #include <vector>
 #include <mutex>
+#include <optional>
 #include "glm/gtc/matrix_transform.hpp"
 #include "Coroutine.h"
 #include "EditorTags.h"
@@ -36,6 +39,384 @@ namespace fs = std::filesystem;
 
 namespace
 {
+	// ---------------- 资产浏览器：筛选 + 搜索（只作用于当前文件夹显示的项，两者取交集） ----------------
+
+	constexpr int kAssetTypeCount = static_cast<int>(AssetType::AnimatedImage) + 1;
+
+	const char* BrowserTypeLabel(AssetType type)
+	{
+		switch (type)
+		{
+		case AssetType::Texture: return "贴图";
+		case AssetType::Sprite: return "精灵";
+		case AssetType::AnimatedImage: return "动图";
+		case AssetType::StaticModel: return "模型";
+		case AssetType::StaticMesh: return "网格体";
+		case AssetType::SkinnedModel: return "蒙皮模型";
+		case AssetType::SkinnedMesh: return "蒙皮网格";
+		case AssetType::Skeleton: return "骨骼";
+		case AssetType::AnimationClip: return "动画片段";
+		case AssetType::Material: return "材质";
+		case AssetType::UiDocument: return "UI 文档";
+		case AssetType::UiStyle: return "UI 样式";
+		case AssetType::Scene: return "场景";
+		case AssetType::Script: return "脚本";
+		case AssetType::Audio: return "音频";
+		default: return "未知类型";
+		}
+	}
+
+	struct BrowserFilterGroup
+	{
+		const char* name;
+		std::vector<AssetType> types;
+	};
+
+	const std::vector<BrowserFilterGroup>& BrowserFilterGroups()
+	{
+		static const std::vector<BrowserFilterGroup> groups = {
+			{ "图像", { AssetType::Texture, AssetType::Sprite, AssetType::AnimatedImage } },
+			{ "3D", { AssetType::StaticModel, AssetType::StaticMesh, AssetType::SkinnedModel, AssetType::SkinnedMesh,
+				AssetType::Skeleton, AssetType::AnimationClip, AssetType::Material } },
+			{ "UI", { AssetType::UiDocument, AssetType::UiStyle } },
+			{ "其他", { AssetType::Scene, AssetType::Script, AssetType::Audio, AssetType::Unknown } },
+		};
+		return groups;
+	}
+
+	struct BrowserFilterState
+	{
+		bool folders = true;
+		bool nonAsset = false;
+		bool types[kAssetTypeCount] = {};
+		char search[256] = {};
+		bool popupWasOpen = false;		// 上一帧气泡是否开着
+		bool clickOnlyCloses = false;	// 按下按钮时气泡开着：这次点击只用来关它，不再重新打开
+
+		BrowserFilterState() { Reset(); }
+
+		// 默认：显示文件夹和所有资产类型，不显示非资产文件
+		void Reset()
+		{
+			folders = true;
+			nonAsset = false;
+			for (bool& value : types)
+				value = true;
+		}
+		void SelectAll()
+		{
+			folders = true;
+			nonAsset = true;
+			for (bool& value : types)
+				value = true;
+		}
+		void Invert()
+		{
+			folders = !folders;
+			nonAsset = !nonAsset;
+			for (bool& value : types)
+				value = !value;
+		}
+		// 和默认状态不同的开关个数（显示在按钮上）
+		int ChangedCount() const
+		{
+			int count = (folders ? 0 : 1) + (nonAsset ? 1 : 0);
+			for (bool value : types)
+				count += value ? 0 : 1;
+			return count;
+		}
+		bool& TypeFlag(AssetType type)
+		{
+			int index = static_cast<int>(type);
+			if (index < 0 || index >= kAssetTypeCount)
+				index = 0;
+			return types[index];
+		}
+	};
+
+	BrowserFilterState& BrowserFilter()
+	{
+		static BrowserFilterState state;
+		return state;
+	}
+
+	// 搜索词：按空格拆开，英文转小写；每个词都要出现在名字里
+	std::vector<std::string> SplitSearchTerms(const char* text)
+	{
+		std::vector<std::string> terms;
+		std::string current;
+		for (const char* p = text; p && *p; ++p)
+		{
+			const unsigned char c = static_cast<unsigned char>(*p);
+			if (c == ' ' || c == '\t')
+			{
+				if (!current.empty())
+					terms.push_back(std::move(current));
+				current.clear();
+			}
+			else
+				current.push_back(c < 128 ? static_cast<char>(std::tolower(c)) : static_cast<char>(c));
+		}
+		if (!current.empty())
+			terms.push_back(std::move(current));
+		return terms;
+	}
+
+	bool MatchSearchTerms(const std::string& name, const std::vector<std::string>& terms)
+	{
+		if (terms.empty())
+			return true;
+		std::string lower(name);
+		for (char& c : lower)
+		{
+			const unsigned char u = static_cast<unsigned char>(c);
+			if (u < 128)
+				c = static_cast<char>(std::tolower(u));
+		}
+		for (const auto& term : terms)
+		{
+			if (lower.find(term) == std::string::npos)
+				return false;
+		}
+		return true;
+	}
+
+	bool PassBrowserFilter(BrowserFilterState& filter, bool isFolder, bool isAsset, AssetType type)
+	{
+		if (isFolder)
+			return filter.folders;
+		if (!isAsset)
+			return filter.nonAsset;
+		return filter.TypeFlag(type);
+	}
+
+	// 带"混合"状态的组开关：全开时勾上、全关时不勾、部分开时显示混合；点一下在"全开 / 全关"之间切
+	void GroupCheckbox(const char* label, BrowserFilterState& filter, const std::vector<AssetType>& types)
+	{
+		int on = 0;
+		for (AssetType type : types)
+			on += filter.TypeFlag(type) ? 1 : 0;
+		bool all = on == static_cast<int>(types.size());
+		const bool mixed = on > 0 && !all;
+		if (mixed)
+			ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+		if (ImGui::Checkbox(label, &all))
+		{
+			for (AssetType type : types)
+				filter.TypeFlag(type) = all;
+		}
+		if (mixed)
+			ImGui::PopItemFlag();
+	}
+
+	void DrawBrowserFilterBar(BrowserFilterState& filter, size_t shown, size_t total)
+	{
+		const char* popupId = "##AssetBrowserFilterPopup";
+		const int changed = filter.ChangedCount();
+
+		// ---- 筛选按钮（右侧画一个小三角，字体里没有箭头字符）----
+		if (changed > 0)
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		const std::string label = changed > 0 ? std::format("筛选 ({})     ##AssetFilterButton", changed) : std::string("筛选     ##AssetFilterButton");
+		const bool clicked = ImGui::Button(label.c_str());
+		if (changed > 0)
+			ImGui::PopStyleColor();
+		const ImVec2 buttonMin = ImGui::GetItemRectMin();
+		const ImVec2 buttonMax = ImGui::GetItemRectMax();
+		if (ImGui::IsItemActivated())
+			filter.clickOnlyCloses = filter.popupWasOpen;	// 点气泡外面会先把它关掉，所以要看按下这一刻之前它开没开
+		if (clicked && !filter.clickOnlyCloses)
+			ImGui::OpenPopup(popupId);
+		if (ImGui::IsItemHovered() && !filter.popupWasOpen)
+		{
+			if (changed > 0)
+				ImGui::SetTooltip("按类型筛选当前文件夹的内容（%d 项和默认不同）", changed);
+			else
+				ImGui::SetTooltip("按类型筛选当前文件夹的内容");
+		}
+		{
+			const float h = buttonMax.y - buttonMin.y;
+			const ImVec2 c(buttonMax.x - h * 0.5f, (buttonMin.y + buttonMax.y) * 0.5f + h * 0.04f);
+			const float r = h * 0.16f;
+			ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(c.x - r, c.y - r * 0.55f), ImVec2(c.x + r, c.y - r * 0.55f),
+				ImVec2(c.x, c.y + r * 0.65f), ImGui::GetColorU32(ImGuiCol_Text));
+		}
+
+		// ---- 搜索栏 ----
+		ImGui::SameLine();
+		const std::string countText = std::format("显示 {} / {}", shown, total);
+		const float countWidth = ImGui::CalcTextSize(countText.c_str()).x;
+		const float clearWidth = filter.search[0] ? ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x : 0.0f;
+		const float searchWidth = std::max(80.0f, ImGui::GetContentRegionAvail().x - countWidth - clearWidth - ImGui::GetStyle().ItemSpacing.x * 2.0f);
+		ImGui::SetNextItemWidth(searchWidth);
+		ImGui::InputTextWithHint("##AssetBrowserSearch", "搜索当前文件夹（空格分隔多个词）", filter.search, sizeof(filter.search));
+		if (filter.search[0])
+		{
+			ImGui::SameLine();
+			if (ImGui::Button("×##AssetBrowserClearSearch", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+				filter.search[0] = '\0';
+		}
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextDisabled("%s", countText.c_str());
+
+		// ---- 筛选气泡：带一个指向按钮的小三角；点外面 / 再点按钮 / Esc 关闭 ----
+		// 面板里不用表格：嵌套表格放在自动适应大小的弹窗里，列宽会被算成 0，选项全被裁掉。
+		// 改成按固定列宽手动排，面板尺寸可以在画之前算出来，摆放不依赖上一帧量到的大小
+		const ImGuiStyle& style = ImGui::GetStyle();
+		auto checkboxWidth = [&style](const char* text)
+			{
+				return ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(text, nullptr, true).x;
+			};
+		const char* fileRowLabel = "文件";
+		float groupColumnWidth = ImGui::CalcTextSize(fileRowLabel).x;
+		float cellWidth = std::max(checkboxWidth("文件夹"), checkboxWidth("非资产文件"));
+		for (const auto& group : BrowserFilterGroups())
+		{
+			groupColumnWidth = std::max(groupColumnWidth, checkboxWidth(group.name));
+			for (AssetType type : group.types)
+				cellWidth = std::max(cellWidth, checkboxWidth(BrowserTypeLabel(type)));
+		}
+		groupColumnWidth += style.ItemSpacing.x * 2.0f;
+		cellWidth += style.ItemSpacing.x;
+		const float headerWidth = ImGui::CalcTextSize("全选").x + ImGui::CalcTextSize("反选").x + ImGui::CalcTextSize("重置").x
+			+ style.FramePadding.x * 6.0f + style.ItemSpacing.x * 2.0f;
+
+		// 可用区域：资产浏览器窗口（优先）和编辑器主窗口
+		const float margin = 4.0f;
+		const ImVec2 hostPos = ImGui::GetWindowPos();
+		const ImVec2 hostSize = ImGui::GetWindowSize();
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		const ImVec2 screenMin(viewport->WorkPos.x + margin, viewport->WorkPos.y + margin);
+		const ImVec2 screenMax(viewport->WorkPos.x + viewport->WorkSize.x - margin, viewport->WorkPos.y + viewport->WorkSize.y - margin);
+		const float hostLeft = std::max(hostPos.x + margin, screenMin.x);
+		const float hostRight = std::min(hostPos.x + hostSize.x - margin, screenMax.x);
+		const float hostTop = std::max(hostPos.y + margin, screenMin.y);
+		const float hostBottom = std::min(hostPos.y + hostSize.y - margin, screenMax.y);
+
+		auto panelWidth = [&](int columns)
+			{
+				return std::max(headerWidth, groupColumnWidth + cellWidth * static_cast<float>(columns) - style.ItemSpacing.x)
+					+ style.WindowPadding.x * 2.0f + style.ItemSpacing.x;
+			};
+		// 每行放几个类型：优先 4 个，资产浏览器窗口太窄就减少，最少 1 个
+		int columns = 4;
+		while (columns > 1 && panelWidth(columns) > hostRight - hostLeft)
+			--columns;
+		auto rowsOf = [columns](size_t count) { return std::max(1, static_cast<int>((count + columns - 1) / columns)); };
+
+		int lines = 1 + rowsOf(2);	// 按钮行 + 文件行
+		for (const auto& group : BrowserFilterGroups())
+			lines += rowsOf(group.types.size());
+		const int separators = 2;
+		const float frameHeight = ImGui::GetFrameHeight();
+		const float contentHeight = lines * frameHeight + (lines - 1) * style.ItemSpacing.y
+			+ separators * (style.ItemSpacing.y + 1.0f) + style.WindowPadding.y * 2.0f + style.ItemSpacing.y;
+		float width = panelWidth(columns);
+
+		// 上下：先看资产浏览器窗口里放不放得下（下方优先），再看主窗口里；都不行放空间大的一边、限制高度（可以滚动）
+		const float arrowHeight = 7.0f;
+		const float belowY = buttonMax.y + arrowHeight;
+		const float aboveBottom = buttonMin.y - arrowHeight;
+		bool placeBelow = true;
+		if (belowY + contentHeight <= hostBottom)
+			placeBelow = true;
+		else if (aboveBottom - contentHeight >= hostTop)
+			placeBelow = false;
+		else if (belowY + contentHeight <= screenMax.y)
+			placeBelow = true;
+		else if (aboveBottom - contentHeight >= screenMin.y)
+			placeBelow = false;
+		else
+			placeBelow = (screenMax.y - belowY) >= (aboveBottom - screenMin.y);
+
+		const float maxHeight = std::max(frameHeight * 3.0f, placeBelow ? screenMax.y - belowY : aboveBottom - screenMin.y);
+		const float height = std::min(contentHeight, maxHeight);
+		if (height < contentHeight)
+			width += style.ScrollbarSize;	// 要滚动时给竖向滚动条留出宽度，免得最右一列被挡
+		const float y = placeBelow ? belowY : aboveBottom - height;
+
+		// 左右：对齐按钮左边，夹在资产浏览器窗口里（比窗口还宽时只夹在主窗口里）
+		float x = buttonMin.x;
+		if (hostRight - hostLeft >= width)
+			x = std::clamp(x, hostLeft, hostRight - width);
+		x = std::clamp(x, screenMin.x, std::max(screenMin.x, screenMax.x - width));
+
+		// 尺寸显式给定（弹窗自动适应大小时，API 设过的轴以设的为准），位置和尺寸当帧就是对的
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+		bool open = false;
+		if (ImGui::BeginPopup(popupId))
+		{
+			open = true;
+			if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+				ImGui::CloseCurrentPopup();
+
+			if (ImGui::Button("全选"))
+				filter.SelectAll();
+			ImGui::SameLine();
+			if (ImGui::Button("反选"))
+				filter.Invert();
+			ImGui::SameLine();
+			if (ImGui::Button("重置"))
+				filter.Reset();
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("回到默认：显示文件夹和所有资产，不显示非资产文件");
+			ImGui::Separator();
+
+			// 每组一行（类型多了按列数换行）：左边组开关，右边这组的类型
+			const float rowStartX = ImGui::GetCursorPosX();
+			auto placeCell = [&](size_t index)
+				{
+					const int column = static_cast<int>(index % static_cast<size_t>(columns));
+					if (column == 0 && index > 0)
+						ImGui::SetCursorPosX(rowStartX + groupColumnWidth);	// 上一个选项已经换行
+					else
+						ImGui::SameLine(rowStartX + groupColumnWidth + cellWidth * static_cast<float>(column));
+				};
+			for (const auto& group : BrowserFilterGroups())
+			{
+				ImGui::PushID(group.name);
+				GroupCheckbox(group.name, filter, group.types);
+				for (size_t i = 0; i < group.types.size(); ++i)
+				{
+					placeCell(i);
+					ImGui::Checkbox(BrowserTypeLabel(group.types[i]), &filter.TypeFlag(group.types[i]));
+				}
+				ImGui::PopID();
+			}
+
+			ImGui::Separator();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextDisabled("%s", fileRowLabel);
+			placeCell(0);
+			ImGui::Checkbox("文件夹", &filter.folders);
+			placeCell(1);
+			ImGui::Checkbox("非资产文件", &filter.nonAsset);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("没有登记成资产的文件：原始图片、fbx / obj、没登记的 .meta 等");
+
+			// 指向按钮的小三角（画在气泡窗口外面，用前景层）：气泡在下方时画在上边缘、尖朝上；在上方时画在下边缘、尖朝下
+			const ImVec2 popupPos = ImGui::GetWindowPos();
+			const ImVec2 popupSize = ImGui::GetWindowSize();
+			const float rounding = style.PopupRounding;
+			const float tipMin = popupPos.x + rounding + arrowHeight + 2.0f;
+			const float tipMax = std::max(tipMin, popupPos.x + popupSize.x - rounding - arrowHeight - 2.0f);
+			const float tipX = std::clamp((buttonMin.x + buttonMax.x) * 0.5f, tipMin, tipMax);
+			const float edgeY = placeBelow ? popupPos.y + 1.0f : popupPos.y + popupSize.y - 1.0f;
+			const ImVec2 tip(tipX, placeBelow ? popupPos.y - arrowHeight + 1.0f : popupPos.y + popupSize.y + arrowHeight - 1.0f);
+			const ImVec2 left(tipX - arrowHeight, edgeY);
+			const ImVec2 right(tipX + arrowHeight, edgeY);
+			ImDrawList* foreground = ImGui::GetForegroundDrawList();
+			foreground->AddTriangleFilled(left, right, tip, ImGui::GetColorU32(ImGuiCol_PopupBg));
+			foreground->AddLine(left, tip, ImGui::GetColorU32(ImGuiCol_Border));
+			foreground->AddLine(tip, right, ImGui::GetColorU32(ImGuiCol_Border));
+
+			ImGui::EndPopup();
+		}
+		filter.popupWasOpen = open;
+	}
+
 	// ---------------- 编辑器视口里的 2D 层：点选、手柄 ----------------
 
 	// 最近一次从 2D 层点选到的实体：它用 2D 手柄直接改 Transform2D
@@ -296,6 +677,23 @@ namespace
 		std::string lower = extension;
 		std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		return lower == ".lua" || lower == ".ui" || lower == ".uistyle";
+	}
+
+	// 文件夹的"资产路径"：相对工程目录、正斜杠、UTF-8，例如 "UI/Textures"。
+	// 文件用的是资产库里登记的 AssetMeta::path（见 DrawFile 的右键菜单）。不在工程目录里就返回空
+	std::string ToProjectAssetPath(const fs::path& fullPath, const std::string& projectFolder)
+	{
+		if (projectFolder.empty() || fullPath.empty())
+			return {};
+		std::error_code ec;
+		const fs::path root = fs::weakly_canonical(fs::path(projectFolder), ec);
+		if (ec)
+			return {};
+		const fs::path relative = fullPath.lexically_relative(root);
+		if (relative.empty() || relative == "." || *relative.begin() == "..")
+			return {};
+		const std::u8string u8 = relative.generic_u8string();
+		return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 	}
 }
 
@@ -779,6 +1177,23 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 			items[folders.size() + idx] = { false, isAsset, isAsset ? metas[file] : AssetMeta{}, std::move(file) };
 		});
 
+	// ---- 顶部：筛选 + 搜索。只在当前文件夹显示的项里过滤（不进子文件夹），筛选和搜索取交集 ----
+	auto& browserFilter = BrowserFilter();
+	const size_t totalItemCount = items.size();
+	{
+		const auto terms = SplitSearchTerms(browserFilter.search);
+		std::erase_if(items, [&](const Item& item)
+			{
+				return !PassBrowserFilter(browserFilter, item.isFolder, item.isAssetFile, item.meta.type)
+					|| !MatchSearchTerms(item.name, terms);
+			});
+	}
+	DrawBrowserFilterBar(browserFilter, items.size(), totalItemCount);
+	ImGui::Separator();
+
+	// 下面的格子放进子窗口：滚动时顶部的筛选栏不跟着走
+	ImGui::BeginChild("##FolderItems", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+
 	// 网格布局
 	float iconSize = 80.0f;
 	float padding = 8.f;
@@ -857,6 +1272,13 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 				if (ImGui::MenuItem("复制路径")) {
 					ImGui::SetClipboardText(fullFolderPath.string().c_str());
 				}
+				{
+					const std::string assetPath = projectManager->IsProjectOpen() ? ToProjectAssetPath(fullFolderPath, projectManager->GetProjectFolderFullPath()) : std::string();
+					if (ImGui::MenuItem("复制资产路径", nullptr, false, !assetPath.empty()))
+						ImGui::SetClipboardText(assetPath.c_str());
+					if (!assetPath.empty() && ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", assetPath.c_str());
+				}
 				if (ImGui::MenuItem("复制文件夹名")) {
 					ImGui::SetClipboardText(item.name.c_str());
 				}
@@ -917,10 +1339,12 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 			: iconMgr->GetIconByFilePath(item.name);
 
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
-		// Sprite / 动图直接显示内容缩略图（动图会动），拿不到时退回类型图标
+		// 贴图 / 精灵 / 动图显示内容缩略图（动图会动）。缩略图是独立模块、后台生成，不加载资产；
+		// 还没生成好、生成失败或关掉了缩略图时退回类型图标
 		Render2D::SpriteFrame thumbnail;
-		if (isAssetFile && (meta.type == AssetType::Sprite || meta.type == AssetType::AnimatedImage))
-			thumbnail = Sprite2DEditor::GetAssetThumbnail(projectManager, meta);
+		if (isAssetFile && AssetThumbnails::IsSupported(meta.type)
+			&& ImGui::IsRectVisible(iconPos, ImVec2(iconPos.x + iconSize, iconPos.y + iconSize)))	// 只给视野里的格子请求
+			thumbnail = AssetThumbnails::Get(projectManager, meta, Sprite2DEditor::EditorTimeMs());
 		if (thumbnail.IsValid())
 		{
 			Sprite2DEditor::DrawFrameInRect(drawList, thumbnail,
@@ -985,23 +1409,17 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 				if (fullFilePath.empty())
 					return;
 
-				auto strPath = fullFilePath.string();
-				if (HasShellAssociation(strPath))
+				// .ui / .uistyle / .lua：用内置文本编辑器打开（VS Code、记事本、系统默认程序在右键菜单里）
+				// 调用方总是传 &meta（不是资产时 type 为 Unknown），所以按类型或扩展名任一命中都算
+				const std::string itemExtension = fullFilePath.extension().string();
+				const bool codeEditable = (isAssetFile && IsCodeEditableAsset(meta->type)) || IsCodeEditableExtension(itemExtension);
+				if (codeEditable)
 				{
-					OpenWithSystemDefault(strPath);
+					TextAssetEditor::Open(fullFilePath);
 					return;
 				}
-				else
-				{
-					const std::string itemExtension = fullFilePath.extension().string();
-					const bool codeEditable = isAssetFile ? IsCodeEditableAsset(meta->type) : IsCodeEditableExtension(itemExtension);
-					if (codeEditable)
-					{
-						if (OpenWithVSCode(fullFilePath.string()) || OpenWithNotePad(fullFilePath.string()))
-							return;
-					}
-				}
 
+				auto strPath = fullFilePath.string();
 				OpenWithSystemDefault(strPath);
 			};
 
@@ -1015,15 +1433,16 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 		if (ImGui::BeginPopupContextItem("file_context_menu"))
 		{
-			if (ImGui::MenuItem("打开"))
-			{
-				OpenFile(&meta, fullFilePath);
-			}
-
 			if (!fullFilePath.empty())
 			{
 				const std::string itemExtension = fullFilePath.extension().string();
-				const bool codeEditable = isAssetFile ? IsCodeEditableAsset(meta.type) : IsCodeEditableExtension(itemExtension);
+				const bool codeEditable = (isAssetFile && IsCodeEditableAsset(meta.type)) || IsCodeEditableExtension(itemExtension);
+
+				// 顺序：内置打开 > 指定程序（VS Code、记事本） > 系统默认程序
+				if (ImGui::MenuItem("打开"))
+				{
+					OpenFile(&meta, fullFilePath);
+				}
 				if (codeEditable)
 				{
 					if (ImGui::MenuItem("用 VS Code 打开"))
@@ -1034,7 +1453,15 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 					{
 						OpenWithNotePad(fullFilePath.string());
 					}
+					if (ImGui::MenuItem("用系统默认程序打开", nullptr, false, HasShellAssociation(fullFilePath.string())))
+					{
+						OpenWithSystemDefault(fullFilePath.string());
+					}
 				}
+			}
+			else if (ImGui::MenuItem("打开"))
+			{
+				OpenFile(&meta, fullFilePath);
 			}
 
 			if (isAssetFile && meta.type == AssetType::Texture && ImGui::MenuItem("生成精灵"))
@@ -1046,6 +1473,33 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 
 			if (ImGui::MenuItem("复制路径")) {
 				ImGui::SetClipboardText(fullFilePath.string().c_str());
+			}
+			{
+				// 资产路径 = 资产库里登记的 AssetMeta::path（图片资产就是它的 .meta），统一成正斜杠、UTF-8。
+				// .ui / .uistyle 里写这个，引擎按资产库查，导入配置、Sprite 区域都生效
+				std::string assetPath;
+				if (isAssetFile && !meta.path.empty())
+				{
+					const std::u8string u8 = fs::path(meta.path).generic_u8string();
+					assetPath.assign(reinterpret_cast<const char*>(u8.data()), u8.size());
+				}
+				if (ImGui::MenuItem("复制资产路径", nullptr, false, !assetPath.empty()))
+					ImGui::SetClipboardText(assetPath.c_str());
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				{
+					if (!assetPath.empty())
+						ImGui::SetTooltip("%s\n（.ui / .uistyle 里引用图片、样式时直接写这个）", assetPath.c_str());
+					else
+						ImGui::SetTooltip("还不是资产（没有导入），没有资产路径");
+				}
+			}
+			// 只有登记过的资产才有 GUID。.ui 里引用图片写 GUID，图片重命名、移动后也不会失效；样式引用只认路径
+			if (isAssetFile && !meta.guid.empty())
+			{
+				if (ImGui::MenuItem("复制 GUID"))
+					ImGui::SetClipboardText(meta.guid.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s\n（.ui 里引用图片时可以写 GUID，重命名、移动后也不会失效；样式引用只认路径）", meta.guid.c_str());
 			}
 			if (ImGui::MenuItem("复制文件名")) {
 				ImGui::SetClipboardText(item.name.c_str());
@@ -1378,6 +1832,8 @@ void ImguiLayout::DrawFolderContent(ProjectManager* projectManager, const std::s
 			// 可以记录日志 / 弹窗
 		}
 	}
+
+	ImGui::EndChild();	// ##FolderItems
 }
 
 void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, ProjectManager* projectManager)
@@ -1610,6 +2066,12 @@ void ImguiLayout::DrawMainMenu(GLFWwindow* window, EditorApp* editorApp, Project
 			ImGui::MenuItem("场景对象");
 			ImGui::MenuItem("对象属性");
 			ImGui::MenuItem("项目管理");
+			ImGui::Separator();
+			bool thumbnails = AssetThumbnails::IsEnabled();
+			if (ImGui::MenuItem("资产缩略图", nullptr, &thumbnails))
+				AssetThumbnails::SetEnabled(thumbnails);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("资产浏览器里的贴图 / 精灵 / 动图显示内容缩略图（后台生成，不加载资产）。关掉后显示类型图标");
 			ImGui::EndMenu();
 		}
 
@@ -2288,6 +2750,7 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		};
 
 	bool open = true;
+	ImGui::SetNextWindowSize(ImVec2(680.0f, 440.0f), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin(std::format("Material Editor: {}###MaterialEditor", meta->name).c_str(), &open, ImGuiWindowFlags_NoDocking))
 	{
 		ImGui::End();
@@ -2304,126 +2767,197 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 	auto properties = materialAsset->GetProperties();
 	const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2.f;
 	ImGui::BeginChild("MaterialEditorContent", ImVec2(0.f, -footerHeight), ImGuiChildFlags_None);
-	if (ImGui::BeginTable("MaterialEditorColumns", 2,
-		ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
-	{
-		ImGui::TableSetupColumn("Properties", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-		ImGui::TableSetupColumn("Textures", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-		ImGui::TableNextRow();
 
-		ImGui::TableSetColumnIndex(0);
-		ImGui::BeginChild("MaterialPropertyPanel", ImVec2(0.f, 0.f), ImGuiChildFlags_Borders);
-		ImGui::TextUnformatted("Material Properties");
-		ImGui::Separator();
-		ImGui::SetNextItemWidth(250.f);
-		changed |= ImGui::ColorEdit3("Albedo", glm::value_ptr(properties.albedo));
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("Metallic", &properties.metallic, 0.01f, 0.f, 1.f);
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("Roughness", &properties.roughness, 0.01f, 0.001f, 1.f);
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("Ambient Occlusion", &properties.ambientOcclusion, 0.01f, 0.f, 1.f);
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("Opacity", &properties.opacity, 0.01f, 0.f, 1.f);
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("IOR", &properties.IOR, 0.01f, 1.f, 3.f);
-		ImGui::Spacing();
-		ImGui::TextUnformatted("Emission");
-		ImGui::SetNextItemWidth(250.f);
-		changed |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(properties.emissionColor));
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::DragFloat("Emission Strength", &properties.emissionStrength, 0.01f, 0.f, 100.f);
-		ImGui::Spacing();
-		int alphaMode = static_cast<int>(properties.alphamode);
-		const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
-		ImGui::SetNextItemWidth(130.f);
-		if (ImGui::Combo("Alpha Mode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+	// ---- 属性：两列网格（左标签、右控件占满），比"控件 + 右侧标签、固定宽度"紧凑 ----
+	auto drawProperties = [&]()
 		{
-			properties.alphamode = static_cast<AlphaMode>(alphaMode);
-			changed = true;
-		}
-		if (properties.alphamode == AlphaMode::Mask)
-		{
-			ImGui::SetNextItemWidth(130.f);
-			changed |= ImGui::DragFloat("Mask Threshold", &properties.maskthreshold, 0.01f, 0.f, 1.f);
-		}
-		changed |= ImGui::Checkbox("Two Sided", &properties.twosided);
-		ImGui::EndChild();
-
-		ImGui::TableSetColumnIndex(1);
-		ImGui::BeginChild("MaterialTexturePanel", ImVec2(0.f, 0.f), ImGuiChildFlags_Borders);
-		ImGui::TextUnformatted("Texture Slots");
-		ImGui::SameLine();
-		ImGui::TextDisabled("Drag texture assets onto a slot");
-		ImGui::Separator();
-		const std::pair<TextureType, const char*> textureSlots[] = {
-			{ TextureType::Albedo, "Albedo Texture" },
-			{ TextureType::Metallic, "Metallic Texture" },
-			{ TextureType::Roughness, "Roughness Texture" },
-			{ TextureType::Normal, "Normal Texture" },
-			{ TextureType::AO, "AO Texture" },
-			{ TextureType::Emissive, "Emissive Texture" },
-			{ TextureType::MetallicRoughness, "Metallic Roughness Texture" },
-			{ TextureType::Height, "Height Texture" },
-			{ TextureType::Opacity, "Opacity Texture" }
-		};
-		for (const auto& [type, label] : textureSlots)
-		{
-			ImGui::PushID(static_cast<int>(type));
-			ImGui::BeginGroup();
-			ImGui::TextUnformatted(label);
-			const auto& dependencies = materialAsset->GetTextureDependencies();
-			auto dependency = dependencies.find(type);
-			std::string textureLabel = "None";
-			if (dependency != dependencies.end())
-			{
-				auto textureMeta = database->GetAssetMetaByGuid(dependency->second);
-				textureLabel = textureMeta ? textureMeta->name : dependency->second;
-			}
-			ImGui::Button(textureLabel.c_str(), ImVec2(220.f, 34.f));
-			if (ImGui::BeginDragDropTarget())
-			{
-				if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			ImGui::SeparatorText("Material Properties");
+			const float labelWidth = ImGui::CalcTextSize("Emission Strength").x + ImGui::GetStyle().ItemSpacing.x;
+			if (!ImGui::BeginTable("##MaterialProps", 2, ImGuiTableFlags_SizingFixedFit))
+				return;
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+			auto row = [](const char* label)
 				{
-					const auto* guidData = static_cast<const char*>(payload->Data);
-					if (guidData && guidData[0] != '\0')
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(label);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::SetNextItemWidth(-FLT_MIN);
+				};
+			row("Albedo");
+			changed |= ImGui::ColorEdit3("##Albedo", glm::value_ptr(properties.albedo));
+			row("Metallic");
+			changed |= ImGui::DragFloat("##Metallic", &properties.metallic, 0.01f, 0.f, 1.f);
+			row("Roughness");
+			changed |= ImGui::DragFloat("##Roughness", &properties.roughness, 0.01f, 0.001f, 1.f);
+			row("Ambient Occlusion");
+			changed |= ImGui::DragFloat("##AO", &properties.ambientOcclusion, 0.01f, 0.f, 1.f);
+			row("Opacity");
+			changed |= ImGui::DragFloat("##Opacity", &properties.opacity, 0.01f, 0.f, 1.f);
+			row("IOR");
+			changed |= ImGui::DragFloat("##IOR", &properties.IOR, 0.01f, 1.f, 3.f);
+			row("Emission Color");
+			changed |= ImGui::ColorEdit3("##EmissionColor", glm::value_ptr(properties.emissionColor));
+			row("Emission Strength");
+			changed |= ImGui::DragFloat("##EmissionStrength", &properties.emissionStrength, 0.01f, 0.f, 100.f);
+
+			int alphaMode = static_cast<int>(properties.alphamode);
+			const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+			row("Alpha Mode");
+			if (ImGui::Combo("##AlphaMode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+			{
+				properties.alphamode = static_cast<AlphaMode>(alphaMode);
+				changed = true;
+			}
+			if (properties.alphamode == AlphaMode::Mask)
+			{
+				row("Mask Threshold");
+				changed |= ImGui::DragFloat("##MaskThreshold", &properties.maskthreshold, 0.01f, 0.f, 1.f);
+			}
+			row("Two Sided");
+			changed |= ImGui::Checkbox("##TwoSided", &properties.twosided);
+			ImGui::EndTable();
+		};
+
+	// ---- 贴图槽：一行一个（40px 缩略图 | 槽名 + 贴图名 | 清除），整行都能拖入 ----
+	auto acceptTextureDrop = [&](TextureType type)
+		{
+			if (!ImGui::BeginDragDropTarget())
+				return;
+			if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+			{
+				const auto* guidData = static_cast<const char*>(payload->Data);
+				if (guidData && guidData[0] != '\0')
+				{
+					auto textureMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+					if (textureMeta && textureMeta->type == AssetType::Texture)
 					{
-						auto textureMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
-						if (textureMeta && textureMeta->type == AssetType::Texture)
-						{
-							auto textureObject = projectManager->LoadAsset(textureMeta->guid);
-							auto texture = textureObject ? textureObject->AsTexture() : nullptr;
-							if (texture)
+						auto textureObject = projectManager->LoadAsset(textureMeta->guid);
+						auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+						if (texture)
+							materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
+					}
+					else if (textureMeta && textureMeta->type == AssetType::Sprite)
+					{
+						// 精灵拖进贴图栏：先用精灵的原图生成一张贴图，导入成功后填进这个栏
+						const AssetGUID materialGuid = meta->guid;
+						const TextureType slotType = type;
+						RequestTextureFromSprite(textureMeta->guid, projectManager, [projectManager, materialGuid, slotType](const AssetMeta& created)
 							{
-								materialAsset->SetTextureDependency(type, textureMeta->guid, texture);
-							}
-						}
-						else if (textureMeta && textureMeta->type == AssetType::Sprite)
-						{
-							// 精灵拖进贴图栏：先用精灵的原图生成一张贴图，导入成功后填进这个栏
-							const AssetGUID materialGuid = meta->guid;
-							const TextureType slotType = type;
-							RequestTextureFromSprite(textureMeta->guid, projectManager, [projectManager, materialGuid, slotType](const AssetMeta& created)
-								{
-									auto material = std::dynamic_pointer_cast<MaterialAsset>(projectManager->LoadAsset(materialGuid));
-									auto textureObject = projectManager->LoadAsset(created.guid);
-									auto texture = textureObject ? textureObject->AsTexture() : nullptr;
-									if (material && texture)
-										material->SetTextureDependency(slotType, created.guid, texture);
-								});
-						}
+								auto material = std::dynamic_pointer_cast<MaterialAsset>(projectManager->LoadAsset(materialGuid));
+								auto textureObject = projectManager->LoadAsset(created.guid);
+								auto texture = textureObject ? textureObject->AsTexture() : nullptr;
+								if (material && texture)
+									material->SetTextureDependency(slotType, created.guid, texture);
+							});
 					}
 				}
-				ImGui::EndDragDropTarget();
 			}
-			ImGui::SameLine();
-			if (dependency != dependencies.end() && ImGui::SmallButton("Clear"))
-				materialAsset->SetTextureDependency(type, {}, nullptr);
-			ImGui::EndGroup();
+			ImGui::EndDragDropTarget();
+		};
+
+	auto drawTextures = [&]()
+		{
+			ImGui::SeparatorText("Texture Slots");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("把贴图（或精灵，会先生成贴图）资产拖到槽上");
+
+			const std::pair<TextureType, const char*> textureSlots[] = {
+				{ TextureType::Albedo, "Albedo" },
+				{ TextureType::Metallic, "Metallic" },
+				{ TextureType::Roughness, "Roughness" },
+				{ TextureType::Normal, "Normal" },
+				{ TextureType::AO, "AO" },
+				{ TextureType::Emissive, "Emissive" },
+				{ TextureType::MetallicRoughness, "Metallic Roughness" },
+				{ TextureType::Height, "Height" },
+				{ TextureType::Opacity, "Opacity" }
+			};
+			constexpr float slotSide = 40.0f;
+			if (!ImGui::BeginTable("##TextureSlots", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg))
+				return;
+			ImGui::TableSetupColumn("thumb", ImGuiTableColumnFlags_WidthFixed, slotSide);
+			ImGui::TableSetupColumn("info", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("clear", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+
+			const auto& dependencies = materialAsset->GetTextureDependencies();
+			std::optional<TextureType> clearType;
+			for (const auto& [type, label] : textureSlots)
+			{
+				ImGui::PushID(static_cast<int>(type));
+				auto dependency = dependencies.find(type);
+				const bool assigned = dependency != dependencies.end();
+				const AssetGUID guid = assigned ? dependency->second : AssetGUID{};
+				auto textureMeta = assigned ? database->GetAssetMetaByGuid(guid) : nullptr;
+				const std::string textureName = !assigned ? std::string("None") : (textureMeta ? textureMeta->name : guid);
+
+				ImGui::TableNextRow(ImGuiTableRowFlags_None, slotSide);
+
+				ImGui::TableSetColumnIndex(0);
+				AssetThumbnails::DrawThumbnailBox(projectManager, guid, slotSide);
+				acceptTextureDrop(type);
+
+				// 槽名（暗色）+ 贴图名两行；整个格子是一个不可见按钮，作为拖放目标
+				ImGui::TableSetColumnIndex(1);
+				const ImVec2 cellPos = ImGui::GetCursorScreenPos();
+				const float cellWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+				ImGui::InvisibleButton("##slot", ImVec2(cellWidth, slotSide));
+				const bool hovered = ImGui::IsItemHovered();
+				acceptTextureDrop(type);
+				{
+					ImDrawList* drawList = ImGui::GetWindowDrawList();
+					const float lineHeight = ImGui::GetTextLineHeight();
+					const float top = cellPos.y + (slotSide - lineHeight * 2.0f - 2.0f) * 0.5f;
+					drawList->PushClipRect(cellPos, ImVec2(cellPos.x + cellWidth, cellPos.y + slotSide), true);
+					drawList->AddText(ImVec2(cellPos.x, top), ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
+					drawList->AddText(ImVec2(cellPos.x, top + lineHeight + 2.0f),
+						ImGui::GetColorU32(assigned ? ImGuiCol_Text : ImGuiCol_TextDisabled), textureName.c_str());
+					drawList->PopClipRect();
+				}
+				if (hovered)
+				{
+					if (assigned && textureMeta)
+						ImGui::SetTooltip("%s\n%s", textureMeta->name.c_str(), textureMeta->path.c_str());
+					else if (assigned)
+						ImGui::SetTooltip("资产不存在：%s", guid.c_str());
+					else
+						ImGui::SetTooltip("把贴图资产拖到这里");
+				}
+
+				ImGui::TableSetColumnIndex(2);
+				if (assigned)
+				{
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (slotSide - ImGui::GetFrameHeight()) * 0.5f);
+					if (ImGui::Button("×", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+						clearType = type;
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("清除");
+				}
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+			// 遍历时引用着 dependencies，清除放到循环外面
+			if (clearType)
+				materialAsset->SetTextureDependency(*clearType, {}, nullptr);
+		};
+
+	// 窗口够宽就左右两栏，窄了就上下排
+	const bool twoColumns = ImGui::GetContentRegionAvail().x >= 600.0f;
+	if (ImGui::BeginTable("MaterialEditorColumns", twoColumns ? 2 : 1, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("Properties", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		if (twoColumns)
+			ImGui::TableSetupColumn("Textures", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		drawProperties();
+		if (twoColumns)
+			ImGui::TableSetColumnIndex(1);
+		else
 			ImGui::Spacing();
-			ImGui::PopID();
-		}
-		ImGui::EndChild();
+		drawTextures();
 		ImGui::EndTable();
 	}
 	ImGui::EndChild();
@@ -2503,6 +3037,7 @@ void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
 	}
 	DrawMaterialEditor(projectManager);
 	Sprite2DEditor::DrawWindows(projectManager);
+	TextAssetEditor::DrawWindows(projectManager);
 }
 
 void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectManager)
@@ -3244,7 +3779,8 @@ void ImguiLayout::DropFile(const std::string& filePathStr, ProjectManager* proje
 	{
 		std::string targetWindow = GetWindowAtPosition(mousePos);
 
-		if (targetWindow == "Folder")
+		// 文件夹内容放在 "Folder" 窗口的子窗口里，子窗口名是 "Folder/..."
+		if (targetWindow == "Folder" || targetWindow.starts_with("Folder/"))
 		{
 			std::string importFolerPath = m_selectedFolder.empty() || m_selectedFolder == "." ?
 				projectManager->GetProjectFolderFullPath()

@@ -1,11 +1,18 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/Base/Sprite2D.h"
+#include "VulkanRenderEngine/General/DDSLoader.h"
 
 // 静态图解码用 stb（本编译单元私有一份实现，和 Texture2D.cpp 等文件一样走 STB_IMAGE_STATIC）；GIF 用下面自己写的解码
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #include <stb/stb_image.h>
+// 缩放（缩略图用），同样是本编译单元私有的一份实现
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_STATIC
+#include <stb/stb_image_resize2.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <filesystem>
@@ -42,18 +49,16 @@ namespace
 			*error = std::move(message);
 	}
 
+	float NormalizeDelay(float delayMs)
+	{
+		return delayMs < kMinFrameDurationMs ? kFallbackFrameDurationMs : delayMs;
+	}
+
 	// ---------- GIF 解码 ----------
 	// 不用 stbi_load_gif：stb 把处置方式 2 当成“恢复到画上一帧之前的样子”，而规范（和浏览器）是把该帧区域清成透明，
 	// 结果第一帧会一直垫在后面的帧下面；它处理处置方式 3 时取上一帧的指针也算错了。
 	// 这里按规范实现：0/1 保留画布；2 把该帧区域清成透明；3 恢复到画这一帧之前的画布。
 	// 画布初始全透明（和浏览器一致，不用逻辑屏幕的背景色）。
-	struct GifFrames
-	{
-		uint32_t width = 0;
-		uint32_t height = 0;
-		std::vector<std::vector<uint8_t>> frames;	// 每帧 width * height * 4，RGBA8
-		std::vector<float> durationsMs;
-	};
 
 	class GifReader
 	{
@@ -220,15 +225,63 @@ namespace
 		return written;
 	}
 
-	bool DecodeGif(const std::vector<uint8_t>& bytes, GifFrames& result, std::string& error)
+	bool IsGif(const uint8_t* data, size_t size)
 	{
-		if (bytes.size() < 13 || std::memcmp(bytes.data(), "GIF", 3) != 0)
+		return size >= 13 && std::memcmp(data, "GIF", 3) == 0;
+	}
+
+	// 只走一遍块结构、不解 LZW：拿画布尺寸和帧数（逐帧解码前用来决定每帧缩多小）
+	bool ProbeGif(const uint8_t* data, size_t size, GifInfo& info)
+	{
+		info = {};
+		if (!IsGif(data, size))
+			return false;
+
+		GifReader reader(data, size);
+		reader.Skip(6);
+		info.width = reader.U16();
+		info.height = reader.U16();
+		const uint8_t screenFlags = reader.U8();
+		reader.Skip(2);
+		if (screenFlags & 0x80)
+			reader.Skip(size_t(3) * (size_t(2) << (screenFlags & 7)));
+
+		while (!reader.Eof())
+		{
+			const uint8_t tag = reader.U8();
+			if (tag == 0x21)
+			{
+				reader.U8();				// 扩展类型
+				reader.SubBlocks(nullptr);	// 扩展内容本身就是子块序列
+			}
+			else if (tag == 0x2C)
+			{
+				reader.Skip(8);
+				const uint8_t flags = reader.U8();
+				if (flags & 0x80)
+					reader.Skip(size_t(3) * (size_t(2) << (flags & 7)));
+				reader.U8();				// LZW 最小码长
+				reader.SubBlocks(nullptr);
+				if (reader.Overrun())
+					break;
+				++info.frameCount;
+			}
+			else
+				break;
+		}
+		return info.width > 0 && info.height > 0 && info.frameCount > 0;
+	}
+
+	// 逐帧回调：onFrame 拿到的是整张画布（回调返回后会被下一帧覆盖），返回 false 中止
+	bool DecodeGif(const uint8_t* data, size_t size, const GifFrameCallback& onFrame, std::string& error)
+	{
+		if (!IsGif(data, size))
 		{
 			error = "不是 GIF 文件";
 			return false;
 		}
 
-		GifReader reader(bytes.data(), bytes.size());
+		GifReader reader(data, size);
 		reader.Skip(6);
 		const uint32_t canvasW = reader.U16();
 		const uint32_t canvasH = reader.U16();
@@ -257,9 +310,7 @@ namespace
 		uint8_t transparentIndex = 0;
 		float delayMs = 0.0f;
 
-		result = {};
-		result.width = canvasW;
-		result.height = canvasH;
+		uint32_t frameCount = 0;
 
 		bool ended = false;
 		while (!ended && !reader.Eof())
@@ -351,8 +402,9 @@ namespace
 					dst[3] = 255;
 				}
 
-				result.frames.push_back(canvas);
-				result.durationsMs.push_back(delayMs);
+				++frameCount;
+				if (!onFrame(canvas.data(), canvasW, canvasH, NormalizeDelay(delayMs)))
+					ended = true;
 
 				// 按这一帧的处置方式准备下一帧的画布
 				if (disposal == 2)
@@ -378,13 +430,140 @@ namespace
 			}
 		}
 
-		if (result.frames.empty())
+		if (frameCount == 0)
 		{
 			error = "GIF 里没有可用的帧";
 			return false;
 		}
 		return true;
 	}
+}
+
+// ============================== CPU 解码工具 ==============================
+
+namespace
+{
+	bool HasExtension(const std::string& path, const char* ext)
+	{
+		std::string actual = std::filesystem::path(reinterpret_cast<const char8_t*>(path.c_str())).extension().string();
+		std::transform(actual.begin(), actual.end(), actual.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return actual == ext;
+	}
+
+	// DDS：和 Texture2D 加载时一样走 LoadDDSFile（DirectXTex 读文件、压缩格式解压成 RGBA8、BC5 法线补 Z）。
+	// 目标格式按文件自己是不是 sRGB 选：sRGB 文件解成 sRGB 的 RGBA8，解压时不做 gamma 转换，像素值和文件里一致
+	bool DecodeDDS(const std::string& path, ImageRGBA& out, std::string* error)
+	{
+		vk::Format target = vk::Format::eR8G8B8A8Unorm;
+		{
+			DirectX::TexMetadata metadata;
+			const std::wstring widePath = std::filesystem::path(reinterpret_cast<const char8_t*>(path.c_str())).wstring();
+			if (SUCCEEDED(DirectX::GetMetadataFromDDSFile(widePath.c_str(), DirectX::DDS_FLAGS_NONE, metadata)) && DirectX::IsSRGB(metadata.format))
+				target = vk::Format::eR8G8B8A8Srgb;
+		}
+
+		DDSLoadResult result = LoadDDSFile(path, target);
+		const size_t sliceBytes = static_cast<size_t>(result.width) * result.height * 4u;
+		if (!result.valid || result.width == 0 || result.height == 0 || result.data.size() < sliceBytes)
+		{
+			SetError(error, std::format("解码 DDS 失败：{}", path));
+			return false;
+		}
+		out.width = result.width;
+		out.height = result.height;
+		// 体积纹理只取第一张切片
+		out.pixels.assign(result.data.begin(), result.data.begin() + static_cast<std::ptrdiff_t>(sliceBytes));
+		return true;
+	}
+}
+
+bool Render2D::DecodeImageFile(const std::string& path, ImageRGBA& out, std::string* error)
+{
+	out = {};
+	if (HasExtension(path, ".dds"))
+		return DecodeDDS(path, out, error);
+
+	std::vector<uint8_t> bytes;
+	if (!ReadFileBytes(path, bytes))
+	{
+		SetError(error, std::format("读取图片文件失败：{}", path));
+		return false;
+	}
+
+	if (IsGif(bytes.data(), bytes.size()))
+	{
+		// GIF：按规范合成第一帧（stb 的合成有问题，见上面 DecodeGif 的说明）
+		std::string reason;
+		const bool ok = DecodeGif(bytes.data(), bytes.size(), [&](const uint8_t* rgba, uint32_t width, uint32_t height, float)
+			{
+				out.width = width;
+				out.height = height;
+				out.pixels.assign(rgba, rgba + static_cast<size_t>(width) * height * 4u);
+				return false;
+			}, reason);
+		if (!ok || out.pixels.empty())
+		{
+			SetError(error, std::format("解码 GIF 失败：{}（{}）", path, reason));
+			out = {};
+			return false;
+		}
+		return true;
+	}
+
+	int width = 0, height = 0, comp = 0;
+	stbi_uc* pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &comp, 4);
+	if (!pixels || width <= 0 || height <= 0)
+	{
+		if (pixels) stbi_image_free(pixels);
+		SetError(error, std::format("解码图片失败：{}（{}）", path, stbi_failure_reason() ? stbi_failure_reason() : "unknown"));
+		return false;
+	}
+	out.width = static_cast<uint32_t>(width);
+	out.height = static_cast<uint32_t>(height);
+	out.pixels.assign(pixels, pixels + static_cast<size_t>(width) * height * 4u);
+	stbi_image_free(pixels);
+	return true;
+}
+
+bool Render2D::DecodeGifFile(const std::string& path, const GifFrameCallback& onFrame, GifInfo* info, std::string* error)
+{
+	std::vector<uint8_t> bytes;
+	if (!ReadFileBytes(path, bytes))
+	{
+		SetError(error, std::format("读取 GIF 文件失败：{}", path));
+		return false;
+	}
+
+	GifInfo probed;
+	if (!ProbeGif(bytes.data(), bytes.size(), probed))
+	{
+		SetError(error, std::format("不是有效的 GIF：{}", path));
+		return false;
+	}
+	if (info)
+		*info = probed;
+
+	std::string reason;
+	if (!DecodeGif(bytes.data(), bytes.size(), onFrame, reason))
+	{
+		SetError(error, std::format("解码 GIF 失败：{}（{}）", path, reason));
+		return false;
+	}
+	return true;
+}
+
+void Render2D::ResizeRGBA(const uint8_t* src, uint32_t srcW, uint32_t srcH, uint8_t* dst, uint32_t dstW, uint32_t dstH)
+{
+	if (!src || !dst || srcW == 0 || srcH == 0 || dstW == 0 || dstH == 0)
+		return;
+	if (srcW == dstW && srcH == dstH)
+	{
+		std::memcpy(dst, src, static_cast<size_t>(srcW) * srcH * 4u);
+		return;
+	}
+	// STBIR_RGBA：alpha 非预乘，缩放时按 alpha 加权，透明边缘不会发黑
+	stbir_resize_uint8_linear(src, static_cast<int>(srcW), static_cast<int>(srcH), 0,
+		dst, static_cast<int>(dstW), static_cast<int>(dstH), 0, STBIR_RGBA);
 }
 
 // ============================== 2D 图像贴图 ==============================
@@ -467,6 +646,7 @@ SpriteFrame Sprite::Resolve(const std::string& region) const
 {
 	std::lock_guard<std::mutex> lock(_mutex);
 
+	// 区域名为空或找不到：整张图（2D 组件和 UI 统一这条规则）
 	const SpriteRegion* found = nullptr;
 	if (!region.empty())
 	{
@@ -474,8 +654,6 @@ SpriteFrame Sprite::Resolve(const std::string& region) const
 		if (it != _regions.end())
 			found = &*it;
 	}
-	if (!found && !_regions.empty())
-		found = &_regions.front();
 
 	return MakeFrame(_texture, found);
 }
@@ -532,23 +710,28 @@ std::shared_ptr<AnimatedImage> AnimatedImage::LoadFromFile(const std::string& pa
 	const bool isGif = bytes.size() >= 6 && std::memcmp(bytes.data(), "GIF", 3) == 0;
 	if (isGif)
 	{
-		GifFrames gif;
+		std::vector<std::vector<uint8_t>> frameData;
+		std::vector<float> durations;
+		uint32_t width = 0, height = 0;
 		std::string reason;
-		if (!DecodeGif(bytes, gif, reason))
+		const bool ok = DecodeGif(bytes.data(), bytes.size(), [&](const uint8_t* rgba, uint32_t w, uint32_t h, float delayMs)
+			{
+				width = w;
+				height = h;
+				frameData.emplace_back(rgba, rgba + static_cast<size_t>(w) * h * 4u);
+				durations.push_back(delayMs);
+				return true;
+			}, reason);
+		if (!ok)
 		{
 			SetError(error, std::format("解码 GIF 失败：{}（{}）", path, reason));
 			return nullptr;
 		}
 
-		std::vector<const uint8_t*> frames(gif.frames.size());
-		std::vector<float> durations(gif.frames.size());
-		for (size_t i = 0; i < gif.frames.size(); ++i)
-		{
-			frames[i] = gif.frames[i].data();
-			const float delay = gif.durationsMs[i];
-			durations[i] = delay < kMinFrameDurationMs ? kFallbackFrameDurationMs : delay;
-		}
-		return FromFrames(frames, gif.width, gif.height, durations, config, error);
+		std::vector<const uint8_t*> frames(frameData.size());
+		for (size_t i = 0; i < frameData.size(); ++i)
+			frames[i] = frameData[i].data();
+		return FromFrames(frames, width, height, durations, config, error);
 	}
 
 	// 不是 GIF：按单帧静态图处理，方便把普通贴图也当动图资源用
@@ -567,7 +750,7 @@ std::shared_ptr<AnimatedImage> AnimatedImage::LoadFromFile(const std::string& pa
 }
 
 std::shared_ptr<AnimatedImage> AnimatedImage::FromFrames(const std::vector<const uint8_t*>& rgbaFrames, uint32_t width, uint32_t height,
-	const std::vector<float>& durationsMs, const TextureConfig& config, std::string* error)
+	const std::vector<float>& durationsMs, const TextureConfig& config, std::string* error, bool createSampler)
 {
 	if (rgbaFrames.empty() || width == 0 || height == 0)
 	{
@@ -647,7 +830,7 @@ std::shared_ptr<AnimatedImage> AnimatedImage::FromFrames(const std::vector<const
 			frame.durationMs = durationsMs.empty() ? kFallbackFrameDurationMs : std::max(1.0f, durationsMs[durationIndex]);
 		}
 
-		auto page = std::make_shared<Texture2D>(pageW, pageH, format, atlasConfig, 1u);
+		auto page = std::make_shared<Texture2D>(pageW, pageH, format, atlasConfig, 1u, createSampler);
 		if (!page || page->IsEmpty())
 		{
 			SetError(error, "创建动图图集纹理失败");
