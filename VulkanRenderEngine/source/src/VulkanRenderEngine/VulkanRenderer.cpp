@@ -35,6 +35,8 @@
 #include "VulkanRenderEngine/RenderPass/DDGIProbeDrawPass.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 
+#include <chrono>
+
 const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
 
 static void NeedVulkanBaseInitlized()
@@ -287,6 +289,51 @@ bool VulkanRenderer::CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& 
 	return true;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Pass 并行构造
+// Pass 的构造函数里主要是 shader 编译（shaderc）和管线创建，彼此独立，可以并发：
+//   * SPIR-V 内存缓存、队列提交、描述符池分配、RenderGraph 资源管理都有锁；
+//   * 命令池是 thread_local 的（VKThreadContext），每个工作线程各用各的；
+//   * 构造期间的纹理上传（SSAO 噪声图等）都是提交并等待完成的，线程池销毁、工作线程退出时
+//     各自的命令池随之释放，不会有还在 GPU 上执行的命令。
+// 有顺序依赖的（DDGI 图集布局）和 Pass 之间的连接（SetGeneralBuffer / SetSharedState）仍在调用线程上做。
+// 不用 _frameTaskPool：它在 Run() 里才启动，Resize 时也会被 Stop()。
+// ---------------------------------------------------------------------------------------------------
+namespace
+{
+	template <typename T>
+	using PassTask = std::shared_ptr<ThreadPool::SubmitHandle<std::unique_ptr<T>>>;
+
+	class PassConstructPool
+	{
+	public:
+		PassConstructPool()
+			: _pool(std::max(1u, std::thread::hardware_concurrency()))
+		{
+			_pool.start();
+		}
+		~PassConstructPool()
+		{
+			if (_pool.running())
+				_pool.stop();
+		}
+		PassConstructPool(const PassConstructPool&) = delete;
+		PassConstructPool& operator=(const PassConstructPool&) = delete;
+
+		// 任务只能按值捕获：get() 抛异常时调用方会提前离开作用域
+		template <typename F>
+		auto Submit(F&& f) { return _pool.submit(std::forward<F>(f)); }
+
+	private:
+		ThreadPool _pool;
+	};
+
+	int64_t ElapsedMs(std::chrono::steady_clock::time_point start)
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	}
+}
+
 VulkanRenderer::VulkanRenderer()
 	:_frameTaskPool(std::max(std::max(1u, GlobalConfig::MaxFramesInFlight), std::thread::hardware_concurrency()))
 {
@@ -334,17 +381,33 @@ void VulkanRenderer::InitForOffSceen(uint32_t width, uint32_t height)
 
 void VulkanRenderer::Init_Internal()
 {
-	// 与分辨率无关，只创建一次
-	if (!_preCalculatePass)
-		_preCalculatePass = std::make_unique<PreCalculatePass>();
-	if (!_skinnedPass)
-		_skinnedPass = std::make_unique<SkinnedPass>();
-	if (!_combinPass)
-		_combinPass = std::make_unique<CombinPass>("shader/postprocess/combin.comp");
-	if (!_globalBloomPass)
-		_globalBloomPass = std::make_unique<BloomPass>("shader/bloom/bloomDownSample.comp", "shader/bloom/bloomUpSample.comp");
-	if (!_globalPostProcessPass)
-		_globalPostProcessPass = std::make_unique<GlobalPostProcessPass>("shader/postprocess/globalpostprocess.comp");
+	// 与分辨率无关，只创建一次；互相独立，并行构造（见 PassConstructPool）
+	{
+		PassConstructPool pool;
+
+		PassTask<BloomPass> bloomTask;
+		PassTask<SkinnedPass> skinnedTask;
+		PassTask<CombinPass> combinTask;
+		PassTask<GlobalPostProcessPass> postProcessTask;
+		PassTask<PreCalculatePass> preCalculateTask;
+
+		if (!_globalBloomPass)
+			bloomTask = pool.Submit([] { return std::make_unique<BloomPass>("shader/bloom/bloomDownSample.comp", "shader/bloom/bloomUpSample.comp"); });
+		if (!_skinnedPass)
+			skinnedTask = pool.Submit([] { return std::make_unique<SkinnedPass>(); });
+		if (!_combinPass)
+			combinTask = pool.Submit([] { return std::make_unique<CombinPass>("shader/postprocess/combin.comp"); });
+		if (!_globalPostProcessPass)
+			postProcessTask = pool.Submit([] { return std::make_unique<GlobalPostProcessPass>("shader/postprocess/globalpostprocess.comp"); });
+		if (!_preCalculatePass)
+			preCalculateTask = pool.Submit([] { return std::make_unique<PreCalculatePass>(); });
+
+		if (bloomTask) _globalBloomPass = bloomTask->get();
+		if (skinnedTask) _skinnedPass = skinnedTask->get();
+		if (combinTask) _combinPass = combinTask->get();
+		if (postProcessTask) _globalPostProcessPass = postProcessTask->get();
+		if (preCalculateTask) _preCalculatePass = preCalculateTask->get();
+	}
 
 	InitRenderTarget();
 }
@@ -752,44 +815,9 @@ void VulkanRenderer::InitSceneRenderGraph()
 	const bool rebuild = _scenePasses != nullptr;
 	if (!_scenePasses)
 	{
+		const auto constructStart = std::chrono::steady_clock::now();
 
-
-		auto atmospherePreCalculatePass = std::make_unique<AtmospherePreCalculatePass>(
-			"shader/Atmosphere/TransmittanceLut.comp",
-			"shader/Atmosphere/SkyViewLut.comp",
-			"shader/Atmosphere/SkyCubeGenerate.comp"
-		);
-
-		auto skyboxPreCalculatePass = std::make_unique<SkyBoxPreCalculatePass>();
-
-		auto hzbPass = std::make_unique<HZBPass>(
-			"shader/HZB/depth.vs",
-			"shader/HZB/depth.fs",
-			"shader/HZB/HZBGenerate.comp",
-			"shader/HZB/occlusionCulling.comp"
-		);
-
-		auto lightingShadowDepthPass = std::make_unique<LightShadowDepthPass>(
-			"shader/lighting/AMDViewport_Dirlightshadow_StaticMesh.vs",
-			"shader/lighting/AMDViewport_Dirlightshadow.fs",
-			"shader/lighting/AMDViewport_Pointlightshadow_StaticMesh.vs",
-			"shader/lighting/AMDViewport_Pointlightshadow.fs"
-		);
-
-		auto geometryPass = std::make_unique<GeometryPass>(
-			"shader/gbuffer/geometrypass_StaticMesh.vs",
-			"shader/gbuffer/geometrypass_StaticMesh.fs"
-		);
-
-		auto ssaoPass = std::make_unique<SSAOPass>("shader/ssao/ssao.comp", "shader/ssao/ssaoblur.comp");
-
-		auto lightingPass = std::make_unique<LightingPass>("shader/lighting/lightingpass.comp");
-
-		auto skyBoxPass = std::make_unique<SkyBoxPass>("shader/skybox/skybox.comp");
-
-		std::unique_ptr<RenderPassBase> generalPass;
-		std::unique_ptr<RenderPassBase> reflectPass;
-		std::unique_ptr<RenderPassBase> giPass;
+		// ---- 1. 在本线程先做：有顺序依赖的、Pass 之间共享的 ----
 
 		// DDGI 图集布局取决于设备的纹理尺寸上限，必须在创建 DDGI 管线（注入布局宏）之前确定
 		{
@@ -808,90 +836,181 @@ void VulkanRenderer::InitSceneRenderGraph()
 		if (!_ddgiDebugChannel)
 			_ddgiDebugChannel = std::make_shared<DDGIDebugChannel>();
 
-		auto ddgiUpdatePass = std::make_unique<DDGIProbeUpdatePass>(
-			"shader/DDGI/DDGIProbeUpdate.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/DDGI/DDGIClosestHit.rchit",
-			"", "", ""
-		);
-		auto ddgiBlendPass = std::make_unique<DDGIBlendPass>("shader/DDGI/DDGIBlend.comp");
-		auto ddgiApplyPass = std::make_unique<DDGIApplyPass>("shader/DDGI/DDGIApply.comp");
-
-		auto ddgiProbeDrawPass = std::make_unique<DDGIProbeDrawPass>("shader/DDGI/DDGIProbeDraw.vs", "shader/DDGI/DDGIProbeDraw.fs");
+		// 描述符池是懒创建的，外层的空判断不是原子的：先在本线程建好，免得多个线程同时进入
+		VKCONTEXT->GetDescriptorPool();
 
 		// DDGI Pass 共享跨帧状态，保证同一帧的体积布局、更新列表逐位一致
 		auto ddgiSharedState = std::make_shared<DDGISharedState>(_ddgiDebugChannel);
+		// 体积拆成 Lut（提前算散射 / 透射率）和 Combine（不透明完成后合成），两者共享本帧的 Lut 是否有效
+		auto volumeShared = std::make_shared<VolumePassShared>();
+
+		// ---- 2. 并行构造（按值捕获；管线多的先提交） ----
+		PassConstructPool pool;
+
+		auto effectTask = pool.Submit([] { return std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs"); });
+
+		auto transparentTask = pool.Submit([] {
+			return std::make_unique<TransparentPass>(
+				"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs",
+				"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_oit.fs",
+				"shader/Transparent/transparent_oit_composite.vs", "shader/Transparent/transparent_oit_composite.fs");
+			});
+
+		auto lightingShadowDepthTask = pool.Submit([] {
+			return std::make_unique<LightShadowDepthPass>(
+				"shader/lighting/AMDViewport_Dirlightshadow_StaticMesh.vs",
+				"shader/lighting/AMDViewport_Dirlightshadow.fs",
+				"shader/lighting/AMDViewport_Pointlightshadow_StaticMesh.vs",
+				"shader/lighting/AMDViewport_Pointlightshadow.fs");
+			});
+
+		auto hzbTask = pool.Submit([] {
+			return std::make_unique<HZBPass>(
+				"shader/HZB/depth.vs",
+				"shader/HZB/depth.fs",
+				"shader/HZB/HZBGenerate.comp",
+				"shader/HZB/occlusionCulling.comp");
+			});
+
+		auto atmospherePreCalculateTask = pool.Submit([] {
+			return std::make_unique<AtmospherePreCalculatePass>(
+				"shader/Atmosphere/TransmittanceLut.comp",
+				"shader/Atmosphere/SkyViewLut.comp",
+				"shader/Atmosphere/SkyCubeGenerate.comp");
+			});
+
+		// 光追三件套：General 只建几个空 buffer，留在本线程建（Reflect / GI / DDGIUpdate 要用它的 GeneralBuffer，连接在汇合后做）
+		std::unique_ptr<RenderPassBase> generalPass;
+		std::shared_ptr<RTCoreRayTraceGeneralBuffer> rtCoreGeneralBuffer;
+		std::shared_ptr<RayTraceGeneralBuffer> rtGeneralBuffer;
+		PassTask<RTCoreRayTraceReflectPass> rtCoreReflectTask;
+		PassTask<RTCoreRayTraceGIPass> rtCoreGITask;
+		PassTask<RayTraceReflectPass> rtReflectTask;
+		PassTask<RayTraceGIPass> rtGITask;
+		if (GlobalConfig::RTCoreEnable)
+		{
+			rtCoreReflectTask = pool.Submit([] {
+				return std::make_unique<RTCoreRayTraceReflectPass>(
+					"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+					"", "", "");
+				});
+			rtCoreGITask = pool.Submit([] {
+				return std::make_unique<RTCoreRayTraceGIPass>(
+					"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
+					"", "", "");
+				});
+
+			auto t_generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
+			rtCoreGeneralBuffer = t_generalPass->GetGeneralBuffer();
+			generalPass = std::move(t_generalPass);
+		}
+		else
+		{
+			rtReflectTask = pool.Submit([] { return std::make_unique<RayTraceReflectPass>("shader/RayTrace/RayTraceReflect.comp"); });
+			rtGITask = pool.Submit([] { return std::make_unique<RayTraceGIPass>("shader/RayTrace/RayTraceGI.comp"); });
+
+			auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
+			rtGeneralBuffer = t_generalPass->GetGeneralBuffer();
+			generalPass = std::move(t_generalPass);
+		}
+
+		auto ddgiUpdateTask = pool.Submit([] {
+			return std::make_unique<DDGIProbeUpdatePass>(
+				"shader/DDGI/DDGIProbeUpdate.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/DDGI/DDGIClosestHit.rchit",
+				"", "", "");
+			});
+		auto ddgiBlendTask = pool.Submit([] { return std::make_unique<DDGIBlendPass>("shader/DDGI/DDGIBlend.comp"); });
+		auto ddgiApplyTask = pool.Submit([] { return std::make_unique<DDGIApplyPass>("shader/DDGI/DDGIApply.comp"); });
+		auto ddgiProbeDrawTask = pool.Submit([] { return std::make_unique<DDGIProbeDrawPass>("shader/DDGI/DDGIProbeDraw.vs", "shader/DDGI/DDGIProbeDraw.fs"); });
+
+		auto geometryTask = pool.Submit([] {
+			return std::make_unique<GeometryPass>(
+				"shader/gbuffer/geometrypass_StaticMesh.vs",
+				"shader/gbuffer/geometrypass_StaticMesh.fs");
+			});
+		auto ssaoTask = pool.Submit([] { return std::make_unique<SSAOPass>("shader/ssao/ssao.comp", "shader/ssao/ssaoblur.comp"); });
+		auto lightingTask = pool.Submit([] { return std::make_unique<LightingPass>("shader/lighting/lightingpass.comp"); });
+		auto lightDrawTask = pool.Submit([] { return std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs"); });
+		auto skyBoxTask = pool.Submit([] { return std::make_unique<SkyBoxPass>("shader/skybox/skybox.comp"); });
+		auto skyboxPreCalculateTask = pool.Submit([] { return std::make_unique<SkyBoxPreCalculatePass>(); });
+		auto ssrTask = pool.Submit([] { return std::make_unique<SSRPass>("shader/ssr/SSReflect.comp"); });
+		auto ssgiTask = pool.Submit([] { return std::make_unique<SSGIPass>("shader/ssr/SSGI.comp"); });
+
+		auto volumeLutTask = pool.Submit([volumeShared] { return std::make_unique<VolumeLutPass>("shader/Volume/VolumeLut.comp", volumeShared); });
+		auto volumeCombineTask = pool.Submit([volumeShared] { return std::make_unique<VolumeCombinePass>("shader/Volume/VolumeCalculate.comp", volumeShared); });
+
+		auto autoExposureTask = pool.Submit([] { return std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp"); });
+		auto gBufferHistoryCopyTask = pool.Submit([] { return std::make_unique<GBufferHistoryCopyPass>(); });
+
+		// 间接光合成：漫反射 / 镜面 / 路径追踪三路分别合成，最后加到场景颜色（分工见 IndirectLightingPolicy.h）
+		auto indirectDiffuseCombinTask = pool.Submit([] { return MakeIndirectBranchCombinPass(); });
+		auto indirectSpecularCombinTask = pool.Submit([] { return MakeIndirectBranchCombinPass(); });
+		auto indirectPathTracingCombinTask = pool.Submit([] { return MakeIndirectBranchCombinPass(); });
+		auto combinIndirectLightingTask = pool.Submit([] { return MakeConbinIndirectLightingPass(); });
+
+		// ---- 3. 汇合 ----
+		auto atmospherePreCalculatePass = atmospherePreCalculateTask->get();
+		auto skyboxPreCalculatePass = skyboxPreCalculateTask->get();
+		auto hzbPass = hzbTask->get();
+		auto lightingShadowDepthPass = lightingShadowDepthTask->get();
+		auto geometryPass = geometryTask->get();
+		auto ssaoPass = ssaoTask->get();
+		auto lightingPass = lightingTask->get();
+		auto skyBoxPass = skyBoxTask->get();
+		auto ddgiUpdatePass = ddgiUpdateTask->get();
+		auto ddgiBlendPass = ddgiBlendTask->get();
+		auto ddgiApplyPass = ddgiApplyTask->get();
+		auto ddgiProbeDrawPass = ddgiProbeDrawTask->get();
+		auto ssrPass = ssrTask->get();
+		auto ssgiPass = ssgiTask->get();
+		auto indirectDiffuseCombinPass = indirectDiffuseCombinTask->get();
+		auto indirectSpecularCombinPass = indirectSpecularCombinTask->get();
+		auto indirectPathTracingCombinPass = indirectPathTracingCombinTask->get();
+		auto combinIndirectLightingPass = combinIndirectLightingTask->get();
+		auto lightDrawPass = lightDrawTask->get();
+		auto volumeLutPass = volumeLutTask->get();
+		auto volumeCombinePass = volumeCombineTask->get();
+		auto transparentPass = transparentTask->get();
+		auto effectPass = effectTask->get();
+		auto autoExposurePass = autoExposureTask->get();
+		auto gBufferHistoryCopyPass = gBufferHistoryCopyTask->get();
+
+		// ---- 4. Pass 之间的连接（与原先串行构造时的顺序一致） ----
 		ddgiUpdatePass->SetSharedState(ddgiSharedState);
 		ddgiBlendPass->SetSharedState(ddgiSharedState);
 		ddgiApplyPass->SetSharedState(ddgiSharedState);
 		ddgiProbeDrawPass->SetSharedState(ddgiSharedState);
 
+		std::unique_ptr<RenderPassBase> reflectPass;
+		std::unique_ptr<RenderPassBase> giPass;
 		if (GlobalConfig::RTCoreEnable)
 		{
+			auto t_reflectPass = rtCoreReflectTask->get();
+			auto t_giPass = rtCoreGITask->get();
 
-			auto t_generalPass = std::make_unique<RTCoreRayTraceGeneralPass>();
-			auto t_reflectPass = std::make_unique<RTCoreRayTraceReflectPass>(
-				"shader/RTCoreRayTrace/RayTraceReflect.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-				"", "", ""
-			);
-			auto t_giPass = std::make_unique<RTCoreRayTraceGIPass>(
-				"shader/RTCoreRayTrace/RayTraceGI.rgen", "shader/RTCoreRayTrace/Miss.rmiss", "shader/RTCoreRayTrace/ClosestHit.rchit",
-				"", "", ""
-			);
-
-			t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+			t_reflectPass->SetGeneralBuffer(rtCoreGeneralBuffer);
 			t_reflectPass->SetSharedState(ddgiSharedState);		// 反射命中点采样 DDGI
-			t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
-			ddgiUpdatePass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+			t_giPass->SetGeneralBuffer(rtCoreGeneralBuffer);
+			ddgiUpdatePass->SetGeneralBuffer(rtCoreGeneralBuffer);
 
-			generalPass = std::move(t_generalPass);
 			reflectPass = std::move(t_reflectPass);
 			giPass = std::move(t_giPass);
 		}
 		else
 		{
-			auto t_generalPass = std::make_unique<RayTraceGeneralPass>();
-			auto t_reflectPass = std::make_unique<RayTraceReflectPass>(
-				"shader/RayTrace/RayTraceReflect.comp"
-			);
-			auto t_giPass = std::make_unique<RayTraceGIPass>(
-				"shader/RayTrace/RayTraceGI.comp"
-			);
+			auto t_reflectPass = rtReflectTask->get();
+			auto t_giPass = rtGITask->get();
 
-			t_reflectPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
-			t_giPass->SetGeneralBuffer(t_generalPass->GetGeneralBuffer());
+			t_reflectPass->SetGeneralBuffer(rtGeneralBuffer);
+			t_giPass->SetGeneralBuffer(rtGeneralBuffer);
 
-			generalPass = std::move(t_generalPass);
 			reflectPass = std::move(t_reflectPass);
 			giPass = std::move(t_giPass);
 		}
 
-		auto ssrPass = std::make_unique<SSRPass>("shader/ssr/SSReflect.comp");
 		ssrPass->SetSharedState(ddgiSharedState);		// 反射命中点采样 DDGI
 
-		auto ssgiPass = std::make_unique<SSGIPass>("shader/ssr/SSGI.comp");
-
-		// 间接光合成：漫反射 / 镜面 / 路径追踪三路分别合成，最后加到场景颜色（分工见 IndirectLightingPolicy.h）
-		auto indirectDiffuseCombinPass = MakeIndirectBranchCombinPass();
-		auto indirectSpecularCombinPass = MakeIndirectBranchCombinPass();
-		auto indirectPathTracingCombinPass = MakeIndirectBranchCombinPass();
-		auto combinIndirectLightingPass = MakeConbinIndirectLightingPass();
-
-		auto lightDrawPass = std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs");
-
-		// 体积拆成 Lut（提前算散射 / 透射率）和 Combine（不透明完成后合成），两者共享本帧的 Lut 是否有效
-		auto volumeShared = std::make_shared<VolumePassShared>();
-		auto volumeLutPass = std::make_unique<VolumeLutPass>("shader/Volume/VolumeLut.comp", volumeShared);
-		auto volumeCombinePass = std::make_unique<VolumeCombinePass>("shader/Volume/VolumeCalculate.comp", volumeShared);
-
-		auto transparentPass = std::make_unique<TransparentPass>(
-			"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_static.fs",
-			"shader/Transparent/transparent_static.vs", "shader/Transparent/transparent_oit.fs",
-			"shader/Transparent/transparent_oit_composite.vs", "shader/Transparent/transparent_oit_composite.fs");
-
-		auto effectPass = std::make_unique<EffectPass>("shader/effect/particle.vs", "shader/effect/particle_color.fs", "shader/effect/particle_material.fs");
-
-		auto autoExposurePass = std::make_unique<AutoExposurePass>("shader/AutoExposure/histogram.comp");
-
-		auto gBufferHistoryCopyPass = std::make_unique<GBufferHistoryCopyPass>();
+		std::cout << std::format("[ Renderer ] 场景 Pass 并行构造完成，耗时 {} ms\n", ElapsedMs(constructStart));
 
 		auto passes = std::make_unique<ScenePasses>();
 		passes->hzbMaxLevel = hzbPass->GetMaxLevel();
