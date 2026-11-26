@@ -3,8 +3,6 @@
 
 #include "VulkanRenderEngine/Base/GraphicsPipeline.h"
 
-#include "VulkanRenderEngine/General/FBOHelper.h"
-
 #include "VulkanRenderEngine/RenderPass/GeometryPass.h"
 #include "VulkanRenderEngine/RenderPass/LightShadowDepthPass.h"
 #include "VulkanRenderEngine/RenderPass/LightingPass.h"
