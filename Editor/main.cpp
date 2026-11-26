@@ -8,6 +8,7 @@
 #include "ImguiLayout.h"
 #include "Sprite2DEditor.h"
 #include "AssetThumbnails.h"
+#include "IconManager.h"
 
 #include <stdio.h>
 #if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
@@ -489,17 +490,24 @@ int ImGuiMain()
 	// ==================== 清理 ====================
 	// 缩略图：先停掉后台任务（正在执行的等它做完），再等 GPU 空闲；贴图的描述符集在下面 TextureCache().Clear 里还回去
 	AssetThumbnails::Shutdown();
+	// 引擎先收尾：停掉帧循环 / 流水线 / 场景线程，释放渲染器和资产，执行完延迟销毁
+	editorApp->Shutdown();
 	err = vkDeviceWaitIdle(g_Device);
 	check_vk_result(err);
 
 	// 描述符集属于 ImGui 后端，后端关掉前先还回去
 	Sprite2DEditor::TextureCache().Clear(true);
+	IconManager::Get()->Release();
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
+	// 编辑器自己的 Vulkan 对象：交换链、surface
 	CleanupVulkanWindow(&g_MainWindowData);
 	CleanupVulkan();
+
+	// 设备、实例、描述符池是引擎建的，由引擎销毁（编辑器用它们建的东西上面都已经释放了）
+	editorApp->DestroyRenderContext();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

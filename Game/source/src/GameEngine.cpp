@@ -59,6 +59,8 @@ void GameEngine::Shutdown()
 		return;
 
 	m_runtime->Shutdown();
+	// 设备和实例是引擎建的：引擎停了以后由引擎销毁（共享纹理等宿主的 Vulkan 对象要在调用前释放）
+	m_runtime->DestroyRenderContext();
 	m_runtime.reset();
 }
 

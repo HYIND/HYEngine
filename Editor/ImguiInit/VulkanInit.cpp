@@ -158,15 +158,25 @@ void SetupVulkanWindow(ImGui_ImplVulkanH_Window* wd, VkSurfaceKHR surface, int w
 }
 
 // ==================== 清理函数 ====================
+// 实例、设备、描述符池都是引擎建的（SetupVulkan 只是接过句柄），由 EngineRuntime::DestroyRenderContext 销毁。
+// 这里只清掉句柄，免得之后误用
 void CleanupVulkan() {
-	vkDestroyDescriptorPool(g_Device, g_DescriptorPool, g_Allocator);
-	vkDestroyDevice(g_Device, g_Allocator);
-	vkDestroyInstance(g_Instance, g_Allocator);
+	g_DescriptorPool = VK_NULL_HANDLE;
+	g_Queue = VK_NULL_HANDLE;
+	g_Device = VK_NULL_HANDLE;
+	g_PhysicalDevice = VK_NULL_HANDLE;
+	g_Instance = VK_NULL_HANDLE;
 }
 
+// 交换链和 surface 是编辑器自己的：实例销毁前要先放掉。
+// ImGui_ImplVulkanH_DestroyWindow 不再销毁 surface（v1.92.6 起），所以这里自己销毁
 void CleanupVulkanWindow(ImGui_ImplVulkanH_Window* wd) {
 	ImGui_ImplVulkanH_DestroyWindow(g_Instance, g_Device, wd, g_Allocator);
-	//vkDestroySurfaceKHR(g_Instance, wd->Surface, g_Allocator);
+	if (wd->Surface != VK_NULL_HANDLE)
+	{
+		vkDestroySurfaceKHR(g_Instance, wd->Surface, g_Allocator);
+		wd->Surface = VK_NULL_HANDLE;
+	}
 }
 
 // ==================== 渲染函数 ====================

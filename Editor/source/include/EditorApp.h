@@ -76,6 +76,12 @@ public:
 
 	EngineRuntime& Runtime() { return m_runtime; }
 
+	// 退出时调用（main 里、编辑器自己的 ImGui / Vulkan 收尾之前）：停场景线程、帧循环和流水线，
+	// 释放渲染器、工程和资产，并执行完延迟销毁队列
+	void Shutdown();
+	// 退出的最后一步：编辑器的 ImGui 后端、交换链、surface 都释放之后，销毁引擎的设备和实例
+	void DestroyRenderContext();
+
 private:
 	EngineRuntime m_runtime;
 	SceneEditor m_scene;

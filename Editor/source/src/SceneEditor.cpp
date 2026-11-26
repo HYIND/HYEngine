@@ -77,6 +77,9 @@ void SetNameTag(Entity entity, const std::string& name)
     }
 }
 
+// 默认场景共用的天空盒：建一次，之后的默认场景都复用；退出时由 ReleaseSharedResources 放掉
+static std::shared_ptr<TextureCube> s_defaultSkyboxCube;
+
 static void GeneralDefaultWorld(World& world)
 {
     {
@@ -95,9 +98,10 @@ static void GeneralDefaultWorld(World& world)
             "Test/skybox/box2/front.png",
             "Test/skybox/box2/back.png"
         };
-        static auto skyboxcube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
+        if (!s_defaultSkyboxCube)
+            s_defaultSkyboxCube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
         Entity entity = world.createEntity();
-        entity.addComponent<SkyBox>(skyboxcube);
+        entity.addComponent<SkyBox>(s_defaultSkyboxCube);
 
         SetNameTag(entity, "DefaultSkybox");
     }
@@ -254,6 +258,11 @@ void SceneEditor::PanCamera(float deltaX, float deltaY)
         return;
     const float viewportHeight = m_viewportHeight ? m_viewportHeight() : 1.0f;
     m_camera.PanCamera(m_runtime, *_world, deltaX, deltaY, viewportHeight);
+}
+
+void SceneEditor::ReleaseSharedResources()
+{
+    s_defaultSkyboxCube.reset();
 }
 
 std::shared_ptr<SceneCodec> SceneEditor::CreateDefaultSceneCodec()

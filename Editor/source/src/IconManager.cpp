@@ -116,6 +116,20 @@ ImTextureID IconManager::GetIconByFilePath(const std::string& filePath) const
 	return GetIcon("file");
 }
 
+void IconManager::Release()
+{
+	{
+		LockGuard guard_pool(VKCONTEXT->GetDescriptorPoolRequestMutex());
+		for (auto& [name, icon] : m_icons)
+		{
+			if (icon.descSet != VK_NULL_HANDLE)
+				ImGui_ImplVulkan_RemoveTexture(icon.descSet);
+			icon.descSet = VK_NULL_HANDLE;
+		}
+	}
+	m_icons.clear();
+}
+
 ImTextureID IconManager::GetFolderIcon() const
 {
 	Need();

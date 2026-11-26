@@ -37,6 +37,8 @@ public:
 	bool RemoveSegment(const SegmentID& id);																	// 移除段
 
 	void SetAlign(uint64_t align);
+	// 释放 GPU 缓冲和所有分段（关闭时用），之后不能再用
+	void Release();
 
 	const BufferImpl* GetBuffer() const;
 	uint64_t GetAlign() const;

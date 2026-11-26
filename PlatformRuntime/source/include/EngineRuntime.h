@@ -99,6 +99,9 @@ public:
 
 
 	bool CreateRenderContext(const EngineRenderContextDesc& desc, std::string* error = nullptr);
+	// CreateRenderContext 的反操作：销毁引擎的 Vulkan 设备和实例（VKContext::Shutdown）。
+	// 引擎没停的话先 Shutdown；宿主自己用这个设备建的东西（ImGui 后端、交换链、surface）要在这之前释放
+	void DestroyRenderContext();
 	EngineVulkanContext GetVulkanContext() const;	// 当前上下文句柄。引擎还没有上下文时 valid 为 false。
 
 	Render::Renderer* GetRenderer();

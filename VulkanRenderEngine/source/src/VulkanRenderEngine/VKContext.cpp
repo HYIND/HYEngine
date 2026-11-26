@@ -121,17 +121,26 @@ vk::ResultValue<std::vector<vk::DescriptorSet>> VKContext::AllocateDescriptorSet
 
 vk::Result VKContext::FreeDescriptorSets(const std::vector<vk::DescriptorSet>& sets) {
 	LockGuard guard(_descriptorPoolRequestMutex);
-	return _device->GetHandle().freeDescriptorSets(GetDescriptorPool(), sets);
+	// 设备 / 描述符池已经销毁：描述符集随池子一起没了
+	if (!_device || !_descriptorPool)
+		return vk::Result::eSuccess;
+	return _device->GetHandle().freeDescriptorSets(_descriptorPool, sets);
 }
 
 void VKContext::Retire(VKWrapper::IVKResource* res) {
 	if (!res) return;
+	// 设备已经销毁：句柄都跟着设备没了，不能再调 Destroy（会用到已销毁的设备 / VMA 分配器）
+	if (_retireClosed.load(std::memory_order_acquire))
+	{
+		delete res;
+		return;
+	}
 	LockGuard guard(_pendingDestoryResourceMutex);
 	_pendingDestoryResource.push_back(PendingResource{ res, _frameIndex.load() });
 }
 
 void VKContext::ProcessRetireAndPushFrameIndex() {
-	if (_pendingDestoryResource.empty())
+	if (_retireClosed.load(std::memory_order_acquire) || _pendingDestoryResource.empty())
 		return;
 
 	std::list<PendingResource> temp;
@@ -167,6 +176,36 @@ void VKContext::ProcessRetireAndPushFrameIndex() {
 			delete p.res;
 		}
 	}
+}
+
+void VKContext::FlushRetiredResources() {
+	if (_device)
+		_device->WaitIdle();
+
+	// 有些 Destroy 会再 Retire（释放材质 → 段缓冲，回收 bindless 槽位 → 旧的 image），所以要循环到队列为空
+	constexpr uint32_t kMaxRounds = 32;
+	for (uint32_t round = 0; round < kMaxRounds; ++round)
+	{
+		std::list<PendingResource> temp;
+		{
+			LockGuard guard(_pendingDestoryResourceMutex);
+			if (_pendingDestoryResource.empty())
+				return;
+			temp.swap(_pendingDestoryResource);
+		}
+
+		for (auto& p : temp) {
+			if (p.res)
+			{
+				p.res->Destroy();
+				delete p.res;
+			}
+		}
+	}
+
+	LockGuard guard(_pendingDestoryResourceMutex);
+	std::cerr << std::format("[ VKContext ] WARNING: 延迟销毁队列执行了 {} 轮还没清空（剩 {} 个），可能有 Destroy 在反复 Retire\n",
+		kMaxRounds, _pendingDestoryResource.size());
 }
 
 std::shared_ptr<VKWrapper::VKCommandBuffer> VKThreadContext::GetCommandBuffer()
@@ -206,8 +245,110 @@ void VKThreadContext::NeedCommandPool()
 	if (_commandPool)
 		return;
 
-	if (auto commandPool = std::make_shared<VKWrapper::VKCommandPool>(VKCONTEXT->GetDevice().get(), VKWrapper::VKCommandPool::QueueFamilyType::Graphics, vk::CommandPoolCreateFlagBits::eResetCommandBuffer))
-		_commandPool = commandPool;
+	// 设备还没建 / 已经销毁
+	auto device = VKCONTEXT->GetDevice();
+	if (!device)
+		return;
+
+	auto commandPool = std::make_shared<VKWrapper::VKCommandPool>(device.get(), VKWrapper::VKCommandPool::QueueFamilyType::Graphics, vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+	if (!commandPool || !commandPool->GetHandle())
+		return;
+	_commandPool = std::move(commandPool);
+	VKCONTEXT->RegisterThreadContext(this);
+}
+
+VKThreadContext::~VKThreadContext()
+{
+	// 先从登记表里摘掉（和 Shutdown 互斥），再随成员一起释放命令池。
+	// Shutdown 已经释放过的话 _commandPool 是空的，这里什么都不用做
+	VKContext::Instance()->UnregisterThreadContext(this);
+}
+
+void VKContext::RegisterThreadContext(VKThreadContext* context)
+{
+	LockGuard guard(_threadContextsMutex);
+	_threadContexts.insert(context);
+}
+
+void VKContext::UnregisterThreadContext(VKThreadContext* context)
+{
+	LockGuard guard(_threadContextsMutex);
+	_threadContexts.erase(context);
+}
+
+void VKContext::AddShutdownCallback(std::function<void()> callback)
+{
+	if (!callback)
+		return;
+	LockGuard guard(_shutdownCallbacksMutex);
+	_shutdownCallbacks.push_back(std::move(callback));
+}
+
+void VKContext::Shutdown()
+{
+	if (_retireClosed.load(std::memory_order_acquire))
+		return;
+
+	auto device = _device;
+	if (device)
+	{
+		// 1. 引擎、宿主都已经停了：等 GPU 做完，执行完它们延迟销毁的资源
+		FlushRetiredResources();
+
+		// 2. 全局缓存（bindless 表、间接绘制的段缓冲……）：倒序释放，释放出来的又进延迟销毁队列
+		std::vector<std::function<void()>> callbacks;
+		{
+			LockGuard guard(_shutdownCallbacksMutex);
+			callbacks.swap(_shutdownCallbacks);
+		}
+		for (auto it = callbacks.rbegin(); it != callbacks.rend(); ++it)
+			(*it)();
+
+		// 3. 还没提交的命令缓冲：放掉（它们的释放也走延迟销毁，要在命令池之前）
+		{
+			LockGuard guard(_pendingCommandBufferMutex);
+			_pendingCommandBuffers.clear();
+		}
+		FlushRetiredResources();
+
+		// 4. 各线程的命令池：主线程的 thread_local 要到 main 返回后才析构，那时设备早没了
+		{
+			LockGuard guard(_threadContextsMutex);
+			for (auto* context : _threadContexts)
+				context->ReleaseCommandPool();
+			_threadContexts.clear();
+		}
+
+		// 5. 描述符池（ImGui 后端也从这里分配，宿主要先关掉 ImGui 后端）
+		{
+			LockGuard guard(_descriptorPoolRequestMutex);
+			if (_descriptorPool)
+			{
+				device->GetHandle().destroyDescriptorPool(_descriptorPool);
+				_descriptorPool = VK_NULL_HANDLE;
+			}
+		}
+	}
+
+	// 6. 关掉延迟销毁：之后静态对象析构时释放的资源直接丢弃
+	_retireClosed.store(true, std::memory_order_release);
+	{
+		LockGuard guard(_pendingDestoryResourceMutex);
+		if (!_pendingDestoryResource.empty())
+			std::cerr << std::format("[ VKContext ] WARNING: 销毁设备时延迟销毁队列里还剩 {} 个资源，已丢弃\n", _pendingDestoryResource.size());
+		for (auto& p : _pendingDestoryResource)
+			delete p.res;
+		_pendingDestoryResource.clear();
+	}
+
+	// 7. 设备、实例
+	_device.reset();
+	if (device)
+		device->Release();
+	device.reset();
+
+	if (auto instance = std::move(_instance))
+		instance->Release();
 }
 
 // ======================== 实例 / 设备 ========================
@@ -502,7 +643,7 @@ void VKContext::NeedDescriptorPool()
 
 	LockGuard guard(_descriptorPoolCreateMutex);
 
-	if (_descriptorPool)
+	if (_descriptorPool || !_device)
 		return;
 
 	std::vector<vk::DescriptorPoolSize> poolSizes = {

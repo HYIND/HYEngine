@@ -44,6 +44,8 @@ public:
 
 public:
 	void ReleaseSlot(BindlessIndex index);
+	// 设备销毁前（VKContext::Shutdown 回调）：清空整张表和占位图
+	void Release();
 
 private:
 	BindlessTextureManager();
@@ -144,6 +146,9 @@ public:
 	void DeleteMesh(const std::string& uuid);
 	void DeleteMaterial(const std::string& uuid);
 	void DeleteSkinned(const std::string& uuid);
+
+	// 设备销毁前（VKContext::Shutdown 回调）：释放所有段缓冲，之后不能再用
+	void Release();
 
 private:
 	IndirectDrawManager();

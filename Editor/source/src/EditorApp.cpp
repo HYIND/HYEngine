@@ -53,6 +53,18 @@ EditorApp::EditorApp()
 
 EditorApp::~EditorApp() {}
 
+void EditorApp::Shutdown()
+{
+	// 默认场景共用的天空盒：放掉缓存，场景销毁时它就跟着释放
+	SceneEditor::ReleaseSharedResources();
+	m_runtime.Shutdown();
+}
+
+void EditorApp::DestroyRenderContext()
+{
+	m_runtime.DestroyRenderContext();
+}
+
 bool EditorApp::CreateRenderContext(const EngineRenderContextDesc& desc)
 {
 	std::string error;

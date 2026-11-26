@@ -569,6 +569,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		shouldStopRenderThread = true;
 		renderThread->join();
+		// 呈现桥里的共享纹理是用引擎设备建的：设备销毁前（GameEngine::Shutdown）先放掉
+		RenderManager::Instance()->getVulkanBridge()->Shutdown();
 		GameEngine::Instance().StopSceneThread();
 		GameEngine::Instance().CloseScene();
 		GameEngine::Instance().Shutdown();

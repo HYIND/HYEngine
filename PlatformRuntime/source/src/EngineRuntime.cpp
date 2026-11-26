@@ -344,6 +344,9 @@ void EngineRuntime::Shutdown()
 	m_config = {};
 	m_audioDevice.reset();
 	m_initialized = false;
+
+	if (VKCONTEXT->GetDevice())
+		VKCONTEXT->FlushRetiredResources();
 }
 
 bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std::string* error)
@@ -382,6 +385,19 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 		return false;
 	}
 	return true;
+}
+
+void EngineRuntime::DestroyRenderContext()
+{
+	// 帧循环、流水线、场景线程都会用设备：先停
+	if (m_initialized)
+		Shutdown();
+	if (m_renderer)
+	{
+		m_renderer->Shutdown();
+		m_renderer.reset();
+	}
+	VKCONTEXT->Shutdown();
 }
 
 EngineVulkanContext EngineRuntime::GetVulkanContext() const

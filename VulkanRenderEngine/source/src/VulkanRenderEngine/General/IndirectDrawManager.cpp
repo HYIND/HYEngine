@@ -237,9 +237,48 @@ void BindlessTextureManager::ReleaseSlot(BindlessIndex index)
 
 BindlessTextureManager::BindlessTextureManager() {
 	_aspect = vk::ImageAspectFlagBits::eColor;
+	// 单例一直活到进程退出：设备销毁前由 VKContext 回调释放它持有的描述符和占位图
+	VKCONTEXT->AddShutdownCallback([this] { Release(); });
 }
 
-IndirectDrawManager::IndirectDrawManager() {}
+void BindlessTextureManager::Release()
+{
+	{
+		std::lock_guard dirtyGuard(_dirtyMutex);
+		_dirtyTextures.clear();
+	}
+
+	std::vector<TextureDescBindEntry> entries;
+	{
+		LockGuard guard(_mutex);
+		for (const auto& [tex, index] : _textureEntrys)
+			tex->_bindlessRegistered.store(false, std::memory_order_seq_cst);
+		_textureEntrys.clear();
+		entries.swap(_entrys);
+		std::queue<uint32_t>().swap(_idleSlot);
+	}
+	// 锁外放掉：image / view / sampler 释放时会 Retire；占位图析构时还会回来调 UnregisterTexture
+	entries.clear();
+	_placeholderTexture.reset();
+}
+
+IndirectDrawManager::IndirectDrawManager()
+{
+	// 单例一直活到进程退出：设备销毁前由 VKContext 回调释放段缓冲
+	VKCONTEXT->AddShutdownCallback([this] { Release(); });
+}
+
+void IndirectDrawManager::Release()
+{
+	WithWriteLock({ SharedLockType::Mesh, SharedLockType::Material, SharedLockType::Skinned }, [this]()
+		{
+			_VertexManager.Release();
+			_IndexManager.Release();
+			_MaterialManager.Release();
+			_ShadowMaterialManager.Release();
+			_SkinnedManager.Release();
+		});
+}
 
 std::shared_ptr<IndirectDrawManager> IndirectDrawManager::Instance()
 {

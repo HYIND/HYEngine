@@ -106,6 +106,16 @@ bool SegmentBufferManager<BufferImpl, SegmentID>::FindSegment(const SegmentID& i
 }
 
 template<typename BufferImpl, typename SegmentID>
+void SegmentBufferManager<BufferImpl, SegmentID>::Release()
+{
+	_buffer.reset();
+	_usingSegment.clear();
+	_idleSegment.clear();
+	_userDatas.clear();
+	_useSpace = 0;
+}
+
+template<typename BufferImpl, typename SegmentID>
 bool SegmentBufferManager<BufferImpl, SegmentID>::IsSegmentExist(const SegmentID& id)
 {
 	return _usingSegment.find(id) != _usingSegment.end();

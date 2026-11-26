@@ -27,6 +27,8 @@ public:
 	explicit SceneEditor(EngineRuntime& runtime);
 
 	static std::shared_ptr<SceneCodec> CreateDefaultSceneCodec();
+	// 退出前调用：释放默认场景共用的 GPU 资源（天空盒）
+	static void ReleaseSharedResources();
 	static void RegisterSceneComponentCodecs();
 
 	void InitDefaultWorld();

@@ -129,16 +129,29 @@ VulkanDevice& VulkanDevice::operator=(VulkanDevice&& other) noexcept
 
 void VulkanDevice::Release()
 {
+	// 顺序：等 GPU 空闲 → 销毁回调（可能还要释放显存）→ VMA 分配器 → 设备
+	if (m_device) {
+		WaitIdle();
+		ExecuteCallbacks(m_callbacks_destroyDevice);
+	}
 
 	if (m_allocator)
 	{
-		vmaDestroyAllocator(m_allocator);
+		// 还有没释放的分配时 vmaDestroyAllocator 在 Debug 下会断言：打个警告，跳过它（显存随设备一起回收）
+		VmaTotalStatistics stats{};
+		vmaCalculateStatistics(m_allocator, &stats);
+		const uint32_t leakedCount = stats.total.statistics.allocationCount;
+		if (leakedCount > 0)
+		{
+			std::cerr << std::format("[ VulkanDevice ] WARNING: 销毁设备时还有 {} 个显存分配没释放（共 {} 字节），跳过 vmaDestroyAllocator\n",
+				leakedCount, static_cast<uint64_t>(stats.total.statistics.allocationBytes));
+		}
+		else
+			vmaDestroyAllocator(m_allocator);
 		m_allocator = VK_NULL_HANDLE;
 	}
 
 	if (m_device) {
-		WaitIdle();
-		ExecuteCallbacks(m_callbacks_destroyDevice);
 		vkDestroyDevice(m_device, nullptr);
 		m_device = VK_NULL_HANDLE;
 		m_deviceExtensions.clear();

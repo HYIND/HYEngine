@@ -22,6 +22,9 @@ public:
 	ImTextureID GetIconByFilePath(const std::string& filePath) const;
 	ImTextureID GetFolderIcon() const;
 
+	// 退出时调用（ImGui 后端关掉之前）：还回描述符集，放掉图标贴图
+	void Release();
+
 private:
 	IconManager();
 	void Need()const;
