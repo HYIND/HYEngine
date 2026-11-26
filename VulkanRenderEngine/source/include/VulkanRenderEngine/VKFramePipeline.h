@@ -28,7 +28,7 @@
 // 每帧有一张最终画面（RGBA8，渲染目标尺寸），各阶段依次往上画；画完的帧进完成队列，宿主用 WaitImage / FetchImage 取走。
 //
 // 目前一帧的段（共 10 段）：
-//   段 1      资源回收（流水线自己的，VKContext::ProcessRetireAndPushFrameIndex）
+//   段 1      提交待提交队列 + 资源回收（流水线自己的，VKContext::ProcessPendingCommand / ProcessRetireAndPushFrameIndex）
 //   段 2 ~ 9  VKRenderer3D：SetupRenderState / SetupIndirectDrawData / PreCalculate / Skinned / 预计算提交 /
 //             清屏 / SceneRenderGraph / 后处理（Combin + Bloom + PostProcess，写最终画面）
 //   段 10     VKRenderer2D：精灵 / 调试线叠到最终画面

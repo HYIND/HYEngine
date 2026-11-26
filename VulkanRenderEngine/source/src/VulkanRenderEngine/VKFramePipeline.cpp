@@ -265,10 +265,11 @@ void VKFramePipeline::ExecuteFrame(FrameJob& job)
 	RenderFrameProfile* profile = job.Profile();
 	sync.waitAccumUs = profile ? &profile->steps[size_t(RenderProfileStep::WaitPrevFrame)] : nullptr;
 
-	// 段 1：延迟释放资源的回收。这是整帧的事，不属于哪个阶段
+	// 段 1：提交图外 SubmitToQueue 攒下的命令，再回收延迟释放的资源。这是整帧的事，不属于哪个阶段
 	{
 		FlightSync::ProgressScope syncScope(sync);
 		RenderProfileScope scope(profile, RenderProfileStep::ProcessRetire);
+		VKCONTEXT->ProcessPendingCommand();
 		VKCONTEXT->ProcessRetireAndPushFrameIndex();
 	}
 

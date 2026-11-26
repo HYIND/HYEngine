@@ -96,7 +96,7 @@ public:
 	vk::Result SubmitCommandImmediatelyAndWait(const std::shared_ptr<VKWrapper::VKCommandBuffer>& buffer, const CmdSyncSeamphore& syncSeamphore = {});
 	vk::Result SubmitCommandImmediatelyAndWait(const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& buffer, const CmdSyncSeamphore& syncSeamphore = {});
 
-	void ProcessPendingCommandAndWait();
+	void ProcessPendingCommand();
 
 public:
 	SpinLock& GetDescriptorPoolRequestMutex();
@@ -106,6 +106,14 @@ private:
 	~VKContext();
 
 	void NeedDescriptorPool();
+
+	// SubmitCommandImmediatelyAndWait 用的 fence：等完、重置后放回来复用，
+	// 省掉每次 vkCreateFence + 延迟销毁。只回收确认没在用的（等成功并重置成功、或根本没提交出去的）
+	std::shared_ptr<VKWrapper::VKFence> AcquireWaitFence();
+	void RecycleWaitFence(std::shared_ptr<VKWrapper::VKFence> fence);
+	// 提交并等待：成功时 fence 重置后放回池子，失败时不回收（让它走延迟销毁）
+	vk::Result SubmitAndWaitWithPooledFence(const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& buffers,
+		const std::vector<WaitSemaphoreData>& waitSemaphores, const std::vector<SignalSemaphoreData>& signalSemaphores);
 
 	friend class VKThreadContext;
 	void RegisterThreadContext(VKThreadContext* context);
@@ -124,6 +132,7 @@ private:
 
 	std::vector<SubmitCMDData> _pendingCommandBuffers;
 	SpinLock _pendingCommandBufferMutex;
+	std::atomic<bool> _hasPendingCommands{ false };	// 只在 _pendingCommandBufferMutex 里改；ProcessPendingCommand 不拿锁先看它
 	SpinLock _submitQueueMutex;
 
 	vk::DescriptorPool _descriptorPool;
@@ -137,6 +146,9 @@ private:
 	// 有命令池的线程上下文
 	std::unordered_set<VKThreadContext*> _threadContexts;
 	SpinLock _threadContextsMutex;
+
+	std::vector<std::shared_ptr<VKWrapper::VKFence>> _waitFencePool;	// 空闲、未置位的 fence
+	SpinLock _waitFencePoolMutex;
 
 	std::vector<std::function<void()>> _shutdownCallbacks;
 	SpinLock _shutdownCallbacksMutex;

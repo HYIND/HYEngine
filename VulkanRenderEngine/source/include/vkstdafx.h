@@ -1,6 +1,6 @@
 #pragma once
 
-//#define Enable_Vulkan_Validation
+#define Enable_Vulkan_Validation
 
 #define VK_USE_PLATFORM_WIN32_KHR
 

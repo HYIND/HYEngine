@@ -304,10 +304,15 @@ void VKContext::Shutdown()
 		for (auto it = callbacks.rbegin(); it != callbacks.rend(); ++it)
 			(*it)();
 
-		// 3. 还没提交的命令缓冲：放掉（它们的释放也走延迟销毁，要在命令池之前）
+		// 3. 还没提交的命令缓冲、池子里的 fence：放掉（它们的释放也走延迟销毁，要在命令池之前）
 		{
 			LockGuard guard(_pendingCommandBufferMutex);
 			_pendingCommandBuffers.clear();
+			_hasPendingCommands.store(false, std::memory_order_relaxed);
+		}
+		{
+			LockGuard guard(_waitFencePoolMutex);
+			_waitFencePool.clear();
 		}
 		FlushRetiredResources();
 
@@ -511,6 +516,7 @@ void VKContext::SubmitCommandBufferToPendingQueue(std::shared_ptr<VKWrapper::VKC
 	data.signalFence = signalFence;
 	LockGuard guard(_pendingCommandBufferMutex);
 	_pendingCommandBuffers.push_back(std::move(data));
+	_hasPendingCommands.store(true, std::memory_order_release);
 }
 
 void VKContext::SubmitCommandBufferToPendingQueue(std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> buffers, const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
@@ -527,6 +533,7 @@ void VKContext::SubmitCommandBufferToPendingQueue(std::vector<std::shared_ptr<VK
 	data.signalFence = signalFence;
 	LockGuard guard(_pendingCommandBufferMutex);
 	_pendingCommandBuffers.push_back(std::move(data));
+	_hasPendingCommands.store(true, std::memory_order_release);
 }
 
 vk::Result VKContext::SubmitCommandImmediately(const std::shared_ptr<VKWrapper::VKCommandBuffer>& buffer, const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
@@ -553,12 +560,7 @@ vk::Result VKContext::SubmitCommandImmediatelyAndWait(const std::shared_ptr<VKWr
 	if (buffer->IsRecording())
 		buffer->End();
 
-	auto fence = std::make_shared<VKWrapper::VKFence>(_device.get());
-	if (auto result = SubmitCommandBuffer(_device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), { buffer }, syncSeamphore.waitSemaphores, syncSeamphore.signalSemaphores, fence); result != vk::Result::eSuccess)
-		return result;
-	if (auto result = fence->Wait(); result != vk::Result::eSuccess)
-		return result;
-	return vk::Result::eSuccess;
+	return SubmitAndWaitWithPooledFence({ buffer }, syncSeamphore.waitSemaphores, syncSeamphore.signalSemaphores);
 }
 
 vk::Result VKContext::SubmitCommandImmediatelyAndWait(const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& buffers, const CmdSyncSeamphore& syncSeamphore)
@@ -569,66 +571,86 @@ vk::Result VKContext::SubmitCommandImmediatelyAndWait(const std::vector<std::sha
 			cmd->End();
 	}
 
+	return SubmitAndWaitWithPooledFence(buffers, syncSeamphore.waitSemaphores, syncSeamphore.signalSemaphores);
+}
+
+std::shared_ptr<VKWrapper::VKFence> VKContext::AcquireWaitFence()
+{
+	{
+		LockGuard guard(_waitFencePoolMutex);
+		if (!_waitFencePool.empty())
+		{
+			auto fence = std::move(_waitFencePool.back());
+			_waitFencePool.pop_back();
+			return fence;
+		}
+	}
 	auto fence = std::make_shared<VKWrapper::VKFence>(_device.get());
-	if (auto result = SubmitCommandBuffer(_device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), buffers, syncSeamphore.waitSemaphores, syncSeamphore.signalSemaphores, fence); result != vk::Result::eSuccess)
+	if (!fence->GetHandle())
+		return nullptr;
+	return fence;
+}
+
+void VKContext::RecycleWaitFence(std::shared_ptr<VKWrapper::VKFence> fence)
+{
+	// 池子上限：同时在等的线程数有限，多出来的照常释放（走延迟销毁）
+	constexpr size_t kMaxPooledFences = 64;
+	if (!fence || !fence->GetHandle() || _retireClosed.load(std::memory_order_acquire))
+		return;
+	LockGuard guard(_waitFencePoolMutex);
+	if (_waitFencePool.size() < kMaxPooledFences)
+		_waitFencePool.push_back(std::move(fence));
+}
+
+vk::Result VKContext::SubmitAndWaitWithPooledFence(const std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>>& buffers,
+	const std::vector<WaitSemaphoreData>& waitSemaphores, const std::vector<SignalSemaphoreData>& signalSemaphores)
+{
+	auto fence = AcquireWaitFence();
+	if (!fence)
+		return vk::Result::eErrorOutOfDeviceMemory;
+
+	if (auto result = SubmitCommandBuffer(_device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), buffers, waitSemaphores, signalSemaphores, fence); result != vk::Result::eSuccess)
+	{
+		// 提交失败：fence 没交给队列，还是未置位，可以直接放回
+		RecycleWaitFence(std::move(fence));
 		return result;
+	}
+
 	if (auto result = fence->Wait(); result != vk::Result::eSuccess)
-		return result;
+		return result;	// 等失败（设备丢失等）：fence 状态不明，不回收
+
+	// 置位了：重置后放回。重置失败就不回收
+	if (fence->Reset() == vk::Result::eSuccess)
+		RecycleWaitFence(std::move(fence));
 	return vk::Result::eSuccess;
 }
 
-void VKContext::ProcessPendingCommandAndWait()
+void VKContext::ProcessPendingCommand()
 {
+	// 快速路径：不拿锁。标记只在锁里改，这里读到旧值最多晚一帧提交（或多拿一次锁），不会漏
+	if (!_hasPendingCommands.load(std::memory_order_acquire))
+		return;
+
 	auto device = _device;
 	if (!device)
 		return;
 
-	auto graphicsQueue = device->GetGraphicsQueue();
-
-	if (_pendingCommandBuffers.empty())
-		return;
-
 	std::vector<SubmitCMDData> temp;
-
 	{
 		LockGuard guard(_pendingCommandBufferMutex);
 		_pendingCommandBuffers.swap(temp);
+		_hasPendingCommands.store(false, std::memory_order_relaxed);
 	}
 
-	if (temp.empty())
-		return;
-
-	std::vector<WaitSemaphoreData> allWaits;
-	allWaits.reserve(temp.size());
-
-	for (int i = 0; i < temp.size(); i++)
+	// 按加入顺序逐批提交，各批自己的信号量 / fence 照常带上。只提交、不等：
+	// 命令缓冲、信号量释放时都走延迟销毁，调用方要等结果就自己带 fence 或信号量
+	for (auto& submitData : temp)
 	{
-
-		auto& submitData = temp[i];
-		auto& waitSemaphores = submitData.syncSeamphore.waitSemaphores;
-		auto& signalSemaphores = submitData.syncSeamphore.signalSemaphores;
-
-		auto sem = std::make_shared<VKWrapper::VKBinarySemaphore>(device.get());
-		WaitSemaphoreData wait{ .semaphore = sem };
-		SignalSemaphoreData signal{ .semaphore = sem };
-		signalSemaphores.push_back(std::move(signal));
-
-		vk::Result result = SubmitCommandBuffer(device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), submitData.buffers, submitData.syncSeamphore.waitSemaphores, signalSemaphores, submitData.signalFence);
+		vk::Result result = SubmitCommandBuffer(device->GetGraphicsQueue(), device->GetGraphicsQueueMutex(), submitData.buffers,
+			submitData.syncSeamphore.waitSemaphores, submitData.syncSeamphore.signalSemaphores, submitData.signalFence);
 		if (result != vk::Result::eSuccess)
-			outStream << std::format("[ graphicsBase ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
-
-		allWaits.push_back(std::move(wait));
+			outStream << std::format("[ ProcessPendingCommand ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
 	}
-
-	auto fence = std::make_shared<VKWrapper::VKFence>(_device.get());
-
-	vk::Result result = SubmitCommandBuffer(device->GetGraphicsQueue(), _device->GetGraphicsQueueMutex(), {}, allWaits, {}, fence);
-	if (result != vk::Result::eSuccess)
-		outStream << std::format("[ graphicsBase ] ERROR\nFailed to submit the command buffer!\nError code: {}\n", to_string(result));
-
-	if (auto result = fence->Wait(); result != vk::Result::eSuccess)
-		outStream << std::format("[ ProcessPendingCommandAndWait ] ERROR\nFailed to wait fence!\nError code: {}\n", to_string(result));
-
 }
 
 VKContext::VKContext()

@@ -3,8 +3,179 @@
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/VKContext.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
+#include "CriticalSectionLock.h"
 
 using namespace VKWrapper;
+
+// ======================== 上传堆 ========================
+
+namespace
+{
+	// 延迟销毁要等 2 × MaxFramesInFlight 帧才回收，堆要装得下这几帧的上传量；装不下的回退到单独建 staging
+	constexpr vk::DeviceSize kUploadHeapSize = 32ull * 1024 * 1024;
+	// 单次超过这个大小（大贴图）也单独建 staging，免得一次就把堆占掉一大块
+	constexpr vk::DeviceSize kUploadHeapMaxAllocation = kUploadHeapSize / 4;
+}
+
+class RetireUploadHeapAllocation : public IVKResource
+{
+public:
+	explicit RetireUploadHeapAllocation(const UploadHeap::Allocation& allocation)
+		:_allocation(allocation) {}
+	virtual void Destroy() {
+		UploadHeap::Instance().Free(_allocation);
+	}
+
+private:
+	UploadHeap::Allocation _allocation;
+};
+
+UploadHeap& UploadHeap::Instance()
+{
+	// 不析构：缓冲由 Release（设备销毁前的回调）释放，进程退出时设备早没了
+	static UploadHeap* instance = new UploadHeap();
+	return *instance;
+}
+
+// 调用方持有 _mutex
+bool UploadHeap::NeedLocked()
+{
+	if (_block)
+		return true;
+	if (_initTried)
+		return false;
+	_initTried = true;
+
+	auto device = VKCONTEXT->GetDevice();
+	if (!device || VKCONTEXT->IsShutdown())
+		return false;
+	VmaAllocator allocator = device->GetAllocator();
+
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = kUploadHeapSize;
+	bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// 只顺序写、不读：放系统内存（PREFER_HOST），常驻映射
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+	allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+	VkBuffer buffer = VK_NULL_HANDLE;
+	VmaAllocation allocation = VK_NULL_HANDLE;
+	VmaAllocationInfo allocationInfo = {};
+	if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer, &allocation, &allocationInfo) != VK_SUCCESS || !allocationInfo.pMappedData)
+	{
+		if (buffer)
+			vmaDestroyBuffer(allocator, buffer, allocation);
+		std::cerr << std::format("[ UploadHeap ] WARNING: 创建上传堆失败（{} MB），上传全部走单独的 staging\n", kUploadHeapSize >> 20);
+		return false;
+	}
+
+	VmaVirtualBlockCreateInfo blockInfo = {};
+	blockInfo.size = kUploadHeapSize;
+	VmaVirtualBlock block = VK_NULL_HANDLE;
+	if (vmaCreateVirtualBlock(&blockInfo, &block) != VK_SUCCESS)
+	{
+		vmaDestroyBuffer(allocator, buffer, allocation);
+		std::cerr << "[ UploadHeap ] WARNING: 创建虚拟块失败，上传全部走单独的 staging\n";
+		return false;
+	}
+
+	VkMemoryPropertyFlags memoryFlags = 0;
+	vmaGetAllocationMemoryProperties(allocator, allocation, &memoryFlags);
+
+	_allocator = allocator;
+	_buffer = buffer;
+	_allocation = allocation;
+	_mapped = static_cast<uint8_t*>(allocationInfo.pMappedData);
+	_coherent = (memoryFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+	_block = block;
+
+	VKCONTEXT->AddShutdownCallback([this] { Release(); });
+	return true;
+}
+
+bool UploadHeap::Allocate(vk::DeviceSize size, vk::DeviceSize alignment, Allocation& allocation)
+{
+	if (size == 0 || size > kUploadHeapMaxAllocation)
+		return false;
+
+	LockGuard guard(_mutex);
+	if (!NeedLocked())
+		return false;
+
+	VmaVirtualAllocationCreateInfo createInfo = {};
+	createInfo.size = size;
+	createInfo.alignment = alignment;
+
+	VmaVirtualAllocation handle = VK_NULL_HANDLE;
+	VkDeviceSize offset = 0;
+	if (vmaVirtualAllocate(_block, &createInfo, &handle, &offset) != VK_SUCCESS)
+	{
+		if (!_fullReported.exchange(true, std::memory_order_relaxed))
+			std::cerr << std::format("[ UploadHeap ] WARNING: 上传堆满了（{} MB，本次 {} 字节），装不下的上传回退到单独建 staging（只提示一次）\n",
+				kUploadHeapSize >> 20, static_cast<uint64_t>(size));
+		return false;
+	}
+
+	allocation.buffer = vk::Buffer(_buffer);
+	allocation.offset = offset;
+	allocation.size = size;
+	allocation.mapped = _mapped + offset;
+	allocation.handle = handle;
+	return true;
+}
+
+void UploadHeap::Flush(const Allocation& allocation)
+{
+	if (!allocation.handle || _coherent)
+		return;
+	LockGuard guard(_mutex);
+	if (_allocation)
+		vmaFlushAllocation(_allocator, _allocation, allocation.offset, allocation.size);
+}
+
+void UploadHeap::Free(const Allocation& allocation)
+{
+	if (!allocation.handle)
+		return;
+	LockGuard guard(_mutex);
+	// 已经 Release：虚拟块整个清掉了，不用再还
+	if (_block)
+		vmaVirtualFree(_block, allocation.handle);
+}
+
+void UploadHeap::Retire(const Allocation& allocation)
+{
+	if (!allocation.handle)
+		return;
+	VKCONTEXT->Retire(new RetireUploadHeapAllocation(allocation));
+}
+
+void UploadHeap::Release()
+{
+	LockGuard guard(_mutex);
+	_initTried = true;
+	if (_block)
+	{
+		// 还没回收的段（延迟销毁队列里的）随虚拟块一起清掉；它们之后的 Free 看到 _block 为空直接返回
+		vmaClearVirtualBlock(_block);
+		vmaDestroyVirtualBlock(_block);
+		_block = VK_NULL_HANDLE;
+	}
+	if (_buffer)
+	{
+		vmaDestroyBuffer(_allocator, _buffer, _allocation);
+		_buffer = VK_NULL_HANDLE;
+		_allocation = VK_NULL_HANDLE;
+	}
+	_mapped = nullptr;
+	_allocator = VK_NULL_HANDLE;
+}
+
+// ======================== VmaBuffer ========================
 
 class RestireBuffer :public IVKResource
 {
@@ -147,6 +318,21 @@ bool VmaBuffer::Update(const void* data, size_t size, size_t offset)
 		return UpdateMappable(data, size, offset); 	// 直接 CPU 写入
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
+	if (!cmd)
+		return false;
+
+	UploadHeap::Allocation upload;
+	if (RecordUploadFromHeap(cmd, data, size, offset, upload))
+	{
+		// 等过 fence，GPU 已经读完这一段：直接还给上传堆，不用等延迟销毁
+		const bool submitted = VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd) == vk::Result::eSuccess;
+		if (submitted)
+			UploadHeap::Instance().Free(upload);
+		else
+			UploadHeap::Instance().Retire(upload);
+		return submitted;
+	}
+
 	bool result = UpdateStagingBuffer(cmd, data, size, offset);
 	if (cmd->IsRecording())
 		cmd->SubmitNowAndWait();
@@ -161,6 +347,14 @@ bool VmaBuffer::UpdateAsync(const std::shared_ptr<VKCommandBuffer>& cmd, const v
 
 	if (IsMappable())
 		return UpdateMappable(data, size, offset); 	// 直接 CPU 写入
+
+	UploadHeap::Allocation upload;
+	if (RecordUploadFromHeap(cmd, data, size, offset, upload))
+	{
+		// 命令还没提交：交给延迟销毁，和原来单独建的 staging 释放时机一样
+		UploadHeap::Instance().Retire(upload);
+		return true;
+	}
 	return UpdateStagingBuffer(cmd, data, size, offset);
 }
 
@@ -265,6 +459,27 @@ bool VmaBuffer::UpdateMappable(const void* data, size_t size, size_t offset)
 	}
 
 	vmaUnmapMemory(m_allocator, m_allocation);
+	return true;
+}
+
+bool VmaBuffer::RecordUploadFromHeap(const std::shared_ptr<VKCommandBuffer>& cmd, const void* data, size_t size, size_t offset, UploadHeap::Allocation& upload)
+{
+	// 上传堆建在 VKContext 的设备上
+	if (!m_buffer || m_device != VKCONTEXT->GetDevice().get())
+		return false;
+
+	auto& heap = UploadHeap::Instance();
+	if (!heap.Allocate(size, 16, upload))
+		return false;
+
+	memcpy(upload.mapped, data, size);
+	heap.Flush(upload);
+
+	vk::BufferCopy region;
+	region.setSrcOffset(upload.offset)
+		.setDstOffset(offset)
+		.setSize(size);
+	cmd->copyBuffer(upload.buffer, m_buffer, region);
 	return true;
 }
 

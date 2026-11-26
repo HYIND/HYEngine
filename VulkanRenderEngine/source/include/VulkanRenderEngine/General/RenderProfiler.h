@@ -82,7 +82,7 @@ inline const char* RenderProfileStepTip(RenderProfileStep step)
 	case RenderProfileStep::Analysis:		return "Renderer3D::ProcessFrame 里把场景帧数据整理成 RenderState（AnalysisRenderFrameData）";
 	case RenderProfileStep::Queue:			return "从 PushFrame 到被流水线派发线程取走；在途帧满了时会变长";
 	case RenderProfileStep::WaitPrevFrame:	return "多帧并行时，各段开始前等上一帧做完同一段的时间（FlightSync），不计入各步骤";
-	case RenderProfileStep::ProcessRetire:	return "每帧第 1 段：VKContext::ProcessRetireAndPushFrameIndex，释放 GPU 已经用完的延迟资源";
+	case RenderProfileStep::ProcessRetire:	return "每帧第 1 段：VKContext::ProcessPendingCommand（提交图外 SubmitToQueue 攒下的命令，不等，通常为空）+ ProcessRetireAndPushFrameIndex（释放 GPU 已经用完的延迟资源）";
 	case RenderProfileStep::PreSubmit:		return "PreCalculate 与 Skinned 录完后的 SubmitNowAndWait，含 GPU 执行";
 	case RenderProfileStep::ClearTargets:	return "清 sceneColorBuffer / firstPersonColorBuffer 并等待";
 	case RenderProfileStep::SceneGraph:		return "SceneRenderGraph::Execute 整体（含等图内 GPU 工作做完），展开看每个 Pass 的 CPU / GPU 耗时";

@@ -216,31 +216,55 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 	cmd->Begin();
 
 
-	// 计算像素大小（根据格式）
+	// 计算像素大小（根据格式）。按目标 mip 的尺寸算（原来一律用 0 级尺寸，mip > 0 时拷贝范围越界）
 	size_t bytesPerPixel = ImageLayout::GetFormatSize(m_format);
-	vk::DeviceSize dataSize = static_cast<vk::DeviceSize>(m_extent.width) * m_extent.height * std::max(1u, m_extent.depth) * bytesPerPixel;
+	const vk::Extent3D mipExtent{
+		std::max(1u, m_extent.width >> mipLevel),
+		std::max(1u, m_extent.height >> mipLevel),
+		std::max(1u, std::max(1u, m_extent.depth) >> mipLevel)
+	};
+	vk::DeviceSize dataSize = static_cast<vk::DeviceSize>(mipExtent.width) * mipExtent.height * mipExtent.depth * bytesPerPixel;
 
-	// 创建 Staging Buffer（复用 VmaBuffer）
+	// Staging：先从上传堆切一段。bufferOffset 要是 4 和像素大小的倍数，虚拟块的对齐只能是 2 的幂，
+	// 所以像素大小不是 2 的幂（如 RGB32F）时不走上传堆；分配不到时单独建一个
+	UploadHeap::Allocation upload;
+	const bool texelPow2 = bytesPerPixel > 0 && (bytesPerPixel & (bytesPerPixel - 1)) == 0;
+	const bool fromHeap = texelPow2 && m_device == VKCONTEXT->GetDevice().get()
+		&& UploadHeap::Instance().Allocate(dataSize, std::max<vk::DeviceSize>(4, bytesPerPixel), upload);
+
 	VmaBuffer stagingBuffer;
-	vk::BufferCreateInfo stagingInfo = {};
-	stagingInfo.setSize(dataSize)
-		.setUsage(vk::BufferUsageFlagBits::eTransferSrc);
-
-	VmaAllocationCreateInfo stagingAllocInfo = {};
-	stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-	if (!stagingBuffer.Create(m_device, stagingInfo, stagingAllocInfo)) {
-		return false;
+	vk::Buffer srcBuffer = VK_NULL_HANDLE;
+	vk::DeviceSize srcOffset = 0;
+	if (fromHeap)
+	{
+		memcpy(upload.mapped, data, static_cast<size_t>(dataSize));
+		UploadHeap::Instance().Flush(upload);
+		srcBuffer = upload.buffer;
+		srcOffset = upload.offset;
 	}
+	else
+	{
+		vk::BufferCreateInfo stagingInfo = {};
+		stagingInfo.setSize(dataSize)
+			.setUsage(vk::BufferUsageFlagBits::eTransferSrc);
 
-	// 写入数据到 Staging Buffer
-	void* mapped = stagingBuffer.Map();
-	if (!mapped) {
-		stagingBuffer.Destroy();
-		return false;
+		VmaAllocationCreateInfo stagingAllocInfo = {};
+		stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+		if (!stagingBuffer.Create(m_device, stagingInfo, stagingAllocInfo)) {
+			return false;
+		}
+
+		// 写入数据到 Staging Buffer
+		void* mapped = stagingBuffer.Map();
+		if (!mapped) {
+			stagingBuffer.Destroy();
+			return false;
+		}
+		memcpy(mapped, data, static_cast<size_t>(dataSize));
+		stagingBuffer.Unmap();
+		srcBuffer = stagingBuffer.GetHandle();
 	}
-	memcpy(mapped, data, static_cast<size_t>(dataSize));
-	stagingBuffer.Unmap();
 
 	// 切换布局到 TRANSFER_DST（只切当前 Mip）
 	TransitionLayout(
@@ -259,14 +283,14 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 	subresourceLayers.setLayerCount(1);
 
 	vk::BufferImageCopy region;
-	region.setBufferOffset(0);
+	region.setBufferOffset(srcOffset);
 	region.setBufferRowLength(0);		// 0 表示紧密排列
 	region.setBufferImageHeight(0);     // 0 表示紧密排列
 	region.setImageSubresource(subresourceLayers);
 	region.setImageOffset({ 0,0,0 });
-	region.setImageExtent(m_extent);
+	region.setImageExtent(mipExtent);
 
-	cmd->copyBufferToImage(stagingBuffer, m_image, vk::ImageLayout::eTransferDstOptimal, region);
+	cmd->copyBufferToImage(srcBuffer, m_image, vk::ImageLayout::eTransferDstOptimal, region);
 
 	//// 切换布局到最终布局
 	//TransitionLayout(
@@ -276,7 +300,16 @@ bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer
 	//);
 
 	cmd->End();
-	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+	const vk::Result submitResult = VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+
+	// 上传堆的这一段：等过 fence 就直接还回去，没等成功交给延迟销毁
+	if (fromHeap)
+	{
+		if (submitResult == vk::Result::eSuccess)
+			UploadHeap::Instance().Free(upload);
+		else
+			UploadHeap::Instance().Retire(upload);
+	}
 
 	return true;
 }
