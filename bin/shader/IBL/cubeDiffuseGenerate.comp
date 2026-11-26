@@ -7,164 +7,81 @@
 #define work_size_y 16
 #endif
 
-layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
-
-layout (binding = 0) uniform Params
-{
-    uint sampleCount;
-    uint frameIndex;
-};
-layout (binding = 1, rgba16f) uniform writeonly image2DArray outputDiffuseCube;
-layout (binding = 2) uniform samplerCube skyCube;
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
 
 #ifndef PI_DEFINE
 #define PI_DEFINE
 const float PI = 3.14159265359;
 #endif
 
-uint pcg_hash(uint seed) {
-    uint state = seed * 747796405u + 2891336453u;
-    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
+// 漫反射辐照度 E(N) = ∫ L(ω) · max(N·ω, 0) dω（和原来一样存 E，使用时乘 albedo / π）。
+//   做法：不再随机采样，而是把源 cube 缩小到每面 gridSize × gridSize 的那一级 mip（盒式滤波，太阳等亮点已经被摊开），
+//   对这一级的每个像素精确求和：dω = (2 / g)² / |d|³（d 是主轴分量为 1 的未归一化方向），再按 Σdω = 4π 校正。
+//   结果确定、没有噪点；辐照度本来就非常平滑，每面 16 个像素已经足够（误差远小于 8 位显示精度）。
+//   源 cube 没有 mip 时 lod 被硬件截到 0，相当于在第 0 级上稀疏取点（亮点可能被漏掉），所以源 cube 应带完整 mip。
 
-float pcg_float(uint seed) {
-    return float(pcg_hash(seed)) / 4294967296.0;
-}
-
-vec2 pcg_float2(uint seed) {
-    uint h1 = pcg_hash(seed);
-    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
-    return vec2(float(h1), float(h2)) / 4294967296.0;
-}
-
-vec2 getRandom(uint seed) 
+layout (binding = 0) uniform Params
 {
-    return pcg_float2(seed);
-}
+    uint gridSize;      // 每面在每个方向上求和的像素数，4~64，默认 16
+    uint reserved;
+};
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputDiffuseCube;
+layout (binding = 2) uniform samplerCube skyCube;
 
-vec3 RotateNormal(vec3 normal, float cosTheta, float r2)
+// 输出 cube 的面方向：和 equirectToCube.comp、天空 cube 的生成保持一致（不要单独改）
+vec3 GetCubeDirUnnormalized(vec2 uv, int face)
 {
-    float phi = 2.0 * PI * r2;
-    
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-
-    vec3 dir = vec3(
-        sinTheta * cos(phi),
-        sinTheta * sin(phi),
-        cosTheta
-    );
-    
-    // 将局部坐标转到世界空间（以法线为Z轴）
-    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangent = normalize(cross(up, normal));
-    vec3 bitangent = cross(normal, tangent);
-
-    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
-
-    return samplerDir;
-}
-
-// 生成余弦加权半球随机方向
-vec3 ImportanceSampleCosine(vec3 normal, vec2 random)
-{
-    float cosTheta = sqrt(random.x);// 余弦加权
-    float r2 = random.y;  
-    return RotateNormal(normal, cosTheta, r2);
-}
-
-vec3 CalcContribute_CosineSample(vec3 light)
-{
-	return light * PI;
-}
-
-vec3 SamplerCubeColor(vec3 viewDir, uint sampleId)
-{
-    uint seedbase = uint(gl_GlobalInvocationID.x) * 197u 
-            + uint(gl_GlobalInvocationID.y) * 927u
-            + uint(gl_GlobalInvocationID.z) * 619u
-            + uint(frameIndex) * 777u;
-
-    uint seed = seedbase + uint(sampleId) * 269u;
-
-    // 余弦加权重要性采样diffuse
-    vec2 random = getRandom(seed);
-    vec3 samplerDir = ImportanceSampleCosine(viewDir, random);
-
-    vec3 diffuse = texture(skyCube, samplerDir).rgb;
-    return CalcContribute_CosineSample(diffuse);
-}
-
-vec3 CalculateDiffuse(vec3 viewDir, uint sampleCount) 
-{
-    vec3 totalIrradiance = vec3(0.0);
-
-    for (uint i = 0; i < sampleCount; i++) 
-        totalIrradiance += SamplerCubeColor(viewDir, i);
-
-    return sampleCount > 0 ?  totalIrradiance / float(sampleCount) : vec3(0.f);
-}
-
-vec3 GetViewDirForCube(vec2 uv, int face)
-{    
     vec2 ndc = uv * 2.0 - 1.0;
     ndc.y = -ndc.y;
-    float tanHalfFov = tan(radians(90.f) * 0.5);
-    vec2 localRayXY = ndc * tanHalfFov;
-
-    vec3 dir;
-
     switch (face)
     {
-        case 0: // +X
-            dir = vec3(1, localRayXY.y, -localRayXY.x);
-            break;
-
-        case 1: // -X
-            dir = vec3(-1, localRayXY.y, localRayXY.x);
-            break;
-
-        case 2: // +Y
-            dir = vec3(localRayXY.x, 1, -localRayXY.y);
-            break;
-
-        case 3: // -Y
-            dir = vec3(localRayXY.x, -1, localRayXY.y);
-            break;
-
-        case 4: // +Z
-            dir = vec3(localRayXY.x, localRayXY.y, 1);
-            break;
-
-        case 5: // -Z
-            dir = vec3(-localRayXY.x, localRayXY.y, -1);
-            break;
-        
-        default:
-            dir = vec3(localRayXY.x, localRayXY.y, 1);
-            break;
+        case 0: return vec3(1, ndc.y, -ndc.x);     // +X
+        case 1: return vec3(-1, ndc.y, ndc.x);     // -X
+        case 2: return vec3(ndc.x, 1, -ndc.y);     // +Y
+        case 3: return vec3(ndc.x, -1, ndc.y);     // -Y
+        case 4: return vec3(ndc.x, ndc.y, 1);      // +Z
+        case 5: return vec3(-ndc.x, ndc.y, -1);    // -Z
     }
-
-    return normalize(dir);
+    return vec3(ndc.x, ndc.y, 1);
 }
 
 void main()
 {
     ivec3 arraySize = imageSize(outputDiffuseCube);
-
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imageSize = arraySize.xy;
-
     int face = int(gl_GlobalInvocationID.z);
-
-    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+    if (coord.x >= arraySize.x || coord.y >= arraySize.y || face >= 6 || face >= arraySize.z)
         return;
 
-    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+    vec2 uv = (vec2(coord) + 0.5) / vec2(arraySize.xy);
+    vec3 N = normalize(GetCubeDirUnnormalized(uv, face));
 
-    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+    int sourceSize = textureSize(skyCube, 0).x;
+    int grid = clamp(int(gridSize), 4, 64);
+    grid = min(grid, sourceSize);
+    float lod = max(log2(float(sourceSize) / float(grid)), 0.0);
+    float cellArea = (2.0 / float(grid)) * (2.0 / float(grid));
 
-    vec3 color = CalculateDiffuse(viewDir, sampleCount);
+    vec3 irradiance = vec3(0.0);
+    float totalSolidAngle = 0.0;
+    for (int f = 0; f < 6; ++f)
+    {
+        for (int y = 0; y < grid; ++y)
+        {
+            for (int x = 0; x < grid; ++x)
+            {
+                vec3 d = GetCubeDirUnnormalized((vec2(x, y) + 0.5) / float(grid), f);
+                float len2 = dot(d, d);
+                float solidAngle = cellArea / (len2 * sqrt(len2));
+                totalSolidAngle += solidAngle;
 
-    imageStore(outputDiffuseCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f));
+                vec3 dir = d * inversesqrt(len2);
+                float cosTheta = dot(N, dir);
+                if (cosTheta > 0.0)
+                    irradiance += textureLod(skyCube, dir, lod).rgb * (cosTheta * solidAngle);
+            }
+        }
+    }
+    irradiance *= 4.0 * PI / max(totalSolidAngle, 1e-6);
+    imageStore(outputDiffuseCube, ivec3(coord, face), vec4(irradiance, 1.0));
 }

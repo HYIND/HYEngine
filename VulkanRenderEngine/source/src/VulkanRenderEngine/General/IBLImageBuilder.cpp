@@ -78,11 +78,13 @@ void IBLImageBuilder::CalculateCubeDiffuse(
 	);
 }
 
+// 和 cubePrefilterGenerate.comp 的 Params 一致（std140：4 个 32 位）
 struct PrefilterGnerateRunTimeParams
 {
 	float roughness;
-	uint32_t samplerCount;
-	uint32_t frameIndex;
+	uint32_t sampleCount;
+	uint32_t level;
+	uint32_t reserved;
 };
 
 void IBLImageBuilder::CalculateCubePrefilter(
@@ -95,27 +97,29 @@ void IBLImageBuilder::CalculateCubePrefilter(
 	if (!_outputPrefilter || _outputPrefilter->IsEmpty() || !_originCube || _originCube->IsEmpty())
 		return;
 
-	PrefilterGnerateRunTimeParams params{ .roughness = 0.f, .samplerCount = p.samplerCount, .frameIndex = p.frameIndex };
-	auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
-
-	ComputeBindingRecord binding;
-	binding.SetUniformTextureCube(_originCube, vk::ImageAspectFlagBits::eColor, 2);
-
 	auto size = _outputPrefilter->GetSize();
-	uint32_t maxLevel = _outputPrefilter->GetMaxLevel();
-
+	const uint32_t maxLevel = std::max(1u, _outputPrefilter->GetMaxLevel());
 
 	for (uint32_t level = 0; level < maxLevel; level++) {
-		uint32_t currW = std::max(1u, size.x >> level);
-		uint32_t currH = std::max(1u, size.y >> level);
+		const uint32_t currW = std::max(1u, size.x >> level);
+		const uint32_t currH = std::max(1u, size.y >> level);
 
-		params.roughness = Tool::LinearLerp(0.f, 1.f, float(level) / float(maxLevel - 1));
-		params.roughness = std::clamp(params.roughness, 0.01f, 1.f);
+		// 第 0 级是镜面（roughness = 0，直接取源图），最后一级 roughness = 1
+		PrefilterGnerateRunTimeParams params{
+			.roughness = maxLevel > 1 ? float(level) / float(maxLevel - 1) : 0.0f,
+			.sampleCount = p.sampleCount,
+			.level = level,
+			.reserved = 0,
+		};
 
+		// 每级一个 UBO：同一个命令缓冲里反复改写同一个 UBO，前面的 dispatch 可能读到后写的值
+		auto paramsUBO = std::make_shared<UniformBlock>(sizeof(params));
 		paramsUBO->WriteDataAsync(cmd, &params, sizeof(params));
 
+		ComputeBindingRecord binding;
 		binding.SetUniformBlock(paramsUBO, 0);
 		binding.SetStorageImage2DArrayLevel(_outputPrefilter, vk::ImageAspectFlagBits::eColor, level, 1, 1);
+		binding.SetUniformTextureCube(_originCube, vk::ImageAspectFlagBits::eColor, 2);
 
 		_iblPrefilterGenerateShader.Bind(cmd, binding);
 		cmd->dispatch(

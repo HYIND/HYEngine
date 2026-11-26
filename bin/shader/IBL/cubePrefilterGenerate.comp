@@ -7,197 +7,127 @@
 #define work_size_y 16
 #endif
 
-layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
-
-layout (binding = 0) uniform Params
-{
-    float roughness;
-    uint sampleCount;
-    uint frameIndex;
-};
-layout (binding = 1, rgba16f) uniform writeonly image2DArray outputPrefilterCube;
-layout (binding = 2) uniform samplerCube skyCube;
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
 
 #ifndef PI_DEFINE
 #define PI_DEFINE
 const float PI = 3.14159265359;
 #endif
 
-uint pcg_hash(uint seed) {
-    uint state = seed * 747796405u + 2891336453u;
-    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
+// 镜面预过滤（split-sum 的第一项），一次 dispatch 写一个 mip 级。
+//   做法：filtered importance sampling（GPU Gems 3 第 20 章 / UE4）：
+//     - Hammersley 固定采样点 + GGX 重要性采样，N = V = R；
+//     - 每个采样按它代表的立体角从源 cube 的对应 mip 取值：Ω样本 = 1 / (N · pdf)，pdf = D / 4（N = V 时），
+//       lod = 0.5 · log2(Ω样本 / Ω源像素) + 1。很小很亮的光源（太阳）被模糊到和采样间隔一样大，每个像素都分得到，
+//       不会出现"有的像素打中、有的没打中"的斑块；
+//     - 按 Σ NdotL 归一化（原来除以采样数，粗糙时整体偏暗，粗糙度 1 只剩约 25%）。
+//   源 cube 要有完整 mip 链才有效果；没有 mip 时 lod 被硬件截到 0，退化成普通重要性采样（会有噪点但不出错）。
+//   roughness = 0（第 0 级）：直接按输出和源的尺寸比取对应 mip（输出比源小时相当于盒式缩小）。
 
-float pcg_float(uint seed) {
-    return float(pcg_hash(seed)) / 4294967296.0;
-}
-
-vec2 pcg_float2(uint seed) {
-    uint h1 = pcg_hash(seed);
-    uint h2 = pcg_hash(h1 + 0x9e3779b9u);
-    return vec2(float(h1), float(h2)) / 4294967296.0;
-}
-
-vec2 getRandom(uint seed) 
+layout (binding = 0) uniform Params
 {
-    return pcg_float2(seed);
+    float roughness;
+    uint sampleCount;
+    uint level;         // 输出的 mip 级（只用来调试，尺寸从 imageSize 取）
+    uint reserved;
+};
+layout (binding = 1, rgba16f) uniform writeonly image2DArray outputPrefilterCube;
+layout (binding = 2) uniform samplerCube skyCube;
+
+// Hammersley 低差异序列：所有像素用同一组固定的采样点，结果确定、没有随机噪点，也不随帧变化
+vec2 Hammersley(uint i, uint n)
+{
+    return vec2(float(i) / float(n), float(bitfieldReverse(i)) * 2.3283064365386963e-10);
 }
 
-vec3 RotateNormal(vec3 normal, float cosTheta, float r2)
+// GGX 半程向量采样（N 为 z 轴），α = roughness²，和 bdrfHelper.comp 的 DistributionGGX 一致
+vec3 ImportanceSampleGGX(vec2 xi, vec3 N, float roughness)
 {
-    float phi = 2.0 * PI * r2;
-    
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-
-    vec3 dir = vec3(
-        sinTheta * cos(phi),
-        sinTheta * sin(phi),
-        cosTheta
-    );
-    
-    // 将局部坐标转到世界空间（以法线为Z轴）
-    vec3 up = abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangent = normalize(cross(up, normal));
-    vec3 bitangent = cross(normal, tangent);
-
-    vec3 samplerDir = normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
-
-    return samplerDir;
-}
-
-// 生成GGX权重半球随机方向,基于Prefilter调整
-vec3 ImportanceSampleGGX(float roughness, vec3 dirR, vec2 random)
-{
-    float r1 = random.x;
-    float r2 = random.y;  
-
-    // 生成局部坐标系的 H（假设 N 朝上）
     float a = roughness * roughness;
     float a2 = a * a;
-    float phi = 2.0 * PI * r1;
-    float cosTheta = sqrt((1.0 - r2) / (1.0 + (a2 - 1.0) * r2));
-    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    float phi = 2.0 * PI * xi.x;
+    float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a2 - 1.0) * xi.y));
+    float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+    vec3 hLocal = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 
-    // 本地空间的 H 向量 (z轴为N)
-    vec3 H_local = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-
-    // 构建 TBN 矩阵
-    vec3 up = abs(dirR.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangent = normalize(cross(up, dirR));
-    vec3 bitangent = cross(dirR, tangent);
-    
-    // 将 H 转换到世界空间
-    vec3 H = normalize(tangent * H_local.x + bitangent * H_local.y + dirR * H_local.z);
-
-    vec3 L = reflect(-dirR, H);
-
-    // // 计算正确的 PDF（基于 L 空间，补上雅可比）
-    // float NdotH = max(dot(N, H), 0.0);
-    // float VdotH = max(dot(V, H), 0.0);
-    
-    // // 局部空间的 D（为了算 PDF，必须用局部的夹角，但 cosTheta 已经等于 NdotH，因为 H 转到了世界，且 TBN 是正交的）
-    // float denom = cosTheta * cosTheta * (a2 - 1.0) + 1.0;
-    // float D = a2 / (PI * denom * denom);
-    
-    // float pdf_H = D * cosTheta;             // H 空间的 PDF
-    // pdf_L = pdf_H / (4.0 * VdotH + 0.0001); // L 空间的 PDF
-    
-    return L;
+    vec3 up = abs(N.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    return normalize(tangent * hLocal.x + bitangent * hLocal.y + N * hLocal.z);
 }
 
-vec3 SamplerPrefilter(vec3 dirR, float roughness, uint sampleId)
+float DistributionGGX(float NdotH, float roughness)
 {
-    uint seedbase = uint(gl_GlobalInvocationID.x) * 197u 
-            + uint(gl_GlobalInvocationID.y) * 927u
-            + uint(gl_GlobalInvocationID.z) * 619u
-            + uint(frameIndex) * 777u;
-
-    uint seed = seedbase + uint(sampleId) * 269u;
-
-    // GGX重要性采样
-    vec2 random = getRandom(seed);
-    vec3 samplerLightDir = roughness <= 0.01 ? dirR : ImportanceSampleGGX(roughness, dirR, random);
-
-    float NdotL = max(dot(dirR, samplerLightDir), 0.0);
-
-    vec3 prefilteredColor = texture(skyCube, samplerLightDir).rgb * NdotL;
-
-    return prefilteredColor;
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
 }
 
-vec3 CalculatePrefilte(vec3 viewDir, float roughness, uint sampleCount) 
+// 输出 cube 的面方向：和 equirectToCube.comp、天空 cube 的生成保持一致（不要单独改）
+vec3 GetCubeDirUnnormalized(vec2 uv, int face)
 {
-    vec3 totalColor = vec3(0.0);
-
-    if (roughness <= 0.01f)
-        sampleCount = 1;
-
-    for (uint i = 0; i < sampleCount; i++) 
-        totalColor += SamplerPrefilter(viewDir, roughness, i);
-
-    return sampleCount > 0 ?  totalColor / float(sampleCount) : vec3(0.f);
-}
-
-vec3 GetViewDirForCube(vec2 uv, int face)
-{    
     vec2 ndc = uv * 2.0 - 1.0;
     ndc.y = -ndc.y;
-    float tanHalfFov = tan(radians(90.f) * 0.5);
-    vec2 localRayXY = ndc * tanHalfFov;
-
-    vec3 dir;
-
     switch (face)
     {
-        case 0: // +X
-            dir = vec3(1, localRayXY.y, -localRayXY.x);
-            break;
-
-        case 1: // -X
-            dir = vec3(-1, localRayXY.y, localRayXY.x);
-            break;
-
-        case 2: // +Y
-            dir = vec3(localRayXY.x, 1, -localRayXY.y);
-            break;
-
-        case 3: // -Y
-            dir = vec3(localRayXY.x, -1, localRayXY.y);
-            break;
-
-        case 4: // +Z
-            dir = vec3(localRayXY.x, localRayXY.y, 1);
-            break;
-
-        case 5: // -Z
-            dir = vec3(-localRayXY.x, localRayXY.y, -1);
-            break;
-        
-        default:
-            dir = vec3(localRayXY.x, localRayXY.y, 1);
-            break;
+        case 0: return vec3(1, ndc.y, -ndc.x);     // +X
+        case 1: return vec3(-1, ndc.y, ndc.x);     // -X
+        case 2: return vec3(ndc.x, 1, -ndc.y);     // +Y
+        case 3: return vec3(ndc.x, -1, ndc.y);     // -Y
+        case 4: return vec3(ndc.x, ndc.y, 1);      // +Z
+        case 5: return vec3(-ndc.x, ndc.y, -1);    // -Z
     }
-
-    return normalize(dir);
+    return vec3(ndc.x, ndc.y, 1);
 }
 
 void main()
 {
     ivec3 arraySize = imageSize(outputPrefilterCube);
-
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imageSize = arraySize.xy;
-
     int face = int(gl_GlobalInvocationID.z);
-
-    if (coord.x >= imageSize.x || coord.y >= imageSize.y || face >= 6 || face >= arraySize.z)
+    if (coord.x >= arraySize.x || coord.y >= arraySize.y || face >= 6 || face >= arraySize.z)
         return;
 
-    vec2 TexCoords = (vec2(coord) + vec2(0.5)) / vec2(imageSize);
+    vec2 uv = (vec2(coord) + 0.5) / vec2(arraySize.xy);
+    vec3 N = normalize(GetCubeDirUnnormalized(uv, face));
 
-    vec3 viewDir = GetViewDirForCube(TexCoords, face);
+    float sourceSize = float(textureSize(skyCube, 0).x);
+    float maxLod = float(textureQueryLevels(skyCube) - 1);
+    // 输出像素比源像素大时，至少取到尺寸对应的 mip（不然低粗糙度的几级会走样）
+    float footprintLod = max(log2(sourceSize / float(arraySize.x)), 0.0);
 
-    vec3 color = CalculatePrefilte(viewDir, roughness, sampleCount);
-    imageStore(outputPrefilterCube, ivec3(coord.x, coord.y, face), vec4(color, 1.0f)); 
+    if (roughness <= 1e-3)
+    {
+        imageStore(outputPrefilterCube, ivec3(coord, face), vec4(textureLod(skyCube, N, min(footprintLod, maxLod)).rgb, 1.0));
+        return;
+    }
+
+    uint count = clamp(sampleCount, 16u, 4096u);
+    float texelSolidAngle = 4.0 * PI / (6.0 * sourceSize * sourceSize);
+
+    vec3 V = N;
+    vec3 color = vec3(0.0);
+    float weight = 0.0;
+    for (uint i = 0u; i < count; ++i)
+    {
+        vec3 H = ImportanceSampleGGX(Hammersley(i, count), N, roughness);
+        float VdotH = dot(V, H);
+        vec3 L = 2.0 * VdotH * H - V;
+        float NdotL = dot(N, L);
+        if (NdotL <= 0.0)
+            continue;
+
+        // N = V 时 pdf(L) = D · NdotH / (4 · VdotH) = D / 4
+        float NdotH = max(dot(N, H), 0.0);
+        float pdf = DistributionGGX(NdotH, roughness) * 0.25;
+        float sampleSolidAngle = 1.0 / (float(count) * pdf + 1e-6);
+        float lod = 0.5 * log2(sampleSolidAngle / texelSolidAngle) + 1.0;
+        lod = clamp(max(lod, footprintLod), 0.0, maxLod);
+
+        color += textureLod(skyCube, L, lod).rgb * NdotL;
+        weight += NdotL;
+    }
+    color = weight > 0.0 ? color / weight : vec3(0.0);
+    imageStore(outputPrefilterCube, ivec3(coord, face), vec4(color, 1.0));
 }

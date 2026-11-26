@@ -17,7 +17,9 @@ SkyBoxPreCalculatePass::SkyBoxPreCalculatePass()
 	uint32_t prefilterLevel = floor(log2(ratio)) + 1;
 	prefilterLevel = std::min(prefilterLevel, 8u);
 
-	_skyCubeDiffuse = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
+	// 漫反射辐照度很平滑，每面 32 就够（原来 256，生成和采样都白费）
+	constexpr uint32_t diffuseCubeSize = 32;
+	_skyCubeDiffuse = std::make_shared<TextureCube>(diffuseCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
 	_skyCubePrefilter = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), prefilterLevel);
 }
 
@@ -42,12 +44,13 @@ void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 
 		{
-			IBLImageBuilder::DiffuseGenerateParams diffuseParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
+			// 源 cube（天空盒）最好带 mip（SceneEditor 默认天空盒已打开 autoMipMaps），没有也能用，只是亮点处有噪点
+			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
 			_iblBuilder.CalculateCubeDiffuse(cmd, _skyCubeDiffuse, skyCube, diffuseParams);
 		}
 
 		{
-			IBLImageBuilder::PrefilterGenerateParams prefilterParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
+			IBLImageBuilder::PrefilterGenerateParams prefilterParams{};
 			_iblBuilder.CalculateCubePrefilter(cmd, _skyCubePrefilter, skyCube, prefilterParams);
 		}
 
@@ -56,8 +59,8 @@ void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry
 			{
 				if (!_brdfLUT)
 					_brdfLUT = std::make_shared<Texture2D>(512, 512, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-				IBLImageBuilder::BRDFLUTGenerateParams prefilterParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
-				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, prefilterParams);
+				IBLImageBuilder::BRDFLUTGenerateParams lutParams{};
+				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, lutParams);
 			}
 		}
 

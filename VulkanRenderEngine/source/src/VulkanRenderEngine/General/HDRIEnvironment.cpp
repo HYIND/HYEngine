@@ -25,7 +25,6 @@ namespace
 	constexpr vk::Format kCubeFormat = vk::Format::eR16G16B16A16Sfloat;
 	constexpr uint32_t kBRDFLUTSize = 512;
 	constexpr uint32_t kBRDFLUTSamples = 1024;
-	constexpr uint32_t kSampleSeed = 1;			// 固定种子：同一张图每次生成的结果一样
 	constexpr float kMaxHalfValue = 60000.0f;	// 半精度最大 65504，太阳之类的超亮像素截在这以内，不变成 inf
 
 	// 和 equirectToCube.comp 的 push_constant 一致
@@ -219,22 +218,20 @@ std::shared_ptr<HDRIEnvironment> HDRIEnvironment::LoadFromFile(const std::string
 
 	const TextureConfig cubeConfig = TextureConfig::GetDefaultSkyCubeConfig();
 	const uint32_t backgroundSize = std::max(settings.backgroundSize, 16u);
-	const uint32_t sourceSize = std::max(settings.sourceSize, 16u);
 	const uint32_t diffuseSize = std::max(settings.diffuseSize, 4u);
 	const uint32_t prefilterSize = std::max(settings.prefilterSize, 8u);
 	const uint32_t prefilterLevels = std::clamp(settings.prefilterLevels, 2u, FullMipCount(prefilterSize));
 
 	auto background = std::make_shared<TextureCube>(backgroundSize, kCubeFormat, cubeConfig, FullMipCount(backgroundSize));
-	auto source = std::make_shared<TextureCube>(sourceSize, kCubeFormat, cubeConfig, 1);
 	auto diffuse = std::make_shared<TextureCube>(diffuseSize, kCubeFormat, cubeConfig, 1);
 	auto prefilter = std::make_shared<TextureCube>(prefilterSize, kCubeFormat, cubeConfig, prefilterLevels);
-	if (background->IsEmpty() || source->IsEmpty() || diffuse->IsEmpty() || prefilter->IsEmpty())
+	if (background->IsEmpty() || diffuse->IsEmpty() || prefilter->IsEmpty())
 	{
 		SetError(error, "创建 cube 贴图失败");
 		return nullptr;
 	}
 
-	// 1) 经纬图 → 背景 cube（第 0 级）和源 cube
+	// 1) 经纬图 → 背景 cube（第 0 级）
 	{
 		auto cmd = VKCONTEXT->GetCommandBuffer();
 		if (!cmd)
@@ -243,13 +240,12 @@ std::shared_ptr<HDRIEnvironment> HDRIEnvironment::LoadFromFile(const std::string
 			return nullptr;
 		}
 		DispatchEquirectToCube(*shared, cmd, equirect, background);
-		DispatchEquirectToCube(*shared, cmd, equirect, source);
 		if (cmd->IsRecording())
 			cmd->SubmitNowAndWait();
 	}
 	equirect.reset();
 
-	// 2) 背景 cube 的 mip（背景模糊用），自己提交
+	// 2) 背景 cube 的 mip：背景模糊用，也是 IBL 预过滤 / 漫反射按立体角取值用的，自己提交
 	background->GenerateTextureMipMaps();
 
 	// 3) IBLImageBuilder：漫反射、预过滤、BRDF LUT（LUT 和环境无关，只生成一次）
@@ -261,18 +257,18 @@ std::shared_ptr<HDRIEnvironment> HDRIEnvironment::LoadFromFile(const std::string
 			return nullptr;
 		}
 
-		IBLImageBuilder::DiffuseGenerateParams diffuseParams{ .samplerCount = settings.diffuseSamples, .frameIndex = kSampleSeed };
-		shared->iblBuilder->CalculateCubeDiffuse(cmd, diffuse, source, diffuseParams);
+		IBLImageBuilder::DiffuseGenerateParams diffuseParams{ .gridSize = settings.diffuseGrid };
+		shared->iblBuilder->CalculateCubeDiffuse(cmd, diffuse, background, diffuseParams);
 
-		IBLImageBuilder::PrefilterGenerateParams prefilterParams{ .samplerCount = settings.prefilterSamples, .frameIndex = kSampleSeed };
-		shared->iblBuilder->CalculateCubePrefilter(cmd, prefilter, source, prefilterParams);
+		IBLImageBuilder::PrefilterGenerateParams prefilterParams{ .sampleCount = settings.prefilterSamples };
+		shared->iblBuilder->CalculateCubePrefilter(cmd, prefilter, background, prefilterParams);
 
 		if (!shared->brdfLUT)
 		{
 			auto lut = std::make_shared<Texture2D>(kBRDFLUTSize, kBRDFLUTSize, kCubeFormat, TextureConfig::GetDefaultSkyCubeConfig());
 			if (!lut->IsEmpty())
 			{
-				IBLImageBuilder::BRDFLUTGenerateParams lutParams{ .samplerCount = kBRDFLUTSamples, .frameIndex = kSampleSeed };
+				IBLImageBuilder::BRDFLUTGenerateParams lutParams{ .sampleCount = kBRDFLUTSamples };
 				shared->iblBuilder->CalculateBRDFLUT(cmd, lut, lutParams);
 				shared->brdfLUT = lut;
 			}
@@ -281,7 +277,6 @@ std::shared_ptr<HDRIEnvironment> HDRIEnvironment::LoadFromFile(const std::string
 		if (cmd->IsRecording())
 			cmd->SubmitNowAndWait();
 	}
-	source.reset();
 
 	if (!shared->brdfLUT)
 	{

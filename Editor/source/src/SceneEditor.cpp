@@ -99,7 +99,8 @@ static void GeneralDefaultWorld(World& world)
             "Test/skybox/box2/back.png"
         };
         if (!s_defaultSkyboxCube)
-            s_defaultSkyboxCube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig());
+            // autoMipMaps：IBL 预过滤 / 漫反射要从天空盒的低分辨率 mip 取值（见 IBLImageBuilder）
+            s_defaultSkyboxCube = std::make_shared<TextureCube>(faces, TextureConfig::GetDefaultSkyCubeConfig(), true);
         Entity entity = world.createEntity();
         entity.addComponent<SkyBox>(s_defaultSkyboxCube);
 

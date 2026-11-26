@@ -10,20 +10,18 @@
 // HDRI 环境的生成参数（边长都是 cube 每个面的像素数）
 struct HDRIEnvironmentSettings
 {
-	uint32_t backgroundSize = 512;		// 背景 cube：直接显示用，带完整 mip（背景模糊按 mip 取）
-	uint32_t sourceSize = 128;			// 交给 IBLImageBuilder 的源 cube：IBLImageBuilder 只采样第 0 级，
-										// 源图分辨率低一点（相当于先做了一次盒式模糊）随机采样的噪点小很多
+	uint32_t backgroundSize = 512;		// 背景 cube：带完整 mip，既用来显示（背景模糊按 mip 取），也是 IBL 的源 cube
 	uint32_t diffuseSize = 32;			// 漫反射辐照度 cube（本来就非常平滑）
 	uint32_t prefilterSize = 128;		// 镜面预过滤 cube 第 0 级的边长
 	uint32_t prefilterLevels = 6;		// 预过滤 mip 级数：第 i 级粗糙度 = i / (级数 - 1)，和场景的取法一致
-	uint32_t diffuseSamples = 2048;
-	uint32_t prefilterSamples = 1024;
+	uint32_t diffuseGrid = 16;			// 漫反射求和用的源 mip 每面像素数（见 IBLImageBuilder::DiffuseGenerateParams）
+	uint32_t prefilterSamples = 512;
 };
 
 // 从等距柱状投影（equirectangular / 经纬图）的 .hdr 文件生成一套 IBL：
 //   .hdr（stb_image 读成线性 float，转半精度上传）
-//     → 计算着色器 shader/IBL/equirectToCube.comp 转成 TextureCube（背景 cube + 小一号的源 cube，都按超采样取平均）
-//     → IBLImageBuilder：漫反射辐照度 cube、镜面预过滤 cube（按粗糙度分 mip）、BRDF LUT（所有环境共用一张）
+//     → 计算着色器 shader/IBL/equirectToCube.comp 转成背景 TextureCube（超采样取平均）并生成完整 mip
+//     → IBLImageBuilder（以背景 cube 为源）：漫反射辐照度 cube、镜面预过滤 cube（按粗糙度分 mip）、BRDF LUT（所有环境共用一张）
 // 约定和场景 IBL（SkyBoxPreCalculatePass / lightingHelper.comp 的 CalculateIBLLightingSplit）一致：
 //   漫反射 = albedo / π × (1 - metallic) × texture(diffuse, N)；镜面 = textureLod(prefilter, R, roughness × (级数 - 1)) × (F0 × A + B)。
 // 方向约定：Y 轴朝上，经纬图正中间（u = 0.5）对着 -Z，u 增大往 +X 转（右手系里从 -Z 往右转）。

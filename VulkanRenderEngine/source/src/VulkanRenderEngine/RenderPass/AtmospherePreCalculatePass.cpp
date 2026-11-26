@@ -73,8 +73,12 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		uint32_t prefilterLevel = floor(log2(ratio)) + 1;
 		prefilterLevel = std::min(prefilterLevel, 8u);
 
-		_skyCube = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-		_skyCubeDiffuse = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
+		// 天空 cube 带完整 mip：IBL 预过滤 / 漫反射按立体角从低分辨率 mip 取值（太阳这类小而亮的区域靠它摊开）
+		const uint32_t skyCubeLevels = static_cast<uint32_t>(floor(log2(float(skyCubeSize)))) + 1;
+		_skyCube = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), skyCubeLevels);
+		// 漫反射辐照度很平滑，每面 32 就够（原来 256）
+		constexpr uint32_t diffuseCubeSize = 32;
+		_skyCubeDiffuse = std::make_shared<TextureCube>(diffuseCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
 		_skyCubePrefilter = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), prefilterLevel);
 	}
 
@@ -154,13 +158,19 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 			_skyCube->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 		}
 
+		// 生成天空 cube 的 mip：GenerateTextureMipMaps 自己取命令缓冲并立即提交，先把前面录的提交掉，之后换一个新的继续录
+		if (cmd->IsRecording())
+			cmd->SubmitNowAndWait();
+		_skyCube->GenerateTextureMipMaps();
+		cmd = VKCONTEXT->GetCommandBuffer();
+
 		{
-			IBLImageBuilder::DiffuseGenerateParams diffuseParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
+			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
 			_iblBuilder.CalculateCubeDiffuse(cmd, _skyCubeDiffuse, _skyCube, diffuseParams);
 		}
 
 		{
-			IBLImageBuilder::PrefilterGenerateParams prefilterParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
+			IBLImageBuilder::PrefilterGenerateParams prefilterParams{};
 			_iblBuilder.CalculateCubePrefilter(cmd, _skyCubePrefilter, _skyCube, prefilterParams);
 		}
 
@@ -169,8 +179,8 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 			{
 				if (!_brdfLUT)
 					_brdfLUT = std::make_shared<Texture2D>(512, 512, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-				IBLImageBuilder::BRDFLUTGenerateParams prefilterParams{ .samplerCount = 200, .frameIndex = state.renderRecord.frameIndex % 100000 };
-				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, prefilterParams);
+				IBLImageBuilder::BRDFLUTGenerateParams lutParams{};
+				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, lutParams);
 			}
 		}
 
@@ -230,7 +240,8 @@ void AtmospherePreCalculatePass::CaulateSkyCube(const std::shared_ptr<VKWrapper:
 	if (!_skyCube || _skyCube->IsEmpty())
 		return;
 
-	binding.SetStorageImage2DArray(_skyCube, vk::ImageAspectFlagBits::eColor, 1);
+	// 只写第 0 级（storage image 的视图只能有一个 mip），其余级之后 GenerateTextureMipMaps 生成
+	binding.SetStorageImage2DArrayLevel(_skyCube, vk::ImageAspectFlagBits::eColor, 0, 1, 1);
 	binding.SetUniformTexture(_transmittanceLut, vk::ImageAspectFlagBits::eColor, 2);
 
 	_skyCubeGenerateShader.Bind(cmd, binding);
