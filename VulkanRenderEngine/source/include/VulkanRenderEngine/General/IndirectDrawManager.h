@@ -8,6 +8,9 @@
 #include "GeneralSegmentBuffer.h"
 #include "CriticalSectionLock.h"
 
+#include <mutex>
+#include <unordered_set>
+
 
 struct IndirectDrawMeta
 {
@@ -36,10 +39,7 @@ public:
 
 	std::vector<TextureDescBindEntry> GetTextureDescBindEntrys() const;
 
-	// 贴图的描述符版本变了（换过 image / view / sampler）：Texture2D 内部调，只置标记、不拿锁
-	static void MarkDirty() noexcept { s_dirty.store(true, std::memory_order_release); }
-	// 渲染帧的一步（VKRenderer3D::SetupIndirectDrawData）：有标记时把版本对不上的槽位刷新成贴图当前的描述符。
-	// 返回刷新了几个槽位
+	void MarkDirty(const Texture2D* tex);
 	uint32_t RefreshChangedTextures();
 
 public:
@@ -48,12 +48,6 @@ public:
 private:
 	BindlessTextureManager();
 
-	// 调用方持有写锁：换掉一个槽位的描述符，旧的放进 retired，由调用方出锁后交给 Retire
-	// （在途帧的描述符集还引用着旧的 view / sampler，而 VKImageView / VKSampler 析构时会立刻销毁句柄）
-	void ReplaceEntryLocked(BindlessIndex index, TextureDescBindEntry entry, std::vector<TextureDescBindEntry>& retired);
-	static void RetireEntries(std::vector<TextureDescBindEntry>& retired);
-
-	static inline std::atomic<bool> s_dirty{ false };
 
 private:
 	std::vector<TextureDescBindEntry> _entrys;
@@ -62,6 +56,9 @@ private:
 	std::queue<uint32_t> _idleSlot;
 
 	mutable SharedLock _mutex;
+
+	std::unordered_set<const Texture2D*> _dirtyTextures;
+	std::mutex _dirtyMutex;
 };
 
 class IndirectDrawManager

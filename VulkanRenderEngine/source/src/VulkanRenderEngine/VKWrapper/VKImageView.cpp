@@ -1,7 +1,27 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine/VKWrapper/VKImageView.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 using namespace VKWrapper;
+
+namespace
+{
+	class RetireImageView :public VKWrapper::IVKResource
+	{
+	public:
+		RetireImageView(VKCore::VulkanDevice* device, vk::ImageView handle)
+			:device(device), handle(handle)
+		{}
+		virtual void Destroy() {
+			if (device && handle)
+				device->GetHandle().destroyImageView(handle);
+		}
+
+	public:
+		VKCore::VulkanDevice* device = nullptr;
+		vk::ImageView handle = VK_NULL_HANDLE;
+	};
+}
 
 VKWrapper::VKImageView::VKImageView(VKCore::VulkanDevice* device, const vk::ImageViewCreateInfo& createInfo)
 {
@@ -15,6 +35,9 @@ VKWrapper::VKImageView::VKImageView(VKImageView&& other) noexcept
 
 VKImageView& VKWrapper::VKImageView::operator=(VKImageView&& other) noexcept
 {
+	if (this == &other)
+		return *this;
+	Release();
 	_device = other._device;
 	_handle = other._handle;
 	other._device = nullptr;
@@ -50,7 +73,7 @@ vk::Result VKWrapper::VKImageView::Create(VKCore::VulkanDevice* device, const vk
 void VKWrapper::VKImageView::Release()
 {
 	if (_device && _handle)
-		_device->GetHandle().destroyImageView(_handle);
+		VKCONTEXT->Retire(new RetireImageView(_device, _handle));
 
 	_device = nullptr;
 	_handle = VK_NULL_HANDLE;

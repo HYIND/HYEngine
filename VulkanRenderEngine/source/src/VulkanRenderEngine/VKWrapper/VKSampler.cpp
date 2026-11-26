@@ -1,8 +1,28 @@
 ﻿#pragma once
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/VKWrapper/VKSampler.h"
+#include "VulkanRenderEngine/VKContext.h"
 
 using namespace VKWrapper;
+
+namespace
+{
+	class RetireSampler :public VKWrapper::IVKResource
+	{
+	public:
+		RetireSampler(VKCore::VulkanDevice* device, vk::Sampler handle)
+			:device(device), handle(handle)
+		{}
+		virtual void Destroy() {
+			if (device && handle)
+				device->GetHandle().destroySampler(handle);
+		}
+
+	public:
+		VKCore::VulkanDevice* device = nullptr;
+		vk::Sampler handle = VK_NULL_HANDLE;
+	};
+}
 
 VKWrapper::VKSampler::VKSampler(VKCore::VulkanDevice* device, const vk::SamplerCreateInfo& createInfo)
 {
@@ -16,6 +36,9 @@ VKWrapper::VKSampler::VKSampler(VKSampler&& other) noexcept
 
 VKSampler& VKWrapper::VKSampler::operator=(VKSampler&& other) noexcept
 {
+	if (this == &other)
+		return *this;
+	Release();
 	_device = other._device;
 	_handle = other._handle;
 	other._device = nullptr;
@@ -51,7 +74,7 @@ vk::Result VKWrapper::VKSampler::Create(VKCore::VulkanDevice* device, const vk::
 void VKWrapper::VKSampler::Release()
 {
 	if (_device && _handle)
-		_device->GetHandle().destroySampler(_handle);
+		VKCONTEXT->Retire(new RetireSampler(_device, _handle));
 
 	_device = nullptr;
 	_handle = VK_NULL_HANDLE;

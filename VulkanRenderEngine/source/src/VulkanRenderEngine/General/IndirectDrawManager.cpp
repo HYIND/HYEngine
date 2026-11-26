@@ -45,21 +45,6 @@ namespace ReitreRes
 		std::string uuid;
 	};
 
-	// 被换下来的描述符：持有旧的 image / view / sampler，等在途帧用完再放掉
-	class RetireBindlessDescEntry :public VKWrapper::IVKResource
-	{
-	public:
-		RetireBindlessDescEntry(TextureDescBindEntry entry)
-			:entry(std::move(entry))
-		{}
-		virtual void Destroy() {
-			entry = TextureDescBindEntry{};
-		}
-
-	public:
-		TextureDescBindEntry entry;
-	};
-
 	// 延迟回收的是槽位，不是贴图指针：在途帧的材质数据里可能还写着这个槽位，
 	// 等它们用完再换成占位图；指针映射在 UnregisterTexture 里已经删掉了
 	class RetireBindlessTexture :public VKWrapper::IVKResource
@@ -98,7 +83,7 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 	if (!tex || tex->IsEmpty())
 		return BindlessIndexNull;
 
-	std::vector<TextureDescBindEntry> retired;
+	// 换下来的旧描述符直接覆盖：image / view / sampler 释放时自己会走 Retire，在途帧还能用
 	BindlessIndex result = BindlessIndexNull;
 	{
 		LockGuard guard(_mutex);
@@ -109,14 +94,18 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 			{
 				auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
 				if (entry.image && entry.imageView && entry.sampler)
-					ReplaceEntryLocked(index, std::move(entry), retired);
+					_entrys[index] = std::move(entry);
 			}
 			result = index;
 		}
 		else
 		{
+			// 先置注册标记再取描述符：取描述符之后贴图再换 sampler / view，就会走 MarkDirty，下一帧刷新
+			tex->_bindlessRegistered.store(true, std::memory_order_seq_cst);
 			TextureDescBindEntry entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
-			if (entry.image && entry.imageView && entry.sampler)
+			if (!entry.image || !entry.imageView || !entry.sampler)
+				tex->_bindlessRegistered.store(false, std::memory_order_seq_cst);
+			else
 			{
 				if (_idleSlot.empty())
 				{
@@ -134,7 +123,6 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 			}
 		}
 	}
-	RetireEntries(retired);
 	return result;
 }
 
@@ -180,6 +168,10 @@ void BindlessTextureManager::UnregisterTexture(const Texture2D* tex)
 		index = it->second;
 		_textureEntrys.erase(it);
 	}
+	{
+		std::lock_guard dirtyGuard(_dirtyMutex);
+		_dirtyTextures.erase(tex);
+	}
 
 	// 槽位里的描述符（持有旧的 image / view / sampler）留到在途帧用完再换掉
 	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(index));
@@ -191,45 +183,43 @@ std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntr
 	return _entrys;
 }
 
+void BindlessTextureManager::MarkDirty(const Texture2D* tex)
+{
+	if (!tex)
+		return;
+	std::lock_guard guard(_dirtyMutex);
+	_dirtyTextures.insert(tex);
+}
+
 uint32_t BindlessTextureManager::RefreshChangedTextures()
 {
-	// 先清标记再刷新：刷新期间又有贴图变了，标记会被重新置上，下一帧再刷
-	if (!s_dirty.exchange(false, std::memory_order_acq_rel))
-		return 0;
+	// 先把脏集合换出来再刷新：刷新期间又有贴图变了，会进新的集合，下一帧再刷
+	std::unordered_set<const Texture2D*> dirty;
+	{
+		std::lock_guard guard(_dirtyMutex);
+		if (_dirtyTextures.empty())
+			return 0;
+		dirty.swap(_dirtyTextures);
+	}
 
 	uint32_t refreshed = 0;
-	std::vector<TextureDescBindEntry> retired;
+	LockGuard guard(_mutex);
+	for (const Texture2D* tex : dirty)
 	{
-		LockGuard guard(_mutex);
-		for (const auto& [tex, index] : _textureEntrys)
-		{
-			if (index >= _entrys.size() || _entrys[index].version == tex->GetDescBindEntryVersion())
-				continue;
-			auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
-			if (!entry.image || !entry.imageView || !entry.sampler)
-				continue;
-			ReplaceEntryLocked(index, std::move(entry), retired);
-			++refreshed;
-		}
+		// 还在映射表里才能碰：Texture2D 析构时第一件事就是在写锁里删掉自己的映射
+		auto it = _textureEntrys.find(tex);
+		if (it == _textureEntrys.end())
+			continue;
+		const BindlessIndex index = it->second;
+		if (index >= _entrys.size() || _entrys[index].version == tex->GetDescBindEntryVersion())
+			continue;
+		auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+		if (!entry.image || !entry.imageView || !entry.sampler)
+			continue;
+		_entrys[index] = std::move(entry);
+		++refreshed;
 	}
-	RetireEntries(retired);
 	return refreshed;
-}
-
-void BindlessTextureManager::ReplaceEntryLocked(BindlessIndex index, TextureDescBindEntry entry, std::vector<TextureDescBindEntry>& retired)
-{
-	if (index >= _entrys.size())
-		return;
-	auto old = std::exchange(_entrys[index], std::move(entry));
-	if (old.image || old.imageView || old.sampler)
-		retired.push_back(std::move(old));
-}
-
-void BindlessTextureManager::RetireEntries(std::vector<TextureDescBindEntry>& retired)
-{
-	for (auto& entry : retired)
-		VKCONTEXT->Retire(new ReitreRes::RetireBindlessDescEntry(std::move(entry)));
-	retired.clear();
 }
 
 void BindlessTextureManager::ReleaseSlot(BindlessIndex index)

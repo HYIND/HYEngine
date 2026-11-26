@@ -665,7 +665,8 @@ bool Texture2D::CreateImage()
 
 	_image = image;
 	_version++;
-	BindlessTextureManager::MarkDirty();
+	if (_bindlessRegistered.load(std::memory_order_seq_cst))
+		BindlessTextureManager::Instance()->MarkDirty(this);
 
 	return true;
 }
@@ -675,7 +676,8 @@ bool Texture2D::CreateImageView()
 	LockGuard guard(_mutex);
 	_levelImageViews.clear();
 	_version++;
-	BindlessTextureManager::MarkDirty();
+	if (_bindlessRegistered.load(std::memory_order_seq_cst))
+		BindlessTextureManager::Instance()->MarkDirty(this);
 	return true;
 }
 
@@ -710,7 +712,8 @@ bool Texture2D::CreateSampler()
 
 	_sampler = sampler;
 	_version++;
-	BindlessTextureManager::MarkDirty();	// bindless 表里这张图的描述符在下一帧刷新
+	if (_bindlessRegistered.load(std::memory_order_seq_cst))
+		BindlessTextureManager::Instance()->MarkDirty(this);
 
 	return true;
 }
@@ -754,7 +757,8 @@ bool Texture2D::CreateFromDX11SharedHandle(std::shared_ptr<SharedTexture> shared
 
 	_image = image;
 	_version++;
-	BindlessTextureManager::MarkDirty();	// bindless 表里这张图的描述符在下一帧刷新
+	if (_bindlessRegistered.load(std::memory_order_seq_cst))
+		BindlessTextureManager::Instance()->MarkDirty(this);
 
 	return true;
 }

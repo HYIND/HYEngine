@@ -6,6 +6,7 @@
 #include "CommonData/AssetGUIDDef.h"
 
 struct SharedTexture;
+class BindlessTextureManager;
 
 class Texture2D
 {
@@ -117,6 +118,8 @@ private:
 	mutable CriticalSectionLock _mutex;
 
 	std::atomic<uint32_t> _version{ 0 };
+	mutable std::atomic<bool> _bindlessRegistered{ false };
+	friend class BindlessTextureManager;
 
 	uint32_t m_Width;
 	uint32_t m_Height;
