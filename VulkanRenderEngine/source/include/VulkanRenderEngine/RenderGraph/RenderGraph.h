@@ -130,7 +130,8 @@ namespace RenderGraph
 			FrameLocalResourceRecord& frameLocalResRecord,
 			ExternalResourceManager& externalResManager,
 			std::shared_ptr<GraphSubmitContext>& submitCtx,
-			int64_t* executeWaitUs = nullptr		// 渲染性能统计：记「等待执行」
+			int64_t* executeWaitUs = nullptr,		// 渲染性能统计：记「等待提交」
+			uint32_t gpuQuery = UINT32_MAX			// 渲染性能统计：本 Pass 的 GPU 时间戳查询下标（UINT32_MAX = 不记）
 		);
 
 	private:

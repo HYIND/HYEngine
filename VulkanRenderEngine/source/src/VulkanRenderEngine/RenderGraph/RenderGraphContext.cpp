@@ -146,6 +146,7 @@ void RenderGraph::PassFrameCmdContext::End()
 		{
 			LockForExecute();
 			StartupCmd();
+			WriteGpuEndTimestamp();
 			if (kWaitEachPassOnGPU && _lastSignaled > 0)
 				_submitCtx->timeline->Wait(_lastSignaled);
 			_submitCtx->mutex.unlock();
@@ -155,6 +156,7 @@ void RenderGraph::PassFrameCmdContext::End()
 	{
 		if (!_submitcmds.empty())
 			StartupCmd();
+		WriteGpuEndTimestamp();
 		if (kWaitEachPassOnGPU && _lastSignaled > 0)
 			_submitCtx->timeline->Wait(_lastSignaled);
 		_submitCtx->mutex.unlock();
@@ -185,6 +187,10 @@ void PassFrameCmdContext::Need()
 
 	auto barriercmd = VKCONTEXT->GetCommandBuffer();
 
+	// GPU 计时开始：BOTTOM_OF_PIPE 的时间戳要等提交顺序在它之前的命令全部做完才写，即「前面的 Pass 做完、轮到本 Pass」的时刻
+	if (_submitCtx->queryPool && _gpuQuery != UINT32_MAX)
+		barriercmd->writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, _submitCtx->queryPool, _gpuQuery);
+
 	// FrameBegin、图之前的阶段直接用 VKCONTEXT 提交的工作不在链上（它们已经 SubmitNowAndWait 做完），
 	// 一条全局屏障让它们的写入对本 Pass 可见
 	barriercmd->pipelineBarrier(
@@ -196,5 +202,18 @@ void PassFrameCmdContext::Need()
 	VKWrapper::PassImageStateRecord::EndRecord(barriercmd);
 
 	if (auto v = _submitCtx->Submit(barriercmd))
+		_lastSignaled = v;
+}
+
+// GPU 计时结束：链尾补一条只写时间戳的命令，记本 Pass 最后一条命令做完的时刻。
+// 只在本 Pass 提交过命令（写过开始时间戳）时写；调用方持有 _submitCtx->mutex
+void PassFrameCmdContext::WriteGpuEndTimestamp()
+{
+	if (!_started || !_submitCtx->queryPool || _gpuQuery == UINT32_MAX)
+		return;
+
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	cmd->writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, _submitCtx->queryPool, _gpuQuery + 1);
+	if (auto v = _submitCtx->Submit(cmd))
 		_lastSignaled = v;
 }

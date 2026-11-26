@@ -1,11 +1,16 @@
 #pragma once
 
 // 渲染性能统计：编辑器「调试 → 渲染性能」窗口的数据来源。
-// 只记墙钟耗时（微秒），每一步就是「这一步实际花了多久」，不区分 CPU / GPU：
-// RenderGraph 里每个 Pass 结束时都会等自己提交的 GPU 工作做完，所以 Pass 的 Execute 耗时已经包含 GPU 执行。
+//
+// 两种时间：
+//   * 墙钟时间（微秒）：单帧耗时、RenderGraph 之外的各步骤、SceneRenderGraph 整体、每个 Pass 的 FrameBegin / Execute。
+//     RenderGraph 之外的步骤各自 SubmitNowAndWait，所以它们的墙钟时间已经包含 GPU 执行，就是这一步的完整耗时；
+//     SceneRenderGraph 整体也一样（Execute 收尾会等图内全部 GPU 工作做完）。
+//   * GPU 时间（时间戳）：只有 RenderGraph 里的 Pass 有。图内的提交接在同一条提交链上、CPU 不再逐个等 Pass 做完，
+//     Pass 的 Execute 墙钟时间只是 CPU 侧的开销（取资源 + 录制 + 等待提交 + 提交），GPU 上花的时间要看 gpuUs。
 //
 // 不统计时零开销：窗口没打开时 RenderProfilerChannel::IsEnabled() 为 false，帧上不挂 RenderFrameProfile，
-// 各打点处只多一次判空，不分配内存、不取时间戳。
+// 各打点处只多一次判空，不分配内存、不取时间戳、不建时间戳查询池。
 
 #include <algorithm>
 #include <array>
@@ -77,7 +82,7 @@ inline const char* RenderProfileStepTip(RenderProfileStep step)
 	case RenderProfileStep::WaitPrevFrame:	return "多帧并行时，各段开始前等上一帧做完同一段的时间（FlightSync），不计入各步骤";
 	case RenderProfileStep::PreSubmit:		return "PreCalculate 与 Skinned 录完后的 SubmitNowAndWait，含 GPU 执行";
 	case RenderProfileStep::ClearTargets:	return "清 sceneColorBuffer / firstPersonColorBuffer 并等待";
-	case RenderProfileStep::SceneGraph:		return "SceneRenderGraph::Execute 整体，展开看每个 Pass";
+	case RenderProfileStep::SceneGraph:		return "SceneRenderGraph::Execute 整体（含等图内 GPU 工作做完），展开看每个 Pass 的 CPU / GPU 耗时";
 	default:								return nullptr;
 	}
 }
@@ -100,11 +105,17 @@ struct RenderGraphProfileLayout
 
 struct RenderPassProfile
 {
-	int64_t frameBeginUs = 0;			// FrameBegin（各 Pass 并行执行）
-	int64_t executeUs = 0;				// 取资源 + 录制 + 等待执行 + 提交并等 GPU 做完
-	int64_t executeWaitUs = 0;			// 其中「等待执行」：录完后等前面的 Pass 在 GPU 上执行完、轮到自己（同一张图串行执行）
+	// ── CPU（墙钟） ──
+	int64_t frameBeginUs = 0;			// FrameBegin（各 Pass 并行执行；里面直接提交并等待的 GPU 工作会排在已提交的 Pass 之后，可能偏大）
+	int64_t executeUs = 0;				// Execute：取资源 + 录制 + 等待提交 + 提交。有回读的 Pass（SubmitNowAndWait）还含等 GPU 把它和它之前的工作做完
+	int64_t executeWaitUs = 0;			// 其中「等待提交」：等提交锁 —— 前面的 Pass 正在补差 / 提交，或有回读的 Pass 拿着锁在等 GPU
 	bool executed = false;				// ShouldExecute 为 false 时不执行
 
+	// ── GPU（时间戳） ──
+	int64_t gpuUs = 0;					// 本 Pass 第一条命令开始到最后一条命令结束，含 Pass 内多次提交之间的空闲（如阴影图集按灯光分批提交、回读后的 CPU 处理）
+	bool gpuValid = false;				// 有 GPU 计时：Pass 执行并提交过命令，且设备的图形队列支持时间戳
+
+	// CPU 自身 = Execute - 等待提交
 	int64_t SelfUs() const { return executeUs > executeWaitUs ? executeUs - executeWaitUs : 0; }
 };
 

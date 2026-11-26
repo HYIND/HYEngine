@@ -49,15 +49,21 @@ namespace
 
 	struct PassStat
 	{
-		Stat execute;				// 只统计执行了的帧
-		Stat wait;					// 其中等待执行（等前面的 Pass 在 GPU 上执行完）
-		Stat self;					// 总耗时 - 等待执行
+		Stat execute;				// CPU：Execute 墙钟耗时，只统计执行了的帧
+		Stat wait;					// 其中等待提交（等提交锁）
+		Stat self;					// CPU 自身 = Execute - 等待提交
+		Stat gpu;					// GPU：时间戳计时，只统计有 GPU 计时的帧
 		Stat frameBegin;
 		int executedFrames = 0;
+		int gpuFrames = 0;
 		bool executedCur = false;
+		bool gpuCur = false;
 	};
 
 	enum class ValueMode : int { Current = 0, Average, Max };
+
+	// 节点图按哪个耗时着色 / 算关键路径
+	enum class GraphMetric : int { Gpu = 0, CpuSelf, CpuTotal };
 
 	double Value(const Stat& st, ValueMode mode)
 	{
@@ -77,6 +83,8 @@ namespace
 		std::array<Stat, kStepCount> steps;
 		LayoutPtr layout;
 		std::vector<PassStat> passes;
+		Stat graphGpu;				// 每帧图内各 Pass GPU 耗时之和（图内提交串行执行，和即图在 GPU 上忙的时间）
+		bool hasGpu = false;		// 统计范围内有 GPU 计时
 		double fps = 0.0;
 	};
 
@@ -115,7 +123,7 @@ namespace
 		bool sortPasses = false;
 
 		ValueMode graphValue = ValueMode::Average;
-		bool graphSelfOnly = true;						// 节点图按自身耗时（扣除等待执行）着色
+		GraphMetric graphMetric = GraphMetric::Gpu;		// 节点图着色依据
 		bool showCriticalPath = true;
 		ImVec2 pan = ImVec2(0, 0);
 		float zoom = 1.0f;
@@ -185,6 +193,8 @@ namespace
 			// RenderGraph 重新编译过的帧，结构对不上，不参与 Pass 统计
 			if (f->graphLayout != a.layout || f->passes.size() != passCount)
 				continue;
+			int64_t frameGpu = 0;
+			bool frameHasGpu = false;
 			for (size_t p = 0; p < passCount; ++p)
 			{
 				const auto& pp = f->passes[p];
@@ -196,7 +206,19 @@ namespace
 					ps.wait.Push(pp.executeWaitUs);
 					ps.self.Push(pp.SelfUs());
 					++ps.executedFrames;
+					if (pp.gpuValid)
+					{
+						ps.gpu.Push(pp.gpuUs);
+						++ps.gpuFrames;
+						frameGpu += pp.gpuUs;
+						frameHasGpu = true;
+					}
 				}
+			}
+			if (frameHasGpu)
+			{
+				a.graphGpu.Push(frameGpu);
+				a.hasGpu = true;
 			}
 		}
 
@@ -212,7 +234,10 @@ namespace
 				a.passes[p].execute.cur = pp.executed ? pp.executeUs : 0;
 				a.passes[p].wait.cur = pp.executed ? pp.executeWaitUs : 0;
 				a.passes[p].self.cur = pp.executed ? pp.SelfUs() : 0;
+				a.passes[p].gpuCur = pp.executed && pp.gpuValid;
+				a.passes[p].gpu.cur = a.passes[p].gpuCur ? pp.gpuUs : 0;
 				a.passes[p].frameBegin.cur = pp.frameBeginUs;
+				a.graphGpu.cur += a.passes[p].gpu.cur;
 			}
 		}
 
@@ -482,7 +507,8 @@ namespace
 			ImGui::SetTooltip(
 				"单帧耗时 = 从渲染循环取走这一帧到画完，不含「帧数据解析」和「排队」。\n"
 				"多帧并行时各帧会重叠，所以帧率按相邻帧完成的间隔算。\n"
-				"全部是墙钟时间；Debug 构建和验证层下数字会明显偏大。\n"
+				"单帧和各步骤是墙钟时间；RenderGraph 里的 Pass 另有 GPU 计时（时间戳）。\n"
+				"Debug 构建和验证层下数字会明显偏大。\n"
 				"被新帧顶掉 = 候选帧还没被渲染线程取走，场景就提交了新数据，旧的那帧被替换掉；\n"
 				"场景数据比渲染快时会持续增长，属正常。");
 
@@ -505,15 +531,21 @@ namespace
 	{
 		ImGui::Checkbox("隐藏未执行的 Pass", &s.hideSkipped);
 		ImGui::SameLine();
-		ImGui::Checkbox("Pass 按自身耗时排序", &s.sortPasses);
+		ImGui::Checkbox("Pass 按 GPU 耗时排序", &s.sortPasses);
 		ImGui::SameLine();
 		ImGui::TextDisabled("(?)");
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip(
-				"Pass 总耗时 = 取资源 + 录制 + 等待执行 + 提交并等 GPU 做完。\n"
-				"各 Pass 并行录制、串行执行（命令按录制时预设的纹理布局执行，同一张图里只能一组一组来），\n"
-				"「等待执行」= 录完后等前面的 Pass 在 GPU 上执行完、轮到自己的时间；「自身」= 总耗时 - 等待执行。\n"
-				"所以总耗时加起来会大于 SceneRenderGraph，看 Pass 自己的开销用「自身」。\n"
+				"RenderGraph 之外的步骤：墙钟时间，各自提交并等 GPU 做完，就是这一步的完整耗时。\n"
+				"SceneRenderGraph：墙钟时间，含等图内 GPU 工作做完；GPU 列是各 Pass GPU 耗时之和。\n"
+				"\n"
+				"Pass 有两组时间：\n"
+				"  当前 / 平均 / 最大 = CPU 侧 Execute 墙钟耗时（取资源 + 录制 + 等待提交 + 提交），不含 GPU 执行；\n"
+				"    例外：有回读的 Pass（自动曝光、HZB 遮挡剔除等）要等 GPU 把它和它之前的工作做完，会偏大。\n"
+				"  「等待提交」= 等提交锁（前面的 Pass 在补差 / 提交，或有回读的 Pass 拿着锁在等 GPU）；\n"
+				"  「CPU 自身」= Execute - 等待提交。\n"
+				"  「GPU」= 时间戳：本 Pass 第一条命令开始到最后一条命令结束，含 Pass 内多次提交之间的空闲。\n"
+				"图内各 Pass 在 GPU 上按提交顺序串行执行，所以 GPU 时间可以直接相加；占比按 GPU 时间 / SceneRenderGraph。\n"
 				"FrameBegin 在图执行前对所有 Pass 并行调用。");
 
 		if (!agg.current)
@@ -521,7 +553,7 @@ namespace
 
 		const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_BordersOuterH
 			| ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
-		enum Column { ColName = 0, ColCur, ColAvg, ColMax, ColWait, ColSelf, ColFrameBegin, ColShare, ColCount };
+		enum Column { ColName = 0, ColCur, ColAvg, ColMax, ColWait, ColSelf, ColGpu, ColFrameBegin, ColShare, ColCount };
 		if (!ImGui::BeginTable("##profilerSteps", ColCount, flags))
 			return;
 
@@ -530,8 +562,9 @@ namespace
 		ImGui::TableSetupColumn("当前 ms", ImGuiTableColumnFlags_WidthStretch, 1.0f);
 		ImGui::TableSetupColumn("平均 ms", ImGuiTableColumnFlags_WidthStretch, 1.0f);
 		ImGui::TableSetupColumn("最大 ms", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-		ImGui::TableSetupColumn("等待执行 ms", ImGuiTableColumnFlags_WidthStretch, 1.1f);
-		ImGui::TableSetupColumn("自身 ms", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableSetupColumn("等待提交 ms", ImGuiTableColumnFlags_WidthStretch, 1.1f);
+		ImGui::TableSetupColumn("CPU ms", ImGuiTableColumnFlags_WidthStretch, 1.1f);
+		ImGui::TableSetupColumn("GPU ms", ImGuiTableColumnFlags_WidthStretch, 1.0f);
 		ImGui::TableSetupColumn("FrameBegin ms", ImGuiTableColumnFlags_WidthStretch, 1.1f);
 		ImGui::TableSetupColumn("占比", ImGuiTableColumnFlags_WidthStretch, 0.8f);
 		ImGui::TableHeadersRow();
@@ -593,6 +626,19 @@ namespace
 			ImGui::PopID();
 
 			numberCells(st, true, nullptr);
+			if (step == RenderProfileStep::SceneGraph)
+			{
+				ImGui::TableSetColumnIndex(ColGpu);
+				if (agg.hasGpu)
+				{
+					ImGui::Text("%.2f", Ms(agg.graphGpu.Avg()));
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("图内各 Pass GPU 耗时之和（平均）\n当前 %.2f / 最大 %.2f ms\n和 SceneRenderGraph 墙钟时间的差 ≈ GPU 在图内空闲（等 CPU 提交）的时间",
+							Ms(double(agg.graphGpu.cur)), Ms(double(agg.graphGpu.max)));
+				}
+				else
+					ImGui::TextDisabled("—");
+			}
 			ImGui::TableSetColumnIndex(ColShare);
 			if (!outsideFrame && frameAvg > 0.0)
 				ImGui::Text("%.1f%%", st.Avg() / frameAvg * 100.0);
@@ -606,6 +652,7 @@ namespace
 				const auto& nodes = agg.layout->nodes;
 				std::vector<int> rows;
 				double maxSelfAvg = 0.0;
+				double maxGpuAvg = 0.0;
 				for (int i = 0; i < int(nodes.size()); ++i)
 				{
 					if (nodes[i].fence)
@@ -615,11 +662,12 @@ namespace
 						continue;
 					rows.push_back(i);
 					maxSelfAvg = std::max(maxSelfAvg, ps.self.Avg());
+					maxGpuAvg = std::max(maxGpuAvg, ps.gpu.Avg());
 				}
 				if (s.sortPasses)
 				{
 					std::stable_sort(rows.begin(), rows.end(), [&](int a, int b) {
-						return agg.passes[a].self.Avg() > agg.passes[b].self.Avg();
+						return agg.passes[a].gpu.Avg() > agg.passes[b].gpu.Avg();
 						});
 				}
 
@@ -668,7 +716,7 @@ namespace
 
 					if (skipped)
 					{
-						for (int c = ColCur; c <= ColSelf; ++c)
+						for (int c = ColCur; c <= ColGpu; ++c)
 						{
 							ImGui::TableSetColumnIndex(c);
 							ImGui::TextDisabled("未执行");
@@ -680,14 +728,25 @@ namespace
 						ImGui::TableSetColumnIndex(ColWait);
 						ImGui::TextDisabled("%.2f", Ms(ps.wait.Avg()));
 						ImGui::TableSetColumnIndex(ColSelf);
-						const ImVec4 color = HeatColor(maxSelfAvg > 0.0 ? float(ps.self.Avg() / maxSelfAvg) : 0.0f);
-						ImGui::TextColored(color, "%.2f", Ms(ps.self.Avg()));
+						const ImVec4 selfColor = HeatColor(maxSelfAvg > 0.0 ? float(ps.self.Avg() / maxSelfAvg) : 0.0f);
+						ImGui::TextColored(selfColor, "%.2f", Ms(ps.self.Avg()));
+						ImGui::TableSetColumnIndex(ColGpu);
+						if (ps.gpuFrames > 0)
+						{
+							const ImVec4 gpuColor = HeatColor(maxGpuAvg > 0.0 ? float(ps.gpu.Avg() / maxGpuAvg) : 0.0f);
+							ImGui::TextColored(gpuColor, "%.2f", Ms(ps.gpu.Avg()));
+							if (ImGui::IsItemHovered())
+								ImGui::SetTooltip("GPU  当前 %.2f   平均 %.2f   最大 %.2f ms",
+									ps.gpuCur ? Ms(double(ps.gpu.cur)) : 0.0, Ms(ps.gpu.Avg()), Ms(double(ps.gpu.max)));
+						}
+						else
+							ImGui::TextDisabled("—");
 					}
 					ImGui::TableSetColumnIndex(ColFrameBegin);
 					ImGui::Text("%.2f", Ms(ps.frameBegin.Avg()));
 					ImGui::TableSetColumnIndex(ColShare);
-					if (!skipped && graphAvg > 0.0)
-						ImGui::Text("%.1f%%", ps.self.Avg() / graphAvg * 100.0);
+					if (!skipped && ps.gpuFrames > 0 && graphAvg > 0.0)
+						ImGui::Text("%.1f%%", ps.gpu.Avg() / graphAvg * 100.0);
 				}
 			}
 			ImGui::TreePop();
@@ -727,9 +786,17 @@ namespace
 			if (layout.nodes[i].fence)
 				continue;
 			const auto& ps = agg.passes[i];
-			executed[i] = (s.graphValue == ValueMode::Current) ? ps.executedCur : (ps.executedFrames > 0);
+			const bool current = s.graphValue == ValueMode::Current;
+			if (s.graphMetric == GraphMetric::Gpu)
+				executed[i] = current ? ps.gpuCur : (ps.gpuFrames > 0);
+			else
+				executed[i] = current ? ps.executedCur : (ps.executedFrames > 0);
 			if (executed[i])
-				value[i] = Value(s.graphSelfOnly ? ps.self : ps.execute, s.graphValue);
+			{
+				const Stat& st = s.graphMetric == GraphMetric::Gpu ? ps.gpu
+					: (s.graphMetric == GraphMetric::CpuSelf ? ps.self : ps.execute);
+				value[i] = Value(st, s.graphValue);
+			}
 			maxValue = std::max(maxValue, value[i]);
 		}
 
@@ -766,9 +833,17 @@ namespace
 		if (ImGui::Combo("数值", &mode, modes, IM_ARRAYSIZE(modes)))
 			s.graphValue = ValueMode(mode);
 		ImGui::SameLine();
-		ImGui::Checkbox("只看自身耗时", &s.graphSelfOnly);
+		const char* metrics[] = { "GPU", "CPU 自身", "CPU 总耗时" };
+		int metric = int(s.graphMetric);
+		ImGui::SetNextItemWidth(110.0f);
+		if (ImGui::Combo("着色", &metric, metrics, IM_ARRAYSIZE(metrics)))
+			s.graphMetric = GraphMetric(metric);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("扣除「等待执行」（等前面的 Pass 在 GPU 上执行完的时间）。\n关掉则按总耗时，节点颜色会被串行等待放大。");
+			ImGui::SetTooltip(
+				"GPU：时间戳计时。图内各 Pass 在 GPU 上按提交顺序串行执行，GPU 着色时看单个 Pass 的耗时，\n"
+				"     关键路径只作参考（GPU 上实际是全部相加）。设备不支持时间戳时全部显示未执行。\n"
+				"CPU 自身：Execute - 等待提交（录制 / 取资源 / 提交本身的开销）。\n"
+				"CPU 总耗时：Execute 墙钟时间，含等提交锁；有回读的 Pass 还含等 GPU。");
 		ImGui::SameLine();
 		ImGui::Checkbox("关键路径", &s.showCriticalPath);
 		if (ImGui::IsItemHovered())
@@ -971,11 +1046,16 @@ namespace
 				ImGui::TextDisabled("统计范围内没有执行");
 			else
 			{
-				ImGui::Text("总耗时  当前 %.2f   平均 %.2f   最大 %.2f ms",
+				if (ps.gpuFrames > 0)
+					ImGui::Text("GPU        当前 %.2f   平均 %.2f   最大 %.2f ms",
+						ps.gpuCur ? Ms(double(ps.gpu.cur)) : 0.0, Ms(ps.gpu.Avg()), Ms(double(ps.gpu.max)));
+				else
+					ImGui::TextDisabled("GPU        无计时");
+				ImGui::Text("CPU 总耗时 当前 %.2f   平均 %.2f   最大 %.2f ms",
 					ps.executedCur ? Ms(double(ps.execute.cur)) : 0.0, Ms(ps.execute.Avg()), Ms(double(ps.execute.max)));
-				ImGui::Text("自身    当前 %.2f   平均 %.2f   最大 %.2f ms",
+				ImGui::Text("CPU   当前 %.2f   平均 %.2f   最大 %.2f ms",
 					ps.executedCur ? Ms(double(ps.self.cur)) : 0.0, Ms(ps.self.Avg()), Ms(double(ps.self.max)));
-				ImGui::Text("等待执行 平均 %.2f ms    FrameBegin 平均 %.2f ms", Ms(ps.wait.Avg()), Ms(ps.frameBegin.Avg()));
+				ImGui::Text("等待提交 平均 %.2f ms    FrameBegin 平均 %.2f ms", Ms(ps.wait.Avg()), Ms(ps.frameBegin.Avg()));
 				ImGui::TextDisabled("batch %d · 层 %d · 执行 %d / %d 帧", node.batch, g.layer[hoveredNode], ps.executedFrames, int(agg.frames.size()));
 			}
 			ImGui::EndTooltip();

@@ -253,6 +253,10 @@ namespace RenderGraph
 		std::shared_ptr<VKWrapper::VKTimelineSemaphore> timeline;
 		uint64_t value = 0;		// 链上最后一次 signal 的值，只在持有 mutex 时读写
 
+		// GPU 计时（只在渲染性能窗口打开时创建）：每个 Pass 两个时间戳查询 [2i] 开始 / [2i+1] 结束，下标 i = 排序后的 Pass 下标。
+		// 由 Graph::Execute 创建、在链首重置，Execute 收尾等链做完后读回并销毁
+		vk::QueryPool queryPool = VK_NULL_HANDLE;
+
 		// 接到链尾提交。成功返回本次 signal 的值；失败返回 0，且不推进 value（否则之后等这个值的都会卡死）
 		uint64_t Submit(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
 			CmdSyncSeamphore syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
@@ -302,13 +306,16 @@ namespace RenderGraph
 		void Start();
 		void End();
 
-		// 渲染性能统计：串行执行时，等前面的 Pass 在 GPU 上执行完、轮到自己提交的累计时间（不统计时为空）
+		// 渲染性能统计：等提交锁（轮到自己补差 + 提交）的累计时间（不统计时为空）
 		void SetExecuteWaitRecord(int64_t* waitUs) { _executeWaitUs = waitUs; }
+		// 渲染性能统计：本 Pass 的 GPU 时间戳查询（开始 = beginQuery，结束 = beginQuery + 1）；不统计时不调用
+		void SetGpuTimestampQuery(uint32_t beginQuery) { _gpuQuery = beginQuery; }
 
 	private:
 		void StartupCmd();
 		void Need();
 		void LockForExecute();
+		void WriteGpuEndTimestamp();
 
 	private:
 		struct PassFrameSubmitCMDData
@@ -326,6 +333,7 @@ namespace RenderGraph
 		std::queue<PassFrameSubmitCMDData> _submitcmds;
 		std::shared_ptr<GraphSubmitContext> _submitCtx;
 		std::vector<TexLayoutData> _texDatas;
+		uint32_t _gpuQuery = UINT32_MAX;	// UINT32_MAX = 不记 GPU 时间
 		int64_t* _executeWaitUs = nullptr;
 	};
 }

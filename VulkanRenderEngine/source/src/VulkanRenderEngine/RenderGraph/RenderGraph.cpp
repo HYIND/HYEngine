@@ -2,8 +2,40 @@
 #include "VulkanRenderEngine/RenderGraph/RenderGraph.h"
 #include "CriticalSectionLock.h"
 #include <algorithm>
+#include <cmath>
 
 using namespace RenderGraph;
+
+namespace
+{
+	// 图形队列的时间戳能力。不支持（timestampValidBits == 0）时不做 GPU 计时
+	struct GpuTimestampInfo
+	{
+		double periodNs = 0.0;		// 一个时间戳单位多少纳秒
+		uint64_t mask = 0;			// 有效位掩码（差值要按它回绕）
+	};
+
+	bool QueryGpuTimestampInfo(GpuTimestampInfo& info)
+	{
+		auto device = VKCONTEXT->GetDevice();
+		if (!device)
+			return false;
+
+		const float period = device->GetPhysicalDeviceProperties().properties.limits.timestampPeriod;
+		const auto families = device->GetPhysicalDevice().getQueueFamilyProperties();
+		const uint32_t family = device->GetGraphicsQueueFamily();
+		if (family >= families.size() || period <= 0.0f)
+			return false;
+
+		const uint32_t bits = families[family].timestampValidBits;
+		if (bits == 0)
+			return false;
+
+		info.periodNs = double(period);
+		info.mask = bits >= 64 ? ~0ull : ((1ull << bits) - 1ull);
+		return true;
+	}
+}
 
 Graph::PassExecuteContext::PassExecuteContext() : dependency(0) {}
 
@@ -216,8 +248,9 @@ void Graph::FindReadyNodeAndExcute(
 						RenderFrameProfile* profile = state.profile.get();
 						RenderPassProfile* passProfile = (profile && size_t(idx) < profile->passes.size()) ? &profile->passes[idx] : nullptr;
 						const int64_t start = passProfile ? RenderProfileNowUs() : 0;
+						const uint32_t gpuQuery = (passProfile && submitCtx->queryPool) ? uint32_t(idx) * 2u : UINT32_MAX;
 						const bool executed = ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, submitCtx,
-							passProfile ? &passProfile->executeWaitUs : nullptr);
+							passProfile ? &passProfile->executeWaitUs : nullptr, gpuQuery);
 						if (passProfile)
 						{
 							passProfile->executeUs = RenderProfileNowUs() - start;
@@ -262,7 +295,8 @@ bool Graph::ExecutePass(
 	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
 	std::shared_ptr<GraphSubmitContext>& submitCtx,
-	int64_t* executeWaitUs
+	int64_t* executeWaitUs,
+	uint32_t gpuQuery
 )
 {
 	//auto start = Tool::GetTimestampMircoseconds();
@@ -273,6 +307,8 @@ bool Graph::ExecutePass(
 
 	PassFrameCmdContext cmdCtx(submitCtx);
 	cmdCtx.SetExecuteWaitRecord(executeWaitUs);
+	if (gpuQuery != UINT32_MAX)
+		cmdCtx.SetGpuTimestampQuery(gpuQuery);
 	PassFrameContext ctx;
 	ctx.passName = node->GetName();
 
@@ -382,6 +418,32 @@ void Graph::Execute(
 		profile->passes.assign(_sortedPasses.size(), RenderPassProfile{});
 	}
 
+	// GPU 计时：每个 Pass 两个时间戳（开始 / 结束）。查询池在链首重置，收尾等链做完后读回、销毁
+	GpuTimestampInfo gpuTimestamp;
+	const uint32_t gpuQueryCount = uint32_t(_sortedPasses.size()) * 2u;
+	if (profile && gpuQueryCount > 0 && QueryGpuTimestampInfo(gpuTimestamp))
+	{
+		vk::QueryPoolCreateInfo poolInfo;
+		poolInfo
+			.setQueryType(vk::QueryType::eTimestamp)
+			.setQueryCount(gpuQueryCount);
+		auto [poolResult, pool] = VKCONTEXT->GetDeviceHandle().createQueryPool(poolInfo);
+		if (poolResult == vk::Result::eSuccess)
+		{
+			submitCtx->mutex.lock();
+			auto resetCmd = VKCONTEXT->GetCommandBuffer();
+			resetCmd->resetQueryPool(pool, 0, gpuQueryCount);
+			const bool resetSubmitted = submitCtx->Submit(resetCmd) != 0;
+			submitCtx->mutex.unlock();
+
+			// 没重置成功就不能写时间戳：这一帧不做 GPU 计时（链上还没有用到它的命令，可以直接销毁）
+			if (resetSubmitted)
+				submitCtx->queryPool = pool;
+			else
+				VKCONTEXT->GetDeviceHandle().destroyQueryPool(pool);
+		}
+	}
+
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> BeginHandles;
 	BeginHandles.reserve(passExeContext.size());
 	for (size_t passIdx = 0; passIdx < passExeContext.size(); ++passIdx)
@@ -481,6 +543,37 @@ void Graph::Execute(
 
 		if (lastValue > 0)
 			submitCtx->timeline->Wait(lastValue);
+	}
+
+	// GPU 计时读回：链已经做完，查询结果都可用（没提交过命令的 Pass 没写时间戳，可用标记为 0）
+	if (submitCtx->queryPool)
+	{
+		struct QueryResult { uint64_t value; uint64_t available; };
+		std::vector<QueryResult> results(gpuQueryCount, QueryResult{ 0, 0 });
+		const vk::Result readResult = VKCONTEXT->GetDeviceHandle().getQueryPoolResults(
+			submitCtx->queryPool, 0, gpuQueryCount,
+			results.size() * sizeof(QueryResult), results.data(), sizeof(QueryResult),
+			vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWithAvailability);
+
+		// eNotReady：有查询没写（Pass 没执行 / 没提交），其余照常可用
+		if (profile && (readResult == vk::Result::eSuccess || readResult == vk::Result::eNotReady))
+		{
+			const size_t passCount = std::min(profile->passes.size(), _sortedPasses.size());
+			for (size_t i = 0; i < passCount; ++i)
+			{
+				const auto& begin = results[i * 2];
+				const auto& end = results[i * 2 + 1];
+				if (!begin.available || !end.available)
+					continue;
+				const uint64_t ticks = (end.value - begin.value) & gpuTimestamp.mask;
+				auto& pp = profile->passes[i];
+				pp.gpuUs = int64_t(std::llround(double(ticks) * gpuTimestamp.periodNs / 1000.0));
+				pp.gpuValid = true;
+			}
+		}
+
+		VKCONTEXT->GetDeviceHandle().destroyQueryPool(submitCtx->queryPool);
+		submitCtx->queryPool = VK_NULL_HANDLE;
 	}
 
 	//std::cout << "===========================\n";
