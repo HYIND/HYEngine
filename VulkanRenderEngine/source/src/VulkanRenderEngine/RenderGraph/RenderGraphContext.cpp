@@ -42,8 +42,25 @@ void PassFrameCmd::SubmitNowAndWait(const CmdSyncSeamphore& syncSeamphore) {
 		std::cerr << std::format("[ PassFrameCmd ] GetCommandBuffer from self fail!\n");
 }
 
-PassFrameCmdContext::PassFrameCmdContext(const std::shared_ptr<CriticalSectionLock>& mutex)
-	:_mutex(mutex), _immediatelySubmit(false), _isEnd(false)
+// 调试开关：true = 每个 Pass 提交后 CPU 等它在 GPU 上做完（改动前的行为），用于对比帧时间、排查问题
+static constexpr bool kWaitEachPassOnGPU = false;
+
+uint64_t GraphSubmitContext::Submit(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, CmdSyncSeamphore syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
+{
+	const uint64_t signalValue = value + 1;
+	if (value > 0)
+		syncSeamphore.waitSemaphores.push_back(WaitSemaphoreData{ .semaphore = timeline, .flags = vk::PipelineStageFlagBits::eAllCommands, .value = value });
+	syncSeamphore.signalSemaphores.push_back(SignalSemaphoreData{ .semaphore = timeline, .value = signalValue });
+
+	if (VKCONTEXT->SubmitCommandImmediately(cmd, syncSeamphore, signalFence) != vk::Result::eSuccess)
+		return 0;
+
+	value = signalValue;
+	return value;
+}
+
+PassFrameCmdContext::PassFrameCmdContext(const std::shared_ptr<GraphSubmitContext>& submitCtx)
+	:_isEnd(false), _immediatelySubmit(false), _submitCtx(submitCtx)
 {}
 
 PassFrameCmdContext::~PassFrameCmdContext()
@@ -64,18 +81,18 @@ void PassFrameCmdContext::SubmitToQueue(const std::shared_ptr<VKWrapper::VKComma
 		_submitcmds.push(PassFrameSubmitCMDData{ .cmd = cmd, .syncSeamphore = syncSeamphore ,.signalFence = signalFence });
 }
 
-// 各 Pass 的命令按各自录制时预设的纹理布局执行，同一张图里只能一组一组串行执行：
-// 拿到锁 = 前面的组已经在 GPU 上执行完，轮到自己
+// 各 Pass 的命令按各自录制时预设的纹理布局执行，「补差 barrier + 提交」必须一组一组按顺序来：
+// 拿到锁 = 前面的组已经接到提交链上（不要求已在 GPU 上做完），轮到自己
 void PassFrameCmdContext::LockForExecute()
 {
 	if (_executeWaitUs)
 	{
 		const int64_t start = RenderProfileNowUs();
-		_mutex->lock();
+		_submitCtx->mutex.lock();
 		*_executeWaitUs += RenderProfileNowUs() - start;
 	}
 	else
-		_mutex->lock();
+		_submitCtx->mutex.lock();
 }
 
 void PassFrameCmdContext::SubmitNow(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const CmdSyncSeamphore& syncSeamphore, std::shared_ptr<VKWrapper::VKFence> signalFence)
@@ -99,8 +116,9 @@ void PassFrameCmdContext::SubmitNowAndWait(const std::shared_ptr<VKWrapper::VKCo
 	_submitcmds.push(PassFrameSubmitCMDData{ .cmd = cmd, .syncSeamphore = syncSeamphore });
 	StartupCmd();
 
-	if (_timeLine && cmdcount > 0)
-		_timeLine->Wait(cmdcount);
+	// 回读：等本 Pass 这次提交做完（timeline 的 signal 覆盖队列里所有更早的提交，前面的 Pass 也一定做完了）
+	if (_lastSignaled > 0)
+		_submitCtx->timeline->Wait(_lastSignaled);
 }
 
 void RenderGraph::PassFrameCmdContext::Start()
@@ -121,28 +139,30 @@ void RenderGraph::PassFrameCmdContext::End()
 
 	_isEnd = true;
 
+	// 只保证「补差 + 提交」按顺序，不再等 GPU 做完：Pass 之间的先后与可见性由提交链保证
 	if (!_immediatelySubmit)
 	{
 		if (!_submitcmds.empty())
 		{
 			LockForExecute();
 			StartupCmd();
-			if (_timeLine && cmdcount > 0)
-				_timeLine->Wait(cmdcount);
-			_mutex->unlock();
+			if (kWaitEachPassOnGPU && _lastSignaled > 0)
+				_submitCtx->timeline->Wait(_lastSignaled);
+			_submitCtx->mutex.unlock();
 		}
 	}
 	else
 	{
 		if (!_submitcmds.empty())
 			StartupCmd();
-		if (_timeLine && cmdcount > 0)
-			_timeLine->Wait(cmdcount);
-		_mutex->unlock();
+		if (kWaitEachPassOnGPU && _lastSignaled > 0)
+			_submitCtx->timeline->Wait(_lastSignaled);
+		_submitCtx->mutex.unlock();
 	}
 
 }
 
+// 调用方持有 _submitCtx->mutex
 void PassFrameCmdContext::StartupCmd()
 {
 	Need();
@@ -150,34 +170,31 @@ void PassFrameCmdContext::StartupCmd()
 	while (!_submitcmds.empty())
 	{
 		auto& cmdData = _submitcmds.front();
-		cmdData.syncSeamphore.waitSemaphores.push_back(WaitSemaphoreData{ .semaphore = _timeLine, .flags = vk::PipelineStageFlagBits::eAllCommands , .value = cmdcount });
-		cmdData.syncSeamphore.signalSemaphores.push_back(SignalSemaphoreData{ .semaphore = _timeLine, .value = ++cmdcount });
-		VKCONTEXT->SubmitCommandImmediately(cmdData.cmd, cmdData.syncSeamphore, cmdData.signalFence);
+		if (auto v = _submitCtx->Submit(cmdData.cmd, std::move(cmdData.syncSeamphore), cmdData.signalFence))
+			_lastSignaled = v;
 		_submitcmds.pop();
 	}
 }
 
+// 本 Pass 第一次提交前：补差 barrier，接在链尾。调用方持有 _submitCtx->mutex
 void PassFrameCmdContext::Need()
 {
-	if (cmdcount > 0)
+	if (_started)
 		return;
+	_started = true;
 
-	if (!_timeLine && cmdcount == 0)
-	{
-		_timeLine = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
-		auto barriercmd = VKCONTEXT->GetCommandBuffer();
-		VKWrapper::PassImageStateRecord::EndRecord(barriercmd);
-		//for (auto& data : _texDatas)
-		//{
-		//	auto* TexLayoutData = std::get_if<TextureLayout>(&data.layout.data);
-		//	if (TexLayoutData)
-		//		data.tex->TransitionLayout(barriercmd, nullptr, TexLayoutData->stage, TexLayoutData->usage);
-		//}
+	auto barriercmd = VKCONTEXT->GetCommandBuffer();
 
-		if (barriercmd->IsRecording())
-		{
-			CmdSyncSeamphore sync{ .signalSemaphores = {SignalSemaphoreData{.semaphore = _timeLine, .value = ++cmdcount }} };
-			VKCONTEXT->SubmitCommandImmediately(barriercmd, sync);
-		}
-	}
+	// FrameBegin、图之前的阶段直接用 VKCONTEXT 提交的工作不在链上（它们已经 SubmitNowAndWait 做完），
+	// 一条全局屏障让它们的写入对本 Pass 可见
+	barriercmd->pipelineBarrier(
+		vk::PipelineStageFlagBits::eAllCommands,
+		vk::PipelineStageFlagBits::eAllCommands,
+		vk::MemoryBarrier(vk::AccessFlagBits::eMemoryWrite, vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite));
+
+	// 真实态 -> 本 Pass 声明态
+	VKWrapper::PassImageStateRecord::EndRecord(barriercmd);
+
+	if (auto v = _submitCtx->Submit(barriercmd))
+		_lastSignaled = v;
 }

@@ -243,6 +243,21 @@ namespace RenderGraph
 	};
 
 
+	// 一次 Graph::Execute 的提交上下文（每次 Execute 新建一份）：
+	//   mutex    —— 各 Pass 按顺序「补差 + 提交」，保证 CPU 记录的图像状态按提交顺序更新；
+	//   timeline —— 提交链：图内每次提交等上一个值、signal 下一个值，GPU 上按提交顺序串行，
+	//               semaphore 的等待自带执行依赖和内存依赖，CPU 不必再等每个 Pass 做完
+	struct GraphSubmitContext
+	{
+		CriticalSectionLock mutex;
+		std::shared_ptr<VKWrapper::VKTimelineSemaphore> timeline;
+		uint64_t value = 0;		// 链上最后一次 signal 的值，只在持有 mutex 时读写
+
+		// 接到链尾提交。成功返回本次 signal 的值；失败返回 0，且不推进 value（否则之后等这个值的都会卡死）
+		uint64_t Submit(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd,
+			CmdSyncSeamphore syncSeamphore = {}, std::shared_ptr<VKWrapper::VKFence> signalFence = nullptr);
+	};
+
 	class PassFrameCmdContext;
 	class PassFrameCmd :public VKWrapper::VKCommandBuffer
 	{
@@ -268,7 +283,7 @@ namespace RenderGraph
 		};
 
 	public:
-		PassFrameCmdContext(const std::shared_ptr<CriticalSectionLock>& mutex);
+		PassFrameCmdContext(const std::shared_ptr<GraphSubmitContext>& submitCtx);
 		~PassFrameCmdContext();
 
 		std::shared_ptr<PassFrameCmd> GetCmd();
@@ -306,10 +321,10 @@ namespace RenderGraph
 	private:
 		bool _isEnd;
 		bool _immediatelySubmit;
-		uint32_t cmdcount = 0;
+		bool _started = false;				// 本 Pass 的补差 barrier 是否已提交
+		uint64_t _lastSignaled = 0;			// 本 Pass 最后一次提交在链上 signal 的值（SubmitNowAndWait 等它）
 		std::queue<PassFrameSubmitCMDData> _submitcmds;
-		std::shared_ptr<VKWrapper::VKTimelineSemaphore> _timeLine;
-		std::shared_ptr<CriticalSectionLock> _mutex;
+		std::shared_ptr<GraphSubmitContext> _submitCtx;
 		std::vector<TexLayoutData> _texDatas;
 		int64_t* _executeWaitUs = nullptr;
 	};

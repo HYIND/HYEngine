@@ -198,7 +198,7 @@ void Graph::FindReadyNodeAndExcute(
 	ExternalResourceManager& externalResManager,
 	std::atomic<uint32_t>& doneCounter,
 	std::atomic<uint32_t>* transientRefs,
-	std::shared_ptr<CriticalSectionLock>& _cmdMutex
+	std::shared_ptr<GraphSubmitContext>& submitCtx
 )
 {
 	for (auto& passData : batchdata.passes)
@@ -216,7 +216,7 @@ void Graph::FindReadyNodeAndExcute(
 						RenderFrameProfile* profile = state.profile.get();
 						RenderPassProfile* passProfile = (profile && size_t(idx) < profile->passes.size()) ? &profile->passes[idx] : nullptr;
 						const int64_t start = passProfile ? RenderProfileNowUs() : 0;
-						const bool executed = ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, _cmdMutex,
+						const bool executed = ExecutePass(ctx.node, ctx.registry, state, resPrefix, frameLocalResRecord, externalResManager, submitCtx,
 							passProfile ? &passProfile->executeWaitUs : nullptr);
 						if (passProfile)
 						{
@@ -261,7 +261,7 @@ bool Graph::ExecutePass(
 	const std::string& resPrefix,
 	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
-	std::shared_ptr<CriticalSectionLock>& _cmdMutex,
+	std::shared_ptr<GraphSubmitContext>& submitCtx,
 	int64_t* executeWaitUs
 )
 {
@@ -271,7 +271,7 @@ bool Graph::ExecutePass(
 	if (!node->ShouldExecute(registry, state))
 		return false;
 
-	PassFrameCmdContext cmdCtx(_cmdMutex);
+	PassFrameCmdContext cmdCtx(submitCtx);
 	cmdCtx.SetExecuteWaitRecord(executeWaitUs);
 	PassFrameContext ctx;
 	ctx.passName = node->GetName();
@@ -354,7 +354,9 @@ void Graph::Execute(
 	if (!state)
 		return;
 
-	auto _cmdMutex = std::make_shared<CriticalSectionLock>();
+	// 本次 Execute 的提交上下文：提交锁 + 提交链
+	auto submitCtx = std::make_shared<GraphSubmitContext>();
+	submitCtx->timeline = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
 	std::atomic<uint32_t> doneCounter(0u);
 	std::atomic<uint32_t> beginCounter(0u);
 
@@ -444,7 +446,7 @@ void Graph::Execute(
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, frameLocalResRecord, externalResManager, doneCounter, transientRefs.get(), _cmdMutex);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, frameLocalResRecord, externalResManager, doneCounter, transientRefs.get(), submitCtx);
 
 			if (batch.isEnd)
 				it = running_batchs.erase(it);
@@ -459,6 +461,26 @@ void Graph::Execute(
 	{
 		if (transientRefs[i].load(std::memory_order_relaxed) != 0)
 			_resManager.ReleaseTexture(_transientResources[i], resPrefix);
+	}
+
+	// 收尾：链尾提交一条全局屏障，再等整条链在 GPU 上做完才返回
+	//   * 图之后的 Combin / Bloom / PostProcess 直接用 VKCONTEXT 提交、不在链上：屏障让图内的写入对它们可见
+	//     （CPU 等到 GPU 做完只保证执行完成，不保证之后 GPU 上的读能看到这些写）；
+	//   * 下一次 Execute 的 FrameBegin 会改写长期持有的 UBO、销毁重建 TLAS/BLAS，纹理池跨帧复用纹理，
+	//     Texture2D::Resize / 历史纹理重建会立刻销毁 ImageView，Resize 重建图时会直接析构本图 —— 都要求这里已经做完
+	{
+		submitCtx->mutex.lock();
+		auto tailCmd = VKCONTEXT->GetCommandBuffer();
+		tailCmd->pipelineBarrier(
+			vk::PipelineStageFlagBits::eAllCommands,
+			vk::PipelineStageFlagBits::eAllCommands,
+			vk::MemoryBarrier(vk::AccessFlagBits::eMemoryWrite, vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite));
+		submitCtx->Submit(tailCmd);
+		const uint64_t lastValue = submitCtx->value;
+		submitCtx->mutex.unlock();
+
+		if (lastValue > 0)
+			submitCtx->timeline->Wait(lastValue);
 	}
 
 	//std::cout << "===========================\n";

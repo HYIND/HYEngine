@@ -116,7 +116,7 @@ namespace RenderGraph
 			ExternalResourceManager& externalResManager,
 			std::atomic<uint32_t>& doneCounter,
 			std::atomic<uint32_t>* transientRefs,
-			std::shared_ptr<CriticalSectionLock>& _cmdMutex
+			std::shared_ptr<GraphSubmitContext>& submitCtx
 		);
 		void BuildProfileLayout();
 		void BuildTransientRefCounts();
@@ -129,7 +129,7 @@ namespace RenderGraph
 			const std::string& resPrefix,
 			FrameLocalResourceRecord& frameLocalResRecord,
 			ExternalResourceManager& externalResManager,
-			std::shared_ptr<CriticalSectionLock>& _cmdMutex,
+			std::shared_ptr<GraphSubmitContext>& submitCtx,
 			int64_t* executeWaitUs = nullptr		// 渲染性能统计：记「等待执行」
 		);
 
