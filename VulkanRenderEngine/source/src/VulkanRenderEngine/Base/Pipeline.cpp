@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
+#include <deque>
 #include <unordered_map>
 
 static std::tuple<std::string, bool> ReadFromFile(const std::string& path)
@@ -1178,96 +1180,211 @@ void BindingRecord::SetLightStorageData(
 	if (_ssbo_dirLightCascadeDistances) SetStorageBlock(_ssbo_dirLightCascadeDistances, GeneralBindingPoint::Light_DirLightCascadeDistanceData);
 }
 
+// ======================== 描述符批量写入 ========================
+// 一次 Bind 的所有 binding 攒到一起，最后一次 vkUpdateDescriptorSets 写完。
+// VkWriteDescriptorSet 里存的是指针（pBufferInfo / pImageInfo / pNext），要到 Flush 调用时才被读：
+// 被指向的数据放 std::deque，push_back 不会让已有元素的引用失效，追加时就能直接填指针。
+// 每个线程一份反复用：Clear 只把计数清零，元素和数组容量都留着，热起来以后不再分配
+// （MSVC 的 deque 每块只放很少几个元素，每次 clear 再 push_back 都会重新分配块，所以不调 deque::clear）
+struct DescriptorWriteBatch
+{
+	std::vector<vk::WriteDescriptorSet> writes;		// 整体传给驱动，自身扩容不影响别的指针
+
+	bool inUse = false;
+
+	void Clear()
+	{
+		writes.clear();
+		_bufferCount = 0;
+		_imageCount = 0;
+		_imageArrayCount = 0;
+		_asCount = 0;
+	}
+
+	void AddBuffer(vk::DescriptorSet set, uint32_t binding, vk::DescriptorType type, const vk::DescriptorBufferInfo& info)
+	{
+		auto& stored = Next(_buffers, _bufferCount);
+		stored = info;
+		writes.push_back(MakeWrite(set, binding, type).setBufferInfo(stored));
+	}
+
+	void AddImage(vk::DescriptorSet set, uint32_t binding, vk::DescriptorType type, const vk::DescriptorImageInfo& info)
+	{
+		auto& stored = Next(_images, _imageCount);
+		stored = info;
+		writes.push_back(MakeWrite(set, binding, type).setImageInfo(stored));
+	}
+
+	// 数组：先拿一个空数组直接往里填，填完 AddImageArray 登记（引用在 Flush 之前一直有效）
+	std::vector<vk::DescriptorImageInfo>& BeginImageArray()
+	{
+		auto& infos = Next(_imageArrays, _imageArrayCount);
+		infos.clear();		// 只清内容，容量留着
+		return infos;
+	}
+	void AddImageArray(vk::DescriptorSet set, uint32_t binding, vk::DescriptorType type, const std::vector<vk::DescriptorImageInfo>& infos)
+	{
+		// 空数组不写：descriptorCount 不能为 0
+		if (infos.empty())
+			return;
+		writes.push_back(MakeWrite(set, binding, type).setImageInfo(infos));
+	}
+
+	void AddAccelerationStructure(vk::DescriptorSet set, uint32_t binding, vk::AccelerationStructureKHR handle)
+	{
+		// 句柄和指向它的 pNext 结构放在同一个元素里，一起保持地址不变
+		auto& as = Next(_accelerationStructures, _asCount);
+		as.handle = handle;
+		as.write = vk::WriteDescriptorSetAccelerationStructureKHR().setAccelerationStructures(as.handle);
+		writes.push_back(MakeWrite(set, binding, vk::DescriptorType::eAccelerationStructureKHR)
+			.setDescriptorCount(1)
+			.setPNext(&as.write));
+	}
+
+	void Flush(vk::Device device)
+	{
+		if (!writes.empty())
+			device.updateDescriptorSets(writes, nullptr);
+	}
+
+private:
+	static vk::WriteDescriptorSet MakeWrite(vk::DescriptorSet set, uint32_t binding, vk::DescriptorType type)
+	{
+		return vk::WriteDescriptorSet()
+			.setDstSet(set)
+			.setDstBinding(binding)
+			.setDstArrayElement(0)
+			.setDescriptorType(type);
+	}
+
+	// 取第 count 个元素（不够就 emplace_back 一个），count 加一。deque 的 emplace_back 不会让已有元素的引用失效
+	template<typename T>
+	static T& Next(std::deque<T>& storage, size_t& count)
+	{
+		if (count >= storage.size())
+			storage.emplace_back();
+		return storage[count++];
+	}
+
+	struct AccelerationStructureWrite
+	{
+		vk::AccelerationStructureKHR handle = VK_NULL_HANDLE;
+		vk::WriteDescriptorSetAccelerationStructureKHR write;	// 指向上面的 handle
+	};
+
+	std::deque<vk::DescriptorBufferInfo> _buffers;
+	std::deque<vk::DescriptorImageInfo> _images;
+	std::deque<std::vector<vk::DescriptorImageInfo>> _imageArrays;
+	std::deque<AccelerationStructureWrite> _accelerationStructures;
+	size_t _bufferCount = 0;
+	size_t _imageCount = 0;
+	size_t _imageArrayCount = 0;
+	size_t _asCount = 0;
+};
+
 void BindingRecord::BindAllEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage)
 {
 	if (!cmdBuffer)
 		return;
 
+	// 所有 binding 攒到一起，最后一次 updateDescriptorSets 写完。
+	// 每个线程一份、反复用（只 clear 不释放，容量留着）；万一重入（Bind 里又 Bind）就用临时的一份
+	thread_local DescriptorWriteBatch t_batch;
+	std::optional<DescriptorWriteBatch> fallbackBatch;
+	DescriptorWriteBatch* batch = &t_batch;
+	if (t_batch.inUse)
+		batch = &fallbackBatch.emplace();
+	batch->Clear();
+	batch->inUse = true;
+
 	uint32_t size = data->sets.size();
 	for (auto& [bindingpoint, entry] : m_bindingData)
 	{
 		if (bindingpoint.set < size && data->sets[bindingpoint.set] != VK_NULL_HANDLE)
-			BindEntry(cmdBuffer, data, bindStage, bindingpoint, entry);
+			BindEntry(cmdBuffer, data, bindStage, bindingpoint, entry, *batch);
 	}
+
+	batch->Flush(VKCONTEXT->GetDeviceHandle());
+	batch->inUse = false;
 }
 
-void BindingRecord::BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry)
+void BindingRecord::BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry, DescriptorWriteBatch& batch)
 {
 	if (entry.type == BindingEntry::DataType::UniformBlock)
 	{
 		UniformBlockEntry* dataptr = std::get_if<UniformBlockEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformBlock(*dataptr, data, point.binding, point.set);
+		BindUniformBlock(*dataptr, data, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageBlock)
 	{
 		StorageBlockEntry* dataptr = std::get_if<StorageBlockEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageBlock(*dataptr, data, point.binding, point.set);
+		BindStorageBlock(*dataptr, data, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTex)
 	{
 		UniformTextureEntry* dataptr = std::get_if<UniformTextureEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTexture(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindUniformTexture(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTexArray)
 	{
 		UniformTextureArrayEntry* dataptr = std::get_if<UniformTextureArrayEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTextureArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindUniformTextureArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTexCube)
 	{
 		UniformTextureCubeEntry* dataptr = std::get_if<UniformTextureCubeEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTextureCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindUniformTextureCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImage)
 	{
 		StorageImageEntry* dataptr = std::get_if<StorageImageEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImage(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindStorageImage(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImageArray)
 	{
 		StorageImageArrayEntry* dataptr = std::get_if<StorageImageArrayEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImageArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindStorageImageArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImage2DArray)
 	{
 		StorageImage2DArrayEntry* dataptr = std::get_if<StorageImage2DArrayEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImage2DArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindStorageImage2DArray(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImageCube)
 	{
 		StorageImageCubeEntry* dataptr = std::get_if<StorageImageCubeEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImageCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindStorageImageCube(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::AccelerationStructure)
 	{
 		AccelerationStructureEntry* dataptr = std::get_if<AccelerationStructureEntry>(&entry.data);
 		if (!dataptr) return;
-		BindAccelerationStructure(*dataptr, data, point.binding, point.set);
+		BindAccelerationStructure(*dataptr, data, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::UniformTex3D)
 	{
 		UniformTexture3DEntry* dataptr = std::get_if<UniformTexture3DEntry>(&entry.data);
 		if (!dataptr) return;
-		BindUniformTexture3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindUniformTexture3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 	else if (entry.type == BindingEntry::DataType::StorageImage3D)
 	{
 		StorageImage3DEntry* dataptr = std::get_if<StorageImage3DEntry>(&entry.data);
 		if (!dataptr) return;
-		BindStorageImage3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set);
+		BindStorageImage3D(cmdBuffer, data, bindStage, *dataptr, point.binding, point.set, batch);
 	}
 }
 
-void BindingRecord::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+void BindingRecord::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (entry.block)
 	{
@@ -1285,18 +1402,10 @@ void BindingRecord::BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<P
 		.setOffset(0)
 		.setRange(entry.buffer->GetSize());
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-		.setBufferInfo(bufferInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddBuffer(data->sets[set], binding, vk::DescriptorType::eUniformBuffer, bufferInfo);
 }
 
-void BindingRecord::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (entry.block)
 	{
@@ -1314,18 +1423,10 @@ void BindingRecord::BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<P
 		.setOffset(0)
 		.setRange(entry.buffer->GetSize());
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-		.setBufferInfo(bufferInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddBuffer(data->sets[set], binding, vk::DescriptorType::eStorageBuffer, bufferInfo);
 }
 
-void BindingRecord::BindUniformTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindUniformTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1351,18 +1452,10 @@ void BindingRecord::BindUniformTexture(const std::shared_ptr<VKWrapper::VKComman
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eCombinedImageSampler, imageInfo);
 }
 
-void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1370,7 +1463,8 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 	if (entry.provider)
 		entry.descEntrys = entry.provider->GetTextureDescBindEntrys();
 
-	std::vector<vk::DescriptorImageInfo> imageInfos;
+	// 直接填进批次里复用的数组，不另建临时 vector
+	auto& imageInfos = batch.BeginImageArray();
 	for (auto& desc : entry.descEntrys)
 	{
 		// 采样读：光追 / 计算 Pass 绑 bindless 时不再把整组纹理切到 GENERAL、下一个图形 Pass 再切回只读
@@ -1384,21 +1478,11 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 		imageInfos.push_back(imageInfo);
 	}
 
-	if (imageInfos.empty())
-		return;
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfos);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	// 一个都没有时 AddImageArray 不加这一项（descriptorCount 不能为 0）
+	batch.AddImageArray(data->sets[set], binding, vk::DescriptorType::eCombinedImageSampler, imageInfos);
 }
 
-void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1424,18 +1508,10 @@ void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCo
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eCombinedImageSampler, imageInfo);
 }
 
-void BindingRecord::BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1461,24 +1537,16 @@ void BindingRecord::BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandB
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eStorageImage, imageInfo);
 }
 
-void BindingRecord::BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& arrayEntry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
 
 
-	std::vector<vk::DescriptorImageInfo> imageInfos;
+	auto& imageInfos = batch.BeginImageArray();
 	for (auto& entry : arrayEntry.entrys)
 	{
 		if (entry.descEntry.version != entry.texture->GetDescBindEntryVersion())
@@ -1498,18 +1566,11 @@ void BindingRecord::BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCom
 		imageInfos.push_back(imageInfo);
 	}
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfos);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	// 空数组不写（原来会提交 descriptorCount = 0 的写入，规范不允许）
+	batch.AddImageArray(data->sets[set], binding, vk::DescriptorType::eStorageImage, imageInfos);
 }
 
-void BindingRecord::BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1535,18 +1596,10 @@ void BindingRecord::BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKC
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eStorageImage, imageInfo);
 }
 
-void BindingRecord::BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1572,37 +1625,18 @@ void BindingRecord::BindStorageImageCube(const std::shared_ptr<VKWrapper::VKComm
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eStorageImage, imageInfo);
 }
 
-void BindingRecord::BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set)
+void BindingRecord::BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (entry.handle == VK_NULL_HANDLE)
 		return;
 
-	vk::WriteDescriptorSetAccelerationStructureKHR asWrite;
-	asWrite.setAccelerationStructures(entry.handle);
-
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-		.setDescriptorCount(1)
-		.setPNext(&asWrite);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddAccelerationStructure(data->sets[set], binding, entry.handle);
 }
 
-void BindingRecord::BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1628,18 +1662,10 @@ void BindingRecord::BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKComm
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eCombinedImageSampler, imageInfo);
 }
 
-void BindingRecord::BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set)
+void BindingRecord::BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)
 {
 	if (!cmdBuffer)
 		return;
@@ -1665,15 +1691,7 @@ void BindingRecord::BindStorageImage3D(const std::shared_ptr<VKWrapper::VKComman
 		.setSampler(sampler->GetHandle())
 		.setImageLayout(imageLayout);
 
-	vk::WriteDescriptorSet write;
-	write
-		.setDstSet(data->sets[set])
-		.setDstBinding(binding)
-		.setDstArrayElement(0)
-		.setDescriptorType(vk::DescriptorType::eStorageImage)
-		.setImageInfo(imageInfo);
-
-	VKCONTEXT->GetDeviceHandle().updateDescriptorSets(write, nullptr);
+	batch.AddImage(data->sets[set], binding, vk::DescriptorType::eStorageImage, imageInfo);
 }
 
 vk::Result Pipeline::CreateShaderModule(const std::vector<uint32_t>& code, vk::ShaderModule& outModule) {

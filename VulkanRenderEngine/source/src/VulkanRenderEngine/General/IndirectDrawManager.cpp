@@ -222,16 +222,47 @@ uint32_t BindlessTextureManager::RefreshChangedTextures()
 	return refreshed;
 }
 
+// 空闲槽位里放的占位图：1×1 透明黑，上传后固定成只读布局。
+std::shared_ptr<Texture2D> BindlessTextureManager::CreatePlaceholderTexture()
+{
+	TextureConfig config;
+	config.minFilter = vk::Filter::eNearest;
+	config.magFilter = vk::Filter::eNearest;
+	auto texture = std::make_shared<Texture2D>(1u, 1u, vk::Format::eR8G8B8A8Unorm, config, 1u);
+	if (!texture || texture->IsEmpty())
+		return nullptr;
+
+	uint8_t pixel[4] = { 0, 0, 0, 0 };
+	texture->UpdateTextureData(pixel);
+	if (!texture->MakeSampledImmutable())
+		std::cerr << "[ BindlessTextureManager ] WARNING: 占位图切只读失败，空闲槽位每次绑定都会走布局记录\n";
+	return texture;
+}
+
 void BindlessTextureManager::ReleaseSlot(BindlessIndex index)
 {
+	// 占位图的上传、切只读都会等 GPU：在锁外建，免得拿着写锁等，挡住各 Pass 的 Bind
+	std::shared_ptr<Texture2D> placeholder;
+	{
+		SharedLockGuard guard(_mutex);
+		placeholder = _placeholderTexture;
+	}
+	if (!placeholder && !VKCONTEXT->IsShutdown())
+		placeholder = CreatePlaceholderTexture();
+
+	std::shared_ptr<Texture2D> duplicate;	// 别的线程抢先建好了：多建的这张在锁外放掉（声明在锁之前，析构在锁之后）
 	LockGuard guard(_mutex);
+	if (!_placeholderTexture)
+		_placeholderTexture = placeholder;
+	else if (placeholder != _placeholderTexture)
+		duplicate = std::move(placeholder);
+
 	if (index >= _entrys.size())
 		return;
 
-	if (!_placeholderTexture)
-		_placeholderTexture = std::make_shared<Texture2D>(1, 1);
-
-	_entrys[index] = _placeholderTexture->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+	// 占位图建不出来（设备已经关了等）：槽位里留着旧描述符（对象仍然有效，只是晚些释放），照常回收槽位
+	if (_placeholderTexture)
+		_entrys[index] = _placeholderTexture->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
 	_idleSlot.push(index);
 }
 
@@ -249,6 +280,7 @@ void BindlessTextureManager::Release()
 	}
 
 	std::vector<TextureDescBindEntry> entries;
+	std::shared_ptr<Texture2D> placeholder;
 	{
 		LockGuard guard(_mutex);
 		for (const auto& [tex, index] : _textureEntrys)
@@ -256,10 +288,11 @@ void BindlessTextureManager::Release()
 		_textureEntrys.clear();
 		entries.swap(_entrys);
 		std::queue<uint32_t>().swap(_idleSlot);
+		placeholder = std::move(_placeholderTexture);
 	}
 	// 锁外放掉：image / view / sampler 释放时会 Retire；占位图析构时还会回来调 UnregisterTexture
 	entries.clear();
-	_placeholderTexture.reset();
+	placeholder.reset();
 }
 
 IndirectDrawManager::IndirectDrawManager()

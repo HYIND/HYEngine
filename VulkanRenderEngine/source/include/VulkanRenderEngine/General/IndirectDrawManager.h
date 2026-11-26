@@ -49,7 +49,7 @@ public:
 
 private:
 	BindlessTextureManager();
-
+	static std::shared_ptr<Texture2D> CreatePlaceholderTexture();
 
 private:
 	std::vector<TextureDescBindEntry> _entrys;

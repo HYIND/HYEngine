@@ -119,6 +119,7 @@ namespace GeneralBindingPoint
 }
 
 class BindingRecord;
+struct DescriptorWriteBatch;
 
 class Pipeline
 {
@@ -390,19 +391,19 @@ public:
 
 private:
 	void BindAllEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage);
-	void BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry);
-	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
-	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
-	void BindUniformTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set);
-	void BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set);
-	void BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set);
-	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set);
+	void BindEntry(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, const BindingPoint& point, BindingEntry& entry, DescriptorWriteBatch& batch);
+	void BindUniformBlock(UniformBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageBlock(StorageBlockEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindUniformTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureArrayEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageImage(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageImageArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageArrayEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageImage2DArray(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage2DArrayEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageImageCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImageCubeEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindUniformTexture3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTexture3DEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindStorageImage3D(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, StorageImage3DEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
+	void BindAccelerationStructure(AccelerationStructureEntry& entry, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch);
 
 protected:
 	std::unordered_map<BindingPoint, BindingEntry> m_bindingData;
