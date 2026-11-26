@@ -6,7 +6,9 @@
 using namespace VKWrapper;
 
 uint64_t VKWrapper::ImageState::MakeKey(uint32_t mipLevel, uint32_t arrayLayer) {
-	return (static_cast<uint32_t>(mipLevel) << 32) | 0;
+	// 高 32 位是 mip（PassImageStateRecord::EndRecord 按 key >> 32 还原）；各层共用一份状态，arrayLayer 暂不参与。
+	// 必须先转成 64 位再移位：32 位整数左移 32 位是未定义行为（MSVC 上等于没移，所有 key 解出来都是 mip 0）
+	return static_cast<uint64_t>(mipLevel) << 32;
 }
 
 VKWrapper::SubresourceState& VKWrapper::ImageState::GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer) const {
