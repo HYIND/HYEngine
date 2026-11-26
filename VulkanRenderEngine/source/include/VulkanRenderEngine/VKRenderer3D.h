@@ -14,6 +14,7 @@
 #include "VulkanRenderEngine/SharedTexture.h"
 
 #include "VulkanRenderEngine/VKContext.h"
+#include "VulkanRenderEngine/VKFramePipeline.h"
 #include "VulkanRenderEngine/VKCore/CoreGeneral.h"
 #include "VulkanRenderEngine/VKWrapper/WrapperGeneral.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
@@ -41,18 +42,14 @@ struct alignas(16) camera_compData
     float fov = 80.f;
 };
 
-// 3D 渲染器（Renderer3D 的 Vulkan 后端）。引擎只提供离屏模式：每帧画到 finalColorBuffer，
-// 由宿主通过 WaitImage / FetchImage 取走后自己呈现（编辑器走 ImGui 窗口，游戏走 D3D11 交换链）。
-class VKRenderer3D
+// 3D 渲染器（Renderer3D 的 Vulkan 后端），是 VKFramePipeline 的一个阶段：
+// 画场景、做后处理，结果写到这一帧的最终画面（FrameJob::finalColor），后面的阶段（2D / UI）再往上叠。
+// 帧循环、在途 / 完成队列、取图都在 VKFramePipeline 里；实例和设备在 VKContext 里。
+class VKRenderer3D : public IFrameStage
 {
 public:
-    // 实例和设备不归渲染器：先用 VKCONTEXT->CreateInstance / CreateDevice 建好，再构造渲染器，
-    // 尺寸确定后调这个初始化渲染目标
-    static bool CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& renderer, uint32_t width, uint32_t height);
-
-public:
     VKRenderer3D();
-    ~VKRenderer3D();
+    ~VKRenderer3D() override;
 
     glm::u32vec2 GetSize() const;
     uint32_t GetWidth() const;
@@ -60,81 +57,70 @@ public:
     Scene3DRenderOption GetOption() const;
 
     void SetOption(Scene3DRenderOption option);
-    void Resize(uint32_t width, uint32_t height);
 
     // 关掉后整帧不跑 3D 渲染图（省 GPU），输出图清成黑色，2D 层 / UI 照常叠在上面。
-    // 切换时要等在途的帧画完，下一帧起生效
+    // 下一帧起生效；关掉的帧照样按段进出流水线，前后帧不用等它
     void SetSceneRenderEnabled(bool enabled) { _sceneRenderEnabled.store(enabled, std::memory_order_release); }
     bool IsSceneRenderEnabled() const { return _sceneRenderEnabled.load(std::memory_order_acquire); }
 
-    void PushFrameState(std::shared_ptr<RenderState>& state);
-    // 候选队列里是否还有没被 ExecuteLoop 取走的帧；帧循环据此决定要不要重复提交旧数据
-    bool HasPendingFrameState();
-
-    void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
-    bool FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
-
-    void Run();
-    void Stop();
-    void ExecuteLoop();
-
-    uint32_t GetMaxFramesInFlight() const;
+public:
+    // IFrameStage
+    //   OnResize   - 第一次建尺寸无关的 Pass；每次重建中间目标（flightCount 份）和场景渲染图
+    //   OnTick     - 清理渲染图里闲置的瞬时资源
+    //   OnDispatch - 派发线程上：挂这一帧的中间目标、接上一帧的蒙皮历史、推进相机历史
+    //   Execute    - 帧线程上：每帧固定进出 8 段（见 VKRenderer3D.cpp）
+    void OnResize(uint32_t width, uint32_t height, uint32_t flightCount) override;
+    void OnTick() override;
+    void OnDispatch(FrameJob& job, const FrameJob* prev, uint32_t stageIndex) override;
+    void Execute(FrameJob& job, uint32_t stageIndex) override;
 
 public:
     // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
     std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
 
-    // 渲染性能统计通道（编辑器「调试 → 渲染性能」）：不开启时各打点处只多一次判空
-    const std::shared_ptr<RenderProfilerChannel>& GetRenderProfiler() const { return _renderProfiler; }
-
 private:
-    void InitForOffSceen(uint32_t width, uint32_t height);
     void Init_Internal();
 
     void InitRenderTarget();
     void InitRenderGraph();
     void InitSceneRenderGraph();
-    void InitFirstPersonRenderGraph();
 
 private:
+    // 3D 自己的中间目标，每个在途帧一份（按 FrameJob::flightIndex 取），只在帧内用，帧做完就可以给下一帧。
+    // 最终画面（RGBA8，后处理写、2D / UI 往上叠、宿主取走）不在这里，归流水线（FrameJob::finalColor）
     struct RenderTargetData {
         std::shared_ptr<Texture2D> sceneColorBuffer;
         std::shared_ptr<Texture2D> firstPersonColorBuffer;
         std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
         std::vector<std::shared_ptr<Texture2D>> bloomMipBuffers;
-        std::shared_ptr<Texture2D> finalColorBuffer;
     };
 
-    struct FrameData {
-        std::shared_ptr<RenderGraph::Graph::FilghtSync> sync;
+    // 挂在 FrameJob 上的 3D 每帧数据
+    struct Frame3DData : FrameStageData {
         std::shared_ptr<RenderTargetData> renderTarget;
-        std::shared_ptr<RenderState> state;
-        std::shared_ptr<ThreadPool::SubmitHandle<void>> handle;
-        // 在帧提交渲染时（串行分发点）解析出的相机数据：
-        // prev 来自上一张真正提交过的帧，cur 是本帧。各帧各持一份，互不干扰
+        // 在帧进流水线时（串行派发点）解析出的相机数据：
+        // prev 来自上一张真正画过场景的帧，cur 是本帧。各帧各持一份，互不干扰
         camera_compData cameraPrevData{};
         camera_compData cameraCurData{};
-        bool skipScene = false;     // 3D 关闭：这一帧只清输出图
+        bool skipScene = false;     // 3D 关闭：这一帧各段都是空段，只在后处理段把最终画面清黑
     };
 
-    void DrawOffScreen(const std::shared_ptr<FrameData>& data);
-    void DrawEmptyFrame(const std::shared_ptr<FrameData>& data);
-
 private:
-    void ResolveFrameHistory(const std::shared_ptr<FrameData>& data);
+    void ResolveFrameHistory(RenderState& state, Frame3DData& data);
 
     camera_compData BuildCameraCompData(const RenderState& state) const;
 
-    void SetupRenderState(const std::shared_ptr<FrameData>& data);
+    void SetupRenderState(RenderState& state, const Frame3DData& data);
     void SetupIndirectDrawData(std::shared_ptr<RenderState>& state);
 
-    void FinishRendering(std::shared_ptr<RenderState>& state);
+    static void ClearColorTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& texture, const vk::ClearColorValue& clearColor);
 
     //void RenderFirstPersonLayer(RenderState& state);
 
 private:
     uint32_t scr_width;
     uint32_t scr_height;
+    uint32_t _targetCount = 1;  // 中间目标份数 = 最大在途帧数，由流水线在 OnResize 时给
 
 
     //// FirstPersonLayer
@@ -153,7 +139,6 @@ private:
     bool _cameraCacheValid = false;
 
     struct {
-        uint32_t frameIndex = 0;
         float prevEV100 = 1.0f;
     }_record;
 
@@ -189,24 +174,6 @@ private:
     Scene3DRenderOption _option;
 
     std::shared_ptr<DDGIDebugChannel> _ddgiDebugChannel;
-    std::shared_ptr<RenderProfilerChannel> _renderProfiler = std::make_shared<RenderProfilerChannel>();
 
-
-    uint32_t _maxFramesInFlight = 1;  // 最大在途帧数
-
-    std::queue<std::shared_ptr<RenderState>> _candidateFrameStates;
-    SpinLock _candidateFrameStatesMutex;
-
-    SpinLock _executeMutex;
-    ConditionVariable _executeCV;
-    std::queue<std::shared_ptr<FrameData>> _runningFrames;
-
-    RecursiveSpinLock _doneFramesMutex;
-    ConditionVariable _doneFramesCV;
-    std::queue<std::shared_ptr<FrameData>> _doneFrames;
-
-    ThreadPool _frameTaskPool;
-    bool _stop = true;
     std::atomic<bool> _sceneRenderEnabled{ true };
-    std::shared_ptr<std::thread> _exeLoopThread;
 };

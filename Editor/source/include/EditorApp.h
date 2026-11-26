@@ -30,7 +30,7 @@ public:
 	bool CreateRenderContext(const EngineRenderContextDesc& desc);
 	EngineVulkanContext GetVulkanContext() const;
 
-	// 离屏 target 归 Renderer3D 所有。编辑器只报告视口尺寸、向服务询问 target 状态，
+	// 离屏 target 归 Render::Renderer（的帧流水线）所有。编辑器只报告视口尺寸、向服务询问 target 状态，
 	// 不直接碰 Vulkan 后端。
 	bool CreateRenderTarget(uint32_t width, uint32_t height);
 	bool ResizeRenderTarget(uint32_t width, uint32_t height, const std::function<void()>& beforeResize = {});
@@ -68,7 +68,7 @@ public:
 	void SetTargetFps(uint32_t fps);
 	uint32_t GetTargetFps() const;
 
-	bool ResizeVulkan(uint32_t width, uint32_t height, std::function<void()> prevClear);
+	bool ResizeRenderer(uint32_t width, uint32_t height, std::function<void()> prevClear);
 
 	// 场景会话：World、编辑/播放状态、拾取、场景内容搭建。
 	SceneEditor& Scene() { return m_scene; }

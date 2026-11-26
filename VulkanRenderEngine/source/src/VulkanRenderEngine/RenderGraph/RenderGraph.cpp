@@ -383,7 +383,6 @@ bool Graph::ExecutePass(
 // 执行
 void Graph::Execute(
 	std::shared_ptr<RenderState>& state,
-	std::shared_ptr<FilghtSync>& sync,
 	const std::unordered_map<std::string, std::shared_ptr<Texture2D>>& externalResources
 )
 {
@@ -489,7 +488,6 @@ void Graph::Execute(
 	uint32_t lastDoneCounter = std::numeric_limits<uint32_t>::max();
 	while (!running_batchs.empty())
 	{
-		//sync->WaitForNextProgress();
 		auto curBeginCounter = beginCounter.load(std::memory_order_acquire);
 		auto curDoneCounter = doneCounter.load(std::memory_order_acquire);
 		if (
@@ -655,14 +653,4 @@ void Graph::CleanGraphIdleResource()
 	if (_lastCleanupTimeAccumulator != 0)
 		_resManager.CleanupIdleResource();
 	_lastCleanupTimeAccumulator = Tool::GetTimestampSecond();
-}
-
-void Graph::FilghtSync::WaitForNextProgress() {
-	++curProgress;
-	if (preFrameTimeLine)
-		preFrameTimeLine->Wait(curProgress);
-}
-
-void Graph::FilghtSync::SignalDoneProgress() {
-	curframeTimeLine->Signal(curProgress);
 }

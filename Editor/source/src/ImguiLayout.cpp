@@ -3216,7 +3216,7 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 					imguiRegisterTexture.clear();
 				};
 
-			editorApp->ResizeVulkan(viewportSize.x, viewportSize.y, prevClear);
+			editorApp->ResizeRenderer(viewportSize.x, viewportSize.y, prevClear);
 
 			editorApp->WaitImage([&](std::shared_ptr<Texture2D> tex) {
 				if (!tex) return;

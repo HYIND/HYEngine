@@ -40,8 +40,7 @@ public:
     RenderSystem();
     virtual void onAttach(World& world) override;
 
-    void SetTriBuffer3D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render3DFrameData>>> triBuffer);
-    void SetTriBuffer2D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render2DFrameData>>> triBuffer);
+    void SetTriBufferScene(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderSceneFrameData>>> triBuffer);
     void SetTriBufferUI(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderUIFrameData>>> triBuffer);
 
     // 场景当前生效的 2D 相机（primary 且 priority 最大）；一台都没有时返回默认视图、found = false。
@@ -80,8 +79,7 @@ private:
 
 private:
     std::vector<Line2> _DebugLines;
-    std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render3DFrameData>>> _triBuffer3D;
-    std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render2DFrameData>>> _triBuffer2D;
+    std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderSceneFrameData>>> _triBufferScene;
     std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderUIFrameData>>> _triBufferUI;
     ThreadPool _threadPool;
     SpinLock _Scene3D_SpinLock;

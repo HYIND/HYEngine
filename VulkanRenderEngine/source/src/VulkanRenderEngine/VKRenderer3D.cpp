@@ -39,13 +39,6 @@
 
 const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
 
-bool VKRenderer3D::CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& renderer, uint32_t width, uint32_t height)
-{
-	renderer->_maxFramesInFlight = std::max(1u, GlobalConfig::MaxFramesInFlight);
-	renderer->InitForOffSceen(width, height);
-	return true;
-}
-
 // ---------------------------------------------------------------------------------------------------
 // Pass 并行构造
 // Pass 的构造函数里主要是 shader 编译（shaderc）和管线创建，彼此独立，可以并发：
@@ -54,7 +47,7 @@ bool VKRenderer3D::CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& rend
 //   * 构造期间的纹理上传（SSAO 噪声图等）都是提交并等待完成的，线程池销毁、工作线程退出时
 //     各自的命令池随之释放，不会有还在 GPU 上执行的命令。
 // 有顺序依赖的（DDGI 图集布局）和 Pass 之间的连接（SetGeneralBuffer / SetSharedState）仍在调用线程上做。
-// 不用 _frameTaskPool：它在 Run() 里才启动，Resize 时也会被 Stop()。
+// 不用流水线的帧线程池：它在 Run() 里才启动，Resize 时也会被 Stop()。
 // ---------------------------------------------------------------------------------------------------
 namespace
 {
@@ -92,7 +85,6 @@ namespace
 }
 
 VKRenderer3D::VKRenderer3D()
-	:_frameTaskPool(std::max(std::max(1u, GlobalConfig::MaxFramesInFlight), std::thread::hardware_concurrency()))
 {
 	scr_width = 0;
 	scr_height = 0;
@@ -101,14 +93,22 @@ VKRenderer3D::VKRenderer3D()
 VKRenderer3D::~VKRenderer3D()
 {}
 
-void VKRenderer3D::InitForOffSceen(uint32_t width, uint32_t height)
+void VKRenderer3D::OnResize(uint32_t width, uint32_t height, uint32_t flightCount)
 {
-	scr_width = width;
-	scr_height = height;
+	// 第一次：建尺寸无关的 Pass（只建一次）+ 中间目标 + 渲染图；
+	// 之后只重建和分辨率有关的：中间目标、按新尺寸重建渲染图（复用 Pass，不重新编译 shader）
+	scr_width = std::max(1u, width);
+	scr_height = std::max(1u, height);
+	_targetCount = std::max(1u, flightCount);
 
 	Init_Internal();
-
 	InitRenderGraph();
+}
+
+void VKRenderer3D::OnTick()
+{
+	if (_sceneRenderGraph)
+		_sceneRenderGraph->CleanGraphIdleResource();
 }
 
 void VKRenderer3D::Init_Internal()
@@ -162,7 +162,7 @@ void VKRenderer3D::InitRenderTarget()
 	uint32_t bloomLevel = floor(log2(std::max(ratio.x, ratio.y))) + 1;
 	bloomLevel = std::min(bloomLevel, 6u);
 
-	for (uint32_t i = 0; i < _maxFramesInFlight * 2; i++)
+	for (uint32_t i = 0; i < _targetCount; i++)
 	{
 		auto renderTarget = std::make_shared<RenderTargetData>();
 
@@ -179,8 +179,6 @@ void VKRenderer3D::InitRenderTarget()
 			uint32_t currH = std::max(1u, scr_height >> level);
 			renderTarget->bloomMipBuffers.push_back(std::make_shared<Texture2D>(currW, currH, vk::Format::eR16G16B16A16Sfloat, config));
 		}
-
-		renderTarget->finalColorBuffer = std::make_shared<Texture2D>(scr_width, scr_height, vk::Format::eR8G8B8A8Unorm, config);
 
 		_renderTargets.push_back(std::move(renderTarget));
 	}
@@ -216,32 +214,6 @@ Scene3DRenderOption VKRenderer3D::GetOption() const
 void VKRenderer3D::SetOption(Scene3DRenderOption option)
 {
 	_option = option;
-}
-
-void VKRenderer3D::Resize(uint32_t width, uint32_t height)
-{
-	width = std::max(1u, width);
-	height = std::max(1u, height);
-	if (scr_width == width && scr_height == height)
-		return;
-
-	bool needRestartup = !_stop;
-	if (needRestartup)
-		Stop();
-
-	while (!_runningFrames.empty())
-		_runningFrames.pop();
-	while (!_doneFrames.empty())
-		_doneFrames.pop();
-
-	// 只做和分辨率有关的事：重建每个在途帧的 render target，按新尺寸重建渲染图（复用 Pass，不重新编译 shader）
-	scr_width = width;
-	scr_height = height;
-	InitRenderTarget();
-	InitSceneRenderGraph();
-
-	if (needRestartup)
-		Run();
 }
 
 void VKRenderer3D::InitRenderGraph()
@@ -1277,157 +1249,162 @@ void VKRenderer3D::InitSceneRenderGraph()
 		P.ForEach([&](RenderPassBase& pass) { pass.OnResize(width, height); });
 }
 
-void VKRenderer3D::DrawOffScreen(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::ClearColorTexture(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, const std::shared_ptr<Texture2D>& texture, const vk::ClearColorValue& clearColor)
 {
-	if (!data)
+	if (!texture || texture->IsEmpty())
+		return;
+	auto image = texture->GetImage();
+	auto layout = texture->GetLayout(0);
+
+	if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
+		texture->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
+
+	vk::ImageSubresourceRange range;
+	range.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseArrayLayer(0)
+		.setLayerCount(1)
+		.setBaseMipLevel(0)
+		.setLevelCount(1);
+	cmd->clearColorImage(image, layout, clearColor, range);
+}
+
+void VKRenderer3D::OnDispatch(FrameJob& job, const FrameJob* prev, uint32_t stageIndex)
+{
+	auto data = std::make_shared<Frame3DData>();
+	auto& state = *job.state;
+
+	state.option = _option;
+	data->renderTarget = _renderTargets[job.flightIndex % _renderTargets.size()];
+
+	state.curFrameSkinnedData = std::make_shared<FrameHistoryData>();
+	state.preFrameSkinnedData = prev ? prev->state->curFrameSkinnedData : nullptr;
+
+	data->skipScene = !_sceneRenderEnabled.load(std::memory_order_acquire);
+
+	// 相机历史只跟真正画过场景的帧走，3D 关闭的帧不参与
+	if (!data->skipScene)
+		ResolveFrameHistory(state, *data);
+
+	job.stageData[stageIndex] = std::move(data);
+}
+
+// 每帧固定 8 段，顺序是：
+//   1 SetupRenderState   2 SetupIndirectDrawData   3 PreCalculate   4 Skinned   5 预计算 + 蒙皮的提交
+//   6 清中间目标          7 SceneRenderGraph        8 后处理（Combin / Bloom / PostProcess → 最终画面）+ 收尾
+// 3D 关闭时各段照样进出（空段），只在第 8 段把最终画面清黑。
+// 要加段、减段，或者让某一段按条件跳过，都会让前后帧的段对不上号（见 VKFramePipeline.h）。
+void VKRenderer3D::Execute(FrameJob& job, uint32_t stageIndex)
+{
+	auto* data = job.GetStageData<Frame3DData>(stageIndex);
+	auto& state = job.state;
+	if (!data || !state || !job.sync)
 		return;
 
-	auto& state = data->state;
-	auto& sync = data->sync;
-
-	if (!state || !sync)
-		return;
-
-	// 渲染性能统计：各段先等上一帧放行（单独记在 WaitPrevFrame），计时从 guard 之后开始
-	RenderFrameProfile* profile = state->profile.get();
-	sync->waitAccumUs = profile ? &profile->steps[size_t(RenderProfileStep::WaitPrevFrame)] : nullptr;
+	auto& sync = *job.sync;
+	RenderFrameProfile* profile = job.Profile();
+	const bool skip = data->skipScene;
+	auto& renderTarget = data->renderTarget;
 
 	{
-		RenderGraph::FlightSyncScope syncScope(*sync);
-		RenderProfileScope scope(profile, RenderProfileStep::ProcessRetire);
-		VKCONTEXT->ProcessRetireAndPushFrameIndex();
-	}
-
-	{
-		RenderGraph::FlightSyncScope syncScope(*sync);
+		FlightSync::ProgressScope syncScope(sync);
 		RenderProfileScope scope(profile, RenderProfileStep::SetupRenderState);
-		SetupRenderState(data);
+		if (!skip)
+			SetupRenderState(*state, *data);
 	}
 
 	{
-		RenderGraph::FlightSyncScope syncScope(*sync);
+		FlightSync::ProgressScope syncScope(sync);
 		RenderProfileScope scope(profile, RenderProfileStep::SetupIndirectDrawData);
-		SetupIndirectDrawData(state);
+		if (!skip)
+			SetupIndirectDrawData(state);
 	}
 
 	{
-		auto cmd = VKCONTEXT->GetCommandBuffer();
+		std::shared_ptr<VKWrapper::VKCommandBuffer> cmd;
+		if (!skip)
+			cmd = VKCONTEXT->GetCommandBuffer();
 
 		{
-			RenderGraph::FlightSyncScope syncScope(*sync);
+			FlightSync::ProgressScope syncScope(sync);
 			RenderProfileScope scope(profile, RenderProfileStep::PreCalculate);
-			_preCalculatePass->Execute(cmd, *state);
+			if (!skip)
+				_preCalculatePass->Execute(cmd, *state);
 		}
 
 		{
-			RenderGraph::FlightSyncScope syncScope(*sync);
+			FlightSync::ProgressScope syncScope(sync);
 			RenderProfileScope scope(profile, RenderProfileStep::Skinned);
-			_skinnedPass->Execute(cmd, *state);
+			if (!skip)
+				_skinnedPass->Execute(cmd, *state);
 		}
 
 		{
-			RenderGraph::FlightSyncScope syncScope(*sync);
+			FlightSync::ProgressScope syncScope(sync);
 			RenderProfileScope scope(profile, RenderProfileStep::PreSubmit);
+			if (!skip)
+				cmd->SubmitNowAndWait();
+		}
+	}
+
+	{
+		FlightSync::ProgressScope syncScope(sync);
+		RenderProfileScope scope(profile, RenderProfileStep::ClearTargets);
+		if (!skip)
+		{
+			auto cmd = VKCONTEXT->GetCommandBuffer();
+			ClearColorTexture(cmd, renderTarget->sceneColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f });
+			ClearColorTexture(cmd, renderTarget->firstPersonColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f });
 			cmd->SubmitNowAndWait();
 		}
 	}
 
 	{
-		RenderGraph::FlightSyncScope syncScope(*sync);
-		RenderProfileScope scope(profile, RenderProfileStep::ClearTargets);
-		auto cmd = VKCONTEXT->GetCommandBuffer();
-
-		auto clearColorTexture = [&](const std::shared_ptr<Texture2D>& texture, const vk::ClearColorValue& clearColor) {
-			if (!texture || texture->IsEmpty())
-				return;
-			auto image = texture->GetImage();
-			auto layout = texture->GetLayout(0);
-
-			if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
-				texture->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-
-			vk::ImageSubresourceRange range;
-			range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setBaseArrayLayer(0)
-				.setLayerCount(1)
-				.setBaseMipLevel(0)
-				.setLevelCount(1);
-			cmd->clearColorImage(image, layout, clearColor, range);
-			};
-
-		clearColorTexture(data->renderTarget->sceneColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f });
-		clearColorTexture(data->renderTarget->firstPersonColorBuffer, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 0.0f });
-		cmd->SubmitNowAndWait();
-	}
-
-	{
-		std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
-			{ Ext_RenderTargetColorBuffer_Name, data->renderTarget->sceneColorBuffer }
-		};
-		RenderGraph::FlightSyncScope syncScope(*sync);
+		FlightSync::ProgressScope syncScope(sync);
 		RenderProfileScope scope(profile, RenderProfileStep::SceneGraph);
-		_sceneRenderGraph->Execute(state, sync, externalResources);
+		if (!skip)
+		{
+			std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
+				{ Ext_RenderTargetColorBuffer_Name, renderTarget->sceneColorBuffer }
+			};
+			_sceneRenderGraph->Execute(state, externalResources);
+		}
 	}
 
-	auto& renderTarget = data->renderTarget;
+	// 后处理：Combin / Bloom / PostProcess 这几个 Pass 各帧共用，放进同一段，同一时间只有一帧在用。
+	// Finish 也并在这一段里：只记一下 EV100
 	{
-		RenderProfileScope scope(profile, RenderProfileStep::Combin);
-		_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
-	}
-	auto& option = state->option;
-	if (option.flags.bloomOn)
-	{
-		RenderProfileScope scope(profile, RenderProfileStep::Bloom);
-		_globalBloomPass->Draw(renderTarget->combinBrightColorBuffer, renderTarget->bloomMipBuffers);
-	}
-	{
-		RenderProfileScope scope(profile, RenderProfileStep::PostProcess);
-		_globalPostProcessPass->Draw(
-			renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
-			option.flags.bloomOn, option.flags.gammaOn, false,
-			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
-		);
-	}
+		FlightSync::ProgressScope syncScope(sync);
+		if (skip)
+		{
+			auto cmd = VKCONTEXT->GetCommandBuffer();
+			ClearColorTexture(cmd, job.finalColor, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f });
+			cmd->SubmitNowAndWait();
+		}
+		else
+		{
+			{
+				RenderProfileScope scope(profile, RenderProfileStep::Combin);
+				_combinPass->Draw(renderTarget->combinColorBuffer, renderTarget->combinBrightColorBuffer, { renderTarget->sceneColorBuffer ,renderTarget->firstPersonColorBuffer });
+			}
+			auto& option = state->option;
+			if (option.flags.bloomOn)
+			{
+				RenderProfileScope scope(profile, RenderProfileStep::Bloom);
+				_globalBloomPass->Draw(renderTarget->combinBrightColorBuffer, renderTarget->bloomMipBuffers);
+			}
+			{
+				RenderProfileScope scope(profile, RenderProfileStep::PostProcess);
+				_globalPostProcessPass->Draw(
+					job.finalColor, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
+					option.flags.bloomOn, option.flags.gammaOn, false,
+					pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
+				);
+			}
+		}
 
-	{
-		RenderGraph::FlightSyncScope syncScope(*sync);
 		RenderProfileScope scope(profile, RenderProfileStep::Finish);
-		FinishRendering(state);
+		_record.prevEV100 = state->option.postProcessParams.EV100;
 	}
-
-	sync->waitAccumUs = nullptr;
-
-}
-
-void VKRenderer3D::DrawEmptyFrame(const std::shared_ptr<FrameData>& data)
-{
-	if (!data || !data->state || !data->sync)
-		return;
-
-	VKCONTEXT->ProcessRetireAndPushFrameIndex();
-
-	const auto& texture = data->renderTarget ? data->renderTarget->finalColorBuffer : nullptr;
-	if (texture && !texture->IsEmpty())
-	{
-		auto cmd = VKCONTEXT->GetCommandBuffer();
-		auto layout = texture->GetLayout(0);
-		if (layout != vk::ImageLayout::eTransferDstOptimal && layout != vk::ImageLayout::eGeneral)
-			texture->TransitionLayout(cmd, &layout, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Write);
-
-		vk::ImageSubresourceRange range;
-		range.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1)
-			.setBaseMipLevel(0)
-			.setLevelCount(1);
-		cmd->clearColorImage(texture->GetImage(), layout, vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f }, range);
-		cmd->SubmitNowAndWait();
-	}
-
-	FinishRendering(data->state);
-
-	// 这一帧没有跑渲染图，进度计数和正常帧对不上；紧跟着的正常帧会逐段等这条时间线，直接放到很大，让它不用等
-	data->sync->curframeTimeLine->Signal(std::numeric_limits<uint32_t>::max() / 2u);
 }
 
 camera_compData VKRenderer3D::BuildCameraCompData(const RenderState& state) const
@@ -1455,17 +1432,12 @@ camera_compData VKRenderer3D::BuildCameraCompData(const RenderState& state) cons
 	return cameraData;
 }
 
-void VKRenderer3D::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::ResolveFrameHistory(RenderState& state, Frame3DData& data)
 {
-	if (!data || !data->state)
-		return;
-
-	auto& state = *data->state;
-
-	// 相机：prev 取上一张真正提交过的帧，cur 取本帧
-	data->cameraCurData = BuildCameraCompData(state);
-	data->cameraPrevData = _cameraCacheValid ? _cameraCache : data->cameraCurData;
-	_cameraCache = data->cameraCurData;
+	// 相机：prev 取上一张真正画过场景的帧，cur 取本帧
+	data.cameraCurData = BuildCameraCompData(state);
+	data.cameraPrevData = _cameraCacheValid ? _cameraCache : data.cameraCurData;
+	_cameraCache = data.cameraCurData;
 	_cameraCacheValid = true;
 
 	// 蒙皮重投影历史在构建 FrameData 时已经挂好（cur/preFrameSkinnedData），这里不用再管。
@@ -1527,22 +1499,21 @@ void VKRenderer3D::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 	commit(skinnedRenderData.transparentItems);
 }
 
-void VKRenderer3D::SetupRenderState(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::SetupRenderState(RenderState& state, const Frame3DData& data)
 {
-	auto& state = data->state;
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
-	state->camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
-	state->camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
+	state.camera.prevUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
+	state.camera.curUBO = std::make_shared<UniformBlock>(sizeof(camera_compData));
 
-	state->camera.prevUBO->WriteDataAsync(cmd, &data->cameraPrevData, sizeof(camera_compData));
-	state->camera.curUBO->WriteDataAsync(cmd, &data->cameraCurData, sizeof(camera_compData));
+	state.camera.prevUBO->WriteDataAsync(cmd, &data.cameraPrevData, sizeof(camera_compData));
+	state.camera.curUBO->WriteDataAsync(cmd, &data.cameraCurData, sizeof(camera_compData));
 	VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
 
-	state->framebuffer.width = scr_width;
-	state->framebuffer.height = scr_height;
+	state.framebuffer.width = scr_width;
+	state.framebuffer.height = scr_height;
 
-	state->renderRecord.prevEV100 = _record.prevEV100;
+	state.renderRecord.prevEV100 = _record.prevEV100;
 }
 
 void VKRenderer3D::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
@@ -1650,217 +1621,4 @@ void VKRenderer3D::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 					});
 			});
 	}
-}
-
-void VKRenderer3D::FinishRendering(std::shared_ptr<RenderState>& state)
-{
-	_record.prevEV100 = state->option.postProcessParams.EV100;
-	state->renderRecord.frameEndMicroTimeStamp = Tool::GetTimestampMircoseconds();
-}
-
-void VKRenderer3D::PushFrameState(std::shared_ptr<RenderState>& state)
-{
-	if (!state)
-		return;
-
-	{
-		LockGuard guard(_candidateFrameStatesMutex);
-		if (_candidateFrameStates.size() >= _maxFramesInFlight)
-		{
-			if (_renderProfiler->IsEnabled())
-				_renderProfiler->AddDropped();
-			_candidateFrameStates.pop();
-		}
-		_candidateFrameStates.push(state);
-	}
-
-	LockGuard guard(_executeMutex);
-	_executeCV.NotifyOne();
-}
-
-bool VKRenderer3D::HasPendingFrameState()
-{
-	LockGuard guard(_candidateFrameStatesMutex);
-	return !_candidateFrameStates.empty();
-}
-
-void VKRenderer3D::WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
-{
-	do
-	{
-		LockGuard guard(_doneFramesMutex);
-		if (FetchImage(callback))
-			return;
-
-		_doneFramesCV.Wait(guard);
-		if (_stop)
-			return;
-		if (FetchImage(callback))
-			return;
-	} while (true);
-}
-
-bool VKRenderer3D::FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
-{
-	LockGuard guard(_doneFramesMutex);
-	if (_doneFrames.empty())
-		return false;
-
-	if (callback
-		&& _doneFrames.front()
-		&& _doneFrames.front()->renderTarget
-		&& _doneFrames.front()->renderTarget->finalColorBuffer
-		)
-	{
-		auto& framedata = _doneFrames.front();
-		callback(framedata->renderTarget->finalColorBuffer, framedata->state);
-	}
-	_doneFrames.pop();
-	return true;
-}
-
-void VKRenderer3D::Run()
-{
-	if (!_stop)
-		return;
-
-	_frameTaskPool.start();
-	_stop = false;
-	_exeLoopThread = std::make_shared<std::thread>(&VKRenderer3D::ExecuteLoop, this);
-}
-
-void VKRenderer3D::Stop()
-{
-	if (_stop)
-		return;
-
-	_stop = true;
-	_frameTaskPool.stop();
-
-	{
-		LockGuard guard(_doneFramesMutex);
-		_doneFramesCV.NotifyAll();
-	}
-
-	{
-		LockGuard guard(_executeMutex);
-		_executeCV.NotifyAll();
-	}
-
-	if (_exeLoopThread)
-	{
-		if (_exeLoopThread->joinable())
-			_exeLoopThread->join();
-		_exeLoopThread.reset();
-	}
-}
-
-void VKRenderer3D::ExecuteLoop()
-{
-	SetThreadDescription(GetCurrentThread(), L"VKRenderer3D::ExecuteLoop");
-
-	while (!_stop || !_runningFrames.empty())
-	{
-		_sceneRenderGraph->CleanGraphIdleResource();
-
-		bool didWork = false;
-
-		if (!_stop)
-		{
-			LockGuard guard(_candidateFrameStatesMutex);
-			while (!_candidateFrameStates.empty() && (_runningFrames.size() < _maxFramesInFlight))
-			{
-				// 3D 关闭的帧不跑渲染图，没法和前后帧按进度逐段交接：等在途的帧全部画完再放它进去（它不再等上一帧）
-				const bool skipScene = !_sceneRenderEnabled.load(std::memory_order_acquire);
-				if (skipScene && !_runningFrames.empty())
-					break;
-
-				auto sync = std::make_shared<RenderGraph::Graph::FilghtSync>();
-				sync->curframeTimeLine = std::make_shared<VKWrapper::VKTimelineSemaphore>(VKCONTEXT->GetDevice().get());
-				sync->preFrameTimeLine = !_runningFrames.empty() ? _runningFrames.back()->sync->curframeTimeLine : nullptr;
-
-				auto data = std::make_shared<FrameData>();
-				data->sync = std::move(sync);
-				data->state = std::move(_candidateFrameStates.front());
-				data->state->renderRecord.frameIndex = _record.frameIndex++;
-				data->state->renderRecord.frameStartMicroTimeStamp = Tool::GetTimestampMircoseconds();
-
-				// 渲染性能统计：开着才给这一帧挂 profile（Renderer3D 那边开着时已经挂上并记了帧数据解析）
-				if (_renderProfiler->IsEnabled())
-				{
-					auto& profile = data->state->profile;
-					if (!profile)
-						profile = std::make_shared<RenderFrameProfile>();
-					const int64_t now = RenderProfileNowUs();
-					if (profile->pushTimeUs > 0)
-						profile->Add(RenderProfileStep::Queue, now - profile->pushTimeUs);
-					profile->startTimeUs = now;
-					profile->frameIndex = data->state->renderRecord.frameIndex;
-				}
-				else
-					data->state->profile.reset();
-				data->state->option = _option;
-				data->renderTarget = _renderTargets[data->state->renderRecord.frameIndex % _renderTargets.size()];
-
-				data->state->curFrameSkinnedData = std::make_shared<FrameHistoryData>();
-				data->state->preFrameSkinnedData = !_runningFrames.empty() ? _runningFrames.back()->state->curFrameSkinnedData : nullptr;
-				data->skipScene = skipScene;
-
-				// 相机历史只跟真正画过的帧走，空帧不参与
-				if (!skipScene)
-					ResolveFrameHistory(data);
-
-				data->handle = _frameTaskPool.submit([&, weakData = std::weak_ptr(data)]()->void
-					{
-						if (auto data = weakData.lock())
-						{
-							if (data->skipScene)
-								DrawEmptyFrame(data);
-							else
-								DrawOffScreen(data);
-						}
-
-						LockGuard guard(_executeMutex);
-						_executeCV.NotifyOne();
-					});
-				_candidateFrameStates.pop();
-				_runningFrames.push(std::move(data));
-				didWork = true;
-			}
-		}
-
-		while (!_runningFrames.empty() && _runningFrames.front()->handle->is_ready())
-		{
-			auto data = std::move(_runningFrames.front());
-			_runningFrames.pop();
-			RenderFrameProfile* profile = (data->state && data->state->profile) ? data->state->profile.get() : nullptr;
-			if (profile)
-			{
-				profile->endTimeUs = RenderProfileNowUs();
-				_renderProfiler->Publish(std::move(data->state->profile));
-			}
-
-			{
-				LockGuard guard(_doneFramesMutex);
-				if (_doneFrames.size() >= _maxFramesInFlight)
-					_doneFrames.pop();
-				_doneFrames.push(std::move(data));
-				_doneFramesCV.NotifyAll();
-			}
-
-			didWork = true;
-		}
-
-
-		if (!didWork)
-		{
-			LockGuard guard(_executeMutex);
-			_executeCV.WaitFor(guard, std::chrono::milliseconds(20));
-		}
-
-	}
-}
-
-uint32_t VKRenderer3D::GetMaxFramesInFlight() const {
-	return _maxFramesInFlight;
 }

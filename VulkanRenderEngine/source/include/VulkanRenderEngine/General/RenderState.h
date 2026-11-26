@@ -211,7 +211,7 @@ struct RenderState
 		std::shared_ptr<StorageBlock> ssbo_SkinnedMesh_MotionData;
 	} indirectCommands;   
 
-	// 蒙皮重投影的两帧关系数据：和 FilghtSync 的 curframeTimeLine/preFrameTimeLine 一样，
+	// 蒙皮重投影的两帧关系数据：和 FlightSync 的 curframeTimeLine/preFrameTimeLine 一样，
 	// 本帧这份在构建 FrameData 时 make_shared，上一帧那份直接取上一帧 state 里的那份
 	std::shared_ptr<FrameHistoryData> curFrameSkinnedData;
 	std::shared_ptr<FrameHistoryData> preFrameSkinnedData;

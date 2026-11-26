@@ -1,61 +1,30 @@
 ﻿#pragma once
 
-#include "Helper/DynamicFpsController.h"
-#include "Helper/TripleBuffer.h"
 #include "RenderEngine/RenderFrameData.h"
 #include "VulkanRenderEngine/VKRenderer3D.h"
 
 #include <glm/glm.hpp>
 
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
 
 namespace Render
 {
+    // 3D 前端：持有 3D 后端（VKRenderer3D），把场景线程写的 3D 帧数据整理成 RenderState。
+    // 帧循环、帧流水线、渲染目标、帧率都在 Render::Renderer 里；这里只做 3D 自己的事。
     class Renderer3D
     {
     public:
-        using FrameBuffer = TripleBuffer<std::shared_ptr<Render3DFrameData>>;
-        using FrameBufferPtr = std::shared_ptr<FrameBuffer>;
-
         Renderer3D();
-        explicit Renderer3D(FrameBufferPtr frames);
         ~Renderer3D();
         Renderer3D(const Renderer3D&) = delete;
         Renderer3D& operator=(const Renderer3D&) = delete;
 
-        FrameBufferPtr GetFrameBuffer() const noexcept { return m_frames; }
+        // 由 Render::Renderer::SetVulkanRenderer 转过来：它同时把后端挂到新建的帧流水线上
         void SetVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer);
         std::shared_ptr<VKRenderer3D> GetVulkanRenderer() const;
-
-        // 生命周期约定：
-        //   Start / StopFrameLoop       - 只涉及帧消费线程；开销很小、可重复调用，后端不动。
-        //   StartBackend                - Vulkan 分发线程和它的帧池。
-        //   Shutdown                    - 先停消费者再停后端；之后服务仍可以重新启动。
-        //   Create/ResizeRenderTarget   - 内部依次暂停消费者、停后端、重建 target、恢复原先
-        //                                 在跑的部分，宿主不需要自己安排这些调用的顺序。
-        bool Start();
-        void StopFrameLoop();
-        void Shutdown();
-        void StartBackend();
-
-        // 离屏 target 的所有权在这里。宿主只交来一个仅创建设备的后端、并报告视口尺寸；
-        // target 何时创建或重建由服务决定，后端更换 target 期间帧消费者保持挂起。
-        bool CreateRenderTarget(uint32_t width, uint32_t height);
-        bool ResizeRenderTarget(uint32_t width, uint32_t height, const std::function<void()>& beforeResize = {});
-        bool HasRenderer() const;
-        bool IsRenderTargetReady() const;
-        bool IsRenderDeviceReady() const;
-        uint32_t GetRenderTargetWidth() const;
-        uint32_t GetRenderTargetHeight() const;
-        bool IsFrameLoopRunning() const noexcept;
-
-        // 帧消费者的节拍。0 表示“后端能跑多快就跑多快”。新值由消费线程在下一轮迭代时
-        void SetTargetFps(uint32_t fps) noexcept;
-        uint32_t GetTargetFps() const noexcept;
+        bool HasRenderer() const { return GetVulkanRenderer() != nullptr; }
 
         struct CameraSnapshot
         {
@@ -66,8 +35,11 @@ namespace Render
         };
         bool GetCameraSnapshot(CameraSnapshot& out) const;
 
-        void ProcessFrame(const std::shared_ptr<Render3DFrameData>& frame);
-        void WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback);
+        // 帧循环线程上调用：把一帧 3D 数据整理成 RenderState（相机修正、帧数据解析、渲染选项）。
+        // width / height 是渲染目标尺寸（算投影的宽高比）；profiling 为 true 时给这一帧挂 profile 并记帧数据解析。
+        // 没有后端时返回空
+        std::shared_ptr<RenderState> BuildRenderState(const std::shared_ptr<Render3DFrameData>& frame,
+            uint32_t width, uint32_t height, bool profiling);
 
         Scene3DRenderOption GetOption() const;
         void SetOption(Scene3DRenderOption option);
@@ -77,28 +49,12 @@ namespace Render
         bool IsSceneRenderEnabled() const noexcept { return m_sceneRenderEnabled.load(std::memory_order_acquire); }
 
     private:
-        void FrameLoop();
-
-        // 内部实现要求无锁；调用方已持有 m_lifecycleMutex。
-        bool StartLocked();
-        void StopFrameLoopLocked();
-        bool ResizeRenderTargetLocked(const std::shared_ptr<VKRenderer3D>& renderer,
-            uint32_t width, uint32_t height, const std::function<void()>& beforeResize);
-
-        FrameBufferPtr m_frames;
         std::shared_ptr<VKRenderer3D> m_vulkanRenderer;
         mutable std::mutex m_mutex;
-        // 让 target 重建与帧循环的启动/停止互斥；等待消费线程收尾时不会持有它。
-        std::mutex m_lifecycleMutex;
-        std::thread m_frameThread;
-        std::atomic<bool> m_stopFrameLoop{ true };
         Scene3DRenderOption m_option{};
         bool m_optionDirty = false;
-        DynamicFpsController m_fpsController;
 
-        std::atomic<uint32_t> m_targetFps{ 60 };
         std::atomic<bool> m_sceneRenderEnabled{ true };
-        uint32_t m_appliedFps = 0xFFFFFFFFu;
 
         // 最近一帧的相机矩阵
         mutable std::mutex m_cameraMutex;

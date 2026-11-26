@@ -254,6 +254,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaImage.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\WrapperGeneral.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKFramePipeline.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer3D.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
@@ -358,6 +359,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaBuffer.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaImage.cpp" />
     <ClCompile Include="header_only_impl.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKFramePipeline.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer3D.cpp" />
   </ItemGroup>
   <ItemGroup>

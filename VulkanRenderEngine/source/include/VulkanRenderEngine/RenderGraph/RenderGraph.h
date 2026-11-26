@@ -14,40 +14,6 @@ namespace RenderGraph
 	class Graph
 	{
 	public:
-		struct FilghtSync
-		{
-			std::shared_ptr<VKWrapper::VKTimelineSemaphore> preFrameTimeLine;
-			std::shared_ptr<VKWrapper::VKTimelineSemaphore> curframeTimeLine;
-			uint32_t curProgress = 0;
-			int64_t* waitAccumUs = nullptr;		// 渲染性能统计：等上一帧放行的累计耗时（不统计时为空）
-
-			void WaitForNextProgress();
-			void SignalDoneProgress();
-			//void WaitUntil(uint32_t targetProgress) { preFrameTimeLine->Wait(targetProgress); }
-
-			// 一段工作的作用域：构造时等上一帧放行，析构时放行下一帧。用法见 RenderGraph::FlightSyncScope
-			struct ProgressScope
-			{
-				FilghtSync& sync;
-				explicit ProgressScope(FilghtSync& sync) :sync(sync)
-				{
-					if (sync.waitAccumUs)
-					{
-						const int64_t start = RenderProfileNowUs();
-						sync.WaitForNextProgress();
-						*sync.waitAccumUs += RenderProfileNowUs() - start;
-					}
-					else
-						sync.WaitForNextProgress();
-				}
-				~ProgressScope() { sync.SignalDoneProgress(); }
-
-				ProgressScope(const ProgressScope&) = delete;
-				ProgressScope& operator=(const ProgressScope&) = delete;
-			};
-		};
-
-	public:
 		Graph(const std::string& name = "");
 		~Graph();
 
@@ -60,7 +26,6 @@ namespace RenderGraph
 		void Compile();									// 编译（分析依赖和生命周期）
 		void Execute(
 			std::shared_ptr<RenderState>& state,
-			std::shared_ptr<FilghtSync>& sync,
 			const std::unordered_map<std::string, std::shared_ptr<Texture2D>>& externalResources = {}
 		);		// 执行
 
@@ -164,6 +129,4 @@ namespace RenderGraph
 		int64_t _CleanupThresold = 10;
 	};
 
-	// 多帧流水线的一段：{ RenderGraph::FlightSyncScope syncScope(*sync); ... }
-	using FlightSyncScope = Graph::FilghtSync::ProgressScope;
 }

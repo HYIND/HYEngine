@@ -1,6 +1,6 @@
 #include "RenderProfilerPanel.h"
 #include "EditorApp.h"
-#include "RenderEngine/Renderer3D.h"
+#include "RenderEngine/Renderer.h"
 #include "VulkanRenderEngine/General/RenderProfiler.h"
 #include "imgui.h"
 
@@ -142,11 +142,10 @@ namespace
 	{
 		if (!app)
 			return nullptr;
-		auto* renderer3D = app->Runtime().GetRenderer3D();
-		if (!renderer3D)
+		auto* renderer = app->Runtime().GetRenderer();
+		if (!renderer)
 			return nullptr;
-		auto renderer = renderer3D->GetVulkanRenderer();
-		return renderer ? renderer->GetRenderProfiler() : nullptr;
+		return renderer->GetRenderProfiler();
 	}
 
 	// 绿 → 黄 → 红

@@ -35,8 +35,23 @@ namespace Render
 		void reset();
 	};
 
-	// 2D 层一帧的数据就是 VKRenderContext 里的平铺数组（精灵、调试线、相机）
 	using Render2DFrameData = VKRenderContext::Render2DFrame;
+
+	// 场景一帧的渲染数据：3D 和 2D 放在同一个三缓冲里，一次提交、一次取走，保证两者来自同一个逻辑帧。
+	// UI 不在这里：UI 在宿主线程上画、要用最新的数据，单独走 RendererUI 的三缓冲。
+	struct RenderSceneFrameData
+	{
+		std::shared_ptr<Render3DFrameData> scene3D = std::make_shared<Render3DFrameData>();
+		std::shared_ptr<Render2DFrameData> scene2D = std::make_shared<Render2DFrameData>();
+
+		void reset()
+		{
+			if (scene3D)
+				scene3D->reset();
+			if (scene2D)
+				scene2D->reset();
+		}
+	};
 
 	// UI 这一帧要画的东西：由 RenderSystem 从 UIViewRuntime 收集，按 layer 排好序。
 	struct RenderUIFrameData

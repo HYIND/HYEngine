@@ -130,14 +130,9 @@ void RenderSystem::onAttach(World& world) {
 	}
 }
 
-void RenderSystem::SetTriBuffer3D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render3DFrameData>>> triBuffer)
+void RenderSystem::SetTriBufferScene(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderSceneFrameData>>> triBuffer)
 {
-	_triBuffer3D = triBuffer;
-}
-
-void RenderSystem::SetTriBuffer2D(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::Render2DFrameData>>> triBuffer)
-{
-	_triBuffer2D = triBuffer;
+	_triBufferScene = std::move(triBuffer);
 }
 
 void RenderSystem::SetTriBufferUI(std::shared_ptr<TripleBuffer<std::shared_ptr<Render::RenderUIFrameData>>> triBuffer)
@@ -164,8 +159,10 @@ void RenderSystem::postUpdate(float deltaTime)
 
 	std::vector<std::shared_ptr<ThreadPool::SubmitHandle<void>>> tasks;
 
-	auto triBuffer3D = _triBuffer3D;
-	auto framebuffer3D = triBuffer3D ? triBuffer3D->acquireWriteBuffer() : nullptr;
+	// 3D 和 2D 写进同一份帧数据，最后一次提交：渲染端取到的 3D / 2D 一定来自同一个逻辑帧
+	auto triBufferScene = _triBufferScene;
+	auto sceneFrame = triBufferScene ? triBufferScene->acquireWriteBuffer() : nullptr;
+	auto framebuffer3D = sceneFrame ? sceneFrame->scene3D : nullptr;
 	if (framebuffer3D)
 	{
 		// 主相机以 World 记录的为准（编辑器相机、SetMainCamera 设的都在这里）；
@@ -189,8 +186,7 @@ void RenderSystem::postUpdate(float deltaTime)
 		}
 	}
 
-	auto triBuffer2D = _triBuffer2D;
-	auto framebuffer2D = triBuffer2D ? triBuffer2D->acquireWriteBuffer() : nullptr;
+	auto framebuffer2D = sceneFrame ? sceneFrame->scene2D : nullptr;
 	if (framebuffer2D)
 	{
 		tasks.push_back(submit(LogicRenderSection::Sprite, [&] {ProcessSprite(framebuffer2D); }));
@@ -214,11 +210,8 @@ void RenderSystem::postUpdate(float deltaTime)
 
 	const int64_t submitStart = profile ? LogicProfileNowUs() : 0;
 
-	if (triBuffer3D && framebuffer3D)
-		triBuffer3D->submitWriteBuffer();
-
-	if (triBuffer2D && framebuffer2D)
-		triBuffer2D->submitWriteBuffer();
+	if (triBufferScene && sceneFrame)
+		triBufferScene->submitWriteBuffer();
 
 	if (triBufferUI && framebufferUI)
 		triBufferUI->submitWriteBuffer();
@@ -229,8 +222,8 @@ void RenderSystem::postUpdate(float deltaTime)
 		profile->renderCollected = true;
 		profile->renderCollectUs = submitStart - collectStart;
 		profile->renderSubmitUs = now - submitStart;
-		profile->submitted3D = triBuffer3D && framebuffer3D;
-		profile->submitted2D = triBuffer2D && framebuffer2D;
+		profile->submitted3D = triBufferScene && framebuffer3D;
+		profile->submitted2D = triBufferScene && framebuffer2D;
 		profile->submittedUI = triBufferUI && framebufferUI;
 	}
 }

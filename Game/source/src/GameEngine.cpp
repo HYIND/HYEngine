@@ -101,19 +101,15 @@ bool GameEngine::CreateRenderer(uint32_t width, uint32_t height, std::string* er
 		return false;
 	}
 
-	auto* renderer3D = renderer->GetRenderer3D();
-	if (!renderer3D)
+	if (!renderer->HasRenderer())
 	{
 		if (error)
-			*error = "Renderer3D 不可用";
+			*error = "3D 渲染后端不可用";
 		return false;
 	}
 
-	renderer3D->StartBackend();
-	if (auto* renderer = m_runtime->GetRenderer())
-		renderer->Start();
-	else
-		renderer3D->Start();
+	// 先启动帧流水线，再启动帧循环
+	renderer->Start();
 	return true;
 }
 
@@ -126,8 +122,7 @@ void GameEngine::SetTargetFps(uint32_t fps)
 	if (!renderer)
 		return;
 
-	if (auto* renderer3D = renderer->GetRenderer3D())
-		renderer3D->SetTargetFps(fps);
+	renderer->SetTargetFps(fps);
 }
 
 uint32_t GameEngine::GetTargetFps() const
@@ -139,10 +134,7 @@ uint32_t GameEngine::GetTargetFps() const
 	if (!renderer)
 		return 0;
 
-	if (auto* renderer3D = renderer->GetRenderer3D())
-		return renderer3D->GetTargetFps();
-
-	return 0;
+	return renderer->GetTargetFps();
 }
 
 void GameEngine::StartSceneThread(float logicDeltaMilliseconds, float fixedDeltaMilliseconds)

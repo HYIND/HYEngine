@@ -317,3 +317,17 @@ void VKRenderer2D::Render(const std::shared_ptr<Texture2D>& target, const Render
 	cmd->End();
 	cmd->SubmitNowAndWait();
 }
+
+// 每帧固定 1 段：没有 2D 内容或 2D 层关掉时也进出一次（空段），前后帧的段数才对得上
+void VKRenderer2D::Execute(FrameJob& job, uint32_t stageIndex)
+{
+	if (!job.sync)
+		return;
+
+	FlightSync::ProgressScope syncScope(*job.sync);
+	RenderProfileScope scope(job.Profile(), RenderProfileStep::Render2D);
+
+	const auto* input = job.GetStageData<FrameInput>(stageIndex);
+	if (input && input->visible && input->frame)
+		Render(job.finalColor, *input->frame);
+}

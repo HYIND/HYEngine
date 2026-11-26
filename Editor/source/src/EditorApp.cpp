@@ -71,7 +71,7 @@ EngineVulkanContext EditorApp::GetVulkanContext() const
 
 bool EditorApp::CreateRenderTarget(uint32_t width, uint32_t height)
 {
-	// 走 Renderer 门面：3D 目标建好的同时 UI 的离屏目标也会跟着建。
+	// 走 Renderer 门面：目标（最终画面 + 各阶段的中间目标）都由它的帧流水线管理。
 	auto* renderer = m_runtime.GetRenderer();
 	return renderer && renderer->CreateRenderTarget(width, height);
 }
@@ -84,26 +84,26 @@ bool EditorApp::ResizeRenderTarget(uint32_t width, uint32_t height, const std::f
 
 bool EditorApp::IsRenderDeviceReady() const
 {
-	auto* renderer3D = m_runtime.GetRenderer3D();
-	return renderer3D && renderer3D->IsRenderDeviceReady();
+	auto* renderer = m_runtime.GetRenderer();
+	return renderer && renderer->IsRenderDeviceReady();
 }
 
 bool EditorApp::IsRenderTargetReady() const
 {
-	auto* renderer3D = m_runtime.GetRenderer3D();
-	return renderer3D && renderer3D->IsRenderTargetReady();
+	auto* renderer = m_runtime.GetRenderer();
+	return renderer && renderer->IsRenderTargetReady();
 }
 
 uint32_t EditorApp::GetRenderTargetWidth() const
 {
-	auto* renderer3D = m_runtime.GetRenderer3D();
-	return renderer3D ? renderer3D->GetRenderTargetWidth() : 0u;
+	auto* renderer = m_runtime.GetRenderer();
+	return renderer ? renderer->GetRenderTargetWidth() : 0u;
 }
 
 uint32_t EditorApp::GetRenderTargetHeight() const
 {
-	auto* renderer3D = m_runtime.GetRenderer3D();
-	return renderer3D ? renderer3D->GetRenderTargetHeight() : 0u;
+	auto* renderer = m_runtime.GetRenderer();
+	return renderer ? renderer->GetRenderTargetHeight() : 0u;
 }
 
 void EditorApp::StartSceneRender()
@@ -159,7 +159,7 @@ uint32_t EditorApp::GetTargetFps() const
 	return m_runtime.GetTargetFps();
 }
 
-bool EditorApp::ResizeVulkan(uint32_t width, uint32_t height, std::function<void()> prevClear)
+bool EditorApp::ResizeRenderer(uint32_t width, uint32_t height, std::function<void()> prevClear)
 {
 	if (width == GetRenderTargetWidth() && height == GetRenderTargetHeight())
 	{

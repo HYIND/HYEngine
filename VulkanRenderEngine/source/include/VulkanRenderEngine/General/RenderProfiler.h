@@ -33,9 +33,9 @@ inline int64_t RenderProfileNowUs()
 enum class RenderProfileStep : uint32_t
 {
 	Analysis = 0,			// Renderer3D：帧数据解析（AnalysisRenderFrameData）
-	Queue,					// PushFrameState → 被 ExecuteLoop 取走
-	WaitPrevFrame,			// DrawOffScreen 各段等上一帧放行（FlightSync）的总和，不算进各步骤
-	ProcessRetire,
+	Queue,					// VKFramePipeline::PushFrame → 被派发线程取走、建成帧任务
+	WaitPrevFrame,			// 帧任务里各段（FlightSyncScope）等上一帧放行的总和，不算进各步骤
+	ProcessRetire,			// 帧开头的延迟资源回收（VKFramePipeline 的第 1 段）
 	SetupRenderState,
 	SetupIndirectDrawData,
 	PreCalculate,
@@ -46,7 +46,8 @@ enum class RenderProfileStep : uint32_t
 	Combin,
 	Bloom,
 	PostProcess,
-	Finish,
+	Finish,					// 3D 收尾：记下这一帧的 EV100（在后处理那一段里）
+	Render2D,				// 2D 层叠到最终画面（VKRenderer2D，3D 之后的一段）
 	Count
 };
 
@@ -68,7 +69,8 @@ inline const char* RenderProfileStepName(RenderProfileStep step)
 	case RenderProfileStep::Combin:					return "Combin";
 	case RenderProfileStep::Bloom:					return "Bloom";
 	case RenderProfileStep::PostProcess:			return "PostProcess";
-	case RenderProfileStep::Finish:					return "FinishRendering";
+	case RenderProfileStep::Finish:					return "Finish";
+	case RenderProfileStep::Render2D:				return "Render2D";
 	default:										return "?";
 	}
 }
@@ -78,11 +80,13 @@ inline const char* RenderProfileStepTip(RenderProfileStep step)
 	switch (step)
 	{
 	case RenderProfileStep::Analysis:		return "Renderer3D::ProcessFrame 里把场景帧数据整理成 RenderState（AnalysisRenderFrameData）";
-	case RenderProfileStep::Queue:			return "从 PushFrameState 到被渲染循环取走；在途帧满了时会变长";
+	case RenderProfileStep::Queue:			return "从 PushFrame 到被流水线派发线程取走；在途帧满了时会变长";
 	case RenderProfileStep::WaitPrevFrame:	return "多帧并行时，各段开始前等上一帧做完同一段的时间（FlightSync），不计入各步骤";
+	case RenderProfileStep::ProcessRetire:	return "每帧第 1 段：VKContext::ProcessRetireAndPushFrameIndex，释放 GPU 已经用完的延迟资源";
 	case RenderProfileStep::PreSubmit:		return "PreCalculate 与 Skinned 录完后的 SubmitNowAndWait，含 GPU 执行";
 	case RenderProfileStep::ClearTargets:	return "清 sceneColorBuffer / firstPersonColorBuffer 并等待";
 	case RenderProfileStep::SceneGraph:		return "SceneRenderGraph::Execute 整体（含等图内 GPU 工作做完），展开看每个 Pass 的 CPU / GPU 耗时";
+	case RenderProfileStep::Render2D:		return "VKRenderer2D：精灵 / 调试线叠到最终画面，含上传实例和绘制两次 SubmitNowAndWait；没有 2D 内容或 2D 层关闭时是空段";
 	default:								return nullptr;
 	}
 }
@@ -122,8 +126,8 @@ struct RenderPassProfile
 struct RenderFrameProfile
 {
 	uint32_t frameIndex = 0;
-	int64_t pushTimeUs = 0;				// 进入队列（PushFrameState）的时刻
-	int64_t startTimeUs = 0;			// 被 ExecuteLoop 取走的时刻
+	int64_t pushTimeUs = 0;				// 进入候选队列（VKFramePipeline::PushFrame）的时刻
+	int64_t startTimeUs = 0;			// 被派发线程取走、建成帧任务（VKFramePipeline::MakeJob）的时刻
 	int64_t endTimeUs = 0;				// 画完、放进完成队列的时刻
 
 	std::array<int64_t, size_t(RenderProfileStep::Count)> steps{};
@@ -201,7 +205,7 @@ public:
 		return { _history.begin(), _history.end() };
 	}
 
-	// 在途帧满时被新帧挤掉的帧数
+	// 候选队列满时被新帧挤掉的帧数（在途帧已满、派发跟不上时出现）
 	void AddDropped() { _dropped.fetch_add(1, std::memory_order_relaxed); }
 	uint64_t Dropped() const { return _dropped.load(std::memory_order_relaxed); }
 

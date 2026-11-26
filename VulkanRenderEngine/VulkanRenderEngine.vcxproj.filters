@@ -407,6 +407,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer2D.h">
       <Filter>头文件\VulkanRenderEngine</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKFramePipeline.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer3D.h">
       <Filter>头文件\VulkanRenderEngine</Filter>
     </ClInclude>
@@ -696,6 +699,9 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture3D.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKFramePipeline.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer3D.cpp">
       <Filter>源文件\VulkanRenderEngine</Filter>

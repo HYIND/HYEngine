@@ -326,8 +326,8 @@ void EngineRuntime::Shutdown()
 	if (!m_initialized)
 		return;
 
-	if (m_renderer && m_renderer->GetRenderer3D())
-		m_renderer->GetRenderer3D()->StopFrameLoop();
+	if (m_renderer)
+		m_renderer->StopFrameLoop();
 	CloseScene();
 	// 模块要在它供给的场景销毁之后再卸载。
 	UnloadModules();
@@ -335,10 +335,8 @@ void EngineRuntime::Shutdown()
 	{
 		// 先摘掉 sink：外部渲染线程可能还在 WaitImage 里，不能让它回调到半销毁的运行时。
 		m_renderer->SetUiEventSink(nullptr);
-		if (auto* renderer3D = m_renderer->GetRenderer3D())
-			renderer3D->Shutdown();
-		if (auto* renderer2D = m_renderer->GetRenderer2D())
-			renderer2D->Shutdown();
+		// 停帧循环 → 停流水线 → 释放 2D / UI 的 GPU 资源
+		m_renderer->Shutdown();
 		m_renderer.reset();
 	}
 	m_project.reset();
@@ -352,7 +350,7 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 {
 	// 允许先建上下文再 Initialize：建设备不依赖运行时其它服务，宿主可以在建窗口
 	// 的顺序上自己安排。
-	if (m_renderer && m_renderer->GetRenderer3D()->HasRenderer())
+	if (m_renderer && m_renderer->HasRenderer())
 	{
 		if (error)
 			*error = "渲染上下文已经存在";
@@ -374,11 +372,15 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 		return false;
 	}
 
-	auto renderer = std::make_shared<VKRenderer3D>();
-	if (desc.width > 0 && desc.height > 0)
-		VKRenderer3D::CreateForOffScreen_Target(renderer, desc.width, desc.height);
+	BindVulkanRenderer(std::make_shared<VKRenderer3D>());
 
-	BindVulkanRenderer(std::move(renderer));
+	// 填了尺寸就顺带建好离屏目标（走 Renderer 门面，和宿主后来调 CreateRenderTarget 是同一条路）
+	if (m_renderer && desc.width > 0 && desc.height > 0 && !m_renderer->CreateRenderTarget(desc.width, desc.height))
+	{
+		if (error)
+			*error = "创建离屏渲染目标失败";
+		return false;
+	}
 	return true;
 }
 
@@ -938,12 +940,12 @@ void EngineRuntime::StopSceneThread()
 void EngineRuntime::SetTargetFps(uint32_t fps)
 {
 	if (m_renderer)
-		m_renderer->GetRenderer3D()->SetTargetFps(fps);
+		m_renderer->SetTargetFps(fps);
 }
 
 uint32_t EngineRuntime::GetTargetFps() const
 {
-	return m_renderer ? m_renderer->GetRenderer3D()->GetTargetFps() : 0u;
+	return m_renderer ? m_renderer->GetTargetFps() : 0u;
 }
 
 void EngineRuntime::SetWorldTimeScale(float scale)
