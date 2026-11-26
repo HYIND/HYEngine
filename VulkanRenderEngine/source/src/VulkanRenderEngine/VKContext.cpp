@@ -1,6 +1,9 @@
 ﻿#include "vkstdafx.h"
 #include "VulkanRenderEngine/VKContext.h"
+#include <algorithm>
 #include <format>
+#include <iostream>
+#include <mutex>
 #include <thread>
 #include "CriticalSectionLock.h"
 #include "SpinLock.h"
@@ -205,6 +208,107 @@ void VKThreadContext::NeedCommandPool()
 
 	if (auto commandPool = std::make_shared<VKWrapper::VKCommandPool>(VKCONTEXT->GetDevice().get(), VKWrapper::VKCommandPool::QueueFamilyType::Graphics, vk::CommandPoolCreateFlagBits::eResetCommandBuffer))
 		_commandPool = commandPool;
+}
+
+// ======================== 实例 / 设备 ========================
+
+static void NeedVulkanBaseInitlized()
+{
+	static std::once_flag flag;
+	std::call_once(flag, []() {
+		vk::Result result = (vk::Result)volkInitialize();
+		if (result != vk::Result::eSuccess) {
+			std::string str = std::format("volkInitialize failed: {}\n", to_string(result));
+			std::cerr << str;
+			throw std::runtime_error(str);
+		}
+		VULKAN_HPP_DEFAULT_DISPATCHER.init();
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+		});
+}
+
+static std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VKCore::VulkanPhysicalDeviceInfo& info, const std::vector<std::string>& extraDeviceExtensions = {})
+{
+	auto vulkanDevice = std::make_shared<VKCore::VulkanDevice>();
+
+	// 扩展名不允许重复提交，宿主追加的扩展可能和引擎必需的重叠，这里统一去重。
+	std::vector<std::string> requestedExtensions;
+	auto addExtension = [&vulkanDevice, &requestedExtensions](const std::string& name) {
+		if (std::find(requestedExtensions.begin(), requestedExtensions.end(), name) != requestedExtensions.end())
+			return;
+		requestedExtensions.push_back(name);
+		vulkanDevice->AddDeviceExtension(name);
+		};
+
+	addExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+	addExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
+	addExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+	addExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+	addExtension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
+	addExtension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+	//vulkanDevice->AddDeviceExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+
+	if (GlobalConfig::RTCoreEnable)
+	{
+		for (const auto& name : VKCore::RTCoreExtension)
+			addExtension(name);
+		if (GlobalConfig::RTCoreReorderEnable)
+			for (const auto& name : VKCore::RTCoreReorderExtension)
+				addExtension(name);
+	}
+
+	if (GlobalConfig::VK_DESCRIPTOR_HEAP_Enable)
+		for (const auto& name : VKCore::VK_DESCRIPTOR_HEAP_Extension)
+			addExtension(name);
+
+	// 宿主额外声明的设备扩展。
+	for (const auto& name : extraDeviceExtensions)
+		addExtension(name);
+
+	if (vulkanDevice->Create(instance, info) != vk::Result::eSuccess)
+		return nullptr;
+
+	return vulkanDevice;
+}
+
+std::shared_ptr<VKCore::VulkanInstance> VKContext::CreateInstance(const std::vector<std::string>& extensionNames)
+{
+	NeedVulkanBaseInitlized();
+	auto instance = std::make_shared<VKCore::VulkanInstance>();
+	for (auto& name : extensionNames)
+		instance->AddInstanceExtension(name);
+
+	instance->SetLatestApiVersion();
+	if (instance->CreateInstance() != vk::Result::eSuccess)
+		return nullptr;
+
+	SetInstance(instance);
+	return instance;
+}
+
+std::shared_ptr<VKCore::VulkanDevice> VKContext::CreateDevice(const std::vector<std::string>& extraDeviceExtensions)
+{
+	auto instance = _instance;
+	if (!instance)
+	{
+		std::cout << std::format("[ VKContext::CreateDevice ] ERROR\nNo Vulkan instance, call CreateInstance first\n");
+		return nullptr;
+	}
+
+	// 引擎只做离屏渲染，不需要呈现队列
+	VKCore::VulkanPhysicalDeviceInfo info;
+	if (!instance->GetSuitablePhysicalDevice(info, true, true))
+	{
+		std::cout << std::format("[ VKContext::CreateDevice ] ERROR\nFailed to get suitable physical device\n");
+		return nullptr;
+	}
+
+	auto device = CreateVKDevice(instance, info, extraDeviceExtensions);
+	if (!device)
+		return nullptr;
+
+	SetDevice(device);
+	return device;
 }
 
 VKContext* VKContext::Instance()

@@ -359,27 +359,24 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 		return false;
 	}
 
-	// 引擎拥有实例与设备；窗口和交换链不属于引擎，这里只建设备。
-	auto instance = VKRenderer3D::CreateInstance(desc.instanceExtensions);
-	if (!instance)
+	// 引擎拥有实例与设备（都放在 VKContext 里）；窗口和交换链不属于引擎，这里只建设备。
+	if (!VKCONTEXT->CreateInstance(desc.instanceExtensions))
 	{
 		if (error)
 			*error = "创建 Vulkan 实例失败";
 		return false;
 	}
 
-	std::shared_ptr<VKRenderer3D> renderer;
-	if (desc.width > 0 && desc.height > 0)
-		renderer = VKRenderer3D::CreateForOffScreen(instance, desc.width, desc.height);
-	else
-		renderer = VKRenderer3D::CreateOnlyDevice(instance, desc.deviceExtensions);
-
-	if (!renderer)
+	if (!VKCONTEXT->CreateDevice(desc.deviceExtensions))
 	{
 		if (error)
 			*error = "创建 Vulkan 设备失败";
 		return false;
 	}
+
+	auto renderer = std::make_shared<VKRenderer3D>();
+	if (desc.width > 0 && desc.height > 0)
+		VKRenderer3D::CreateForOffScreen_Target(renderer, desc.width, desc.height);
 
 	BindVulkanRenderer(std::move(renderer));
 	return true;
@@ -391,12 +388,11 @@ EngineVulkanContext EngineRuntime::GetVulkanContext() const
 	if (!m_renderer)
 		return context;
 
-	auto renderer = m_renderer->GetRenderer3D()->GetVulkanRenderer();
-	if (!renderer)
+	if (!m_renderer->GetRenderer3D()->GetVulkanRenderer())
 		return context;
 
-	auto instance = renderer->GetVulkanInstance();
-	auto device = renderer->GetVulkanDevice();
+	auto instance = VKCONTEXT->GetInstance();
+	auto device = VKCONTEXT->GetDevice();
 	if (!instance || !device)
 		return context;
 

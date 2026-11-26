@@ -151,7 +151,7 @@ namespace Render
         std::lock_guard lock(m_lifecycleMutex);
 
         auto renderer = GetVulkanRenderer();
-        if (!renderer || !renderer->GetVulkanDevice())
+        if (!renderer || !VKCONTEXT->GetDevice())
             return false;
 
         width = std::max(1u, width);
@@ -172,7 +172,7 @@ namespace Render
         std::lock_guard lock(m_lifecycleMutex);
 
         auto renderer = GetVulkanRenderer();
-        if (!renderer || !renderer->GetVulkanDevice())
+        if (!renderer || !VKCONTEXT->GetDevice())
             return false;
 
         width = std::max(1u, width);
@@ -227,7 +227,7 @@ namespace Render
     bool Renderer3D::IsRenderDeviceReady() const
     {
         auto renderer = GetVulkanRenderer();
-        return renderer && renderer->GetVulkanDevice() != nullptr;
+        return renderer && VKCONTEXT->GetDevice() != nullptr;
     }
 
     uint32_t Renderer3D::GetRenderTargetWidth() const

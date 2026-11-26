@@ -46,19 +46,8 @@ struct alignas(16) camera_compData
 class VKRenderer3D
 {
 public:
-    // 提供CreateInstance扩展，用于创建vk实例，实例用于初始化VKRenderer3D
-    static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(const std::vector<std::string>& extensionNames);
-    static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(uint32_t extensionCount, const char** extensionNames);
-
-    static std::shared_ptr<VKRenderer3D> CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height);					// 创建离屏模式
-
-    // 用于分段初始化
-    // 仅创建设备、不初始化渲染目标
-    static std::shared_ptr<VKRenderer3D> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance);
-    static std::shared_ptr<VKRenderer3D> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions);
-
-    // 分段初始化
-    // 初始化渲染目标
+    // 实例和设备不归渲染器：先用 VKCONTEXT->CreateInstance / CreateDevice 建好，再构造渲染器，
+    // 尺寸确定后调这个初始化渲染目标
     static bool CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& renderer, uint32_t width, uint32_t height);
 
 public:
@@ -92,9 +81,6 @@ public:
     uint32_t GetMaxFramesInFlight() const;
 
 public:
-    std::shared_ptr<VKCore::VulkanInstance> GetVulkanInstance() const;
-    std::shared_ptr<VKCore::VulkanDevice> GetVulkanDevice() const;
-
     // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
     std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
 
@@ -149,9 +135,6 @@ private:
 private:
     uint32_t scr_width;
     uint32_t scr_height;
-
-    std::shared_ptr<VKCore::VulkanInstance> _vulkanInstance;
-    std::shared_ptr<VKCore::VulkanDevice> _vulkanDevice;
 
 
     //// FirstPersonLayer

@@ -30,6 +30,13 @@ class VKContext
 public:
 	static VKContext* Instance();
 
+	// 引擎只有一套 Vulkan 实例和设备，都放在这里；渲染器等只是使用方。
+	// 建实例并设为当前实例，失败返回空
+	std::shared_ptr<VKCore::VulkanInstance> CreateInstance(const std::vector<std::string>& extensionNames);
+	// 在当前实例上选物理设备、建逻辑设备并设为当前设备，失败返回空。
+	// extraDeviceExtensions：宿主额外要的设备扩展（例如编辑器自己的窗口交换链要 VK_KHR_swapchain），和引擎必需的重复会自动去掉
+	std::shared_ptr<VKCore::VulkanDevice> CreateDevice(const std::vector<std::string>& extraDeviceExtensions = {});
+
 	void SetInstance(std::shared_ptr<VKCore::VulkanInstance> instance);
 	void SetDevice(std::shared_ptr<VKCore::VulkanDevice> device);
 
