@@ -410,6 +410,9 @@ std::shared_ptr<TextureAsset> AssetStroageHelper::LoadTexture(AssetMeta& meta, s
 	auto config = desc.GetConfig();
 	asset->_texture = std::make_shared<Texture2D>(pathProvider->GetFullPath(desc.GetPath()), config, true);
 	asset->_texture->SetAssetGUID(meta.guid);
+	// 资产贴图加载完就固定成只读布局：材质、2D、UI、编辑器会在不同线程、不同帧同时采样它
+	if (!asset->_texture->IsEmpty())
+		asset->_texture->MakeSampledImmutable();
 
 	return asset;
 }

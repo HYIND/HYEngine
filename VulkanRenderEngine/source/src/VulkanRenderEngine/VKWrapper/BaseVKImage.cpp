@@ -5,34 +5,53 @@
 
 using namespace VKWrapper;
 
-uint64_t VKWrapper::ImageState::MakeKey(uint32_t mipLevel, uint32_t arrayLayer) {
-	// 高 32 位是 mip（PassImageStateRecord::EndRecord 按 key >> 32 还原）；各层共用一份状态，arrayLayer 暂不参与。
-	// 必须先转成 64 位再移位：32 位整数左移 32 位是未定义行为（MSVC 上等于没移，所有 key 解出来都是 mip 0）
-	return static_cast<uint64_t>(mipLevel) << 32;
+template<typename F>
+void BaseVKImage::VisitStates(F&& f) const
+{
+	// Pass 录制期间：改的是本 Pass 的记录，第一次提交时再统一补差、写回真实记录
+	if (auto record = PassImageStateRecord::Current())
+	{
+		LockGuard guard(record->_mutex);
+		f(record->GetEntryLocked(shared_from_this()).current);
+		return;
+	}
+
+	LockGuard guard(m_imageState.lock);
+	if (m_imageState.mips.size() < m_mipLevels)
+		m_imageState.mips.resize(m_mipLevels);
+	f(m_imageState.mips);
 }
 
-VKWrapper::SubresourceState& VKWrapper::ImageState::GetSubresourceState(uint32_t mipLevel, uint32_t arrayLayer) const {
-	uint64_t key = MakeKey(mipLevel, 0);
-	auto it = _subresourceStates.find(key);
-	if (it == _subresourceStates.end()) {
-		it = _subresourceStates.emplace(key, SubresourceState{}).first;
+void BaseVKImage::ResetImageState(vk::ImageLayout initialLayout)
+{
+	{
+		LockGuard guard(m_imageState.lock);
+		m_imageState.mips.assign(m_mipLevels, SubresourceState{ initialLayout, vk::AccessFlagBits::eNone });
 	}
-	return it->second;
+	m_sampledImmutable.store(false, std::memory_order_release);
+	m_misuseReported.store(false, std::memory_order_relaxed);
 }
 
-SubresourceState& BaseVKImage::GetSubresourceState(uint32_t level) const {
-	if (auto ctx = PassImageStateRecord::Current()) {
-		return ctx->GetRecordState(shared_from_this(), level);
-	}
-	else {
-		return m_imageState.GetSubresourceState(level);
-	}
-};
+void BaseVKImage::ReportImmutableMisuse(const char* what) const
+{
+	if (!m_misuseReported.exchange(true, std::memory_order_relaxed))
+		std::cerr << std::format("[ BaseVKImage ] ERROR: 只读资产贴图（VkImage {:#x}）不能 {}：布局固定为 SHADER_READ_ONLY_OPTIMAL，已忽略。"
+			"要改内容请新建一张图替换\n", reinterpret_cast<uintptr_t>(static_cast<VkImage>(m_image)), what);
+}
 
 vk::Image BaseVKImage::GetHandle() const { return m_image; }
 
 vk::ImageLayout BaseVKImage::GetCurrentLayout(uint32_t level) const {
-	return GetSubresourceState(level).layout;
+	if (IsSampledImmutable())
+		return vk::ImageLayout::eShaderReadOnlyOptimal;
+
+	vk::ImageLayout layout = vk::ImageLayout::eUndefined;
+	VisitStates([&](std::vector<SubresourceState>& states)
+		{
+			if (level < states.size())
+				layout = states[level].layout;
+		});
+	return layout;
 }
 
 uint32_t BaseVKImage::GetMipLevels() const { return m_mipLevels; }
@@ -43,27 +62,16 @@ vk::Format BaseVKImage::GetFormat() const { return m_format; }
 
 BaseVKImage::operator vk::Image() const { return m_image; }
 
-void BaseVKImage::TransitionLayout(
-	std::shared_ptr<VKCommandBuffer> cmd,
-	vk::ImageLayout newLayout,
-	vk::PipelineStageFlags dstStageMask,
-	uint32_t baseMipLevel,
-	uint32_t levelCount,
-	bool force
-) {
-	if (!cmd || !m_image) return;
-
-	if (baseMipLevel >= m_mipLevels)
-		return;
-
-	uint32_t realLevelCount = std::min(m_mipLevels - baseMipLevel, levelCount);
-	uint32_t endMipLevel = baseMipLevel + realLevelCount;
-
-	vk::AccessFlags newAccessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
+void BaseVKImage::TransitionStatesLocked(std::vector<SubresourceState>& states,
+	const std::shared_ptr<VKCommandBuffer>& cmd, vk::ImageLayout newLayout, vk::PipelineStageFlags dstStageMask,
+	uint32_t baseMipLevel, uint32_t endMipLevel, bool force) const
+{
+	const vk::AccessFlags newAccessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
+	endMipLevel = std::min<uint32_t>(endMipLevel, static_cast<uint32_t>(states.size()));
 
 	for (uint32_t level = baseMipLevel; level < endMipLevel; ++level)
 	{
-		auto& state = GetSubresourceState(level);
+		auto& state = states[level];
 
 		if (!force && state.layout == newLayout && state.accessMask == newAccessMask)
 			continue;
@@ -93,12 +101,46 @@ void BaseVKImage::TransitionLayout(
 	}
 }
 
+void BaseVKImage::TransitionLayout(
+	std::shared_ptr<VKCommandBuffer> cmd,
+	vk::ImageLayout newLayout,
+	vk::PipelineStageFlags dstStageMask,
+	uint32_t baseMipLevel,
+	uint32_t levelCount,
+	bool force
+) {
+	if (!cmd || !m_image) return;
+
+	// 只读资产贴图：本来就一直是只读布局，什么都不用做；要切到别的布局一律拒绝
+	if (IsSampledImmutable())
+	{
+		if (newLayout != vk::ImageLayout::eShaderReadOnlyOptimal)
+			ReportImmutableMisuse("切换布局");
+		return;
+	}
+
+	if (baseMipLevel >= m_mipLevels)
+		return;
+
+	const uint32_t endMipLevel = baseMipLevel + std::min(m_mipLevels - baseMipLevel, levelCount);
+
+	// 读、比较、录屏障、写回在同一把锁里完成
+	VisitStates([&](std::vector<SubresourceState>& states)
+		{
+			TransitionStatesLocked(states, cmd, newLayout, dstStageMask, baseMipLevel, endMipLevel, force);
+		});
+}
+
 vk::ImageLayout BaseVKImage::TransitionLayoutForSample(
 	std::shared_ptr<VKCommandBuffer> cmd,
 	ImageLayout::BindStage stage,
 	uint32_t baseMipLevel,
 	uint32_t levelCount
 ) {
+	// 只读资产贴图：直接用只读布局，不碰布局记录（bindless 每个 Pass 都会对所有资产贴图走一遍这里）
+	if (IsSampledImmutable())
+		return vk::ImageLayout::eShaderReadOnlyOptimal;
+
 	vk::ImageLayout newLayout;
 	vk::PipelineStageFlags dstStageMask;
 	ImageLayout::GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, m_format, stage, ImageLayout::BindUsage::Sample);
@@ -106,23 +148,64 @@ vk::ImageLayout BaseVKImage::TransitionLayoutForSample(
 	if (!cmd || !m_image || baseMipLevel >= m_mipLevels)
 		return newLayout;
 
-	if (newLayout != vk::ImageLayout::eGeneral
-		&& (stage == ImageLayout::BindStage::Compute || stage == ImageLayout::BindStage::RayTracing))
+	const uint32_t endMipLevel = baseMipLevel + std::min(m_mipLevels - baseMipLevel, levelCount);
+	const bool mayKeepGeneral = newLayout != vk::ImageLayout::eGeneral
+		&& (stage == ImageLayout::BindStage::Compute || stage == ImageLayout::BindStage::RayTracing);
+
+	// 「是否全是 GENERAL」的判断和切换放在同一把锁里，中间不会被别的线程改掉
+	VisitStates([&](std::vector<SubresourceState>& states)
+		{
+			if (mayKeepGeneral)
+			{
+				bool allGeneral = true;
+				for (uint32_t level = baseMipLevel; level < endMipLevel && allGeneral; ++level)
+					allGeneral = level < states.size() && states[level].layout == vk::ImageLayout::eGeneral;
+				if (allGeneral)
+					newLayout = vk::ImageLayout::eGeneral;
+			}
+			TransitionStatesLocked(states, cmd, newLayout, dstStageMask, baseMipLevel, endMipLevel, false);
+		});
+	return newLayout;
+}
+
+bool BaseVKImage::MakeSampledImmutable()
+{
+	if (!m_image)
+		return false;
+	if (IsSampledImmutable())
+		return true;
+	if (!ImageLayout::IsColorFormat(m_format))
 	{
-		const uint32_t endMipLevel = baseMipLevel + std::min(m_mipLevels - baseMipLevel, levelCount);
-		bool allGeneral = true;
-		for (uint32_t level = baseMipLevel; level < endMipLevel && allGeneral; ++level)
-			allGeneral = GetSubresourceState(level).layout == vk::ImageLayout::eGeneral;
-		if (allGeneral)
-			newLayout = vk::ImageLayout::eGeneral;
+		std::cerr << std::format("[ BaseVKImage ] MakeSampledImmutable 只支持颜色格式（{}），已忽略\n", vk::to_string(m_format));
+		return false;
 	}
 
-	TransitionLayout(cmd, newLayout, dstStageMask, baseMipLevel, levelCount);
-	return newLayout;
+	auto cmd = VKCONTEXT->GetCommandBuffer();
+	if (!cmd)
+		return false;
+
+	// 直接改真实记录（不走 Pass 的记录）：所有 mip（上传完停在 TransferDst、生成 mip 后停在 TransferSrc / TransferDst）
+	// 一次性切到只读，等 GPU 做完再设标记，之后谁拿到这张图都已经是只读布局
+	{
+		LockGuard guard(m_imageState.lock);
+		if (m_imageState.mips.size() < m_mipLevels)
+			m_imageState.mips.resize(m_mipLevels);
+		TransitionStatesLocked(m_imageState.mips, cmd, vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::PipelineStageFlagBits::eAllCommands, 0, m_mipLevels, false);
+	}
+	if (cmd->IsRecording())
+		VKCONTEXT->SubmitCommandImmediatelyAndWait(cmd);
+
+	m_sampledImmutable.store(true, std::memory_order_release);
+	return true;
 }
 
 bool BaseVKImage::UploadData(const void* data, uint32_t mipLevel, uint32_t layer) {
 	if (!data || !m_image) {
+		return false;
+	}
+	if (IsSampledImmutable()) {
+		ReportImmutableMisuse("上传数据");
 		return false;
 	}
 
@@ -203,7 +286,12 @@ void VKWrapper::BaseVKImage::Release()
 	m_device = nullptr;
 	m_image = VK_NULL_HANDLE;
 
-	m_imageState._subresourceStates.clear();
+	{
+		LockGuard guard(m_imageState.lock);
+		m_imageState.mips.clear();
+	}
+	m_sampledImmutable.store(false, std::memory_order_release);
+	m_misuseReported.store(false, std::memory_order_relaxed);
 
 	m_mipLevels = 1;
 	m_extent = vk::Extent3D();
@@ -214,6 +302,10 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 {
 	if (m_mipLevels <= 1)
 		return;
+	if (IsSampledImmutable()) {
+		ReportImmutableMisuse("生成 mip");
+		return;
+	}
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
@@ -228,8 +320,8 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 		uint32_t inputLevel = level - 1;
 		uint32_t outputLevel = level;
 
-		vk::ImageLayout srcLayout = GetSubresourceState(inputLevel).layout;
-		vk::ImageLayout dstLayout = GetSubresourceState(outputLevel).layout;
+		vk::ImageLayout srcLayout = GetCurrentLayout(inputLevel);
+		vk::ImageLayout dstLayout = GetCurrentLayout(outputLevel);
 
 		if (srcLayout != vk::ImageLayout::eTransferSrcOptimal) {
 			TransitionLayout(
@@ -279,20 +371,29 @@ void VKWrapper::PassImageStateRecord::StartRecord()
 
 void VKWrapper::PassImageStateRecord::AddState(std::shared_ptr<const BaseVKImage> image, ImageLayout::BindStage stage, ImageLayout::BindUsage usage)
 {
-	if (!_record)
+	if (!_record || !image)
+		return;
+	// 只读资产贴图不参与补差：它的布局永远是只读
+	if (image->IsSampledImmutable())
 		return;
 
-	auto imageState = image->m_imageState;
-	for (auto& [key, subState] : imageState._subresourceStates)
+	vk::ImageLayout newLayout;
+	vk::PipelineStageFlags dstStageMask;
+	GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, image->m_format, stage, usage);
+	const SubresourceState declared{ newLayout, ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask) };
+
+	size_t mipCount = image->m_mipLevels;
 	{
-		vk::ImageLayout newLayout;
-		vk::PipelineStageFlags dstStageMask;
-		GetImageLayoutAndStageFlag(&newLayout, &dstStageMask, image->m_format, stage, usage);
-		subState.layout = newLayout;
-		subState.accessMask = ImageLayout::GetAccessMaskForLayout(newLayout, dstStageMask);
+		LockGuard guard(image->m_imageState.lock);
+		mipCount = std::max(mipCount, image->m_imageState.mips.size());
 	}
-	_record->_recordFirstStates[image] = imageState;
-	_record->_recordStates[image] = imageState;
+
+	Entry entry;
+	entry.first.assign(mipCount, declared);
+	entry.current = entry.first;
+
+	LockGuard guard(_record->_mutex);
+	_record->_entries[image] = std::move(entry);
 }
 
 void VKWrapper::PassImageStateRecord::EndRecord(const std::shared_ptr<VKWrapper::VKCommandBuffer>& auxCmd)
@@ -300,62 +401,58 @@ void VKWrapper::PassImageStateRecord::EndRecord(const std::shared_ptr<VKWrapper:
 	if (!_record)
 		return;
 
-	for (auto& [image, record] : _record->_recordFirstStates) {
-		auto& real = image->m_imageState._subresourceStates;
-
-		for (auto& [key, recordState] : record._subresourceStates)
-		{
-			auto& realState = real[key];
-			uint32_t level = key >> 32;
-
-			// 补差：真实态 → 声明态
-			if (realState.layout != recordState.layout ||
-				realState.accessMask != recordState.accessMask)
-			{
-				vk::ImageSubresourceRange subresourceRange;
-				subresourceRange.setAspectMask(ImageLayout::GetAspectMaskForFormat(image->m_format));
-				subresourceRange.setBaseMipLevel(level);
-				subresourceRange.setLevelCount(1);
-				subresourceRange.setBaseArrayLayer(0);
-				subresourceRange.setLayerCount(vk::RemainingArrayLayers);
-
-				vk::ImageMemoryBarrier barrier;
-				barrier.setImage(image->GetHandle());
-				barrier.setOldLayout(realState.layout);
-				barrier.setNewLayout(recordState.layout);
-				barrier.setSrcAccessMask(realState.accessMask);
-				//barrier.setDstAccessMask(recordState.accessMask);
-				barrier.setDstAccessMask(vk::AccessFlagBits::eMemoryRead);
-				barrier.setSubresourceRange(subresourceRange);
-
-				auxCmd->pipelineBarrier(
-					ImageLayout::AccessMaskToStage(realState.accessMask),
-					vk::PipelineStageFlagBits::eAllCommands,
-					barrier,
-					vk::DependencyFlagBits::eByRegion
-				);
-			}
-
-			// 更新真实态为声明态（主 cmd 的起点）
-			realState.layout = recordState.layout;
-			realState.accessMask = recordState.accessMask;
-		}
-	}
-
-	// 把本地终态写回真实态
-	for (auto& [image, record] : _record->_recordStates) {
-		auto& real = image->m_imageState._subresourceStates;
-
-		for (auto& [key, recordState] : record._subresourceStates)
-		{
-			auto& realState = real[key];
-			uint32_t level = key >> 32;
-			realState.layout = recordState.layout;
-			realState.accessMask = recordState.accessMask;
-		}
-	}
-
+	// 先摘掉线程局部的记录：下面写回真实记录时，不能再被当成「Pass 录制期间」
+	auto record = std::move(_record);
 	_record.reset();
+
+	LockGuard recordGuard(record->_mutex);
+	for (auto& [image, entry] : record->_entries) {
+		if (!image)
+			continue;
+
+		LockGuard imageGuard(image->m_imageState.lock);
+		auto& real = image->m_imageState.mips;
+		if (!image->m_image)
+			continue;
+		if (real.size() < std::max(entry.first.size(), entry.current.size()))
+			real.resize(std::max(entry.first.size(), entry.current.size()));
+
+		// 补差：真实态 → 声明态（主 cmd 的起点）
+		for (uint32_t level = 0; level < entry.first.size(); ++level)
+		{
+			const auto& realState = real[level];
+			const auto& recordState = entry.first[level];
+			if (realState.layout == recordState.layout && realState.accessMask == recordState.accessMask)
+				continue;
+
+			vk::ImageSubresourceRange subresourceRange;
+			subresourceRange.setAspectMask(ImageLayout::GetAspectMaskForFormat(image->m_format));
+			subresourceRange.setBaseMipLevel(level);
+			subresourceRange.setLevelCount(1);
+			subresourceRange.setBaseArrayLayer(0);
+			subresourceRange.setLayerCount(vk::RemainingArrayLayers);
+
+			vk::ImageMemoryBarrier barrier;
+			barrier.setImage(image->GetHandle());
+			barrier.setOldLayout(realState.layout);
+			barrier.setNewLayout(recordState.layout);
+			barrier.setSrcAccessMask(realState.accessMask);
+			//barrier.setDstAccessMask(recordState.accessMask);
+			barrier.setDstAccessMask(vk::AccessFlagBits::eMemoryRead);
+			barrier.setSubresourceRange(subresourceRange);
+
+			auxCmd->pipelineBarrier(
+				ImageLayout::AccessMaskToStage(realState.accessMask),
+				vk::PipelineStageFlagBits::eAllCommands,
+				barrier,
+				vk::DependencyFlagBits::eByRegion
+			);
+		}
+
+		// 把本地终态写回真实态
+		for (uint32_t level = 0; level < entry.current.size(); ++level)
+			real[level] = entry.current[level];
+	}
 }
 
 std::shared_ptr<PassImageStateRecord> VKWrapper::PassImageStateRecord::Current()
@@ -363,19 +460,19 @@ std::shared_ptr<PassImageStateRecord> VKWrapper::PassImageStateRecord::Current()
 	return _record;
 }
 
-SubresourceState& VKWrapper::PassImageStateRecord::GetRecordState(std::shared_ptr<const BaseVKImage> image, uint32_t level)
+PassImageStateRecord::Entry& VKWrapper::PassImageStateRecord::GetEntryLocked(const std::shared_ptr<const BaseVKImage>& image)
 {
-	LockGuard guard(_mutex);
-	auto it = _recordStates.find(image);
-	if (it != _recordStates.end())
+	auto it = _entries.find(image);
+	if (it != _entries.end())
+		return it->second;
+
+	Entry entry;
 	{
-		auto& imageState = it->second;
-		return imageState.GetSubresourceState(level);
+		LockGuard guard(image->m_imageState.lock);
+		entry.first = image->m_imageState.mips;
 	}
-	else
-	{
-		_recordFirstStates[image] = image->m_imageState;
-		_recordStates[image] = image->m_imageState;
-		return _recordStates[image].GetSubresourceState(level);
-	}
+	if (entry.first.size() < image->m_mipLevels)
+		entry.first.resize(image->m_mipLevels);
+	entry.current = entry.first;
+	return _entries.emplace(image, std::move(entry)).first->second;
 }

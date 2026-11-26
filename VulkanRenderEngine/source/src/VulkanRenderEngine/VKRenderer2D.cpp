@@ -122,6 +122,7 @@ bool VKRenderer2D::EnsurePipelines(vk::Format format)
 		_whiteTexture = std::make_shared<Texture2D>(1u, 1u, vk::Format::eR8G8B8A8Unorm, config, 1u);
 		uint8_t white[4] = { 255, 255, 255, 255 };
 		_whiteTexture->UpdateTextureData(white);
+		_whiteTexture->MakeSampledImmutable();
 	}
 
 	_pipelinesReady = true;

@@ -95,7 +95,7 @@ BloomPass::BloomPass(
 
 void BloomPass::Draw(std::shared_ptr<Texture2D>& brightColorBuffer, std::vector<std::shared_ptr<Texture2D>>& bloomMipBuffers)
 {
-	if (!brightColorBuffer || brightColorBuffer->IsEmpty())
+	if (!brightColorBuffer || brightColorBuffer->IsEmpty() || bloomMipBuffers.empty())
 		return;
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();

@@ -289,12 +289,7 @@ bool VKWrapper::SharedImage::Create(VKCore::VulkanDevice* device, std::shared_pt
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	for (uint32_t i = 0; i < m_mipLevels; i++)
-	{
-		auto state = m_imageState.GetSubresourceState(i);
-		state.layout = imageInfo.initialLayout;
-		state.accessMask = vk::AccessFlags::BitsType::eNone;
-	}
+	ResetImageState(imageInfo.initialLayout);
 
 	outFormat = m_format;
 	return true;

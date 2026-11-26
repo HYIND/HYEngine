@@ -535,6 +535,18 @@ void Texture2D::GenerateTextureMipMaps()
 		img->GenerateMipMaps();
 }
 
+bool Texture2D::MakeSampledImmutable()
+{
+	auto image = _image;
+	return image && image->MakeSampledImmutable();
+}
+
+bool Texture2D::IsSampledImmutable() const
+{
+	auto image = _image;
+	return image && image->IsSampledImmutable();
+}
+
 std::shared_ptr<VKWrapper::BaseVKImage> Texture2D::GetImageSharedPtr() const { return _image; }
 
 void Texture2D::UpdateTextureData(void* data, uint32_t level) {

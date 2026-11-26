@@ -158,9 +158,13 @@ void VKRenderer3D::InitRenderTarget()
 		.gammaCorrection = false
 	};
 
-	glm::vec2 ratio = glm::vec2(scr_width, scr_height) / glm::vec2(16, 16);
-	uint32_t bloomLevel = floor(log2(std::max(ratio.x, ratio.y))) + 1;
-	bloomLevel = std::min(bloomLevel, 6u);
+	// bloom 链级数：每级减半，最后一级的长边不小于 16，最多 6 级、至少 1 级。
+	// 用整数算：原来的 floor(log2(max(w, h) / 16)) + 1 在长边 < 16 时得 0 或负数，
+	// 0 级时后面取 bloomMipBuffers[0] 越界，负数转 uint32_t 是未定义行为
+	const uint32_t bloomMaxDim = std::max(scr_width, scr_height);
+	uint32_t bloomLevel = 1;
+	while (bloomLevel < 6u && (bloomMaxDim >> bloomLevel) >= 16u)
+		++bloomLevel;
 
 	for (uint32_t i = 0; i < _targetCount; i++)
 	{

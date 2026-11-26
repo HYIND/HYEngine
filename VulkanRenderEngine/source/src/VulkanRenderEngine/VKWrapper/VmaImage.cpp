@@ -130,12 +130,7 @@ bool VmaImage::Create(VKCore::VulkanDevice* device,
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	for (uint32_t i = 0; i < m_mipLevels; i++)
-	{
-		auto state = m_imageState.GetSubresourceState(i);
-		state.layout = imageInfo.initialLayout;
-		state.accessMask = vk::AccessFlags::BitsType::eNone;
-	}
+	ResetImageState(imageInfo.initialLayout);
 
 	return true;
 }
@@ -183,12 +178,7 @@ bool VmaImage::Create2D(VKCore::VulkanDevice* device,
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	for (uint32_t i = 0; i < m_mipLevels; i++)
-	{
-		auto state = m_imageState.GetSubresourceState(i);
-		state.layout = imageInfo.initialLayout;
-		state.accessMask = vk::AccessFlags::BitsType::eNone;
-	}
+	ResetImageState(imageInfo.initialLayout);
 
 	return true;
 }
@@ -236,12 +226,7 @@ bool VmaImage::Create3D(VKCore::VulkanDevice* device,
 	m_extent = imageInfo.extent;
 	m_format = imageInfo.format;
 
-	for (uint32_t i = 0; i < m_mipLevels; i++)
-	{
-		auto state = m_imageState.GetSubresourceState(i);
-		state.layout = imageInfo.initialLayout;
-		state.accessMask = vk::AccessFlags::BitsType::eNone;
-	}
+	ResetImageState(imageInfo.initialLayout);
 
 	return true;
 }

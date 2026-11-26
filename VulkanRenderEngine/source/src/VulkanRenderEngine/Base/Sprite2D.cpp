@@ -593,6 +593,8 @@ std::shared_ptr<Texture2D> Render2D::LoadImageTexture(const std::string& fullPat
 		SetError(error, std::format("加载图片失败：{}", fullPath));
 		return nullptr;
 	}
+	// Sprite 的贴图加载一次、之后只采样：固定成只读布局，2D / UI / 编辑器可以跨线程、跨帧同时用
+	texture->MakeSampledImmutable();
 	return texture;
 }
 
@@ -837,6 +839,7 @@ std::shared_ptr<AnimatedImage> AnimatedImage::FromFrames(const std::vector<const
 			return nullptr;
 		}
 		page->UpdateTextureData(pagePixels.data());
+		page->MakeSampledImmutable();		// 图集页上传完就只采样
 		image->_pages.push_back(std::move(page));
 
 		frameIndex += count;
