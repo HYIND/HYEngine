@@ -645,6 +645,7 @@ bool Texture2D::LoadFromFile(const std::string& filepath, bool autoMipMaps)
 
 void Texture2D::Resize(uint32_t width, uint32_t height)
 {
+	LockGuard guard(_mutex);
 	if (width == m_Width && height == m_Height)
 		return;
 	m_Width = width;
@@ -664,6 +665,7 @@ bool Texture2D::CreateImage()
 
 	_image = image;
 	_version++;
+	BindlessTextureManager::MarkDirty();
 
 	return true;
 }
@@ -673,6 +675,7 @@ bool Texture2D::CreateImageView()
 	LockGuard guard(_mutex);
 	_levelImageViews.clear();
 	_version++;
+	BindlessTextureManager::MarkDirty();
 	return true;
 }
 
@@ -707,12 +710,16 @@ bool Texture2D::CreateSampler()
 
 	_sampler = sampler;
 	_version++;
+	BindlessTextureManager::MarkDirty();	// bindless 表里这张图的描述符在下一帧刷新
 
 	return true;
 }
 
 std::shared_ptr<VKWrapper::VKImageView> Texture2D::CreateLevelImageView(const ImageViewInfo& info) const
 {
+	// 空贴图（原图加载失败等）没有 image：不建 view，调用方拿到空的描述符项
+	if (!_image)
+		return nullptr;
 
 	vk::ImageViewCreateInfo viewInfo = {};
 	viewInfo
@@ -747,6 +754,7 @@ bool Texture2D::CreateFromDX11SharedHandle(std::shared_ptr<SharedTexture> shared
 
 	_image = image;
 	_version++;
+	BindlessTextureManager::MarkDirty();	// bindless 表里这张图的描述符在下一帧刷新
 
 	return true;
 }

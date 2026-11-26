@@ -4,6 +4,8 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <atomic>
 #include "CommonData/AssetGUIDDef.h"
 #include "Texture2D.h"
 
@@ -149,7 +151,7 @@ public:
 	void SetAssetGUID(const AssetGUID& guid);
 	const AssetGUID& GetAssetGUID() const;
 
-	const std::map<TextureType, std::shared_ptr<Texture2D>>& GetTextures() const;
+	std::map<TextureType, std::shared_ptr<Texture2D>> GetTextures() const;
 	MaterialData GetMaterialCompData();
 	void GetMaterialCompData(MaterialData& comp_data);
 
@@ -168,9 +170,11 @@ private:
 private:
 	std::string _uuid;
 	AssetGUID _assetGUID;
+
+	mutable std::mutex _mutex;
 	MaterialProperties _properties;
 	std::map<TextureType, std::shared_ptr<Texture2D>> _textures;
 
-	bool needUpdateIndirectDraw;
-	std::atomic<uint32_t> _version;
+	std::atomic<bool> needUpdateIndirectDraw{ true };
+	std::atomic<uint32_t> _version{ 0 };
 };

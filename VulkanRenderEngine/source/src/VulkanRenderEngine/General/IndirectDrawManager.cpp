@@ -45,18 +45,35 @@ namespace ReitreRes
 		std::string uuid;
 	};
 
-	class RetireBindlessTexture :public VKWrapper::IVKResource
+	// 被换下来的描述符：持有旧的 image / view / sampler，等在途帧用完再放掉
+	class RetireBindlessDescEntry :public VKWrapper::IVKResource
 	{
 	public:
-		RetireBindlessTexture(const Texture2D* tex)
-			:tex(tex)
+		RetireBindlessDescEntry(TextureDescBindEntry entry)
+			:entry(std::move(entry))
 		{}
 		virtual void Destroy() {
-			BindlessTextureManager::Instance()->DeleteTexture(tex);
+			entry = TextureDescBindEntry{};
 		}
 
 	public:
-		const Texture2D* tex = nullptr;
+		TextureDescBindEntry entry;
+	};
+
+	// 延迟回收的是槽位，不是贴图指针：在途帧的材质数据里可能还写着这个槽位，
+	// 等它们用完再换成占位图；指针映射在 UnregisterTexture 里已经删掉了
+	class RetireBindlessTexture :public VKWrapper::IVKResource
+	{
+	public:
+		RetireBindlessTexture(BindlessIndex slot)
+			:slot(slot)
+		{}
+		virtual void Destroy() {
+			BindlessTextureManager::Instance()->ReleaseSlot(slot);
+		}
+
+	public:
+		BindlessIndex slot = BindlessIndexNull;
 	};
 }
 
@@ -77,44 +94,48 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const std::shared_
 
 BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* tex)
 {
-	if (!tex)
+	// 空贴图没有 image，取描述符会解引用空指针；不注册，材质那边按「这一槽没有贴图」处理
+	if (!tex || tex->IsEmpty())
 		return BindlessIndexNull;
 
-	LockGuard guard(_mutex);
-	if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
+	std::vector<TextureDescBindEntry> retired;
+	BindlessIndex result = BindlessIndexNull;
 	{
-		auto [storedTex, index] = *it;
-		TextureDescBindEntry& entry = _entrys[index];
-		if (_entrys[index].version != storedTex->GetDescBindEntryVersion())
+		LockGuard guard(_mutex);
+		if (auto it = _textureEntrys.find(tex); it != _textureEntrys.end())
 		{
-			entry = std::move(storedTex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor));
-		}
-		return index;
-	}
-	else
-	{
-		TextureDescBindEntry entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
-		if (!entry.image || !entry.imageView || !entry.sampler)
-			return BindlessIndexNull;
-
-		if (_idleSlot.empty())
-		{
-			BindlessIndex newIndex = _entrys.size();
-
-			_entrys.push_back(std::move(entry));
-			_textureEntrys[tex] = newIndex;
-			return newIndex;
+			const BindlessIndex index = it->second;
+			if (_entrys[index].version != tex->GetDescBindEntryVersion())
+			{
+				auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+				if (entry.image && entry.imageView && entry.sampler)
+					ReplaceEntryLocked(index, std::move(entry), retired);
+			}
+			result = index;
 		}
 		else
 		{
-			BindlessIndex idleIndex = _idleSlot.front();
-			_idleSlot.pop();
-
-			_entrys[idleIndex] = std::move(entry);
-			_textureEntrys[tex] = idleIndex;
-			return idleIndex;
+			TextureDescBindEntry entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+			if (entry.image && entry.imageView && entry.sampler)
+			{
+				if (_idleSlot.empty())
+				{
+					result = static_cast<BindlessIndex>(_entrys.size());
+					_entrys.push_back(std::move(entry));
+				}
+				else
+				{
+					// 空闲槽位里是占位图（ReleaseSlot 换上的），直接覆盖
+					result = _idleSlot.front();
+					_idleSlot.pop();
+					_entrys[result] = std::move(entry);
+				}
+				_textureEntrys[tex] = result;
+			}
 		}
 	}
+	RetireEntries(retired);
+	return result;
 }
 
 BindlessIndex BindlessTextureManager::GetTextureIndex(const std::shared_ptr<Texture2D>& tex)
@@ -148,13 +169,20 @@ void BindlessTextureManager::UnregisterTexture(const Texture2D* tex)
 	if (!tex)
 		return;
 
+	// 映射立刻删：这个地址马上可能被新的 Texture2D 复用，不能让新贴图命中旧映射，
+	// 也不能让几帧后的延迟回收删掉新贴图的映射
+	BindlessIndex index = BindlessIndexNull;
 	{
-		SharedLockGuard guard(_mutex);
-		if (auto it = _textureEntrys.find(tex); it == _textureEntrys.end())
+		LockGuard guard(_mutex);
+		auto it = _textureEntrys.find(tex);
+		if (it == _textureEntrys.end())
 			return;
+		index = it->second;
+		_textureEntrys.erase(it);
 	}
 
-	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(tex));
+	// 槽位里的描述符（持有旧的 image / view / sampler）留到在途帧用完再换掉
+	VKCONTEXT->Retire(new ReitreRes::RetireBindlessTexture(index));
 }
 
 std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntrys() const
@@ -163,20 +191,58 @@ std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntr
 	return _entrys;
 }
 
-void BindlessTextureManager::DeleteTexture(const Texture2D* tex)
+uint32_t BindlessTextureManager::RefreshChangedTextures()
+{
+	// 先清标记再刷新：刷新期间又有贴图变了，标记会被重新置上，下一帧再刷
+	if (!s_dirty.exchange(false, std::memory_order_acq_rel))
+		return 0;
+
+	uint32_t refreshed = 0;
+	std::vector<TextureDescBindEntry> retired;
+	{
+		LockGuard guard(_mutex);
+		for (const auto& [tex, index] : _textureEntrys)
+		{
+			if (index >= _entrys.size() || _entrys[index].version == tex->GetDescBindEntryVersion())
+				continue;
+			auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+			if (!entry.image || !entry.imageView || !entry.sampler)
+				continue;
+			ReplaceEntryLocked(index, std::move(entry), retired);
+			++refreshed;
+		}
+	}
+	RetireEntries(retired);
+	return refreshed;
+}
+
+void BindlessTextureManager::ReplaceEntryLocked(BindlessIndex index, TextureDescBindEntry entry, std::vector<TextureDescBindEntry>& retired)
+{
+	if (index >= _entrys.size())
+		return;
+	auto old = std::exchange(_entrys[index], std::move(entry));
+	if (old.image || old.imageView || old.sampler)
+		retired.push_back(std::move(old));
+}
+
+void BindlessTextureManager::RetireEntries(std::vector<TextureDescBindEntry>& retired)
+{
+	for (auto& entry : retired)
+		VKCONTEXT->Retire(new ReitreRes::RetireBindlessDescEntry(std::move(entry)));
+	retired.clear();
+}
+
+void BindlessTextureManager::ReleaseSlot(BindlessIndex index)
 {
 	LockGuard guard(_mutex);
-	auto it = _textureEntrys.find(tex);
-	if (it == _textureEntrys.end())
+	if (index >= _entrys.size())
 		return;
 
 	if (!_placeholderTexture)
 		_placeholderTexture = std::make_shared<Texture2D>(1, 1);
 
-	uint32_t index = it->second;
-	_idleSlot.push(index);
 	_entrys[index] = _placeholderTexture->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
-	_textureEntrys.erase(it);
+	_idleSlot.push(index);
 }
 
 BindlessTextureManager::BindlessTextureManager() {

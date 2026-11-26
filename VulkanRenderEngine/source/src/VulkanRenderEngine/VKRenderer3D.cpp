@@ -1528,6 +1528,8 @@ void VKRenderer3D::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 
 	auto indirectManager = IndirectDrawManager::Instance();
 
+	BindlessTextureManager::Instance()->RefreshChangedTextures();
+
 	{
 		auto updateMesh = [&](auto& items)
 			{
@@ -1607,8 +1609,8 @@ void VKRenderer3D::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 			{
 				std::for_each(std::execution::seq, willUpdateMaterials.begin(), willUpdateMaterials.end(),
 					[&](auto& materialptr) {
-						indirectManager->SetupMaterial_LockFree(*materialptr);
 						materialptr->SetNeedUpdateIndirectDraw(false);
+						indirectManager->SetupMaterial_LockFree(*materialptr);
 					});
 			});
 	}
