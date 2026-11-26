@@ -818,6 +818,17 @@ Pipeline::DescriptorSetGroup::~DescriptorSetGroup() {
 		VKCONTEXT->FreeDescriptorSets(sets);
 }
 
+Pipeline::DescriptorSetGroup::ArrayWriteRecord& Pipeline::DescriptorSetGroup::GetArrayWriteRecord(uint32_t set, uint32_t binding)
+{
+	for (auto& record : arrayWriteRecords)
+		if (record.set == set && record.binding == binding)
+			return record;
+	auto& record = arrayWriteRecords.emplace_back();
+	record.set = set;
+	record.binding = binding;
+	return record;
+}
+
 Pipeline::DescriptorSetGroupPool::DescriptorSetGroupPool(uint32_t maxResNum) :_maxResNum(maxResNum) {}
 
 std::shared_ptr<Pipeline::DescriptorSetGroup> Pipeline::DescriptorSetGroupPool::Fetch()
@@ -1215,6 +1226,14 @@ struct DescriptorWriteBatch
 		writes.push_back(MakeWrite(set, binding, type).setImageInfo(stored));
 	}
 
+	// 只写数组里的一个元素（dstArrayElement = arrayElement）
+	void AddImageAt(vk::DescriptorSet set, uint32_t binding, vk::DescriptorType type, const vk::DescriptorImageInfo& info, uint32_t arrayElement)
+	{
+		auto& stored = Next(_images, _imageCount);
+		stored = info;
+		writes.push_back(MakeWrite(set, binding, type).setDstArrayElement(arrayElement).setImageInfo(stored));
+	}
+
 	// 数组：先拿一个空数组直接往里填，填完 AddImageArray 登记（引用在 Flush 之前一直有效）
 	std::vector<vk::DescriptorImageInfo>& BeginImageArray()
 	{
@@ -1460,12 +1479,18 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 	if (!cmdBuffer)
 		return;
 
+	// 快照：bindless 表没变时拿到的是同一份，只多一次引用计数，不再每次把整张表拷一遍
 	if (entry.provider)
-		entry.descEntrys = entry.provider->GetTextureDescBindEntrys();
+		entry.snapshot = entry.provider->GetSnapshot();
+	if (!entry.snapshot)
+		return;
+	const auto& entries = entry.snapshot->entries;
+	const uint64_t version = entry.snapshot->version;
+	constexpr vk::DescriptorType type = vk::DescriptorType::eCombinedImageSampler;
 
-	// 直接填进批次里复用的数组，不另建临时 vector
+	// 布局照旧逐张处理：可能要录屏障，结果也可能和上次不同（不假定表里的贴图是只读的）
 	auto& imageInfos = batch.BeginImageArray();
-	for (auto& desc : entry.descEntrys)
+	for (auto& desc : entries)
 	{
 		// 采样读：光追 / 计算 Pass 绑 bindless 时不再把整组纹理切到 GENERAL、下一个图形 Pass 再切回只读
 		vk::ImageLayout imageLayout = desc.image->TransitionLayoutForSample(cmdBuffer, bindStage);
@@ -1478,8 +1503,54 @@ void BindingRecord::BindUniformTextureArray(const std::shared_ptr<VKWrapper::VKC
 		imageInfos.push_back(imageInfo);
 	}
 
-	// 一个都没有时 AddImageArray 不加这一项（descriptorCount 不能为 0）
-	batch.AddImageArray(data->sets[set], binding, vk::DescriptorType::eCombinedImageSampler, imageInfos);
+	// 一个都没有：不写（descriptorCount 不能为 0），set 里的内容也没变
+	if (imageInfos.empty())
+		return;
+
+	const vk::DescriptorSet dstSet = data->sets[set];
+	auto& record = data->GetArrayWriteRecord(set, binding);
+	const size_t count = imageInfos.size();
+
+	// 这组 set 上次写的就是同一份快照（版本全局唯一，里面的 view / sampler 都还被快照持有着）：只看布局
+	if (version != 0 && record.version == version && record.layouts.size() == count)
+	{
+		size_t changed = 0;
+		for (size_t i = 0; i < count; ++i)
+			if (record.layouts[i] != imageInfos[i].imageLayout)
+				++changed;
+
+		if (changed == 0)
+			return;
+
+		// 变的不多：只重写这几个元素；变得多就整段写，省得一堆单元素写入
+		if (changed * 4 <= count)
+		{
+			for (size_t i = 0; i < count; ++i)
+			{
+				if (record.layouts[i] == imageInfos[i].imageLayout)
+					continue;
+				batch.AddImageAt(dstSet, binding, type, imageInfos[i], static_cast<uint32_t>(i));
+				record.layouts[i] = imageInfos[i].imageLayout;
+			}
+			return;
+		}
+	}
+
+	// 整段写
+	batch.AddImageArray(dstSet, binding, type, imageInfos);
+	if (version != 0)
+	{
+		record.version = version;
+		record.layouts.resize(count);
+		for (size_t i = 0; i < count; ++i)
+			record.layouts[i] = imageInfos[i].imageLayout;
+	}
+	else
+	{
+		// 不可缓存的数组覆盖了这个 binding：记录作废，下次 bindless 绑到这组时必须整段写
+		record.version = 0;
+		record.layouts.clear();
+	}
 }
 
 void BindingRecord::BindUniformTextureCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmdBuffer, std::shared_ptr<Pipeline::DescriptorSetGroup>& data, ImageLayout::BindStage& bindStage, UniformTextureCubeEntry& entry, uint32_t binding, uint32_t set, DescriptorWriteBatch& batch)

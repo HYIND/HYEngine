@@ -133,7 +133,7 @@ private:
 	{
 
 	public:
-		DescriptorSetGroupPool(uint32_t maxResNum = 50);
+		DescriptorSetGroupPool(uint32_t maxResNum = 256);
 		void Clear();
 		std::shared_ptr<DescriptorSetGroup> Fetch();
 		bool Recycle(std::shared_ptr<DescriptorSetGroup> setGroup);	// 回收
@@ -157,6 +157,19 @@ public:
 	struct DescriptorSetGroup {
 		VKCore::VulkanDevice* device;
 		std::vector<vk::DescriptorSet> sets;
+
+		// 这组 set 上次给贴图数组 binding 写了什么：下次拿到这组时内容一样就不重写。
+		// 一组 set 从 Fetch 到 Recycle 只有一次 Bind 在用，读写不用加锁
+		struct ArrayWriteRecord
+		{
+			uint32_t set = 0;
+			uint32_t binding = 0;
+			uint64_t version = 0;					// 写入时快照的版本；0 = 内容不可信（下次必须整段写）
+			std::vector<vk::ImageLayout> layouts;	// 每个元素写进去时的布局
+		};
+		std::vector<ArrayWriteRecord> arrayWriteRecords;	// 一般就 1~2 项，线性查
+		ArrayWriteRecord& GetArrayWriteRecord(uint32_t set, uint32_t binding);
+
 		DescriptorSetGroup(VKCore::VulkanDevice* device, const std::vector<vk::DescriptorSet>& sets);
 		~DescriptorSetGroup();
 	};
@@ -260,7 +273,7 @@ public:
 	struct UniformTextureArrayEntry
 	{
 		std::shared_ptr<ITextureArrayProvider> provider;
-		std::vector<TextureDescBindEntry> descEntrys;
+		std::shared_ptr<const TextureArraySnapshot> snapshot;	// 上次 Bind 用的快照（持有里面的 view / sampler）
 	};
 
 	struct StorageImageEntry

@@ -70,6 +70,9 @@ std::vector<std::shared_ptr<Texture2D>> ModelBase::LoadMaterialTextures(aiMateri
 			std::shared_ptr<Texture2D> tex = std::make_shared<Texture2D>(filepath.string(), config, true);
 			if (tex->IsEmpty())
 				continue;
+			// 内嵌贴图加载（含生成 mip）完就只采样：固定成只读布局，bindless 每次绑定不用再走布局记录，
+			// 也能被不同线程、不同帧同时采样（和贴图资产一样，见 AssetStroage.cpp）
+			tex->MakeSampledImmutable();
 
 			LoadedTexture texture;
 			texture.tex = tex;

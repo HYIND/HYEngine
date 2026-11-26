@@ -38,6 +38,8 @@ public:
 	void UnregisterTexture(const Texture2D* tex);
 
 	std::vector<TextureDescBindEntry> GetTextureDescBindEntrys() const;
+	// 整张表的快照：表没变就返回同一份（只多一次引用计数），表一变就作废、下次用时重建并换新版本号
+	std::shared_ptr<const TextureArraySnapshot> GetSnapshot() const override;
 
 	void MarkDirty(const Texture2D* tex);
 	uint32_t RefreshChangedTextures();
@@ -58,6 +60,7 @@ private:
 	std::queue<uint32_t> _idleSlot;
 
 	mutable SharedLock _mutex;
+	mutable std::shared_ptr<const TextureArraySnapshot> _snapshot;	// 改 _entrys 的地方都在写锁里清掉它
 
 	std::unordered_set<const Texture2D*> _dirtyTextures;
 	std::mutex _dirtyMutex;

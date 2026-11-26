@@ -94,7 +94,10 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 			{
 				auto entry = tex->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
 				if (entry.image && entry.imageView && entry.sampler)
+				{
 					_entrys[index] = std::move(entry);
+					_snapshot.reset();
+				}
 			}
 			result = index;
 		}
@@ -120,6 +123,7 @@ BindlessIndex BindlessTextureManager::RegisterOrUpdateTexture(const Texture2D* t
 					_entrys[result] = std::move(entry);
 				}
 				_textureEntrys[tex] = result;
+				_snapshot.reset();
 			}
 		}
 	}
@@ -183,6 +187,26 @@ std::vector<TextureDescBindEntry> BindlessTextureManager::GetTextureDescBindEntr
 	return _entrys;
 }
 
+std::shared_ptr<const TextureArraySnapshot> BindlessTextureManager::GetSnapshot() const
+{
+	{
+		SharedLockGuard guard(_mutex);
+		if (_snapshot)
+			return _snapshot;
+	}
+
+	// 表变过：重建一份。几个线程同时发现为空时只有第一个真的建
+	LockGuard guard(_mutex);
+	if (!_snapshot)
+	{
+		auto snapshot = std::make_shared<TextureArraySnapshot>();
+		snapshot->version = NextTextureArraySnapshotVersion();
+		snapshot->entries = _entrys;
+		_snapshot = std::move(snapshot);
+	}
+	return _snapshot;
+}
+
 void BindlessTextureManager::MarkDirty(const Texture2D* tex)
 {
 	if (!tex)
@@ -219,6 +243,8 @@ uint32_t BindlessTextureManager::RefreshChangedTextures()
 		_entrys[index] = std::move(entry);
 		++refreshed;
 	}
+	if (refreshed > 0)
+		_snapshot.reset();
 	return refreshed;
 }
 
@@ -262,7 +288,10 @@ void BindlessTextureManager::ReleaseSlot(BindlessIndex index)
 
 	// 占位图建不出来（设备已经关了等）：槽位里留着旧描述符（对象仍然有效，只是晚些释放），照常回收槽位
 	if (_placeholderTexture)
+	{
 		_entrys[index] = _placeholderTexture->GetDescBindEntry(vk::ImageAspectFlagBits::eColor);
+		_snapshot.reset();
+	}
 	_idleSlot.push(index);
 }
 
@@ -281,8 +310,10 @@ void BindlessTextureManager::Release()
 
 	std::vector<TextureDescBindEntry> entries;
 	std::shared_ptr<Texture2D> placeholder;
+	std::shared_ptr<const TextureArraySnapshot> snapshot;
 	{
 		LockGuard guard(_mutex);
+		snapshot = std::move(_snapshot);
 		for (const auto& [tex, index] : _textureEntrys)
 			tex->_bindlessRegistered.store(false, std::memory_order_seq_cst);
 		_textureEntrys.clear();
@@ -292,6 +323,7 @@ void BindlessTextureManager::Release()
 	}
 	// 锁外放掉：image / view / sampler 释放时会 Retire；占位图析构时还会回来调 UnregisterTexture
 	entries.clear();
+	snapshot.reset();
 	placeholder.reset();
 }
 

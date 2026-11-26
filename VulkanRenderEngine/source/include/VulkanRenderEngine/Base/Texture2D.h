@@ -5,6 +5,9 @@
 #include "CriticalSectionLock.h"
 #include "CommonData/AssetGUIDDef.h"
 
+#include <atomic>
+#include <memory>
+
 struct SharedTexture;
 class BindlessTextureManager;
 
@@ -129,10 +132,33 @@ private:
 	AssetGUID m_assetGUID;
 };
 
+// 贴图数组的一份快照：Bind 时拿它写描述符，不用每次把整张表拷一遍。
+// version 全局唯一（NextTextureArraySnapshotVersion 发号，不会重复）：版本相同 = 同一份快照 = 内容相同、
+// 里面的 image / view / sampler 都还活着（快照自己持有）。0 表示不能缓存（每次现建的，例如 BaseTextureArrayProvider）
+struct TextureArraySnapshot
+{
+	uint64_t version = 0;
+	std::vector<TextureDescBindEntry> entries;
+};
+
+inline uint64_t NextTextureArraySnapshotVersion()
+{
+	static std::atomic<uint64_t> s_version{ 0 };
+	return s_version.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
 class ITextureArrayProvider
 {
 public:
+	virtual ~ITextureArrayProvider() = default;
 	virtual std::vector<TextureDescBindEntry> GetTextureDescBindEntrys()const = 0;
+	// 默认每次现建一份、version = 0（不缓存）；内容少变的（bindless 表）重写它，返回缓存的快照
+	virtual std::shared_ptr<const TextureArraySnapshot> GetSnapshot() const
+	{
+		auto snapshot = std::make_shared<TextureArraySnapshot>();
+		snapshot->entries = GetTextureDescBindEntrys();
+		return snapshot;
+	}
 
 protected:
 	vk::ImageAspectFlags _aspect;
