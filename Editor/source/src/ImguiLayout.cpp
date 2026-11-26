@@ -12,6 +12,7 @@
 #include "Sprite2DEditor.h"
 #include "TextAssetEditor.h"
 #include "AssetThumbnails.h"
+#include "MaterialPreview.h"
 #include "Render/Systems/RenderSystem.h"
 #include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
@@ -2750,7 +2751,8 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		};
 
 	bool open = true;
-	ImGui::SetNextWindowSize(ImVec2(680.0f, 440.0f), ImGuiCond_FirstUseEver);
+	// 默认够宽，直接是左预览、右参数的两栏
+	ImGui::SetNextWindowSize(ImVec2(940.0f, 640.0f), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin(std::format("Material Editor: {}###MaterialEditor", meta->name).c_str(), &open, ImGuiWindowFlags_NoDocking))
 	{
 		ImGui::End();
@@ -2759,69 +2761,24 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 		{
 			restoreOrigin();
 			s_materialOrigin.valid = false;
+			MaterialPreview::Reset();
 		}
 		return;
 	}
 
 	bool changed = false;
 	auto properties = materialAsset->GetProperties();
-	const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2.f;
-	ImGui::BeginChild("MaterialEditorContent", ImVec2(0.f, -footerHeight), ImGuiChildFlags_None);
+	const auto& dependencies = materialAsset->GetTextureDependencies();
+	std::optional<TextureType> clearType;		// 遍历时引用着 dependencies，清除放到最后
 
-	// ---- 属性：两列网格（左标签、右控件占满），比"控件 + 右侧标签、固定宽度"紧凑 ----
-	auto drawProperties = [&]()
+	auto textureGuidOf = [&](TextureType type) -> AssetGUID
 		{
-			ImGui::SeparatorText("Material Properties");
-			const float labelWidth = ImGui::CalcTextSize("Emission Strength").x + ImGui::GetStyle().ItemSpacing.x;
-			if (!ImGui::BeginTable("##MaterialProps", 2, ImGuiTableFlags_SizingFixedFit))
-				return;
-			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
-			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
-			auto row = [](const char* label)
-				{
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::AlignTextToFramePadding();
-					ImGui::TextUnformatted(label);
-					ImGui::TableSetColumnIndex(1);
-					ImGui::SetNextItemWidth(-FLT_MIN);
-				};
-			row("Albedo");
-			changed |= ImGui::ColorEdit3("##Albedo", glm::value_ptr(properties.albedo));
-			row("Metallic");
-			changed |= ImGui::DragFloat("##Metallic", &properties.metallic, 0.01f, 0.f, 1.f);
-			row("Roughness");
-			changed |= ImGui::DragFloat("##Roughness", &properties.roughness, 0.01f, 0.001f, 1.f);
-			row("Ambient Occlusion");
-			changed |= ImGui::DragFloat("##AO", &properties.ambientOcclusion, 0.01f, 0.f, 1.f);
-			row("Opacity");
-			changed |= ImGui::DragFloat("##Opacity", &properties.opacity, 0.01f, 0.f, 1.f);
-			row("IOR");
-			changed |= ImGui::DragFloat("##IOR", &properties.IOR, 0.01f, 1.f, 3.f);
-			row("Emission Color");
-			changed |= ImGui::ColorEdit3("##EmissionColor", glm::value_ptr(properties.emissionColor));
-			row("Emission Strength");
-			changed |= ImGui::DragFloat("##EmissionStrength", &properties.emissionStrength, 0.01f, 0.f, 100.f);
-
-			int alphaMode = static_cast<int>(properties.alphamode);
-			const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
-			row("Alpha Mode");
-			if (ImGui::Combo("##AlphaMode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
-			{
-				properties.alphamode = static_cast<AlphaMode>(alphaMode);
-				changed = true;
-			}
-			if (properties.alphamode == AlphaMode::Mask)
-			{
-				row("Mask Threshold");
-				changed |= ImGui::DragFloat("##MaskThreshold", &properties.maskthreshold, 0.01f, 0.f, 1.f);
-			}
-			row("Two Sided");
-			changed |= ImGui::Checkbox("##TwoSided", &properties.twosided);
-			ImGui::EndTable();
+			auto it = dependencies.find(type);
+			return it != dependencies.end() ? it->second : AssetGUID{};
 		};
+	auto hasTexture = [&](TextureType type) { return dependencies.find(type) != dependencies.end(); };
 
-	// ---- 贴图槽：一行一个（40px 缩略图 | 槽名 + 贴图名 | 清除），整行都能拖入 ----
+	// ---- 拖入贴图：贴图直接填进槽；精灵先用它的原图生成一张贴图，导入成功后再填 ----
 	auto acceptTextureDrop = [&](TextureType type)
 		{
 			if (!ImGui::BeginDragDropTarget())
@@ -2841,7 +2798,6 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 					}
 					else if (textureMeta && textureMeta->type == AssetType::Sprite)
 					{
-						// 精灵拖进贴图栏：先用精灵的原图生成一张贴图，导入成功后填进这个栏
 						const AssetGUID materialGuid = meta->guid;
 						const TextureType slotType = type;
 						RequestTextureFromSprite(textureMeta->guid, projectManager, [projectManager, materialGuid, slotType](const AssetMeta& created)
@@ -2858,131 +2814,307 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 			ImGui::EndDragDropTarget();
 		};
 
-	auto drawTextures = [&]()
+	// ---- 参数行：[贴图槽] 名称 [数值 / 贴图名] [清除]，贴图和它影响的数值放在同一行 ----
+	constexpr float kSlotSide = 32.0f;
+	const float frameHeight = ImGui::GetFrameHeight();
+	const float labelWidth = ImGui::CalcTextSize("Metallic Roughness").x + ImGui::GetStyle().ItemSpacing.x;
+	using OptionalSlot = std::optional<TextureType>;
+
+	auto beginSection = [&](const char* title) -> bool
 		{
-			ImGui::SeparatorText("Texture Slots");
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("把贴图（或精灵，会先生成贴图）资产拖到槽上");
+			if (!ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen))
+				return false;
+			if (!ImGui::BeginTable(title, 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX))
+				return false;
+			ImGui::TableSetupColumn("slot", ImGuiTableColumnFlags_WidthFixed, kSlotSide);
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("clear", ImGuiTableColumnFlags_WidthFixed, frameHeight);
+			return true;
+		};
+	auto endSection = []() { ImGui::EndTable(); };
 
-			const std::pair<TextureType, const char*> textureSlots[] = {
-				{ TextureType::Albedo, "Albedo" },
-				{ TextureType::Metallic, "Metallic" },
-				{ TextureType::Roughness, "Roughness" },
-				{ TextureType::Normal, "Normal" },
-				{ TextureType::AO, "AO" },
-				{ TextureType::Emissive, "Emissive" },
-				{ TextureType::MetallicRoughness, "Metallic Roughness" },
-				{ TextureType::Height, "Height" },
-				{ TextureType::Opacity, "Opacity" }
-			};
-			constexpr float slotSide = 40.0f;
-			if (!ImGui::BeginTable("##TextureSlots", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg))
-				return;
-			ImGui::TableSetupColumn("thumb", ImGuiTableColumnFlags_WidthFixed, slotSide);
-			ImGui::TableSetupColumn("info", ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn("clear", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+	// 进入数值列；调用方接着画控件（宽度已经设成占满）
+	auto beginRow = [&](const char* label, OptionalSlot slot)
+		{
+			ImGui::PushID(label);
+			const float rowHeight = slot ? kSlotSide : frameHeight;
+			const float offsetY = (rowHeight - frameHeight) * 0.5f;
+			ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
 
-			const auto& dependencies = materialAsset->GetTextureDependencies();
-			std::optional<TextureType> clearType;
-			for (const auto& [type, label] : textureSlots)
+			ImGui::TableSetColumnIndex(0);
+			if (slot)
 			{
-				ImGui::PushID(static_cast<int>(type));
-				auto dependency = dependencies.find(type);
-				const bool assigned = dependency != dependencies.end();
-				const AssetGUID guid = assigned ? dependency->second : AssetGUID{};
-				auto textureMeta = assigned ? database->GetAssetMetaByGuid(guid) : nullptr;
-				const std::string textureName = !assigned ? std::string("None") : (textureMeta ? textureMeta->name : guid);
-
-				ImGui::TableNextRow(ImGuiTableRowFlags_None, slotSide);
-
-				ImGui::TableSetColumnIndex(0);
-				AssetThumbnails::DrawThumbnailBox(projectManager, guid, slotSide);
-				acceptTextureDrop(type);
-
-				// 槽名（暗色）+ 贴图名两行；整个格子是一个不可见按钮，作为拖放目标
-				ImGui::TableSetColumnIndex(1);
-				const ImVec2 cellPos = ImGui::GetCursorScreenPos();
-				const float cellWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
-				ImGui::InvisibleButton("##slot", ImVec2(cellWidth, slotSide));
-				const bool hovered = ImGui::IsItemHovered();
-				acceptTextureDrop(type);
-				{
-					ImDrawList* drawList = ImGui::GetWindowDrawList();
-					const float lineHeight = ImGui::GetTextLineHeight();
-					const float top = cellPos.y + (slotSide - lineHeight * 2.0f - 2.0f) * 0.5f;
-					drawList->PushClipRect(cellPos, ImVec2(cellPos.x + cellWidth, cellPos.y + slotSide), true);
-					drawList->AddText(ImVec2(cellPos.x, top), ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
-					drawList->AddText(ImVec2(cellPos.x, top + lineHeight + 2.0f),
-						ImGui::GetColorU32(assigned ? ImGuiCol_Text : ImGuiCol_TextDisabled), textureName.c_str());
-					drawList->PopClipRect();
-				}
-				if (hovered)
-				{
-					if (assigned && textureMeta)
-						ImGui::SetTooltip("%s\n%s", textureMeta->name.c_str(), textureMeta->path.c_str());
-					else if (assigned)
-						ImGui::SetTooltip("资产不存在：%s", guid.c_str());
-					else
-						ImGui::SetTooltip("把贴图资产拖到这里");
-				}
-
-				ImGui::TableSetColumnIndex(2);
-				if (assigned)
-				{
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (slotSide - ImGui::GetFrameHeight()) * 0.5f);
-					if (ImGui::Button("×", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
-						clearType = type;
-					if (ImGui::IsItemHovered())
-						ImGui::SetTooltip("清除");
-				}
-				ImGui::PopID();
+				AssetThumbnails::DrawThumbnailBox(projectManager, textureGuidOf(*slot), kSlotSide);
+				acceptTextureDrop(*slot);
+				if (!hasTexture(*slot) && ImGui::IsItemHovered())
+					ImGui::SetTooltip("把贴图（或精灵，会先生成贴图）拖到这里");
 			}
-			ImGui::EndTable();
-			// 遍历时引用着 dependencies，清除放到循环外面
-			if (clearType)
-				materialAsset->SetTextureDependency(*clearType, {}, nullptr);
+
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(label);
+			if (slot)
+				acceptTextureDrop(*slot);
+
+			ImGui::TableSetColumnIndex(2);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+		};
+	auto endRow = [&](OptionalSlot slot)
+		{
+			ImGui::TableSetColumnIndex(3);
+			if (slot && hasTexture(*slot))
+			{
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (kSlotSide - frameHeight) * 0.5f);
+				if (ImGui::Button("×", ImVec2(frameHeight, frameHeight)))
+					clearType = *slot;
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("清除贴图");
+			}
+			ImGui::PopID();
 		};
 
-	// 窗口够宽就左右两栏，窄了就上下排
-	const bool twoColumns = ImGui::GetContentRegionAvail().x >= 600.0f;
-	if (ImGui::BeginTable("MaterialEditorColumns", twoColumns ? 2 : 1, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp))
+	// 数值被贴图取代时（着色器里贴图优先）控件变灰，悬停说明原因
+	auto overridden = [](bool disabled, const char* reason, auto&& draw) -> bool
+		{
+			if (disabled)
+				ImGui::BeginDisabled();
+			const bool edited = draw();
+			if (disabled)
+			{
+				ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s", reason);
+			}
+			return edited;
+		};
+
+	// 只有贴图、没有数值的行：显示贴图名
+	auto textureNameCell = [&](TextureType type, const char* hint)
+		{
+			const AssetGUID guid = textureGuidOf(type);
+			auto textureMeta = guid.empty() ? nullptr : database->GetAssetMetaByGuid(guid);
+			ImGui::AlignTextToFramePadding();
+			if (guid.empty())
+				ImGui::TextDisabled("%s", hint);
+			else if (textureMeta)
+				ImGui::TextUnformatted(textureMeta->name.c_str());
+			else
+				ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "资产不存在");
+			acceptTextureDrop(type);
+			if (ImGui::IsItemHovered())
+			{
+				if (textureMeta)
+					ImGui::SetTooltip("%s\n%s", textureMeta->name.c_str(), textureMeta->path.c_str());
+				else if (!guid.empty())
+					ImGui::SetTooltip("资产不存在：%s", guid.c_str());
+			}
+		};
+
+	auto drawSections = [&]()
+		{
+			const bool metallicRoughnessTex = hasTexture(TextureType::MetallicRoughness);
+
+			if (beginSection("Surface"))
+			{
+				beginRow("Albedo", TextureType::Albedo);
+				changed |= ImGui::ColorEdit3("##Albedo", glm::value_ptr(properties.albedo));
+				if (hasTexture(TextureType::Albedo) && ImGui::IsItemHovered())
+					ImGui::SetTooltip("和 Albedo 贴图相乘");
+				endRow(TextureType::Albedo);
+
+				beginRow("Metallic", TextureType::Metallic);
+				changed |= overridden(metallicRoughnessTex || hasTexture(TextureType::Metallic), "由贴图提供（Metallic / Metallic Roughness 贴图的 B 通道），数值不生效",
+					[&] { return ImGui::DragFloat("##Metallic", &properties.metallic, 0.01f, 0.f, 1.f); });
+				endRow(TextureType::Metallic);
+
+				beginRow("Roughness", TextureType::Roughness);
+				changed |= overridden(metallicRoughnessTex || hasTexture(TextureType::Roughness), "由贴图提供（Roughness / Metallic Roughness 贴图的 G 通道），数值不生效",
+					[&] { return ImGui::DragFloat("##Roughness", &properties.roughness, 0.01f, 0.001f, 1.f); });
+				endRow(TextureType::Roughness);
+
+				beginRow("Metallic Roughness", TextureType::MetallicRoughness);
+				textureNameCell(TextureType::MetallicRoughness, "G = 粗糙度，B = 金属度（优先于上面两张）");
+				endRow(TextureType::MetallicRoughness);
+
+				beginRow("Normal", TextureType::Normal);
+				textureNameCell(TextureType::Normal, "拖入法线贴图");
+				endRow(TextureType::Normal);
+
+				beginRow("Ambient Occlusion", TextureType::AO);
+				changed |= overridden(hasTexture(TextureType::AO), "由 AO 贴图（R 通道）提供，数值不生效",
+					[&] { return ImGui::DragFloat("##AO", &properties.ambientOcclusion, 0.01f, 0.f, 1.f); });
+				endRow(TextureType::AO);
+
+				beginRow("Height", TextureType::Height);
+				textureNameCell(TextureType::Height, "当前渲染没有用到");
+				endRow(TextureType::Height);
+				endSection();
+			}
+
+			if (beginSection("Emission"))
+			{
+				beginRow("Emission Color", TextureType::Emissive);
+				changed |= overridden(hasTexture(TextureType::Emissive), "由自发光贴图提供，颜色不生效（强度仍然生效）",
+					[&] { return ImGui::ColorEdit3("##EmissionColor", glm::value_ptr(properties.emissionColor)); });
+				endRow(TextureType::Emissive);
+
+				beginRow("Emission Strength", std::nullopt);
+				changed |= ImGui::DragFloat("##EmissionStrength", &properties.emissionStrength, 0.01f, 0.f, 100.f);
+				endRow(std::nullopt);
+				endSection();
+			}
+
+			if (beginSection("Transparency"))
+			{
+				int alphaMode = static_cast<int>(properties.alphamode);
+				const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+				beginRow("Alpha Mode", std::nullopt);
+				if (ImGui::Combo("##AlphaMode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+				{
+					properties.alphamode = static_cast<AlphaMode>(alphaMode);
+					changed = true;
+				}
+				endRow(std::nullopt);
+
+				beginRow("Opacity", TextureType::Opacity);
+				changed |= ImGui::DragFloat("##Opacity", &properties.opacity, 0.01f, 0.f, 1.f);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("和 Opacity 贴图（R 通道）相乘；没有 Opacity 贴图时取 Albedo 贴图的 alpha");
+				endRow(TextureType::Opacity);
+
+				if (properties.alphamode == AlphaMode::Mask)
+				{
+					beginRow("Mask Threshold", std::nullopt);
+					changed |= ImGui::DragFloat("##MaskThreshold", &properties.maskthreshold, 0.01f, 0.f, 1.f);
+					endRow(std::nullopt);
+				}
+
+				beginRow("IOR", std::nullopt);
+				changed |= ImGui::DragFloat("##IOR", &properties.IOR, 0.01f, 1.f, 3.f);
+				endRow(std::nullopt);
+				endSection();
+			}
+
+			if (beginSection("Rendering"))
+			{
+				beginRow("Two Sided", std::nullopt);
+				changed |= ImGui::Checkbox("##TwoSided", &properties.twosided);
+				endRow(std::nullopt);
+				endSection();
+			}
+		};
+
+	// ---- 实时预览：运行时材质的当前状态（含未保存的修改），有变化才重画 ----
+	// fitHeight：左栏里按栏宽和剩余高度取最大的正方形（下面留工具条的高度）；单栏时限制大小
+	auto drawPreview = [&](bool fitHeight)
+		{
+			const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() * 6.0f + ImGui::GetStyle().ItemSpacing.y;
+			const ImVec2 avail = ImGui::GetContentRegionAvail();
+			float side = fitHeight ? std::min(avail.x, avail.y - toolbarHeight) : std::min(avail.x, 320.0f);
+			side = std::floor(std::clamp(side, 128.0f, 512.0f));
+			if (avail.x > side)
+				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - side) * 0.5f));
+			// AsMaterial：第一次调用时建运行时材质（等依赖贴图加载完），之后直接返回；属性 / 贴图槽的修改会同步到它上面
+			MaterialPreview::Draw(meta->guid, materialAsset->AsMaterial(), side);
+		};
+
+	// ---- 布局：宽窗口左预览、右参数（中间可以拖动分隔），两边各自滚动；窄窗口上下排成一栏 ----
+	const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2.f;
+	ImGui::BeginChild("MaterialEditorContent", ImVec2(0.f, -footerHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+	if (ImGui::GetContentRegionAvail().x >= 620.0f)
 	{
-		ImGui::TableSetupColumn("Properties", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-		if (twoColumns)
-			ImGui::TableSetupColumn("Textures", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(0);
-		drawProperties();
-		if (twoColumns)
+		if (ImGui::BeginTable("MaterialEditorLayout", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Preview", ImGuiTableColumnFlags_WidthStretch, 0.42f);
+			ImGui::TableSetupColumn("Properties", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::BeginChild("##PreviewPane", ImVec2(0.f, 0.f));
+			drawPreview(true);
+			ImGui::EndChild();
 			ImGui::TableSetColumnIndex(1);
-		else
-			ImGui::Spacing();
-		drawTextures();
-		ImGui::EndTable();
+			ImGui::BeginChild("##PropertyPane", ImVec2(0.f, 0.f));
+			drawSections();
+			ImGui::EndChild();
+			ImGui::EndTable();
+		}
+	}
+	else
+	{
+		ImGui::BeginChild("##SinglePane", ImVec2(0.f, 0.f));
+		drawPreview(false);
+		ImGui::Spacing();
+		drawSections();
+		ImGui::EndChild();
 	}
 	ImGui::EndChild();
+
 	if (changed)
 		materialAsset->SetProperties(properties);
+	if (clearType)
+		materialAsset->SetTextureDependency(*clearType, {}, nullptr);
+
+	// ---- 底栏：保存 / 还原 + 未保存提示，右边是资产路径 ----
+	static std::string s_materialSaveError;
+	auto sameProperties = [](const MaterialProperties& a, const MaterialProperties& b)
+		{
+			return a.albedo == b.albedo && a.metallic == b.metallic && a.roughness == b.roughness
+				&& a.ambientOcclusion == b.ambientOcclusion && a.opacity == b.opacity && a.IOR == b.IOR
+				&& a.emissionColor == b.emissionColor && a.emissionStrength == b.emissionStrength
+				&& a.alphamode == b.alphamode && a.maskthreshold == b.maskthreshold && a.twosided == b.twosided;
+		};
+	const bool dirty = s_materialOrigin.valid && s_materialOrigin.guid == meta->guid
+		&& (!sameProperties(materialAsset->GetProperties(), s_materialOrigin.properties)
+			|| materialAsset->GetTextureDependencies() != s_materialOrigin.textures);
+
 	ImGui::Separator();
 	ImGui::BeginChild("MaterialEditorFooter", ImVec2(0.f, footerHeight), ImGuiChildFlags_None);
 	if (open)
 	{
-		if (ImGui::Button("Save"))
+		if (!dirty)
+			ImGui::BeginDisabled();
+		const bool save = ImGui::Button("Save");
+		ImGui::SameLine();
+		const bool restore = ImGui::Button("Restore");
+		if (!dirty)
+			ImGui::EndDisabled();
+
+		if (save)
 		{
 			if (!projectManager->SaveAsset(meta->guid))
 			{
-				ImGui::SameLine();
-				ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "材质保存失败");
+				s_materialSaveError = "材质保存失败";
 			}
 			else
 			{
+				s_materialSaveError.clear();
 				s_materialOrigin.properties = materialAsset->GetProperties();
 				s_materialOrigin.textures = materialAsset->GetTextureDependencies();
+				// 资产浏览器里的材质球按保存后的样子重画（缩略图只认磁盘上的元文件）
+				AssetThumbnails::Invalidate(meta->guid);
 			}
 		}
-		ImGui::SameLine();
-		if (ImGui::Button("Restore"))
+		if (restore)
 			restoreOrigin();
+
+		ImGui::SameLine();
+		if (!s_materialSaveError.empty())
+			ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "%s", s_materialSaveError.c_str());
+		else if (dirty)
+			ImGui::TextColored(ImVec4(1.f, 0.78f, 0.3f, 1.f), "● 有未保存的修改");
+		else
+			ImGui::TextDisabled("已保存");
+
+		// 路径靠右；放不下就跟在后面
+		const float pathWidth = ImGui::CalcTextSize(meta->path.c_str()).x;
+		ImGui::SameLine();
+		const float spare = ImGui::GetContentRegionAvail().x - pathWidth;
+		if (spare > 0.0f)
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + spare);
+		ImGui::TextDisabled("%s", meta->path.c_str());
 	}
 	ImGui::EndChild();
 	ImGui::End();
@@ -2991,6 +3123,7 @@ void ImguiLayout::DrawMaterialEditor(ProjectManager* projectManager)
 	{
 		restoreOrigin();
 		s_materialOrigin.valid = false;
+		MaterialPreview::Reset();
 	}
 }
 

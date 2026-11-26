@@ -3,11 +3,153 @@
 #include "SceneCodec/ComponentCodec.h"
 #include "Render/Components/ParticleEmitter.h"
 #include "PlatformRuntimeComponents.h"
+#include "CommonComponent.h"
 #include "Sprite2DEditor.h"
 #include "AssetThumbnails.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <optional>
+#include <unordered_map>
+#include "Helper/Tools.h"
+#include "imgui_internal.h"	// BeginDragDropTargetCustom：选中槽的头部整块作为拖放目标
+
+// ---------------- 旋转：编辑器里的欧拉角 ----------------
+// 原来每帧都"四元数 → glm::eulerAngles → 拖动 → 四元数"：eulerAngles 的 y 用 asin 求，只在 [-90°, 90°]，
+// y 一过 90° 就换成等价的 (x+180, 180-y, z+180) 写法，表现为 y 卡在 90、x / z 突然变成 ±180。
+// 这里改成面板自己记住欧拉角：拖动、显示都用记住的值；只有四元数被别处改了（Gizmo、物理、脚本）才重新分解，
+// 并且在所有等价写法里选和上次最接近的那个，数值连续。
+namespace EditorRotation
+{
+	inline float NearestAngle(float value, float reference)
+	{
+		return value + 360.0f * std::round((reference - value) / 360.0f);
+	}
+
+	inline bool SameRotation(const glm::quat& a, const glm::quat& b)
+	{
+		return std::abs(glm::dot(a, b)) > 1.0f - 1.0e-6f;	// q 和 -q 是同一个朝向
+	}
+
+	// q 的欧拉角（度）。约定和 glm 一致：q == quat(radians(euler))，即 R = Rz · Ry · Rx。
+	// 等价写法：(x, y, z) 和 (x+180, 180-y, z+180)，每个分量再加减 360 也一样；在里面选和 reference 最接近的。
+	// y = ±90°（万向节锁）时只有 x - z（y = 90）或 x + z（y = -90）有意义：x 保持 reference.x，只解 z
+	inline glm::vec3 NearestEuler(const glm::quat& q, const glm::vec3& reference)
+	{
+		const glm::dquat dq = glm::normalize(glm::dquat(q.w, q.x, q.y, q.z));
+		const glm::dmat3 m = glm::mat3_cast(dq);		// m[列][行]
+		const double sinY = std::clamp(-m[0][2], -1.0, 1.0);
+
+		const auto fit = [&](double x, double y, double z)
+			{
+				return glm::vec3(NearestAngle(static_cast<float>(x), reference.x),
+					NearestAngle(static_cast<float>(y), reference.y),
+					NearestAngle(static_cast<float>(z), reference.z));
+			};
+		const auto distance = [&](const glm::vec3& e)
+			{
+				const glm::vec3 d = glm::abs(e - reference);
+				return d.x + d.y + d.z;
+			};
+
+		if (std::abs(sinY) < 1.0 - 1.0e-7)
+		{
+			const double y = glm::degrees(std::asin(sinY));
+			const double x = glm::degrees(std::atan2(m[1][2], m[2][2]));
+			const double z = glm::degrees(std::atan2(m[0][1], m[0][0]));
+			const glm::vec3 a = fit(x, y, z);
+			const glm::vec3 b = fit(x + 180.0, 180.0 - y, z + 180.0);
+			return distance(a) <= distance(b) ? a : b;
+		}
+
+		const double d = glm::degrees(std::atan2(m[1][0], m[1][1]));
+		const double x = reference.x;
+		return sinY > 0.0 ? fit(x, 90.0, x - d) : fit(x, -90.0, -d - x);
+	}
+
+	struct CacheEntry
+	{
+		glm::vec3 euler = glm::vec3(0.0f);
+		glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		double lastEditTime = -1.0e9;
+		int lastUsedFrame = 0;
+	};
+
+	// 按 ImGui ID（实体 + 组件 + 字段，调用方的 ID 栈决定）缓存
+	inline std::unordered_map<ImGuiID, CacheEntry>& Cache()
+	{
+		static std::unordered_map<ImGuiID, CacheEntry> cache;
+		return cache;
+	}
+
+	// 改完异步提交到场景线程，组件要过几帧才是新值：自己刚改过（含拖动中）这么久之内不按组件重新分解
+	constexpr double kPendingSeconds = 0.5;
+
+	// 拖欧拉角编辑一个四元数，返回是否改了（改了的话 rotation 已经写好）
+	inline bool DragEuler(const char* label, glm::quat& rotation, float speed = 0.5f, const char* format = "%.1f°")
+	{
+		auto& cache = Cache();
+		const ImGuiID id = ImGui::GetID(label);
+		const int frame = ImGui::GetFrameCount();
+		const double now = ImGui::GetTime();
+
+		auto [it, inserted] = cache.try_emplace(id);
+		CacheEntry& entry = it->second;
+		if (inserted)
+		{
+			entry.euler = NearestEuler(rotation, glm::vec3(0.0f));		// 第一次：选最接近 0 的写法
+			entry.rotation = rotation;
+		}
+		else if (!SameRotation(entry.rotation, rotation) && now - entry.lastEditTime > kPendingSeconds)
+		{
+			entry.euler = NearestEuler(rotation, entry.euler);			// 被别处改了：选和上次最接近的写法
+			entry.rotation = rotation;
+		}
+		entry.lastUsedFrame = frame;
+
+		glm::vec3 euler = entry.euler;
+		const bool changed = ImGui::DragFloat3(label, glm::value_ptr(euler), speed, 0.0f, 0.0f, format);
+		if (ImGui::IsItemActive())
+			entry.lastEditTime = now;
+		if (changed)
+		{
+			entry.euler = euler;
+			entry.rotation = glm::normalize(glm::quat(glm::radians(euler)));
+			entry.lastEditTime = now;
+			rotation = entry.rotation;
+		}
+
+		// 很久没画的（换了选中、删了实体）清掉
+		static int s_lastSweepFrame = 0;
+		if (frame - s_lastSweepFrame > 600)
+		{
+			s_lastSweepFrame = frame;
+			std::erase_if(cache, [frame](const auto& item) { return frame - item.second.lastUsedFrame > 600; });
+		}
+		return changed;
+	}
+
+	// 这一帧显示的欧拉角（在 DragEuler 之后、同一个 ID 栈里调用）
+	inline glm::vec3 DisplayedEuler(const char* label)
+	{
+		auto& cache = Cache();
+		auto it = cache.find(ImGui::GetID(label));
+		return it != cache.end() ? it->second.euler : glm::vec3(0.0f);
+	}
+
+	// 直接设成某组欧拉角（复位按钮用）：缓存一起改，下一帧显示的就是这组值，不会被重新分解成别的写法。
+	// 要在和 DragEuler 同一个 ID 栈里调用（同一个 label）
+	inline void SetEuler(const char* label, glm::quat& rotation, const glm::vec3& euler)
+	{
+		CacheEntry& entry = Cache()[ImGui::GetID(label)];
+		entry.euler = euler;
+		entry.rotation = glm::normalize(glm::quat(glm::radians(euler)));
+		entry.lastEditTime = ImGui::GetTime();
+		entry.lastUsedFrame = ImGui::GetFrameCount();
+		rotation = entry.rotation;
+	}
+}
 
 template <typename T>
 struct EditorSnapshot
@@ -86,6 +228,42 @@ struct EditorSnapshot<AnimatedImagePlayer>
 	}
 };
 
+// 物理：碰撞形状是 shared_ptr，快照浅拷贝（每帧拷贝很便宜，三角网格的顶点也不复制）；
+// 面板改某个形状时先复制一份再改（写时复制，见 DrawComponent<Physics>），不碰场景里正在用的那份。
+// 写回时：forceSyncTransform / forceRecalculate 是场景线程上的标记，保留目标上的值，不让旧快照盖掉；
+// 形状变了（任一子形状指针不同）就删掉 PhysicsRuntime——PhysicsSystem 的 updateRigidBody / updateCharacter
+// 不会重建形状，删掉后下一次物理更新 checkNewEntity 按新形状重建刚体 / 角色（Bullet 对象在 OnRemove 里移除并释放）
+template <>
+struct EditorSnapshot<Physics>
+{
+	static void Make(const Physics& src, Physics& snapshot) { snapshot = src; }
+
+	static void Apply(Physics&& snapshot, Physics& dst, const Entity& entity)
+	{
+		const bool shapesChanged = dst.collisionShape.children != snapshot.collisionShape.children;
+		const bool syncTransform = dst.forceSyncTransform;
+		const bool recalculate = dst.forceRecalculate;
+		dst = std::move(snapshot);
+		dst.forceSyncTransform = syncTransform;
+		dst.forceRecalculate = recalculate;
+		if (shapesChanged && entity.hasComponent<PhysicsRuntime>())
+			entity.removeComponent<PhysicsRuntime>();
+	}
+};
+
+// 移动：只写回能编辑的 canJump。移动方向 / 想跳是输入每帧写的运行时状态，不能让面板上一帧的旧值盖掉
+template <>
+struct EditorSnapshot<Movement>
+{
+	static void Make(const Movement& src, Movement& snapshot) { snapshot = src; }
+	static void Apply(Movement&& snapshot, Movement& dst)
+	{
+		dst.canJump = snapshot.canJump;
+		if (!dst.canJump)
+			dst.currentWantJump = false;
+	}
+};
+
 // 注册组件
 template<typename T>
 void PropertiesHelper::RegisterComponent()
@@ -104,15 +282,21 @@ void PropertiesHelper::RegisterComponent()
 
 			if constexpr (sizeof(T) > sizeof(IComponent))
 			{
-				auto temp = new T();
+				// 每帧一份快照：没改动时这一帧结束就释放；改了就移动进场景线程的命令
+				// （SubmitCommand 收 std::move_only_function，可以捕获 unique_ptr），命令执行完释放
+				auto temp = std::make_unique<T>();
 				auto& component = *(static_cast<T*>(comp));
 				EditorSnapshot<T>::Make(component, *temp);
 				bool changed = DrawComponent(*temp, assetManager);
 				if (changed)
 				{
 					auto world = entity.getWorld();
-					world->SubmitCommand([entity, temp, &component] mutable ->void {
-						EditorSnapshot<T>::Apply(std::move(*temp), component);
+					world->SubmitCommand([entity, temp = std::move(temp), &component] mutable ->void {
+						// 需要实体的组件（例如 Physics 改了形状要重建运行时）提供三参数的 Apply
+						if constexpr (requires { EditorSnapshot<T>::Apply(std::move(*temp), component, entity); })
+							EditorSnapshot<T>::Apply(std::move(*temp), component, entity);
+						else
+							EditorSnapshot<T>::Apply(std::move(*temp), component);
 						OnComponentChange(entity, component);
 						});
 				}
@@ -215,13 +399,9 @@ bool PropertiesHelper::DrawField(const std::string& name, FieldType* value, Prop
 		return ImGui::DragFloat4(name.c_str(), glm::value_ptr(*value), 0.1f);
 	}
 	else if constexpr (std::is_same_v<FieldType, glm::quat>) {
-		glm::vec3 euler = glm::degrees(glm::eulerAngles(*value));
+		// 欧拉角由面板记住，不每帧从四元数重算（见 EditorRotation）
 		SetNextPropertyFieldWidth(250.0f, 0.6f);
-		if (ImGui::DragFloat3(name.c_str(), (float*)&euler, 1.f)) {
-			*value = glm::quat(glm::radians(euler));
-			return true;
-		}
-		return false;
+		return EditorRotation::DragEuler(name.c_str(), *value, 1.0f, "%.1f");
 	}
 	else if constexpr (std::is_same_v<FieldType, ImColor>) {
 		SetNextPropertyFieldWidth(180.0f, 0.55f);
@@ -583,88 +763,859 @@ inline bool PropertiesHelper::DrawDataResettable(Scene3DRenderOption::DDGIParams
 	return DrawComponent(p);
 }
 
+// 物理组件：手写面板。原来走反射：15 个字段平铺、驼峰原名、没有范围，碰撞形状完全看不到也改不了。
+//   - 模式（刚体 / 角色控制器）决定显示哪一组参数；只对某种情况生效的选项变灰并说明原因（对照 PhysicsSystem）
+//   - 碰撞形状：每个子形状按类型显示有意义的尺寸（半径 / 高度 / 半边长），可以加、删、改类型、偏移和旋转；
+//     改的时候先复制再改（写时复制），提交时形状变了会重建物理体（见 EditorSnapshot<Physics>）
 template<>
-inline bool PropertiesHelper::DrawComponent(Physics& physics)
+inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 {
-	bool anyChanged = false;
+	bool changed = false;
+	const ImGuiStyle& style = ImGui::GetStyle();
+	const float frameHeight = ImGui::GetFrameHeight();
+	const ImVec4 warnColor(1.0f, 0.75f, 0.3f, 1.0f);
+	const float labelWidth = ImGui::CalcTextSize("Max Penetration").x + style.ItemSpacing.x * 2.0f;
+	constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
 
-	anyChanged |= DrawPropertyField<Physics>("bodyType", &physics.bodyType);
-	anyChanged |= DrawPropertyField<Physics>("mass", &physics.mass);
-	anyChanged |= DrawPropertyField<Physics>("friction", &physics.friction);
-	anyChanged |= DrawPropertyField<Physics>("rollingFriction", &physics.rollingFriction);
-	anyChanged |= DrawPropertyField<Physics>("restitution", &physics.restitution);
-	anyChanged |= DrawPropertyField<Physics>("isSensor", &physics.isSensor);
-	anyChanged |= DrawPropertyField<Physics>("fixedRotation", &physics.fixedRotation);
-	anyChanged |= DrawPropertyField<Physics>("isBullet", &physics.isBullet);
-	anyChanged |= DrawPropertyField<Physics>("isCharacter", &physics.isCharacter);
-	anyChanged |= DrawPropertyField<Physics>("allowSleep", &physics.allowSleep);
+	const auto beginTable = [&](const char* id) -> bool
+		{
+			if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingFixedFit))
+				return false;
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+			return true;
+		};
+	// 一行：左标签（可带悬停说明），进入右列，控件宽度占满
+	const auto row = [](const char* label, const char* tooltip = nullptr)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(label);
+			if (tooltip && ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", tooltip);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+		};
+	// 在当前情况下不生效的控件：变灰，悬停说明原因
+	const auto disabledIf = [](bool disabled, const char* reason, auto&& draw) -> bool
+		{
+			if (disabled)
+				ImGui::BeginDisabled();
+			const bool edited = draw();
+			if (disabled)
+			{
+				ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s", reason);
+			}
+			return edited;
+		};
 
-	if (physics.isCharacter) {
-		ImGui::Indent();
-		anyChanged |= DrawPropertyField<Physics>("stepHeight", &physics.stepHeight);
-		anyChanged |= DrawPropertyField<Physics>("walkSpeed", &physics.walkSpeed);
-		anyChanged |= DrawPropertyField<Physics>("jumpSpeed", &physics.jumpSpeed);
-		anyChanged |= DrawPropertyField<Physics>("maxSlope", &physics.maxSlope);
-		anyChanged |= DrawPropertyField<Physics>("maxPenetrationDepth", &physics.maxPenetrationDepth);
-		ImGui::Unindent();
+	const bool isDynamic = physics.bodyType == Physics::BodyType::Dynamic;
+	const bool isKinematic = physics.bodyType == Physics::BodyType::Kinematic;
+
+	// ======================== 类型 ========================
+	if (beginTable("##PhysicsBody"))
+	{
+		int mode = physics.isCharacter ? 1 : 0;
+		const char* modes[] = { "Rigid Body", "Character Controller" };
+		row("Mode", "Rigid Body：普通刚体，按质量 / 摩擦 / 弹性参与模拟\nCharacter Controller：Bullet 角色控制器，用 Movement 组件的输入行走、跳跃");
+		if (ImGui::Combo("##Mode", &mode, modes, IM_ARRAYSIZE(modes)))
+		{
+			physics.isCharacter = mode == 1;
+			changed = true;
+		}
+
+		int bodyType = static_cast<int>(physics.bodyType);
+		const char* bodyTypes[] = { "Static", "Dynamic", "Kinematic" };
+		const char* bodyTypeTips[] = {
+			"不动，质量按 0 处理（地面、墙）",
+			"受重力和碰撞影响，由物理模拟驱动 Transform",
+			"不受力，每帧跟随 Transform 移动，能推开 Dynamic 物体（移动平台、门）" };
+		row("Body Type");
+		if (ImGui::BeginCombo("##BodyType", bodyTypes[std::clamp(bodyType, 0, 2)]))
+		{
+			for (int i = 0; i < IM_ARRAYSIZE(bodyTypes); ++i)
+			{
+				if (ImGui::Selectable(bodyTypes[i], i == bodyType))
+				{
+					physics.bodyType = static_cast<Physics::BodyType>(i);
+					changed = true;
+				}
+				ImGui::SetItemTooltip("%s", bodyTypeTips[i]);
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::EndTable();
 	}
 
-	return anyChanged;
+	// ======================== 刚体 / 角色参数 ========================
+	if (!physics.isCharacter)
+	{
+		ImGui::SeparatorText("Rigid Body");
+		if (beginTable("##PhysicsRigid"))
+		{
+			row("Mass", "单位 kg；只对 Dynamic 生效");
+			changed |= disabledIf(!isDynamic, "Static / Kinematic 的质量固定按 0（不受力）处理",
+				[&] { return ImGui::DragFloat("##Mass", &physics.mass, 0.05f, 0.001f, 1.0e6f, "%.3f kg", kClamp); });
+			row("Friction", "滑动摩擦系数（0 = 冰面）");
+			changed |= ImGui::DragFloat("##Friction", &physics.friction, 0.01f, 0.0f, 2.0f, "%.2f", kClamp);
+			row("Rolling Friction", "滚动摩擦（球、圆柱滚动时的阻力）");
+			changed |= ImGui::DragFloat("##RollingFriction", &physics.rollingFriction, 0.01f, 0.0f, 1.0f, "%.2f", kClamp);
+			row("Restitution", "弹性：0 = 不反弹，1 = 完全弹回");
+			changed |= ImGui::SliderFloat("##Restitution", &physics.restitution, 0.0f, 1.0f, "%.2f", kClamp);
+			ImGui::EndTable();
+		}
+	}
+	else
+	{
+		ImGui::SeparatorText("Character");
+		if (beginTable("##PhysicsCharacter"))
+		{
+			row("Walk Speed", "Movement 输入方向乘上它，单位 m/s");
+			changed |= ImGui::DragFloat("##WalkSpeed", &physics.walkSpeed, 0.1f, 0.0f, 1000.0f, "%.2f m/s", kClamp);
+			row("Jump Speed", "起跳速度，单位 m/s");
+			changed |= ImGui::DragFloat("##JumpSpeed", &physics.jumpSpeed, 0.1f, 0.0f, 1000.0f, "%.2f m/s", kClamp);
+			row("Step Height", "能直接走上去的台阶高度");
+			changed |= ImGui::DragFloat("##StepHeight", &physics.stepHeight, 0.01f, 0.0f, 10.0f, "%.2f m", kClamp);
+			row("Max Slope", "能走上去的最大坡度");
+			changed |= ImGui::SliderFloat("##MaxSlope", &physics.maxSlope, 0.0f, 89.0f, "%.0f°", kClamp);
+			row("Max Penetration", "允许嵌进其他物体的最大深度，太小容易抖，太大会穿模");
+			changed |= ImGui::DragFloat("##MaxPenetration", &physics.maxPenetrationDepth, 0.005f, 0.0f, 1.0f, "%.3f m", kClamp);
+			ImGui::EndTable();
+		}
+	}
+
+	// ======================== 选项：两列勾选框 ========================
+	ImGui::SeparatorText("Options");
+	if (ImGui::BeginTable("##PhysicsOptions", 2, ImGuiTableFlags_SizingStretchSame))
+	{
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		changed |= ImGui::Checkbox("Sensor", &physics.isSensor);
+		ImGui::SetItemTooltip("只检测重叠、不产生碰撞响应（触发区域）");
+		ImGui::TableSetColumnIndex(1);
+		changed |= disabledIf(!isDynamic || physics.isCharacter, "只对 Dynamic 刚体生效",
+			[&] { return ImGui::Checkbox("Fixed Rotation", &physics.fixedRotation); });
+		if (isDynamic && !physics.isCharacter)
+			ImGui::SetItemTooltip("锁定旋转：碰撞不会让它翻倒");
+
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		changed |= disabledIf(physics.isCharacter, "角色控制器不用连续碰撞检测",
+			[&] { return ImGui::Checkbox("Continuous (CCD)", &physics.isBullet); });
+		if (!physics.isCharacter)
+			ImGui::SetItemTooltip("连续碰撞检测：高速物体（子弹）不会穿过薄物体");
+		ImGui::TableSetColumnIndex(1);
+		changed |= disabledIf(isKinematic, "Kinematic 物体始终保持激活",
+			[&] { return ImGui::Checkbox("Allow Sleep", &physics.allowSleep); });
+		if (!isKinematic)
+			ImGui::SetItemTooltip("静止一段时间后休眠，不参与模拟（省性能）");
+		ImGui::EndTable();
+	}
+
+	// ======================== 碰撞形状 ========================
+	auto& children = physics.collisionShape.children;
+	ImGui::SeparatorText(std::format("Collision Shapes ({})", children.size()).c_str());
+	if (children.empty())
+		ImGui::TextColored(warnColor, "没有碰撞形状：不会创建物理体");
+	else if (physics.isCharacter && children.size() > 1)
+		ImGui::TextColored(warnColor, "角色控制器只用第一个形状（#0），其余忽略");
+
+	const char* shapeNames[] = { "Box", "Sphere", "Capsule", "Cylinder", "Convex Hull", "Triangle Mesh" };
+	const auto shapeName = [&](ShapeType type) { return shapeNames[std::clamp(static_cast<int>(type), 0, 5)]; };
+	const auto isPrimitive = [](ShapeType type) { return type == ShapeType::Box || type == ShapeType::Sphere || type == ShapeType::Capsule || type == ShapeType::Cylinder; };
+
+	// 不同类型之间切换时，按"半径 + 总高"换算尺寸，形状大小大致不变
+	const auto convertSize = [](ShapeType from, ShapeType to, const glm::vec3& size) -> glm::vec3
+		{
+			float radius = size.x;
+			float height = size.y * 2.0f;
+			switch (from)
+			{
+			case ShapeType::Box: radius = std::max(size.x, size.z); height = size.y * 2.0f; break;
+			case ShapeType::Sphere: radius = size.x; height = size.x * 2.0f; break;
+			case ShapeType::Capsule: radius = size.x; height = size.y + size.x * 2.0f; break;
+			case ShapeType::Cylinder: radius = size.x; height = size.y * 2.0f; break;
+			default: break;
+			}
+			radius = std::max(radius, 0.001f);
+			height = std::max(height, 0.001f);
+			switch (to)
+			{
+			case ShapeType::Box: return glm::vec3(radius, height * 0.5f, radius);
+			case ShapeType::Sphere: return glm::vec3(radius);
+			case ShapeType::Capsule: return glm::vec3(radius, std::max(0.0f, height - radius * 2.0f), radius);
+			case ShapeType::Cylinder: return glm::vec3(radius, height * 0.5f, radius);
+			default: return size;
+			}
+		};
+	// 尺寸摘要（标题行上显示）
+	const auto sizeSummary = [](const CollisionShape::ChildShape& shape) -> std::string
+		{
+			switch (shape.shapeType)
+			{
+			case ShapeType::Box: return std::format("{:.2f} × {:.2f} × {:.2f}", shape.size.x * 2.0f, shape.size.y * 2.0f, shape.size.z * 2.0f);
+			case ShapeType::Sphere: return std::format("r {:.2f}", shape.size.x);
+			case ShapeType::Capsule: return std::format("r {:.2f} · h {:.2f}", shape.size.x, shape.size.y);
+			case ShapeType::Cylinder: return std::format("r {:.2f} · h {:.2f}", shape.size.x, shape.size.y * 2.0f);
+			case ShapeType::ConvexHull: return std::format("{} 个顶点", shape.vertices.size());
+			case ShapeType::TriangleMesh: return std::format("{} 个三角形", shape.indices.size() / 3);
+			default: return {};
+			}
+		};
+
+	std::optional<size_t> removeIndex;
+	for (size_t i = 0; i < children.size(); ++i)
+	{
+		if (!children[i])
+			continue;
+		ImGui::PushID(static_cast<int>(i));
+		const CollisionShape::ChildShape& shape = *children[i];
+		const bool ignored = physics.isCharacter && i > 0;
+
+		// 标题行：#i 类型  尺寸摘要                                    [×]
+		const std::string title = std::format("#{} {}  {}", i, shapeName(shape.shapeType), sizeSummary(shape));
+		const ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth
+			| (children.size() <= 2 ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+		if (ignored)
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		const bool open = ImGui::TreeNodeEx("##shape", nodeFlags, "%s", title.c_str());
+		if (ignored)
+			ImGui::PopStyleColor();
+		ImGui::SameLine(ImGui::GetContentRegionMax().x - frameHeight);
+		if (ImGui::Button("×", ImVec2(frameHeight, frameHeight)))
+			removeIndex = i;
+		ImGui::SetItemTooltip("删除这个形状");
+
+		if (open)
+		{
+			// 先在局部副本上改；改了才复制一份子形状（写时复制，三角网格的顶点也只在改的时候复制一次）
+			ShapeType type = shape.shapeType;
+			glm::vec3 size = shape.size;
+			glm::vec3 position = shape.position;
+			glm::quat rotation = shape.rotation;
+			bool shapeChanged = false;
+			bool rotationChanged = false;
+
+			if (beginTable("##ShapeTable"))
+			{
+				row("Type");
+				if (isPrimitive(type))
+				{
+					int typeIndex = static_cast<int>(type);
+					const char* primitives[] = { "Box", "Sphere", "Capsule", "Cylinder" };
+					if (ImGui::Combo("##Type", &typeIndex, primitives, IM_ARRAYSIZE(primitives)) && typeIndex != static_cast<int>(type))
+					{
+						const ShapeType newType = static_cast<ShapeType>(typeIndex);
+						size = convertSize(type, newType, size);
+						type = newType;
+						shapeChanged = true;
+					}
+				}
+				else
+				{
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextDisabled("%s（%s，由模型生成，这里不能改）", shapeName(type), sizeSummary(shape).c_str());
+				}
+
+				const char* scaleNote = "尺寸会再乘上 Transform 的缩放";
+				switch (type)
+				{
+				case ShapeType::Box:
+				{
+					glm::vec3 full = size * 2.0f;
+					row("Size", scaleNote);
+					if (ImGui::DragFloat3("##Size", glm::value_ptr(full), 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
+					{
+						size = full * 0.5f;
+						shapeChanged = true;
+					}
+					break;
+				}
+				case ShapeType::Sphere:
+				{
+					float radius = size.x;
+					row("Radius", scaleNote);
+					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+					{
+						size = glm::vec3(radius);
+						shapeChanged = true;
+					}
+					break;
+				}
+				case ShapeType::Capsule:
+				{
+					float radius = size.x;
+					float height = size.y;
+					row("Radius", scaleNote);
+					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+						shapeChanged = true;
+					row("Height", "两端半球之间圆柱部分的高度（总高 = 高度 + 2 × 半径）");
+					if (ImGui::DragFloat("##Height", &height, 0.01f, 0.0f, 1.0e4f, "%.3f", kClamp))
+						shapeChanged = true;
+					size = glm::vec3(radius, height, radius);
+					break;
+				}
+				case ShapeType::Cylinder:
+				{
+					float radius = size.x;
+					float height = size.y * 2.0f;
+					row("Radius", scaleNote);
+					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+						shapeChanged = true;
+					row("Height", "总高度");
+					if (ImGui::DragFloat("##Height", &height, 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
+						shapeChanged = true;
+					size = glm::vec3(radius, height * 0.5f, radius);
+					break;
+				}
+				default:
+					break;
+				}
+
+				row("Offset", "相对实体中心的偏移");
+				shapeChanged |= ImGui::DragFloat3("##Offset", glm::value_ptr(position), 0.01f);
+				row("Rotation", "相对实体的旋转（度）");
+				rotationChanged = EditorRotation::DragEuler("##Rotation", rotation);
+				ImGui::EndTable();
+			}
+
+			if (type == ShapeType::TriangleMesh && physics.bodyType != Physics::BodyType::Static)
+				ImGui::TextColored(warnColor, "三角网格只能用在 Static 物体上（Dynamic / Kinematic 请用凸包或基本形状）");
+
+			if (shapeChanged || rotationChanged)
+			{
+				auto copy = std::make_shared<CollisionShape::ChildShape>(shape);
+				copy->shapeType = type;
+				copy->size = size;
+				copy->position = position;
+				if (rotationChanged)
+					copy->rotation = rotation;
+				children[i] = std::move(copy);
+				changed = true;
+			}
+			ImGui::TreePop();
+		}
+		ImGui::PopID();
+	}
+
+	if (removeIndex && *removeIndex < children.size())
+	{
+		children.erase(children.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+		changed = true;
+	}
+
+	// 添加形状
+	if (ImGui::Button("+ 添加形状"))
+		ImGui::OpenPopup("##AddShape");
+	if (ImGui::BeginPopup("##AddShape"))
+	{
+		if (ImGui::MenuItem("Box")) { physics.collisionShape.AddBoxShape(); changed = true; }
+		if (ImGui::MenuItem("Sphere")) { physics.collisionShape.AddSphereShape(); changed = true; }
+		if (ImGui::MenuItem("Capsule")) { physics.collisionShape.AddCapsuleShape(); changed = true; }
+		if (ImGui::MenuItem("Cylinder")) { physics.collisionShape.AddCylinderShape(); changed = true; }
+		ImGui::EndPopup();
+	}
+
+	return changed;
+}
+
+// ---------------- 手写面板共用：标签 | 控件 [| 复位] 表格 ----------------
+namespace PanelRows
+{
+	inline const ImVec4 kWarnColor(1.0f, 0.75f, 0.3f, 1.0f);
+
+	inline float LabelWidth(std::initializer_list<const char*> labels)
+	{
+		float width = 0.0f;
+		for (const char* label : labels)
+			width = std::max(width, ImGui::CalcTextSize(label).x);
+		return width + ImGui::GetStyle().ItemSpacing.x * 2.0f;
+	}
+
+	inline float ResetColumnWidth()
+	{
+		return ImGui::CalcTextSize("复位").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+	}
+
+	inline bool Begin(const char* id, float labelWidth, bool resetColumn = false)
+	{
+		if (!ImGui::BeginTable(id, resetColumn ? 3 : 2, ImGuiTableFlags_SizingFixedFit))
+			return false;
+		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+		ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+		if (resetColumn)
+			ImGui::TableSetupColumn("reset", ImGuiTableColumnFlags_WidthFixed, ResetColumnWidth());
+		return true;
+	}
+
+	// 一行：左标签（可带悬停说明，可变灰），进入控件列，控件宽度占满
+	inline void Row(const char* label, const char* tooltip = nullptr, bool disabled = false)
+	{
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		ImGui::AlignTextToFramePadding();
+		if (disabled)
+			ImGui::TextDisabled("%s", label);
+		else
+			ImGui::TextUnformatted(label);
+		if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", tooltip);
+		ImGui::TableSetColumnIndex(1);
+		ImGui::SetNextItemWidth(-FLT_MIN);
+	}
+
+	// 第三列的复位按钮：已经是默认值时变灰（不隐藏，保持对齐）
+	inline bool ResetCell(const char* id, bool isDefault, const char* tooltip)
+	{
+		ImGui::TableSetColumnIndex(2);
+		ImGui::PushID(id);
+		ImGui::BeginDisabled(isDefault);
+		const bool clicked = ImGui::Button("复位");
+		ImGui::EndDisabled();
+		if (!isDefault && ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", tooltip);
+		ImGui::PopID();
+		return clicked;
+	}
+
+	inline void Warn(const char* text)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, kWarnColor);
+		ImGui::TextWrapped("%s", text);
+		ImGui::PopStyleColor();
+	}
+
+	inline void Note(const char* text)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextWrapped("%s", text);
+		ImGui::PopStyleColor();
+	}
+}
+
+// ---------------- Transform ----------------
+// 位置 / 旋转 / 缩放三行，每行右边一个复位；缩放可以锁定等比。
+// 复位 = 组件默认值：位置 (0,0,0)、旋转 (0,0,0)（不旋转）、缩放 (1,1,1)
+template<>
+inline bool PropertiesHelper::DrawComponent<Transform>(Transform& trans)
+{
+	bool changed = false;
+	static bool s_uniformScale = false;		// 等比缩放：所有实体共用一个开关
+	const ImGuiStyle& style = ImGui::GetStyle();
+
+	if (PanelRows::Begin("##Transform", PanelRows::LabelWidth({ "Position", "Rotation", "Scale" }), true))
+	{
+		// ---- 位置 ----
+		PanelRows::Row("Position", "世界坐标（米）。引擎目前没有父子层级，这里就是世界位置");
+		changed |= ImGui::DragFloat3("##Position", glm::value_ptr(trans.position), 0.05f, 0.0f, 0.0f, "%.3f");
+		if (PanelRows::ResetCell("##ResetPosition", trans.position == glm::vec3(0.0f), "复位到原点 (0, 0, 0)"))
+		{
+			trans.position = glm::vec3(0.0f);
+			changed = true;
+		}
+
+		// ---- 旋转 ----
+		PanelRows::Row("Rotation",
+			"欧拉角（度）：依次绕世界 X、Y、Z 轴旋转（先 X，再 Y，最后 Z）。\n"
+			"可以超过 ±180 / ±360，显示的就是你输入的写法；Gizmo 等别处改了旋转时，\n"
+			"会换算成和当前显示最接近的写法，数值不会跳。\n"
+			"Y = ±90° 时 X 和 Z 绕的是同一根轴（万向节锁），改哪个效果一样");
+		changed |= EditorRotation::DragEuler("##Rotation", trans.rotation, 0.5f, "%.1f°");
+		{
+			const glm::vec3 shown = EditorRotation::DisplayedEuler("##Rotation");
+			const bool isDefault = EditorRotation::SameRotation(trans.rotation, glm::quat(1.0f, 0.0f, 0.0f, 0.0f))
+				&& glm::all(glm::lessThan(glm::abs(shown), glm::vec3(1.0e-4f)));
+			if (PanelRows::ResetCell("##ResetRotation", isDefault, "复位到不旋转 (0, 0, 0)"))
+			{
+				EditorRotation::SetEuler("##Rotation", trans.rotation, glm::vec3(0.0f));
+				changed = true;
+			}
+		}
+
+		// ---- 缩放 ----
+		PanelRows::Row("Scale", "各轴缩放倍数（1 = 原始大小）");
+		{
+			const bool locked = s_uniformScale;
+			if (locked)
+				ImGui::PushStyleColor(ImGuiCol_Button, style.Colors[ImGuiCol_ButtonActive]);
+			if (ImGui::Button("等比##UniformScale"))
+				s_uniformScale = !s_uniformScale;
+			if (locked)
+				ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(locked ? "等比缩放：开（改一个分量，另外两个按同样比例变）\n点一下关闭" : "等比缩放：关\n点一下打开");
+			ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+
+			glm::vec3 scale = trans.scale;
+			if (ImGui::DragFloat3("##Scale", glm::value_ptr(scale), 0.01f, 0.0f, 0.0f, "%.3f"))
+			{
+				if (s_uniformScale)
+				{
+					// 找出改的那个分量，按它的比例改另外两个；原来是 0 没法算比例，就三个都设成新值
+					for (int axis = 0; axis < 3; ++axis)
+					{
+						if (scale[axis] == trans.scale[axis])
+							continue;
+						const float before = trans.scale[axis];
+						const float after = scale[axis];
+						if (std::abs(before) > 1.0e-6f)
+							scale = trans.scale * (after / before);
+						else
+							scale = glm::vec3(after);
+						scale[axis] = after;
+						break;
+					}
+				}
+				trans.scale = scale;
+				changed = true;
+			}
+		}
+		if (PanelRows::ResetCell("##ResetScale", trans.scale == glm::vec3(1.0f), "复位到原始大小 (1, 1, 1)"))
+		{
+			trans.scale = glm::vec3(1.0f);
+			changed = true;
+		}
+
+		ImGui::EndTable();
+	}
+
+	if (trans.scale.x == 0.0f || trans.scale.y == 0.0f || trans.scale.z == 0.0f)
+		PanelRows::Warn("缩放有分量为 0：物体被压扁成面 / 线，法线和物理形状会出问题");
+	else if (trans.scale.x < 0.0f || trans.scale.y < 0.0f || trans.scale.z < 0.0f)
+		PanelRows::Warn("负缩放会翻转三角形绕序，开了背面剔除的材质可能显示成反面");
+
+	return changed;
+}
+
+// ---------------- 相机 ----------------
+template<>
+inline bool PropertiesHelper::DrawComponent<CameraComponent>(CameraComponent& camera)
+{
+	bool changed = false;
+	constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
+	const CameraComponent defaults;
+	Entity entity = ImguiLayout::selectedEntity;
+	const bool hasFollow = entity && entity.hasComponent<CameraFollow>();
+
+	if (PanelRows::Begin("##Camera", PanelRows::LabelWidth({ "Field of View", "Near Plane", "Far Plane", "World Up", "First Person" }), true))
+	{
+		PanelRows::Row("Field of View", "垂直视场角（度）。越大看到的越多，透视变形也越明显；一般 60~90");
+		changed |= ImGui::DragFloat("##FOV", &camera.fov, 0.2f, 1.0f, 179.0f, "%.1f°", kClamp);
+		if (PanelRows::ResetCell("##ResetFOV", camera.fov == defaults.fov, "复位到 75°"))
+		{
+			camera.fov = defaults.fov;
+			changed = true;
+		}
+
+		// 近 / 远平面互相限制：近 < 远
+		const float nearMax = std::max(0.001f, camera.farPlane * 0.999f);
+		PanelRows::Row("Near Plane", "近裁剪面（米）：比它更近的东西不画。\n太小会降低深度精度，远处容易闪烁（Z-fighting），够用就别调太小");
+		changed |= ImGui::DragFloat("##Near", &camera.nearPlane, 0.005f, 0.001f, nearMax, "%.3f m", kClamp);
+		if (PanelRows::ResetCell("##ResetNear", camera.nearPlane == defaults.nearPlane, "复位到 0.1 m"))
+		{
+			camera.nearPlane = std::min(defaults.nearPlane, nearMax);
+			changed = true;
+		}
+
+		const float farMin = camera.nearPlane * 1.001f + 0.001f;
+		PanelRows::Row("Far Plane", "远裁剪面（米）：比它更远的东西不画。\n方向光阴影也只算到 min(远平面, 灯光的阴影距离)");
+		changed |= ImGui::DragFloat("##Far", &camera.farPlane, 1.0f, farMin, 1.0e6f, "%.1f m", kClamp);
+		if (PanelRows::ResetCell("##ResetFar", camera.farPlane == defaults.farPlane, "复位到 200 m"))
+		{
+			camera.farPlane = std::max(defaults.farPlane, farMin);
+			changed = true;
+		}
+
+		PanelRows::Row("World Up", "相机的“上”方向，第一人称跟随时用来算朝向。一般就是 (0, 1, 0)；松手后自动归一化");
+		changed |= ImGui::DragFloat3("##WorldUp", glm::value_ptr(camera.worldUp), 0.01f, -1.0f, 1.0f, "%.2f");
+		if (ImGui::IsItemDeactivatedAfterEdit())
+		{
+			const float length = glm::length(camera.worldUp);
+			if (length > 1.0e-4f && std::abs(length - 1.0f) > 1.0e-4f)
+			{
+				camera.worldUp /= length;
+				changed = true;
+			}
+		}
+		if (PanelRows::ResetCell("##ResetUp", camera.worldUp == defaults.worldUp, "复位到 (0, 1, 0)"))
+		{
+			camera.worldUp = defaults.worldUp;
+			changed = true;
+		}
+
+		PanelRows::Row("First Person",
+			"第一人称跟随（配合 Camera Follow 组件）：\n"
+			"跟随目标有 Controller 时，相机放在 目标位置 + 目标旋转 × 偏移，\n"
+			"朝向跟着 Controller 的 yaw / pitch，并把目标水平转到相机朝向。\n"
+			"关掉时 Camera Follow 目前什么都不做（还没有第三人称实现）",
+			!hasFollow);
+		changed |= ImGui::Checkbox("##FirstPerson", &camera.isFirstPerson);
+		ImGui::EndTable();
+	}
+
+	if (glm::length(camera.worldUp) < 1.0e-4f)
+		PanelRows::Warn("World Up 是零向量，算不出相机朝向");
+	if (!hasFollow)
+		PanelRows::Note("这个实体没有 Camera Follow 组件，First Person 不起作用");
+
+	return changed;
+}
+
+// ---------------- 移动 ----------------
+// 只有 Can Jump 是配置；移动方向 / 想跳是输入（PlayerInput、脚本）每帧写的运行时状态，只显示（写回时也不覆盖，见 EditorSnapshot<Movement>）
+template<>
+inline bool PropertiesHelper::DrawComponent<Movement>(Movement& movement)
+{
+	bool changed = false;
+	if (PanelRows::Begin("##Movement", PanelRows::LabelWidth({ "Can Jump", "Move Direction", "Want Jump" })))
+	{
+		PanelRows::Row("Can Jump", "关掉后跳跃请求会被忽略");
+		changed |= ImGui::Checkbox("##CanJump", &movement.canJump);
+
+		ImGui::BeginDisabled();
+		PanelRows::Row("Move Direction", "当前移动方向（世界空间，已归一化），运行时由输入写入");
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text("(%.2f, %.2f, %.2f)", movement.currentMoveDirection.x, movement.currentMoveDirection.y, movement.currentMoveDirection.z);
+		PanelRows::Row("Want Jump", "这一帧是否请求跳跃，运行时由输入写入");
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted(movement.currentWantJump ? "是" : "否");
+		ImGui::EndDisabled();
+		ImGui::EndTable();
+	}
+	PanelRows::Note("灰色两项是运行时状态，只显示，不能在这里改");
+	return changed;
+}
+
+// ---------------- 灯光 ----------------
+namespace LightPanelDetail
+{
+	inline BaseLightData& Base(RenderLight& light)
+	{
+		return std::visit([](auto& data) -> BaseLightData& { return data; }, light.data);
+	}
+
+	// 换类型时保留共有的设置（颜色、阴影、体积光），点光 / 聚光之间还保留强度
+	inline void ChangeType(RenderLight& light, LightType type)
+	{
+		const BaseLightData base = Base(light);
+		std::optional<float> candela;
+		if (const auto* point = light.GetData<PointLightData>()) candela = point->cdIntensity;
+		if (const auto* spot = light.GetData<SpotLightData>()) candela = spot->cdIntensity;
+
+		switch (type)
+		{
+		case LightType::Directional:
+		{
+			DirectionalLightData data;
+			static_cast<BaseLightData&>(data) = base;
+			light.data = data;
+			break;
+		}
+		case LightType::Point:
+		{
+			PointLightData data;
+			static_cast<BaseLightData&>(data) = base;
+			if (candela) data.cdIntensity = *candela;
+			light.data = data;
+			break;
+		}
+		case LightType::Spot:
+		{
+			SpotLightData data;
+			static_cast<BaseLightData&>(data) = base;
+			if (candela) data.cdIntensity = *candela;
+			light.data = data;
+			break;
+		}
+		}
+		light.type = type;
+	}
+
+	inline constexpr uint32_t kShadowMapSizes[] = { 256, 512, 1024, 2048, 4096 };
 }
 
 template<>
 inline bool PropertiesHelper::DrawComponent<RenderLight>(RenderLight& light)
 {
-	bool anyChanged = false;
+	using namespace LightPanelDetail;
+	bool changed = false;
+	constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
 
-	// 绘制 LightType 选择
-	int typeIdx = static_cast<int>(light.type);
-	const char* typeNames[] = { "Directional", "Point", "Spot" };
-	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::Combo("Light Type", &typeIdx, typeNames, IM_ARRAYSIZE(typeNames))) {
-		light.type = static_cast<LightType>(typeIdx);
-		// 切换类型时重置数据
-		switch (light.type) {
-		case LightType::Directional:
-			light.data = DirectionalLightData();
-			break;
-		case LightType::Point:
-			light.data = PointLightData();
-			break;
-		case LightType::Spot:
-			light.data = SpotLightData();
-			break;
-		}
-		anyChanged = true;
+	// type 和 data 对不上（旧数据）：按 type 换成对应的数据
+	if (light.data.index() != static_cast<size_t>(light.type))
+	{
+		ChangeType(light, light.type);
+		changed = true;
 	}
 
-	// 绘制通用属性
-	anyChanged |= DrawPropertyField<RenderLight>("Render Light Shape", &light.renderCube);
-	anyChanged |= DrawPropertyField<RenderLight>("Visible", &light.visible);
+	auto* directional = light.GetData<DirectionalLightData>();
+	auto* point = light.GetData<PointLightData>();
+	auto* spot = light.GetData<SpotLightData>();
+	BaseLightData& base = Base(light);
+	const float labelWidth = PanelRows::LabelWidth({ "Shadow Map Size", "Cascade Split", "Affected By Sky" });
 
-	// 根据类型绘制对应的光照数据
-	switch (light.type) {
-	case LightType::Directional: {
-		if (auto* dirData = light.GetData<DirectionalLightData>()) {
-			anyChanged |= DrawComponent(*dirData);
+	// ======================== 基本 ========================
+	ImGui::SeparatorText("Light");
+	if (PanelRows::Begin("##LightBasic", labelWidth))
+	{
+		PanelRows::Row("Type", "Directional：平行光（太阳），只看方向，位置无关\nPoint：点光，向四周发光\nSpot：聚光，锥形\n换类型会保留颜色、阴影、体积光设置");
+		int typeIndex = static_cast<int>(light.type);
+		const char* typeNames[] = { "Directional（平行光）", "Point（点光）", "Spot（聚光）" };
+		if (ImGui::Combo("##Type", &typeIndex, typeNames, IM_ARRAYSIZE(typeNames)) && typeIndex != static_cast<int>(light.type))
+		{
+			ChangeType(light, static_cast<LightType>(typeIndex));
+			ImGui::EndTable();
+			return true;		// data 换了，这一帧不再画旧数据的引用
 		}
-		break;
-	}
-	case LightType::Point: {
-		if (auto* pointData = light.GetData<PointLightData>()) {
-			anyChanged |= DrawComponent(*pointData);
+
+		PanelRows::Row("Visible", "关掉后这盏灯不参与渲染");
+		changed |= ImGui::Checkbox("##Visible", &light.visible);
+		ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 3.0f);
+		changed |= ImGui::Checkbox("显示光源形状", &light.renderCube);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("在场景里画一个小方块标出灯的位置（调试用）");
+
+		PanelRows::Row("Color", "灯光颜色（线性）");
+		changed |= ImGui::ColorEdit3("##Color", glm::value_ptr(base.color), ImGuiColorEditFlags_Float);
+
+		if (directional)
+		{
+			PanelRows::Row("Intensity", "照度（lux），乘在颜色上");
+			changed |= ImGui::DragFloat("##Intensity", &directional->luxIntensity, 0.05f, 0.0f, 200000.0f, "%.2f lux", kClamp);
 		}
-		break;
-	}
-	case LightType::Spot: {
-		if (auto* spotData = light.GetData<SpotLightData>()) {
-			anyChanged |= DrawComponent(*spotData);
+		else
+		{
+			float& candela = point ? point->cdIntensity : spot->cdIntensity;
+			PanelRows::Row("Intensity", "发光强度（坎德拉 cd），乘在颜色上；照度随距离平方衰减");
+			changed |= ImGui::DragFloat("##Intensity", &candela, 1.0f, 0.0f, 1.0e7f, "%.1f cd", kClamp);
 		}
-		break;
-	}
+
+		// 方向 / 位置来自 Transform：这里只显示
+		if (auto* transform = ImguiLayout::selectedEntity ? ImguiLayout::selectedEntity.tryGetComponent<Transform>() : nullptr)
+		{
+			if (directional || spot)
+			{
+				const glm::vec3 direction = transform->GetDirection();
+				PanelRows::Row("Direction", "照射方向 = 物体 Transform 旋转后的 +Z 方向，用旋转或 Gizmo 调。\n高度角：光从上往下照为正（太阳在地平线以上）");
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextDisabled("(%.2f, %.2f, %.2f)  高度角 %.1f°", direction.x, direction.y, direction.z,
+					glm::degrees(std::asin(std::clamp(-direction.y, -1.0f, 1.0f))));
+			}
+			if (!directional)
+			{
+				PanelRows::Row("Position", "灯的位置 = 物体 Transform 位置");
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextDisabled("(%.2f, %.2f, %.2f)", transform->position.x, transform->position.y, transform->position.z);
+			}
+		}
+		ImGui::EndTable();
 	}
 
-	return anyChanged;
+	// ======================== 聚光锥 ========================
+	if (spot)
+	{
+		ImGui::SeparatorText("Spot Cone");
+		if (PanelRows::Begin("##LightSpot", labelWidth))
+		{
+			PanelRows::Row("Inner Angle", "内锥半角（度）：这个角度以内是全亮");
+			if (ImGui::DragFloat("##Inner", &spot->cutOffAngle, 0.2f, 0.0f, 89.0f, "%.1f°", kClamp))
+			{
+				spot->outercutOffAngle = std::max(spot->outercutOffAngle, spot->cutOffAngle);
+				changed = true;
+			}
+			PanelRows::Row("Outer Angle", "外锥半角（度）：内角到外角之间逐渐变暗，外角以外不亮。不会小于内角");
+			if (ImGui::DragFloat("##Outer", &spot->outercutOffAngle, 0.2f, 0.0f, 89.0f, "%.1f°", kClamp))
+			{
+				spot->cutOffAngle = std::min(spot->cutOffAngle, spot->outercutOffAngle);
+				changed = true;
+			}
+			ImGui::EndTable();
+		}
+	}
+
+	// ======================== 阴影 ========================
+	ImGui::SeparatorText("Shadow");
+	if (PanelRows::Begin("##LightShadow", labelWidth))
+	{
+		PanelRows::Row("Cast Shadow");
+		changed |= ImGui::Checkbox("##CastShadow", &base.castShadow);
+
+		const bool noShadow = !base.castShadow;
+		ImGui::BeginDisabled(noShadow);
+
+		PanelRows::Row("Shadow Map Size",
+			directional ? "每级级联的阴影图边长（像素）：第一级用这个尺寸，后面逐级变小（不小于一半）。越大越清晰，越占显存"
+			: point ? "阴影图边长（像素）。点光要画 6 个面，占用是聚光的 6 倍"
+			: "阴影图边长（像素）。越大越清晰，越占显存",
+			noShadow);
+		{
+			char preview[32];
+			std::snprintf(preview, sizeof(preview), "%u × %u", base.shadowMapSize, base.shadowMapSize);
+			if (ImGui::BeginCombo("##ShadowMapSize", preview))
+			{
+				for (uint32_t size : kShadowMapSizes)
+				{
+					char item[32];
+					std::snprintf(item, sizeof(item), "%u × %u", size, size);
+					if (ImGui::Selectable(item, size == base.shadowMapSize))
+					{
+						base.shadowMapSize = size;
+						changed = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
+
+		if (directional)
+		{
+			PanelRows::Row("Shadow Distance", "阴影距离（米）：只在相机前这么远内算阴影，末尾 10% 渐隐。\n实际还会被相机远平面限制", noShadow);
+			changed |= ImGui::DragFloat("##ShadowDistance", &directional->shadowDistance, 1.0f, 1.0f, 100000.0f, "%.0f m", kClamp);
+
+			PanelRows::Row("Cascades", "级联层数：近处用小范围高精度的阴影图，远处用大范围的。层数越多越清晰也越贵", noShadow);
+			int cascades = static_cast<int>(directional->cascadeLevel);
+			if (ImGui::SliderInt("##Cascades", &cascades, 1, 8, "%d", kClamp))
+			{
+				directional->cascadeLevel = static_cast<uint32_t>(cascades);
+				changed = true;
+			}
+
+			PanelRows::Row("Cascade Split", "级联切分方式：0 = 均匀切分，1 = 对数切分（近处更密）。一般 0.6~0.9", noShadow);
+			changed |= ImGui::SliderFloat("##CascadeSplit", &directional->cascadeSplitLambda, 0.0f, 1.0f, "%.2f", kClamp);
+		}
+
+		PanelRows::Row("Normal Bias", "法线偏移（阴影图像素）：沿法线把接收点往外推，主要消除斜面上的条纹（shadow acne）。\n太大阴影会和物体脱开（漏光）", noShadow);
+		changed |= ImGui::DragFloat("##NormalBias", &base.shadowNormalBias, 0.01f, 0.0f, 10.0f, "%.2f", kClamp);
+
+		PanelRows::Row("Slope Bias", "斜率深度偏移：画阴影图时按三角形斜率把深度推远。\n至少 PCF 半径 + 0.5（3×3 PCF 时 ≥ 1.5）才不会出痘；太大会漏光", noShadow);
+		changed |= ImGui::DragFloat("##SlopeBias", &base.shadowSlopeBias, 0.01f, 0.0f, 10.0f, "%.2f", kClamp);
+
+		ImGui::EndDisabled();
+		ImGui::EndTable();
+	}
+
+	// ======================== 体积光 ========================
+	ImGui::SeparatorText("Volumetric");
+	if (PanelRows::Begin("##LightVolume", labelWidth))
+	{
+		PanelRows::Row("Enable", "这盏灯是否照亮体积雾（光柱效果）");
+		changed |= ImGui::Checkbox("##VolumeEnable", &base.volumeLightEnable);
+
+		const bool noVolume = !base.volumeLightEnable;
+		ImGui::BeginDisabled(noVolume);
+		PanelRows::Row("Intensity", "体积散射强度倍数（只影响体积雾里的光，不影响表面）", noVolume);
+		changed |= ImGui::DragFloat("##VolumeIntensity", &base.volumetricScatteringIntensity, 0.01f, 0.0f, 100.0f, "%.2f", kClamp);
+		PanelRows::Row("Affected By Sky", "光穿过大气时按大气透过率衰减（日落时光柱变红变暗）。\n需要场景开了大气体积", noVolume);
+		changed |= ImGui::Checkbox("##AffectedBySky", &base.volumeLightEffectByAtmospher);
+		ImGui::EndDisabled();
+		ImGui::EndTable();
+	}
+
+	return changed;
 }
 
 template<typename ModelComponent>
@@ -676,32 +1627,58 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 		return false;
 	}
 
-	const auto drawAssetPath = [assetManager](const char* label, const AssetGUID& guid)
+	auto database = assetManager ? assetManager->GetDatabase() : nullptr;
+	const ImGuiStyle& style = ImGui::GetStyle();
+	const float frameHeight = ImGui::GetFrameHeight();
+	const ImVec4 errorColor(1.0f, 0.35f, 0.35f, 1.0f);
+	const char* const alphaModes[] = { "Opaque", "Mask", "Blend" };
+	const auto alphaModeName = [&alphaModes](AlphaMode mode)
 		{
-			ImGui::Text("%s", label);
-			ImGui::SameLine();
-			if (guid.empty())
-			{
-				ImGui::TextDisabled("Unlinked");
-				return;
-			}
+			return alphaModes[std::min<uint32_t>(static_cast<uint32_t>(mode), 2u)];
+		};
+	bool anyChanged = false;
 
-			auto database = assetManager ? assetManager->GetDatabase() : nullptr;
-			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
-			if (!meta)
-			{
-				ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Missing asset (%s)", guid.c_str());
-				return;
-			}
-
-			ImGui::TextUnformatted(meta->name.c_str());
-			ImGui::TextDisabled("%s", meta->path.c_str());
+	// label | value 两列表格的一行：进入数值列，控件宽度占满
+	const auto beginInfoRow = [](const char* label)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(label);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetNextItemWidth(-FLT_MIN);
 		};
 
-	drawAssetPath(modelLabel, comp.model->GetAssetGUID());
+	// ======================== 模型 ========================
+	{
+		const AssetGUID& modelGuid = comp.model->GetAssetGUID();
+		auto modelMeta = (database && !modelGuid.empty()) ? database->GetAssetMetaByGuid(modelGuid) : nullptr;
+		const float labelWidth = std::max(ImGui::CalcTextSize(modelLabel).x, ImGui::CalcTextSize("Visible").x) + style.ItemSpacing.x;
+		if (ImGui::BeginTable("##ModelInfo", 2, ImGuiTableFlags_SizingFixedFit))
+		{
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
 
-	bool anyChanged = false;
-	anyChanged |= DrawPropertyField<RenderStaticModel>("Visible", &comp.visible);
+			beginInfoRow(modelLabel);
+			ImGui::AlignTextToFramePadding();
+			if (modelGuid.empty())
+				ImGui::TextDisabled("Unlinked（不是工程资产里的模型）");
+			else if (!modelMeta)
+				ImGui::TextColored(errorColor, "Missing asset (%s)", modelGuid.c_str());
+			else
+			{
+				ImGui::TextUnformatted(modelMeta->name.c_str());
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s", modelMeta->path.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", modelMeta->path.c_str());
+			}
+
+			beginInfoRow("Visible");
+			anyChanged |= ImGui::Checkbox("##Visible", &comp.visible);
+			ImGui::EndTable();
+		}
+	}
 
 	struct MaterialEdit
 	{
@@ -719,22 +1696,123 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 	std::vector<MaterialDrop> drops;
 	auto& meshInfos = comp.model->GetMeshInfos();
 
-	if (!meshInfos.empty())
+	// ---- 松手才提交：拖动 / 输入期间改动先暂存，没有控件处于激活状态时才变成一次 edit ----
+	//   资产材质：提交 = 写回材质资产并存盘；实例材质：提交 = 克隆一份实例模型 / 材质。拖动期间每帧都提交的话，
+	//   每帧都要存一次盘（资产浏览器缩略图跟着每帧重画）或克隆一次模型。
+	//   暂存期间：能安全直接改的材质（资产材质，或者这个实体已经有自己的实例材质——有 materialOverrideProperties 的槽，
+	//   加载场景和上次提交时都为它单独建了 Material）实时 SetProperty，场景和材质球马上看到效果；
+	//   还和模型资产共用的实例材质不能直接改（会改到其他实体），只在面板里显示暂存值，松手克隆后才生效。
+	//   暂存按"这个组件面板 + 槽号"记，同时记下材质对象：槽被换了材质就作废
+	struct PendingMaterialEdit
+	{
+		const Material* material = nullptr;
+		MaterialProperties properties;
+	};
+	static std::unordered_map<uint64_t, PendingMaterialEdit> s_pendingMaterialEdits;
+
+	const ImGuiID panelId = ImGui::GetID("##materialSlots");
+	const auto pendingKey = [panelId](size_t slot) { return (static_cast<uint64_t>(panelId) << 32) | static_cast<uint32_t>(slot); };
+	const auto canEditLive = [&](size_t slot)
+		{
+			const auto& material = meshInfos[slot].material;
+			return material && (!material->GetAssetGUID().empty()
+				|| comp.materialOverrideProperties.contains(static_cast<uint32_t>(slot)));
+		};
+	const auto effectiveProperties = [&](size_t slot) -> MaterialProperties
+		{
+			const auto& material = meshInfos[slot].material;
+			auto it = s_pendingMaterialEdits.find(pendingKey(slot));
+			if (it != s_pendingMaterialEdits.end())
+			{
+				if (it->second.material == material.get())
+					return it->second.properties;
+				s_pendingMaterialEdits.erase(it);
+			}
+			return material ? material->GetProperties() : MaterialProperties{};
+		};
+	const auto stageEdit = [&](size_t slot, const MaterialProperties& properties)
+		{
+			const auto& material = meshInfos[slot].material;
+			if (!material)
+				return;
+			s_pendingMaterialEdits[pendingKey(slot)] = { material.get(), properties };
+			if (canEditLive(slot))
+				material->SetProperty(properties);
+		};
+	// 这个面板暂存的改动：没有控件在拖动 / 输入时统一提交（只遍历暂存表里属于这个面板的项，不扫全部槽）
+	const auto commitReleased = [&]()
+		{
+			if (ImGui::IsAnyItemActive())
+				return;
+			for (auto it = s_pendingMaterialEdits.begin(); it != s_pendingMaterialEdits.end();)
+			{
+				if ((it->first >> 32) != panelId)
+				{
+					++it;
+					continue;
+				}
+				const size_t slot = static_cast<size_t>(it->first & 0xFFFFFFFFull);
+				if (slot < meshInfos.size())
+				{
+					const auto& material = meshInfos[slot].material;
+					if (material && it->second.material == material.get())
+						edits.push_back({ slot, it->second.properties, material, material->GetAssetGUID() });
+				}
+				it = s_pendingMaterialEdits.erase(it);
+			}
+		};
+
+	const auto materialDisplayName = [&](size_t slot) -> std::string
+		{
+			const auto& material = meshInfos[slot].material;
+			if (!material)
+				return "No material";
+			const AssetGUID& guid = material->GetAssetGUID();
+			if (guid.empty())
+				return "无资产材质";
+			auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+			return meta ? meta->name : std::string("资产不存在");
+		};
+
+	ImGui::SeparatorText(std::format("Materials ({})", meshInfos.size()).c_str());
+	if (meshInfos.empty())
+		ImGui::TextDisabled("这个模型没有材质槽");
+
+	// 面板状态（按面板 ID 存）：选中的槽、搜索词、列表高度
+	struct SlotPanelState
+	{
+		int selected = -1;
+		char filter[128] = {};
+		std::vector<size_t> filtered;		// 搜索结果（槽号）
+		std::string filterKey;				// 算 filtered 时的搜索词
+		const void* filterModel = nullptr;	// 算 filtered 时的模型
+		size_t filterCount = 0;
+		int filterFrame = -1000;
+	};
+	static std::unordered_map<ImGuiID, SlotPanelState> s_slotPanels;
+	SlotPanelState& panel = s_slotPanels[panelId];
+	if (panel.selected >= static_cast<int>(meshInfos.size()))
+		panel.selected = -1;
+	if (panel.selected < 0 && meshInfos.size() == 1)
+		panel.selected = 0;
+
+	// ======================== 批量设置（多个槽时才有，默认收起；展开时才去读各槽属性） ========================
+	if (meshInfos.size() > 1 && ImGui::TreeNodeEx("##BatchEdit", ImGuiTreeNodeFlags_SpanAvailWidth, "批量设置（所有 %zu 个槽）", meshInfos.size()))
 	{
 		float sharedOpacity = 0.f;
 		int sharedAlphaMode = 0;
 		bool hasShared = false;
 		bool mixedOpacity = false;
 		bool mixedAlphaMode = false;
-		for (const auto& meshInfo : meshInfos)
+		for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 		{
-			if (!meshInfo.material)
+			if (!meshInfos[slot].material)
 				continue;
-			const MaterialProperties properties = meshInfo.material->GetProperties();
+			const MaterialProperties properties = effectiveProperties(slot);
 			if (!hasShared)
 			{
 				sharedOpacity = properties.opacity;
-				sharedAlphaMode = static_cast<int>(properties.alphamode);
+				sharedAlphaMode = static_cast<int>(std::min<uint32_t>(static_cast<uint32_t>(properties.alphamode), 2u));
 				hasShared = true;
 			}
 			else
@@ -746,168 +1824,564 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 			}
 		}
 
-		if (hasShared)
+		if (!hasShared)
+			ImGui::TextDisabled("所有槽都没有材质");
+		else
 		{
-			const auto commitAll = [&]()
+			// 改动暂存到每个槽，松手后统一提交
+			const auto applyAll = [&](const auto& modify)
 				{
-					for (size_t index = 0; index < meshInfos.size(); ++index)
+					for (size_t slot = 0; slot < meshInfos.size(); ++slot)
 					{
-						auto& material = meshInfos[index].material;
-						if (!material)
+						if (!meshInfos[slot].material)
 							continue;
-						edits.push_back({ index, material->GetProperties(), material, material->GetAssetGUID() });
+						MaterialProperties properties = effectiveProperties(slot);
+						modify(properties);
+						stageEdit(slot, properties);
 					}
 				};
 
-			bool released = false;
-			SetNextPropertyFieldWidth(130.0f, 0.55f);
-			const char* opacityLabel = mixedOpacity ? "All Materials Opacity (+)" : "All Materials Opacity";
-			if (ImGui::SliderFloat(opacityLabel, &sharedOpacity, 0.0f, 1.0f, "%.3f"))
+			const float labelWidth = ImGui::CalcTextSize("Alpha Mode").x + style.ItemSpacing.x;
+			if (ImGui::BeginTable("##BatchTable", 2, ImGuiTableFlags_SizingFixedFit))
 			{
-				for (auto& meshInfo : meshInfos)
-				{
-					if (!meshInfo.material)
-						continue;
-					MaterialProperties properties = meshInfo.material->GetProperties();
-					properties.opacity = sharedOpacity;
-					meshInfo.material->SetProperty(properties);
-				}
-			}
-			released |= ImGui::IsItemDeactivatedAfterEdit();
+				ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+				ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
 
-			const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
-			SetNextPropertyFieldWidth(130.0f, 0.55f);
-			const char* alphaModeLabel = mixedAlphaMode ? "All Materials Alpha Mode (+)" : "All Materials Alpha Mode";
-			if (ImGui::Combo(alphaModeLabel, &sharedAlphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
-			{
-				for (auto& meshInfo : meshInfos)
-				{
-					if (!meshInfo.material)
-						continue;
-					MaterialProperties properties = meshInfo.material->GetProperties();
-					properties.alphamode = static_cast<AlphaMode>((uint32_t)sharedAlphaMode);
-					meshInfo.material->SetProperty(properties);
-				}
-			}
-			released |= ImGui::IsItemDeactivatedAfterEdit();
+				beginInfoRow("Opacity");
+				if (ImGui::SliderFloat("##AllOpacity", &sharedOpacity, 0.0f, 1.0f, mixedOpacity ? "%.3f（各槽不同）" : "%.3f"))
+					applyAll([&](MaterialProperties& p) { p.opacity = sharedOpacity; });
 
-			if (released)
-				commitAll();
-			ImGui::Separator();
+				beginInfoRow("Alpha Mode");
+				if (ImGui::BeginCombo("##AllAlphaMode", mixedAlphaMode ? "各槽不同" : alphaModes[sharedAlphaMode]))
+				{
+					for (int i = 0; i < IM_ARRAYSIZE(alphaModes); ++i)
+					{
+						if (ImGui::Selectable(alphaModes[i], !mixedAlphaMode && i == sharedAlphaMode))
+							applyAll([i](MaterialProperties& p) { p.alphamode = static_cast<AlphaMode>(static_cast<uint32_t>(i)); });
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::EndTable();
+			}
 		}
+		ImGui::TreePop();
 	}
 
-	for (size_t slot = 0; slot < meshInfos.size(); ++slot)
+	// ======================== 槽列表：搜索 + 固定高度、可拖动调高的列表（只画看得见的行） ========================
+	// 行：[小材质球] #槽号 材质名                     Blend · 双面
+	//   单击选中（预览和参数在列表下面），双击打开材质编辑器，把材质资产拖到行上替换这个槽；悬停材质球看大图
+	const float kRowPad = 2.0f;
+	const float kRowThumb = std::floor(frameHeight + 2.0f);		// 一行文字高的小材质球
+	const float rowHeight = kRowThumb + kRowPad * 2.0f;
+	constexpr float kRowSpacing = 1.0f;							// 行间距（列表里单独设，比默认紧）
+	const float rowStride = rowHeight + kRowSpacing;
+
+	if (!meshInfos.empty())
 	{
-		ImGui::PushID(static_cast<int>(slot));
-		const std::string title = std::format("Material Slot {}", slot);
-		if (ImGui::TreeNodeEx(title.c_str(), ImGuiTreeNodeFlags_None))
+		// ---- 搜索：按槽号或材质名（空格分隔多个词，全部包含才算），结果缓存，词 / 模型变了或每 30 帧重算一次 ----
+		if (meshInfos.size() > 1)
 		{
-			auto& material = meshInfos[slot].material;
-			ImGui::TextUnformatted("Material");
-			ImGui::SameLine();
-			auto database = assetManager ? assetManager->GetDatabase() : nullptr;
-			auto materialMeta = database && material ? database->GetAssetMetaByGuid(material->GetAssetGUID()) : nullptr;
-			const std::string materialLabel = materialMeta ? materialMeta->name :
-				(material && !material->GetAssetGUID().empty() ? material->GetAssetGUID() : "No material assigned");
-			ImGui::Button(materialLabel.c_str(), ImVec2(220.f, 0.f));
-			if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
-				&& materialMeta && materialMeta->type == AssetType::Material)
-				ImguiLayout::OpenMaterialEditor(materialMeta->guid);
-			if (ImGui::BeginDragDropTarget())
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			ImGui::InputTextWithHint("##SlotFilter", "搜索槽号或材质名（空格分隔多个词）", panel.filter, sizeof(panel.filter), ImGuiInputTextFlags_EscapeClearsAll);
+		}
+		const std::string filterText = panel.filter;
+		const int frame = ImGui::GetFrameCount();
+		if (filterText != panel.filterKey || panel.filterModel != comp.model.get() || panel.filterCount != meshInfos.size()
+			|| (!filterText.empty() && frame - panel.filterFrame >= 30))
+		{
+			panel.filterKey = filterText;
+			panel.filterModel = comp.model.get();
+			panel.filterCount = meshInfos.size();
+			panel.filterFrame = frame;
+			panel.filtered.clear();
+
+			std::vector<std::string> terms;
 			{
-				if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+				std::string term;
+				for (char c : filterText)
 				{
-					const auto* guidData = static_cast<const char*>(payload->Data);
-					if (guidData && guidData[0] != '\0' && database && assetManager)
+					if (c == ' ' || c == '\t')
 					{
-						auto droppedMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
-						if (droppedMeta && droppedMeta->type == AssetType::Material)
+						if (!term.empty())
+							terms.push_back(Tool::ToLower(term));
+						term.clear();
+					}
+					else
+						term += c;
+				}
+				if (!term.empty())
+					terms.push_back(Tool::ToLower(term));
+			}
+
+			panel.filtered.reserve(meshInfos.size());
+			for (size_t slot = 0; slot < meshInfos.size(); ++slot)
+			{
+				if (terms.empty())
+				{
+					panel.filtered.push_back(slot);
+					continue;
+				}
+				const std::string haystack = Tool::ToLower(std::format("#{} {}", slot, materialDisplayName(slot)));
+				bool match = true;
+				for (const auto& term : terms)
+				{
+					if (haystack.find(term) == std::string::npos)
+					{
+						match = false;
+						break;
+					}
+				}
+				if (match)
+					panel.filtered.push_back(slot);
+			}
+		}
+
+		if (!filterText.empty())
+			ImGui::TextDisabled("找到 %zu / %zu 个槽", panel.filtered.size(), meshInfos.size());
+
+		// ---- 列表：默认最多显示 8 行高，底边可以拖动调高（ImGui 会记住） ----
+		const size_t visibleRows = std::clamp<size_t>(panel.filtered.size(), 1, 8);
+		const float listHeight = visibleRows * rowStride - kRowSpacing + style.WindowPadding.y * 2.0f;
+		ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, rowStride + style.WindowPadding.y * 2.0f), ImVec2(FLT_MAX, FLT_MAX));
+		if (ImGui::BeginChild("##SlotList", ImVec2(0.0f, listHeight), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY))
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, kRowSpacing));
+			if (panel.filtered.empty())
+				ImGui::TextDisabled("没有匹配的槽");
+
+			// 选中项变了（例如在场景里点选）时滚到它
+			static std::unordered_map<ImGuiID, int> s_scrolledTo;
+			int& scrolledTo = s_scrolledTo[panelId];
+
+			ImGuiListClipper clipper;
+			clipper.Begin(static_cast<int>(panel.filtered.size()), rowStride);
+			if (panel.selected >= 0 && scrolledTo != panel.selected)
+			{
+				auto it = std::find(panel.filtered.begin(), panel.filtered.end(), static_cast<size_t>(panel.selected));
+				if (it != panel.filtered.end())
+					clipper.IncludeItemByIndex(static_cast<int>(it - panel.filtered.begin()));
+			}
+			while (clipper.Step())
+			{
+				for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+				{
+					const size_t slot = panel.filtered[row];
+					ImGui::PushID(static_cast<int>(slot));
+					auto& material = meshInfos[slot].material;
+					const AssetGUID materialGuid = material ? material->GetAssetGUID() : AssetGUID{};
+					auto materialMeta = (database && !materialGuid.empty()) ? database->GetAssetMetaByGuid(materialGuid) : nullptr;
+					const bool isInstance = material && materialGuid.empty();
+					const bool missingAsset = !materialGuid.empty() && !materialMeta;
+					const bool canOpenEditor = materialMeta && materialMeta->type == AssetType::Material;
+					const std::string materialName = !material ? std::string("No material")
+						: materialMeta ? materialMeta->name
+						: isInstance ? std::string("无资产材质")
+						: std::string("资产不存在");
+					const bool selected = panel.selected == static_cast<int>(slot);
+
+					const auto acceptMaterialDrop = [&]()
+						{
+							if (!ImGui::BeginDragDropTarget())
+								return;
+							if (const auto* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
+							{
+								const auto* guidData = static_cast<const char*>(payload->Data);
+								if (guidData && guidData[0] != '\0' && database && assetManager)
+								{
+									auto droppedMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+									if (droppedMeta && droppedMeta->type == AssetType::Material)
+									{
+										auto asset = assetManager->LoadAsset(droppedMeta->guid);
+										auto replacement = asset ? asset->AsMaterial() : nullptr;
+										if (replacement)
+											drops.push_back({ slot, std::move(replacement) });
+									}
+								}
+							}
+							ImGui::EndDragDropTarget();
+						};
+
+					const ImVec2 p0 = ImGui::GetCursorScreenPos();
+					const float rowWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+					const ImVec2 p1(p0.x + rowWidth, p0.y + rowHeight);
+
+					// 整行是一个按钮（点击、拖放、悬停）；上面的材质球允许叠在它上面
+					ImGui::SetNextItemAllowOverlap();
+					ImGui::InvisibleButton("##row", ImVec2(rowWidth, rowHeight));
+					const bool rowHovered = ImGui::IsItemHovered();
+					if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+					{
+						panel.selected = static_cast<int>(slot);
+						scrolledTo = panel.selected;		// 自己点的不用再滚
+					}
+					if (rowHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && canOpenEditor)
+						ImguiLayout::OpenMaterialEditor(materialMeta->guid);
+					acceptMaterialDrop();
+
+					// 只有选中 / 悬停时才画底色，像列表项而不是一张张卡片
+					ImDrawList* drawList = ImGui::GetWindowDrawList();
+					if (selected || rowHovered)
+						drawList->AddRectFilled(p0, p1, ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_HeaderHovered), style.FrameRounding);
+
+					// 小材质球（悬停显示大图）：只有画到的行才会请求渲染
+					ImGui::SetCursorScreenPos(ImVec2(p0.x + kRowPad, p0.y + kRowPad));
+					if (AssetThumbnails::DrawMaterialBox(assetManager, material, kRowThumb, materialName.c_str()) && canOpenEditor)
+						ImguiLayout::OpenMaterialEditor(materialMeta->guid);
+					acceptMaterialDrop();
+
+					// 一行文字：#槽号 材质名，右边靠右是透明模式 / 双面（材质名太长时被裁掉，不压到右边的标签）
+					{
+						const float textY = p0.y + (rowHeight - ImGui::GetTextLineHeight()) * 0.5f;
+						const float textX = p0.x + kRowPad + kRowThumb + style.ItemSpacing.x;
+						std::string tag;
+						if (material)
+						{
+							const MaterialProperties properties = effectiveProperties(slot);
+							if (properties.alphamode != AlphaMode::Opaque)
+								tag = alphaModeName(properties.alphamode);
+							if (properties.twosided)
+								tag += tag.empty() ? "双面" : " · 双面";
+						}
+						const float tagWidth = tag.empty() ? 0.0f : ImGui::CalcTextSize(tag.c_str()).x;
+						const float tagX = p1.x - style.FramePadding.x - tagWidth;
+						if (!tag.empty())
+							drawList->AddText(ImVec2(tagX, textY), ImGui::GetColorU32(ImGuiCol_TextDisabled), tag.c_str());
+
+						const float nameRight = tag.empty() ? p1.x - style.FramePadding.x : tagX - style.ItemSpacing.x;
+						const std::string slotTag = std::format("#{}", slot);
+						drawList->PushClipRect(ImVec2(textX, p0.y), ImVec2(std::max(textX, nameRight), p1.y), true);
+						drawList->AddText(ImVec2(textX, textY), ImGui::GetColorU32(ImGuiCol_TextDisabled), slotTag.c_str());
+						const float nameX = textX + ImGui::CalcTextSize(slotTag.c_str()).x + style.ItemSpacing.x * 0.5f;
+						const ImU32 nameColor = missingAsset ? ImGui::ColorConvertFloat4ToU32(errorColor)
+							: ImGui::GetColorU32(material && !isInstance ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+						drawList->AddText(ImVec2(nameX, textY), nameColor, materialName.c_str());
+						drawList->PopClipRect();
+					}
+
+					// 光标回到行底边再提交一个空 item：ImGui 不允许只用 SetCursorPos 撑大窗口。
+					// Dummy 之后光标在 p1.y + kRowSpacing，正好是 clipper 的行高 rowStride
+					ImGui::SetCursorScreenPos(ImVec2(p0.x, p1.y));
+					ImGui::Dummy(ImVec2(0.0f, 0.0f));
+
+					if (selected && scrolledTo != panel.selected)
+					{
+						ImGui::SetScrollHereY(0.5f);
+						scrolledTo = panel.selected;
+					}
+					ImGui::PopID();
+				}
+			}
+			clipper.End();
+			ImGui::PopStyleVar();
+		}
+		ImGui::EndChild();
+		if (meshInfos.size() > 1)
+			ImGui::TextDisabled("单击选中 · 双击打开材质编辑器 · 材质资产拖到行上或下面的头部替换");
+	}
+
+	// ======================== 选中槽的参数（和材质编辑器同一套排法：[贴图] 名称 [数值]） ========================
+	if (panel.selected >= 0)
+	{
+		const size_t slot = static_cast<size_t>(panel.selected);
+		auto& material = meshInfos[slot].material;
+		const AssetGUID materialGuid = material ? material->GetAssetGUID() : AssetGUID{};
+		auto materialMeta = (database && !materialGuid.empty()) ? database->GetAssetMetaByGuid(materialGuid) : nullptr;
+		const bool isInstance = material && materialGuid.empty();
+		const bool canOpenEditor = materialMeta && materialMeta->type == AssetType::Material;
+		const float textureSide = std::floor(frameHeight * 1.25f);
+		const float propLabelWidth = ImGui::CalcTextSize("Emission Strength").x + style.ItemSpacing.x;
+
+		ImGui::PushID(static_cast<int>(slot));
+		ImGui::Separator();
+
+		// ---- 头部：[材质球] 名称 / 路径 / 槽号 · 透明模式 · 双面 · 贴图数            [编辑] ----
+		{
+			constexpr float kHeaderThumb = 64.0f;
+			const ImVec2 h0 = ImGui::GetCursorScreenPos();
+			const float headerWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+
+			if (AssetThumbnails::DrawMaterialBox(assetManager, material, kHeaderThumb, materialDisplayName(slot).c_str()) && canOpenEditor)
+				ImguiLayout::OpenMaterialEditor(materialMeta->guid);
+
+			const char* editLabel = "编辑";
+			const float editWidth = ImGui::CalcTextSize(editLabel).x + style.FramePadding.x * 2.0f;
+			const float infoX = h0.x + kHeaderThumb + style.ItemSpacing.x;
+			const float infoRight = h0.x + headerWidth - editWidth - style.ItemSpacing.x;
+
+			// 三行信息，裁剪到编辑按钮左边
+			ImDrawList* drawList = ImGui::GetWindowDrawList();
+			const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+			const float infoTop = h0.y + (kHeaderThumb - lineHeight * 3.0f + style.ItemSpacing.y) * 0.5f;
+			std::string line2;
+			std::string line3 = std::format("#{}", slot);
+			if (!material)
+				line2 = "没有材质：把材质资产拖到这里";
+			else
+			{
+				const MaterialProperties properties = effectiveProperties(slot);
+				line2 = materialMeta ? materialMeta->path
+					: isInstance ? std::string(canEditLive(slot) ? "无资产材质 · 属性覆盖存在场景里，只影响这个实体"
+						: "无资产材质 · 和模型共用，松手后为这个实体生成属性覆盖")
+					: std::format("资产不存在：{}", materialGuid);
+				line3 += std::format(" · {}", alphaModeName(properties.alphamode));
+				if (properties.twosided)
+					line3 += " · 双面";
+				size_t textureCount = 0;
+				for (const auto& [type, texture] : material->GetTextures())
+					textureCount += (texture && !texture->IsEmpty()) ? 1 : 0;
+				line3 += textureCount ? std::format(" · {} 张贴图", textureCount) : std::string(" · 没有贴图");
+			}
+			const bool missingAsset = !materialGuid.empty() && !materialMeta;
+			drawList->PushClipRect(ImVec2(infoX, h0.y), ImVec2(std::max(infoX, infoRight), h0.y + kHeaderThumb), true);
+			drawList->AddText(ImVec2(infoX, infoTop), missingAsset ? ImGui::ColorConvertFloat4ToU32(errorColor) : ImGui::GetColorU32(ImGuiCol_Text),
+				materialDisplayName(slot).c_str());
+			drawList->AddText(ImVec2(infoX, infoTop + lineHeight), ImGui::GetColorU32(ImGuiCol_TextDisabled), line2.c_str());
+			drawList->AddText(ImVec2(infoX, infoTop + lineHeight * 2.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled), line3.c_str());
+			drawList->PopClipRect();
+
+			// 信息区域可以悬停看完整路径（窄面板上会被裁掉）
+			ImGui::SetCursorScreenPos(ImVec2(infoX, h0.y));
+			ImGui::InvisibleButton("##info", ImVec2(std::max(1.0f, infoRight - infoX), kHeaderThumb));
+			if (ImGui::IsItemHovered())
+			{
+				if (canOpenEditor)
+					ImGui::SetTooltip("%s\n%s\n修改松手时保存到材质资产，所有用到它的地方都会变；换贴图请到材质编辑器", materialDisplayName(slot).c_str(), line2.c_str());
+				else
+					ImGui::SetTooltip("%s\n%s", materialDisplayName(slot).c_str(), line2.c_str());
+			}
+
+			// 编辑按钮：右边，垂直居中
+			ImGui::SetCursorScreenPos(ImVec2(h0.x + headerWidth - editWidth, h0.y + (kHeaderThumb - frameHeight) * 0.5f));
+			ImGui::BeginDisabled(!canOpenEditor);
+			if (ImGui::Button(editLabel, ImVec2(editWidth, 0.0f)))
+				ImguiLayout::OpenMaterialEditor(materialMeta->guid);
+			ImGui::EndDisabled();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", canOpenEditor ? "在材质编辑器中打开"
+					: isInstance ? "这个槽的材质没有资产，不能在材质编辑器里打开（在下面直接改，作为属性覆盖存进场景）"
+					: "没有可以打开的材质资产");
+
+			// 整个头部（材质球 + 信息 + 按钮）是一个拖放目标：把材质资产拖上来直接替换这个槽。
+			// 只有拖的是别的材质资产时才接（才画高亮框），拖贴图等其他资产经过时不响应
+			{
+				const ImRect headerRect(h0, ImVec2(h0.x + headerWidth, h0.y + kHeaderThumb));
+				if (ImGui::BeginDragDropTargetCustom(headerRect, ImGui::GetID("##headerDrop")))
+				{
+					const ImGuiPayload* peek = ImGui::GetDragDropPayload();
+					std::shared_ptr<AssetMeta> droppedMeta;
+					if (peek && peek->IsDataType("ASSET_GUID") && peek->Data && database)
+					{
+						const auto* guidData = static_cast<const char*>(peek->Data);
+						if (guidData[0] != '\0')
+							droppedMeta = database->GetAssetMetaByGuid(AssetGUID(guidData));
+					}
+					if (droppedMeta && droppedMeta->type == AssetType::Material && droppedMeta->guid != materialGuid)
+					{
+						if (ImGui::AcceptDragDropPayload("ASSET_GUID") && assetManager)
 						{
 							auto asset = assetManager->LoadAsset(droppedMeta->guid);
 							auto replacement = asset ? asset->AsMaterial() : nullptr;
 							if (replacement)
 								drops.push_back({ slot, std::move(replacement) });
 						}
+						else
+							ImGui::SetTooltip("替换 #%zu 的材质为：%s", slot, droppedMeta->name.c_str());
 					}
+					ImGui::EndDragDropTarget();
 				}
-				ImGui::EndDragDropTarget();
 			}
-			if (!material)
-				ImGui::TextDisabled("No material assigned");
-			else
-			{
-				auto properties = material->GetProperties();
-				bool slotChanged = false;
-				SetNextPropertyFieldWidth(250.f, 0.6f);
-				slotChanged |= ImGui::ColorEdit3("Albedo", glm::value_ptr(properties.albedo));
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("Metallic", &properties.metallic, 0.01f, 0.0f, 1.0f);
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("Roughness", &properties.roughness, 0.01f, 0.0f, 1.0f);
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("Ambient Occlusion", &properties.ambientOcclusion, 0.01f, 0.0f, 1.0f);
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("Opacity", &properties.opacity, 0.01f, 0.0f, 1.0f);
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("IOR", &properties.IOR, 0.01f, 1.0f, 3.0f);
-				SetNextPropertyFieldWidth(250.f, 0.6f);
-				slotChanged |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(properties.emissionColor));
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				slotChanged |= ImGui::DragFloat("Emission Strength", &properties.emissionStrength, 0.01f, 0.0f, 100.0f);
 
-				int alphaMode = static_cast<int>(properties.alphamode);
-				const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
-				SetNextPropertyFieldWidth(130.0f, 0.55f);
-				if (ImGui::Combo("Alpha Mode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+			// 光标放到头部下面，再提交一个空 item（不能只靠 SetCursorPos 撑大窗口）
+			ImGui::SetCursorScreenPos(ImVec2(h0.x, h0.y + kHeaderThumb));
+			ImGui::Dummy(ImVec2(0.0f, 0.0f));
+		}
+
+		if (material)
+		{
+			auto properties = effectiveProperties(slot);
+			const auto textures = material->GetTextures();
+			bool slotChanged = false;
+
+			const auto textureOf = [&textures](TextureType type) -> std::shared_ptr<Texture2D>
 				{
-					properties.alphamode = static_cast<AlphaMode>((uint32_t)alphaMode);
-					slotChanged = true;
-				}
-				if (properties.alphamode == AlphaMode::Mask)
-				{
-					SetNextPropertyFieldWidth(130.0f, 0.55f);
-					slotChanged |= ImGui::DragFloat("Mask Threshold", &properties.maskthreshold, 0.01f, 0.0f, 1.0f);
-				}
-				slotChanged |= ImGui::Checkbox("Two Sided", &properties.twosided);
-
-				if (slotChanged)
-					edits.push_back({ slot, properties, material, material->GetAssetGUID() });
-
-				const auto textureName = [](TextureType type) -> const char*
-					{
-						switch (type)
-						{
-						case TextureType::Albedo: return "Albedo Texture";
-						case TextureType::Metallic: return "Metallic Texture";
-						case TextureType::Roughness: return "Roughness Texture";
-						case TextureType::Normal: return "Normal Texture";
-						case TextureType::AO: return "AO Texture";
-						case TextureType::Emissive: return "Emissive Texture";
-						case TextureType::MetallicRoughness: return "Metallic Roughness Texture";
-						case TextureType::Height: return "Height Texture";
-						case TextureType::Opacity: return "Opacity Texture";
-						default: return "Texture";
-						}
-					};
-				// 贴图槽：40px 缩略图（和资产浏览器共用同一份、后台生成）+ 资产名 / 路径
-				for (const auto& [type, texture] : material->GetTextures())
+					auto it = textures.find(type);
+					return (it != textures.end() && it->second && !it->second->IsEmpty()) ? it->second : nullptr;
+				};
+			const auto hasTexture = [&](TextureType type) { return textureOf(type) != nullptr; };
+			const auto textureDisplayName = [&](const std::shared_ptr<Texture2D>& texture) -> std::string
 				{
 					if (!texture)
-						continue;
-					ImGui::PushID(static_cast<int>(type));
-					AssetThumbnails::DrawThumbnailBox(assetManager, texture->GetAssetGUID(), 40.0f);
-					ImGui::SameLine();
-					ImGui::BeginGroup();
-					drawAssetPath(textureName(type), texture->GetAssetGUID());
-					ImGui::EndGroup();
-					ImGui::PopID();
+						return "没有贴图";
+					const AssetGUID& guid = texture->GetAssetGUID();
+					if (guid.empty())
+						return std::format("无资产贴图（{}×{}）", texture->GetWidth(), texture->GetHeight());
+					auto meta = database ? database->GetAssetMetaByGuid(guid) : nullptr;
+					return meta ? meta->name : std::format("资产不存在：{}", guid);
+				};
+
+			// 贴图格只读：资产贴图用缩略图（后台生成、带悬停大图），没有资产的贴图直接画已经加载好的那张
+			const auto drawTextureSlot = [&](TextureType type)
+				{
+					auto texture = textureOf(type);
+					if (texture && !texture->GetAssetGUID().empty())
+					{
+						AssetThumbnails::DrawThumbnailBox(assetManager, texture->GetAssetGUID(), textureSide);
+						return;
+					}
+					const ImVec2 q0 = ImGui::GetCursorScreenPos();
+					const ImVec2 q1(q0.x + textureSide, q0.y + textureSide);
+					ImGui::Dummy(ImVec2(textureSide, textureSide));
+					if (!ImGui::IsItemVisible())
+						return;
+					ImDrawList* dl = ImGui::GetWindowDrawList();
+					dl->AddRectFilled(q0, q1, IM_COL32(40, 40, 40, 255), 3.0f);
+					if (texture)
+						Sprite2DEditor::DrawFrameInRect(dl, Render2D::Sprite::MakeFrame(texture, nullptr), ImVec2(q0.x + 2.0f, q0.y + 2.0f), ImVec2(q1.x - 2.0f, q1.y - 2.0f));
+					dl->AddRect(q0, q1, IM_COL32(95, 95, 95, 255), 3.0f);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", texture ? textureDisplayName(texture).c_str() : "没有贴图（贴图在材质编辑器里设置）");
+				};
+
+			const auto beginSection = [&](const char* title) -> bool
+				{
+					ImGui::SeparatorText(title);
+					if (!ImGui::BeginTable(title, 3, ImGuiTableFlags_SizingFixedFit))
+						return false;
+					ImGui::TableSetupColumn("tex", ImGuiTableColumnFlags_WidthFixed, textureSide);
+					ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, propLabelWidth);
+					ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+					return true;
+				};
+			const auto beginRow = [&](const char* label, std::optional<TextureType> textureType)
+				{
+					const float offsetY = (textureSide - frameHeight) * 0.5f;
+					ImGui::TableNextRow(ImGuiTableRowFlags_None, textureSide);
+					ImGui::TableSetColumnIndex(0);
+					if (textureType)
+						drawTextureSlot(*textureType);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(label);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offsetY);
+					ImGui::SetNextItemWidth(-FLT_MIN);
+				};
+			const auto overridden = [](bool disabled, const char* reason, auto&& draw) -> bool
+				{
+					if (disabled)
+						ImGui::BeginDisabled();
+					const bool edited = draw();
+					if (disabled)
+					{
+						ImGui::EndDisabled();
+						if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+							ImGui::SetTooltip("%s", reason);
+					}
+					return edited;
+				};
+			const auto textureNameCell = [&](TextureType type)
+				{
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(textureDisplayName(textureOf(type)).c_str());
+				};
+
+			const bool metallicRoughnessTex = hasTexture(TextureType::MetallicRoughness);
+
+			if (beginSection("Surface"))
+			{
+				beginRow("Albedo", TextureType::Albedo);
+				slotChanged |= ImGui::ColorEdit3("##Albedo", glm::value_ptr(properties.albedo));
+				if (hasTexture(TextureType::Albedo) && ImGui::IsItemHovered())
+					ImGui::SetTooltip("和 Albedo 贴图相乘");
+
+				beginRow("Metallic", TextureType::Metallic);
+				slotChanged |= overridden(metallicRoughnessTex || hasTexture(TextureType::Metallic), "由贴图提供（Metallic / Metallic Roughness 贴图的 B 通道），数值不生效",
+					[&] { return ImGui::DragFloat("##Metallic", &properties.metallic, 0.01f, 0.0f, 1.0f); });
+
+				beginRow("Roughness", TextureType::Roughness);
+				slotChanged |= overridden(metallicRoughnessTex || hasTexture(TextureType::Roughness), "由贴图提供（Roughness / Metallic Roughness 贴图的 G 通道），数值不生效",
+					[&] { return ImGui::DragFloat("##Roughness", &properties.roughness, 0.01f, 0.0f, 1.0f); });
+
+				if (metallicRoughnessTex)
+				{
+					beginRow("Metallic Roughness", TextureType::MetallicRoughness);
+					textureNameCell(TextureType::MetallicRoughness);
 				}
+				if (hasTexture(TextureType::Normal))
+				{
+					beginRow("Normal", TextureType::Normal);
+					textureNameCell(TextureType::Normal);
+				}
+
+				beginRow("Ambient Occlusion", TextureType::AO);
+				slotChanged |= overridden(hasTexture(TextureType::AO), "由 AO 贴图（R 通道）提供，数值不生效",
+					[&] { return ImGui::DragFloat("##AO", &properties.ambientOcclusion, 0.01f, 0.0f, 1.0f); });
+
+				if (hasTexture(TextureType::Height))
+				{
+					beginRow("Height", TextureType::Height);
+					textureNameCell(TextureType::Height);
+				}
+				ImGui::EndTable();
 			}
-			ImGui::TreePop();
+
+			if (beginSection("Emission"))
+			{
+				beginRow("Emission Color", TextureType::Emissive);
+				slotChanged |= overridden(hasTexture(TextureType::Emissive), "由自发光贴图提供，颜色不生效（强度仍然生效）",
+					[&] { return ImGui::ColorEdit3("##EmissionColor", glm::value_ptr(properties.emissionColor)); });
+
+				beginRow("Emission Strength", std::nullopt);
+				slotChanged |= ImGui::DragFloat("##EmissionStrength", &properties.emissionStrength, 0.01f, 0.0f, 100.0f);
+				ImGui::EndTable();
+			}
+
+			if (beginSection("Transparency"))
+			{
+				int alphaMode = static_cast<int>(std::min<uint32_t>(static_cast<uint32_t>(properties.alphamode), 2u));
+				beginRow("Alpha Mode", std::nullopt);
+				if (ImGui::Combo("##AlphaMode", &alphaMode, alphaModes, IM_ARRAYSIZE(alphaModes)))
+				{
+					properties.alphamode = static_cast<AlphaMode>(static_cast<uint32_t>(alphaMode));
+					slotChanged = true;
+				}
+
+				beginRow("Opacity", TextureType::Opacity);
+				slotChanged |= ImGui::DragFloat("##Opacity", &properties.opacity, 0.01f, 0.0f, 1.0f);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("和 Opacity 贴图（R 通道）相乘；没有 Opacity 贴图时取 Albedo 贴图的 alpha");
+
+				if (properties.alphamode == AlphaMode::Mask)
+				{
+					beginRow("Mask Threshold", std::nullopt);
+					slotChanged |= ImGui::DragFloat("##MaskThreshold", &properties.maskthreshold, 0.01f, 0.0f, 1.0f);
+				}
+
+				beginRow("IOR", std::nullopt);
+				slotChanged |= ImGui::DragFloat("##IOR", &properties.IOR, 0.01f, 1.0f, 3.0f);
+				ImGui::EndTable();
+			}
+
+			if (beginSection("Rendering"))
+			{
+				beginRow("Two Sided", std::nullopt);
+				slotChanged |= ImGui::Checkbox("##TwoSided", &properties.twosided);
+				ImGui::EndTable();
+			}
+
+			if (slotChanged)
+				stageEdit(slot, properties);
 		}
 		ImGui::PopID();
 	}
+	else if (meshInfos.size() > 1)
+	{
+		ImGui::TextDisabled("在上面的列表里选一个槽查看和修改参数");
+	}
+
+	// 批量设置和选中槽的改动：松手后统一提交
+	commitReleased();
 
 	decltype(comp.model) instanceModel;
 	for (const auto& edit : edits)
@@ -923,7 +2397,9 @@ bool PropertiesHelper::DrawModelComponent(ModelComponent& comp, ProjectManager* 
 				if (materialAsset)
 				{
 					materialAsset->SetProperties(edit.properties);
-					assetManager->SaveAsset(edit.guid);
+					// 存盘后资产浏览器里的材质球按新的元文件重画
+					if (assetManager->SaveAsset(edit.guid))
+						AssetThumbnails::Invalidate(edit.guid);
 				}
 			}
 			continue;

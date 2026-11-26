@@ -322,7 +322,7 @@ Entity World::GetMainCameraEntity() const { return m_MainCameraEntity; }
 
 bool World::HasMainCameraEntity() const { return m_MainCameraEntity.isValid(); }
 
-std::future<void> World::SubmitCommand(std::function<void()> command)
+std::future<void> World::SubmitCommand(std::move_only_function<void()> command)
 {
 	std::promise<void> promise;
 	auto future = promise.get_future();
@@ -349,10 +349,11 @@ std::future<void> World::SubmitCommand(std::function<void()> command)
 	return future;
 }
 
-std::future<void> World::SubmitCommand(std::function<void(World&)> command)
+std::future<void> World::SubmitCommand(std::move_only_function<void(World&)> command)
 {
-	auto labdma = [this, command = std::move(command)]()-> void { command(*this); };
-	return SubmitCommand(std::move(labdma));
+	// move_only_function 的 operator() 不是 const：外层 lambda 要 mutable 才能调用捕获的 command
+	auto lambda = [this, command = std::move(command)]() mutable -> void { if (command) command(*this); };
+	return SubmitCommand(std::move_only_function<void()>(std::move(lambda)));
 }
 
 void World::ProcessCommands()

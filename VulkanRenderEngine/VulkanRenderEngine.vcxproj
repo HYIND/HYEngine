@@ -229,6 +229,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSAOPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSGIPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSRPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\MaterialPreviewPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\TransparentPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\VolumeCalculatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\SharedTexture.h" />
@@ -336,6 +337,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\MaterialPreviewPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\TransparentPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\VolumeCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\SharedTexture.cpp" />

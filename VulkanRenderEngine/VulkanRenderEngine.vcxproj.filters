@@ -272,6 +272,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SSRPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\MaterialPreviewPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\TransparentPass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
@@ -692,6 +695,9 @@
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EffectPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\MaterialPreviewPass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\TransparentPass.cpp">

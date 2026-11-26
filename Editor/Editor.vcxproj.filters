@@ -73,6 +73,9 @@
     <ClInclude Include="source\include\AssetThumbnails.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\MaterialPreview.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\AssetImportPopup.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -183,6 +186,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\AssetThumbnails.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\MaterialPreview.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\AssetImportPopup.cpp">

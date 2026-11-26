@@ -8,6 +8,7 @@
 #include "ImguiLayout.h"
 #include "Sprite2DEditor.h"
 #include "AssetThumbnails.h"
+#include "MaterialPreview.h"
 #include "IconManager.h"
 
 #include <stdio.h>
@@ -490,6 +491,8 @@ int ImGuiMain()
 	// ==================== 清理 ====================
 	// 缩略图：先停掉后台任务（正在执行的等它做完），再等 GPU 空闲；贴图的描述符集在下面 TextureCache().Clear 里还回去
 	AssetThumbnails::Shutdown();
+	// 材质编辑器的实时预览：放掉输出贴图（描述符集同样在 TextureCache().Clear 里还回去）
+	MaterialPreview::Shutdown();
 	// 引擎先收尾：停掉帧循环 / 流水线 / 场景线程，释放渲染器和资产，执行完延迟销毁
 	editorApp->Shutdown();
 	err = vkDeviceWaitIdle(g_Device);

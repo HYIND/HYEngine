@@ -159,8 +159,11 @@ public:	//Camera
 	bool HasMainCameraEntity() const;
 
 public:	// 异步Command流，在每轮循环前统一处理
-	std::future<void> SubmitCommand(std::function<void()> command);
-	std::future<void> SubmitCommand(std::function<void(World&)> command);
+	// 命令用 std::move_only_function 存：可以捕获只能移动的对象（unique_ptr、promise 等）。
+	// 可拷贝的 lambda / std::function 照样能传（会拷贝或移动进来），调用方不用改。
+	// 两个重载按能不能用 () / (World&) 调用来区分，和原来 std::function 的行为一致
+	std::future<void> SubmitCommand(std::move_only_function<void()> command);
+	std::future<void> SubmitCommand(std::move_only_function<void(World&)> command);
 	void ProcessCommands();
 
 private:
@@ -198,7 +201,7 @@ private:
 private:
 	struct CommandTask
 	{
-		std::function<void()> command;
+		std::move_only_function<void()> command;
 		std::promise<void> promise;
 	};
 
