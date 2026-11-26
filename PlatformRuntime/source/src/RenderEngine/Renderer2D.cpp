@@ -1,7 +1,7 @@
 #include "vkstdafx.h"
 #include "RenderEngine/Renderer2D.h"
 
-#include "VulkanRenderEngine/General/VKRenderer2D.h"
+#include "VulkanRenderEngine/VKRenderer2D.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 
 namespace Render

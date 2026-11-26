@@ -3,7 +3,7 @@
 #include "Helper/DynamicFpsController.h"
 #include "Helper/TripleBuffer.h"
 #include "RenderEngine/RenderFrameData.h"
-#include "VulkanRenderEngine/VulkanRenderer.h"
+#include "VulkanRenderEngine/VKRenderer3D.h"
 
 #include <glm/glm.hpp>
 
@@ -28,8 +28,8 @@ namespace Render
         Renderer3D& operator=(const Renderer3D&) = delete;
 
         FrameBufferPtr GetFrameBuffer() const noexcept { return m_frames; }
-        void SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
-        std::shared_ptr<VulkanRenderer> GetVulkanRenderer() const;
+        void SetVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer);
+        std::shared_ptr<VKRenderer3D> GetVulkanRenderer() const;
 
         // 生命周期约定：
         //   Start / StopFrameLoop       - 只涉及帧消费线程；开销很小、可重复调用，后端不动。
@@ -72,7 +72,7 @@ namespace Render
         Scene3DRenderOption GetOption() const;
         void SetOption(Scene3DRenderOption option);
 
-        // 关掉后后端整帧不跑 3D 渲染图，帧数据也不再解析（见 VulkanRenderer::SetSceneRenderEnabled）
+        // 关掉后后端整帧不跑 3D 渲染图，帧数据也不再解析（见 VKRenderer3D::SetSceneRenderEnabled）
         void SetSceneRenderEnabled(bool enabled) noexcept { m_sceneRenderEnabled.store(enabled, std::memory_order_release); }
         bool IsSceneRenderEnabled() const noexcept { return m_sceneRenderEnabled.load(std::memory_order_acquire); }
 
@@ -82,11 +82,11 @@ namespace Render
         // 内部实现要求无锁；调用方已持有 m_lifecycleMutex。
         bool StartLocked();
         void StopFrameLoopLocked();
-        bool ResizeRenderTargetLocked(const std::shared_ptr<VulkanRenderer>& renderer,
+        bool ResizeRenderTargetLocked(const std::shared_ptr<VKRenderer3D>& renderer,
             uint32_t width, uint32_t height, const std::function<void()>& beforeResize);
 
         FrameBufferPtr m_frames;
-        std::shared_ptr<VulkanRenderer> m_vulkanRenderer;
+        std::shared_ptr<VKRenderer3D> m_vulkanRenderer;
         mutable std::mutex m_mutex;
         // 让 target 重建与帧循环的启动/停止互斥；等待消费线程收尾时不会持有它。
         std::mutex m_lifecycleMutex;

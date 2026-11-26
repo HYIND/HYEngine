@@ -17,7 +17,7 @@
 //   DDGI 开启        → 不补漫反射
 //   SSGI / RTGI 开启 → 两项都不补（路径追踪已经包含漫反射和镜面）
 //
-// 渲染图（见 VulkanRenderer::InitSceneRenderGraph）：
+// 渲染图（见 VKRenderer3D::InitSceneRenderGraph）：
 //   indirectDiffuseCombinNode     = DDGI          → indirectDiffuse_Output
 //   indirectSpecularCombinNode    = RTR + SSR     → indirectSpecular_Output
 //   indirectPathTracingCombinNode = RTGI + SSGI   → indirectPathTracing_Output

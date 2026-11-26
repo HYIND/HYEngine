@@ -41,32 +41,29 @@ struct alignas(16) camera_compData
     float fov = 80.f;
 };
 
-enum class RenderMode { Present = 0, Offscreen };
-
-class VulkanRenderer
+// 3D 渲染器（Renderer3D 的 Vulkan 后端）。引擎只提供离屏模式：每帧画到 finalColorBuffer，
+// 由宿主通过 WaitImage / FetchImage 取走后自己呈现（编辑器走 ImGui 窗口，游戏走 D3D11 交换链）。
+class VKRenderer3D
 {
 public:
-    // 提供CreateInstance扩展，用于创建vk实例，实例用于初始化VulkanRenderer
+    // 提供CreateInstance扩展，用于创建vk实例，实例用于初始化VKRenderer3D
     static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(const std::vector<std::string>& extensionNames);
     static std::shared_ptr<VKCore::VulkanInstance> CreateInstance(uint32_t extensionCount, const char** extensionNames);
 
-    static std::shared_ptr<VulkanRenderer> CreateForWindow(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool limitFrameRate = false);					// 创建窗口模式
-    static std::shared_ptr<VulkanRenderer> CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height);					// 创建离屏模式
+    static std::shared_ptr<VKRenderer3D> CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height);					// 创建离屏模式
 
     // 用于分段初始化
-    // 仅创建设备、不初始化交换链和渲染目标
-    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface);
-    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance);
-    static std::shared_ptr<VulkanRenderer> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions);
+    // 仅创建设备、不初始化渲染目标
+    static std::shared_ptr<VKRenderer3D> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance);
+    static std::shared_ptr<VKRenderer3D> CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions);
 
     // 分段初始化
-    // 初始化交换链和渲染目标
-    static bool CreateForWindow_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height, bool limitFrameRate = false);
-    static bool CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height);
+    // 初始化渲染目标
+    static bool CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& renderer, uint32_t width, uint32_t height);
 
 public:
-    VulkanRenderer();
-    ~VulkanRenderer();
+    VKRenderer3D();
+    ~VKRenderer3D();
 
     glm::u32vec2 GetSize() const;
     uint32_t GetWidth() const;
@@ -96,9 +93,7 @@ public:
 
 public:
     std::shared_ptr<VKCore::VulkanInstance> GetVulkanInstance() const;
-    std::shared_ptr<VKCore::VulkanSurface> GetVulkanSurface() const;
     std::shared_ptr<VKCore::VulkanDevice> GetVulkanDevice() const;
-    std::shared_ptr<VKCore::VulkanSwapchain> GetVulkanSwapchain() const;
 
     // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
     std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
@@ -107,7 +102,6 @@ public:
     const std::shared_ptr<RenderProfilerChannel>& GetRenderProfiler() const { return _renderProfiler; }
 
 private:
-    void InitForWindow(uint32_t width, uint32_t height);
     void InitForOffSceen(uint32_t width, uint32_t height);
     void Init_Internal();
 
@@ -140,8 +134,6 @@ private:
     void DrawOffScreen(const std::shared_ptr<FrameData>& data);
     void DrawEmptyFrame(const std::shared_ptr<FrameData>& data);
 
-    void PresentImage(std::shared_ptr<FrameData>& data);
-
 private:
     void ResolveFrameHistory(const std::shared_ptr<FrameData>& data);
 
@@ -160,14 +152,6 @@ private:
 
     std::shared_ptr<VKCore::VulkanInstance> _vulkanInstance;
     std::shared_ptr<VKCore::VulkanDevice> _vulkanDevice;
-
-    RenderMode _mode;
-
-    // ForWindow
-    std::shared_ptr<VKCore::VulkanSurface> _vulkanSurface;
-    std::shared_ptr<VKCore::VulkanSwapchain> _vulkanSwapchain;
-    std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _imageAcquiredSemaphores;
-    std::vector<std::shared_ptr<VKWrapper::VKSemaphore>> _renderFinishedSemaphores;
 
 
     //// FirstPersonLayer
@@ -189,8 +173,6 @@ private:
         uint32_t frameIndex = 0;
         float prevEV100 = 1.0f;
     }_record;
-
-    bool needFlipFinalY = false;
 
     std::unique_ptr<RenderGraph::Graph> _sceneRenderGraph;
 

@@ -187,7 +187,6 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\RayTraceGeneralData.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderHelper.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext2D.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderer2D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderState.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\SegmentBufferBase.h" />
@@ -240,6 +239,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanOutput.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSurface.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKCore\VulkanSwapchain.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer2D.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\BaseVKImage.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\SharedImage.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VKCommandBuffer.h" />
@@ -254,7 +254,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaBuffer.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\VmaImage.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\VKWrapper\WrapperGeneral.h" />
-    <ClInclude Include="source\include\VulkanRenderEngine\VulkanRenderer.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer3D.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
@@ -297,7 +297,6 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\ImageLayoutWrapper.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\IndirectDrawManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelper.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\General\VKRenderer2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TemporalAccumulate.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\TAAFilter.cpp" />
@@ -345,6 +344,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanInstance.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSurface.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKCore\VulkanSwapchain.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer2D.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\BaseVKImage.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\SharedImage.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKCommandBuffer.cpp" />
@@ -358,7 +358,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaBuffer.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VmaImage.cpp" />
     <ClCompile Include="header_only_impl.cpp" />
-    <ClCompile Include="source\src\VulkanRenderEngine\VulkanRenderer.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer3D.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source\include\VulkanRenderEngine\General\SegmentBufferManager.inl" />

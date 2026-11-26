@@ -23,7 +23,7 @@ Renderer::Renderer()
 
 Render::Renderer::~Renderer() = default;
 
-void Renderer::SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer)
+void Renderer::SetVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer)
 {
 	if (!_renderer3D)
 		return;

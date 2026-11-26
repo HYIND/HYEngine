@@ -82,7 +82,7 @@ namespace Render
         Shutdown();
     }
 
-    void Renderer3D::SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer)
+    void Renderer3D::SetVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer)
     {
         std::lock_guard lock(m_mutex);
         m_vulkanRenderer = std::move(renderer);
@@ -90,7 +90,7 @@ namespace Render
             m_option = m_vulkanRenderer->GetOption();
     }
 
-    std::shared_ptr<VulkanRenderer> Renderer3D::GetVulkanRenderer() const
+    std::shared_ptr<VKRenderer3D> Renderer3D::GetVulkanRenderer() const
     {
         std::lock_guard lock(m_mutex);
         return m_vulkanRenderer;
@@ -162,7 +162,7 @@ namespace Render
 
         // 首个 target：宿主只建了设备，此时还没有交换链和 target。
         if (renderer->GetWidth() == 0 || renderer->GetHeight() == 0)
-            return VulkanRenderer::CreateForOffScreen_Target(renderer, width, height);
+            return VKRenderer3D::CreateForOffScreen_Target(renderer, width, height);
 
         return ResizeRenderTargetLocked(renderer, width, height, {});
     }
@@ -183,7 +183,7 @@ namespace Render
 
         if (renderer->GetWidth() == 0 || renderer->GetHeight() == 0)
         {
-            if (!VulkanRenderer::CreateForOffScreen_Target(renderer, width, height))
+            if (!VKRenderer3D::CreateForOffScreen_Target(renderer, width, height))
                 return false;
             if (beforeResize)
                 beforeResize();
@@ -193,7 +193,7 @@ namespace Render
         return ResizeRenderTargetLocked(renderer, width, height, beforeResize);
     }
 
-    bool Renderer3D::ResizeRenderTargetLocked(const std::shared_ptr<VulkanRenderer>& renderer,
+    bool Renderer3D::ResizeRenderTargetLocked(const std::shared_ptr<VKRenderer3D>& renderer,
         uint32_t width, uint32_t height, const std::function<void()>& beforeResize)
     {
         // 后端拆除 target 之前，帧消费者和分发线程都必须已经停下：否则仍可能有一帧被

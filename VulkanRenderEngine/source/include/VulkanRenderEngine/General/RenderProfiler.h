@@ -42,7 +42,6 @@ enum class RenderProfileStep : uint32_t
 	Bloom,
 	PostProcess,
 	Finish,
-	Present,
 	Count
 };
 
@@ -65,7 +64,6 @@ inline const char* RenderProfileStepName(RenderProfileStep step)
 	case RenderProfileStep::Bloom:					return "Bloom";
 	case RenderProfileStep::PostProcess:			return "PostProcess";
 	case RenderProfileStep::Finish:					return "FinishRendering";
-	case RenderProfileStep::Present:				return "Present";
 	default:										return "?";
 	}
 }
@@ -80,7 +78,6 @@ inline const char* RenderProfileStepTip(RenderProfileStep step)
 	case RenderProfileStep::PreSubmit:		return "PreCalculate 与 Skinned 录完后的 SubmitNowAndWait，含 GPU 执行";
 	case RenderProfileStep::ClearTargets:	return "清 sceneColorBuffer / firstPersonColorBuffer 并等待";
 	case RenderProfileStep::SceneGraph:		return "SceneRenderGraph::Execute 整体，展开看每个 Pass";
-	case RenderProfileStep::Present:		return "窗口模式下的 Present（离屏模式为 0）";
 	default:								return nullptr;
 	}
 }
@@ -116,7 +113,7 @@ struct RenderFrameProfile
 	uint32_t frameIndex = 0;
 	int64_t pushTimeUs = 0;				// 进入队列（PushFrameState）的时刻
 	int64_t startTimeUs = 0;			// 被 ExecuteLoop 取走的时刻
-	int64_t endTimeUs = 0;				// Present 完成的时刻
+	int64_t endTimeUs = 0;				// 画完、放进完成队列的时刻
 
 	std::array<int64_t, size_t(RenderProfileStep::Count)> steps{};
 
@@ -125,7 +122,7 @@ struct RenderFrameProfile
 
 	void Add(RenderProfileStep step, int64_t us) { steps[size_t(step)] += us; }
 	int64_t Step(RenderProfileStep step) const { return steps[size_t(step)]; }
-	// 单帧耗时：从被取走到 Present 完成（多帧并行时各帧会重叠）
+	// 单帧耗时：从被取走到画完（多帧并行时各帧会重叠）
 	int64_t TotalUs() const { return endTimeUs > startTimeUs ? endTimeUs - startTimeUs : 0; }
 };
 

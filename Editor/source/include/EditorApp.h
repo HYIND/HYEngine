@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "ECSCore/World.h"
-#include "VulkanRenderEngine/VulkanRenderer.h"
+#include "VulkanRenderEngine/VKRenderer3D.h"
 #include "RenderEngine/RenderFrameData.h"
 #include "CommonSystems.h"
 #include "CommonData/LightData.h"

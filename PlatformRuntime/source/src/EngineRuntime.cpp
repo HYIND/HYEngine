@@ -360,7 +360,7 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 	}
 
 	// 引擎拥有实例与设备；窗口和交换链不属于引擎，这里只建设备。
-	auto instance = VulkanRenderer::CreateInstance(desc.instanceExtensions);
+	auto instance = VKRenderer3D::CreateInstance(desc.instanceExtensions);
 	if (!instance)
 	{
 		if (error)
@@ -368,11 +368,11 @@ bool EngineRuntime::CreateRenderContext(const EngineRenderContextDesc& desc, std
 		return false;
 	}
 
-	std::shared_ptr<VulkanRenderer> renderer;
+	std::shared_ptr<VKRenderer3D> renderer;
 	if (desc.width > 0 && desc.height > 0)
-		renderer = VulkanRenderer::CreateForOffScreen(instance, desc.width, desc.height);
+		renderer = VKRenderer3D::CreateForOffScreen(instance, desc.width, desc.height);
 	else
-		renderer = VulkanRenderer::CreateOnlyDevice(instance, desc.deviceExtensions);
+		renderer = VKRenderer3D::CreateOnlyDevice(instance, desc.deviceExtensions);
 
 	if (!renderer)
 	{
@@ -806,7 +806,7 @@ bool EngineRuntime::OpenScene(const std::shared_ptr<SceneCodec>& scene, const Sc
 	return opened;
 }
 
-void EngineRuntime::BindVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer)
+void EngineRuntime::BindVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer)
 {
 	if (!m_renderer)
 		return;

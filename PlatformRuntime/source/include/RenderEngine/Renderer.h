@@ -5,7 +5,7 @@
 #include "RenderEngine/Renderer2D.h"
 #include "RenderEngine/RendererUI.h"
 
-#include "VulkanRenderEngine/VulkanRenderer.h"
+#include "VulkanRenderEngine/VKRenderer3D.h"
 
 #include <atomic>
 #include <functional>
@@ -42,7 +42,7 @@ namespace Render
 		void SetUiEventSink(std::function<void(std::vector<UI::UiEvent>)> sink);
 		// 后端与生命周期：3D 的设备、目标、帧循环都由这里统一转发，宿主只面对这一层；
 		// UI 复用 3D 每帧产出的那张纹理，没有自己的目标、尺寸和格式。
-		void SetVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
+		void SetVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer);
 		bool CreateRenderTarget(uint32_t width, uint32_t height);
 		bool ResizeRenderTarget(uint32_t width, uint32_t height, const std::function<void()>& beforeResize = {});
 

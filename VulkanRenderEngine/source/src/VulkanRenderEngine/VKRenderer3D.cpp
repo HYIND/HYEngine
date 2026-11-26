@@ -1,5 +1,5 @@
 #include "vkstdafx.h"
-#include "VulkanRenderEngine/VulkanRenderer.h"
+#include "VulkanRenderEngine/VKRenderer3D.h"
 
 #include "VulkanRenderEngine/Base/GraphicsPipeline.h"
 
@@ -98,8 +98,8 @@ static std::shared_ptr<VKCore::VulkanDevice> CreateVKDevice(std::shared_ptr<VKCo
 	return vulkanDevice;
 }
 
-// 提供扩展，创建vk实例，实例用于初始化VulkanRenderer
-std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::CreateInstance(const std::vector<std::string>& extensionNames)
+// 提供扩展，创建vk实例，实例用于初始化VKRenderer3D
+std::shared_ptr<VKCore::VulkanInstance> VKRenderer3D::CreateInstance(const std::vector<std::string>& extensionNames)
 {
 	NeedVulkanBaseInitlized();
 	auto instance = std::make_shared<VKCore::VulkanInstance>();
@@ -112,7 +112,7 @@ std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::CreateInstance(const std
 	return instance;
 }
 
-std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::CreateInstance(uint32_t extensionCount, const char** extensionNames)
+std::shared_ptr<VKCore::VulkanInstance> VKRenderer3D::CreateInstance(uint32_t extensionCount, const char** extensionNames)
 {
 	std::vector<std::string> temp;
 	for (size_t i = 0; i < extensionCount; i++)
@@ -121,46 +121,7 @@ std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::CreateInstance(uint32_t 
 	return CreateInstance(temp);
 }
 
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForWindow(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface, uint32_t width, uint32_t height, bool limitFrameRate)
-{
-	if (!instance) return nullptr;
-
-	VKCONTEXT->SetInstance(instance);
-
-	VKCore::VulkanPhysicalDeviceInfo info;
-	if (!instance->GetSuitablePhysicalDevice(info, true, true, true, surface))
-	{
-		std::cout << std::format("[ CreateForWindow ] ERROR\nFailed to get suitable physical device\n");
-		return nullptr;
-	}
-
-	auto vulkanSurface = std::make_shared<VKCore::VulkanSurface>(instance, surface);
-
-	auto vulkanDevice = CreateVKDevice(instance, info);
-	if (!vulkanDevice)
-		return nullptr;
-
-	VKCONTEXT->SetDevice(vulkanDevice);
-
-	auto vulkanSwapchain = std::make_shared<VKCore::VulkanSwapchain>();
-
-	// 除了MaxFramesInFlight之外，交换链需要预留一张图处于呈现状态
-	// 故目标图像数量为MaxFramesInFlight + 1
-	if (auto result = vulkanSwapchain->Create(vulkanDevice, vulkanSurface, { width, height }, GlobalConfig::MaxFramesInFlight + 1, limitFrameRate); result != vk::Result::eSuccess)
-		return nullptr;
-
-	auto renderer = std::make_shared<VulkanRenderer>();
-	renderer->_vulkanInstance = instance;
-	renderer->_vulkanSurface = vulkanSurface;
-	renderer->_vulkanDevice = vulkanDevice;
-	renderer->_vulkanSwapchain = vulkanSwapchain;
-	renderer->_maxFramesInFlight = std::max(1u, std::min(GlobalConfig::MaxFramesInFlight, vulkanSwapchain->GetSwapchainImageCount() - 1));
-	renderer->InitForWindow(width, height);
-
-	return renderer;
-}
-
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height)
+std::shared_ptr<VKRenderer3D> VKRenderer3D::CreateForOffScreen(std::shared_ptr<VKCore::VulkanInstance> instance, uint32_t width, uint32_t height)
 {
 	if (!instance) return nullptr;
 
@@ -179,7 +140,7 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForOffScreen(std::shared_p
 
 	VKCONTEXT->SetDevice(vulkanDevice);
 
-	auto renderer = std::make_shared<VulkanRenderer>();
+	auto renderer = std::make_shared<VKRenderer3D>();
 	renderer->_vulkanInstance = instance;
 	renderer->_vulkanDevice = vulkanDevice;
 	renderer->_maxFramesInFlight = std::max(1u, GlobalConfig::MaxFramesInFlight);
@@ -188,36 +149,7 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateForOffScreen(std::shared_p
 	return renderer;
 }
 
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, VkSurfaceKHR surface)
-{
-	if (!instance) return nullptr;
-
-	VKCONTEXT->SetInstance(instance);
-
-	VKCore::VulkanPhysicalDeviceInfo info;
-	if (!instance->GetSuitablePhysicalDevice(info, true, true, true, surface))
-	{
-		std::cout << std::format("[ CreateForWindow ] ERROR\nFailed to get suitable physical device\n");
-		return nullptr;
-	}
-
-	auto vulkanSurface = std::make_shared<VKCore::VulkanSurface>(instance, surface);
-
-	auto vulkanDevice = CreateVKDevice(instance, info);
-	if (!vulkanDevice)
-		return nullptr;
-
-	VKCONTEXT->SetDevice(vulkanDevice);
-
-	auto renderer = std::make_shared<VulkanRenderer>();
-	renderer->_vulkanInstance = instance;
-	renderer->_vulkanSurface = vulkanSurface;
-	renderer->_vulkanDevice = vulkanDevice;
-
-	return renderer;
-}
-
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions)
+std::shared_ptr<VKRenderer3D> VKRenderer3D::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance, const std::vector<std::string>& extraDeviceExtensions)
 {
 	if (!instance) return nullptr;
 
@@ -236,14 +168,14 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr
 
 	VKCONTEXT->SetDevice(vulkanDevice);
 
-	auto renderer = std::make_shared<VulkanRenderer>();
+	auto renderer = std::make_shared<VKRenderer3D>();
 	renderer->_vulkanInstance = instance;
 	renderer->_vulkanDevice = vulkanDevice;
 
 	return renderer;
 }
 
-std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance)
+std::shared_ptr<VKRenderer3D> VKRenderer3D::CreateOnlyDevice(std::shared_ptr<VKCore::VulkanInstance> instance)
 {
 	if (!instance) return nullptr;
 
@@ -262,27 +194,14 @@ std::shared_ptr<VulkanRenderer> VulkanRenderer::CreateOnlyDevice(std::shared_ptr
 
 	VKCONTEXT->SetDevice(vulkanDevice);
 
-	auto renderer = std::make_shared<VulkanRenderer>();
+	auto renderer = std::make_shared<VKRenderer3D>();
 	renderer->_vulkanInstance = instance;
 	renderer->_vulkanDevice = vulkanDevice;
 
 	return renderer;
 }
 
-bool VulkanRenderer::CreateForWindow_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height, bool limitFrameRate)
-{
-	auto vulkanSwapchain = std::make_shared<VKCore::VulkanSwapchain>();
-
-	if (auto result = vulkanSwapchain->Create(renderer->_vulkanDevice, renderer->_vulkanSurface, { width, height }, std::max(2u, GlobalConfig::MaxFramesInFlight + 1), limitFrameRate); result != vk::Result::eSuccess)
-		return false;
-
-	renderer->_vulkanSwapchain = vulkanSwapchain;
-	renderer->_maxFramesInFlight = std::max(1u, std::min(GlobalConfig::MaxFramesInFlight, vulkanSwapchain->GetSwapchainImageCount() - 1));
-	renderer->InitForWindow(width, height);
-	return true;
-}
-
-bool VulkanRenderer::CreateForOffScreen_Target(std::shared_ptr<VulkanRenderer>& renderer, uint32_t width, uint32_t height)
+bool VKRenderer3D::CreateForOffScreen_Target(std::shared_ptr<VKRenderer3D>& renderer, uint32_t width, uint32_t height)
 {
 	renderer->_maxFramesInFlight = std::max(1u, GlobalConfig::MaxFramesInFlight);
 	renderer->InitForOffSceen(width, height);
@@ -334,52 +253,27 @@ namespace
 	}
 }
 
-VulkanRenderer::VulkanRenderer()
+VKRenderer3D::VKRenderer3D()
 	:_frameTaskPool(std::max(std::max(1u, GlobalConfig::MaxFramesInFlight), std::thread::hardware_concurrency()))
 {
 	scr_width = 0;
 	scr_height = 0;
 }
 
-VulkanRenderer::~VulkanRenderer()
+VKRenderer3D::~VKRenderer3D()
 {}
 
-void VulkanRenderer::InitForWindow(uint32_t width, uint32_t height)
-{
-	width = std::max(1u, width);
-	height = std::max(1u, height);
-
-	scr_width = width;
-	scr_height = height;
-
-	_mode = RenderMode::Present;
-
-	Init_Internal();
-
-	_imageAcquiredSemaphores.clear();
-	_renderFinishedSemaphores.clear();
-	for (uint32_t i = 0; i < _vulkanSwapchain->GetSwapchainImageCount(); i++)
-	{
-		_imageAcquiredSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
-		_renderFinishedSemaphores.push_back(std::move(std::make_shared<VKWrapper::VKBinarySemaphore>(_vulkanDevice.get())));
-	}
-
-	InitRenderGraph();
-}
-
-void VulkanRenderer::InitForOffSceen(uint32_t width, uint32_t height)
+void VKRenderer3D::InitForOffSceen(uint32_t width, uint32_t height)
 {
 	scr_width = width;
 	scr_height = height;
-
-	_mode = RenderMode::Offscreen;
 
 	Init_Internal();
 
 	InitRenderGraph();
 }
 
-void VulkanRenderer::Init_Internal()
+void VKRenderer3D::Init_Internal()
 {
 	// 与分辨率无关，只创建一次；互相独立，并行构造（见 PassConstructPool）
 	{
@@ -412,7 +306,7 @@ void VulkanRenderer::Init_Internal()
 	InitRenderTarget();
 }
 
-void VulkanRenderer::InitRenderTarget()
+void VKRenderer3D::InitRenderTarget()
 {
 	_renderTargets.clear();
 
@@ -455,54 +349,46 @@ void VulkanRenderer::InitRenderTarget()
 
 }
 
-std::shared_ptr<VKCore::VulkanInstance> VulkanRenderer::GetVulkanInstance() const {
+std::shared_ptr<VKCore::VulkanInstance> VKRenderer3D::GetVulkanInstance() const {
 	return _vulkanInstance;
 }
 
-std::shared_ptr<VKCore::VulkanSurface> VulkanRenderer::GetVulkanSurface() const {
-	return _vulkanSurface;
-}
-
-std::shared_ptr<VKCore::VulkanDevice> VulkanRenderer::GetVulkanDevice() const {
+std::shared_ptr<VKCore::VulkanDevice> VKRenderer3D::GetVulkanDevice() const {
 	return _vulkanDevice;
 }
 
-std::shared_ptr<VKCore::VulkanSwapchain> VulkanRenderer::GetVulkanSwapchain() const {
-	return _vulkanSwapchain;
-}
-
-std::shared_ptr<DDGIDebugChannel> VulkanRenderer::GetDDGIDebugChannel()
+std::shared_ptr<DDGIDebugChannel> VKRenderer3D::GetDDGIDebugChannel()
 {
 	if (!_ddgiDebugChannel)
 		_ddgiDebugChannel = std::make_shared<DDGIDebugChannel>();
 	return _ddgiDebugChannel;
 }
 
-glm::u32vec2 VulkanRenderer::GetSize() const {
+glm::u32vec2 VKRenderer3D::GetSize() const {
 	return glm::u32vec2{ scr_width,scr_height };
 }
 
-uint32_t VulkanRenderer::GetWidth() const
+uint32_t VKRenderer3D::GetWidth() const
 {
 	return scr_width;
 }
 
-uint32_t VulkanRenderer::GetHeight() const
+uint32_t VKRenderer3D::GetHeight() const
 {
 	return scr_height;
 }
 
-Scene3DRenderOption VulkanRenderer::GetOption() const
+Scene3DRenderOption VKRenderer3D::GetOption() const
 {
 	return _option;
 }
 
-void VulkanRenderer::SetOption(Scene3DRenderOption option)
+void VKRenderer3D::SetOption(Scene3DRenderOption option)
 {
 	_option = option;
 }
 
-void VulkanRenderer::Resize(uint32_t width, uint32_t height)
+void VKRenderer3D::Resize(uint32_t width, uint32_t height)
 {
 	width = std::max(1u, width);
 	height = std::max(1u, height);
@@ -518,21 +404,17 @@ void VulkanRenderer::Resize(uint32_t width, uint32_t height)
 	while (!_doneFrames.empty())
 		_doneFrames.pop();
 
-	// 只做和分辨率有关的事：重建每个在途帧的 render target，按新尺寸重建渲染图（复用 Pass，不重新编译 shader）。
-	// 窗口模式和原来一样不处理（交换链重建走 VulkanSwapchain）
-	if (_mode == RenderMode::Offscreen)
-	{
-		scr_width = width;
-		scr_height = height;
-		InitRenderTarget();
-		InitSceneRenderGraph();
-	}
+	// 只做和分辨率有关的事：重建每个在途帧的 render target，按新尺寸重建渲染图（复用 Pass，不重新编译 shader）
+	scr_width = width;
+	scr_height = height;
+	InitRenderTarget();
+	InitSceneRenderGraph();
 
 	if (needRestartup)
 		Run();
 }
 
-void VulkanRenderer::InitRenderGraph()
+void VKRenderer3D::InitRenderGraph()
 {
 	InitSceneRenderGraph();
 }
@@ -640,7 +522,7 @@ private:
 	std::unique_ptr<RenderGraph::Graph>& _graph;
 };
 
-void VulkanRenderer::InitSceneRenderGraph()
+void VKRenderer3D::InitSceneRenderGraph()
 {
 	static auto MakeConbinIndirectLightingPass = []()-> auto {
 
@@ -1565,7 +1447,7 @@ void VulkanRenderer::InitSceneRenderGraph()
 		P.ForEach([&](RenderPassBase& pass) { pass.OnResize(width, height); });
 }
 
-void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 {
 	if (!data)
 		return;
@@ -1672,7 +1554,7 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 		RenderProfileScope scope(profile, RenderProfileStep::PostProcess);
 		_globalPostProcessPass->Draw(
 			renderTarget->finalColorBuffer, renderTarget->combinColorBuffer, renderTarget->bloomMipBuffers[0],
-			option.flags.bloomOn, option.flags.gammaOn, needFlipFinalY,
+			option.flags.bloomOn, option.flags.gammaOn, false,
 			pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
 		);
 	}
@@ -1687,7 +1569,7 @@ void VulkanRenderer::DrawOffScreen(const std::shared_ptr<FrameData>& data)
 
 }
 
-void VulkanRenderer::DrawEmptyFrame(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::DrawEmptyFrame(const std::shared_ptr<FrameData>& data)
 {
 	if (!data || !data->state || !data->sync)
 		return;
@@ -1718,61 +1600,7 @@ void VulkanRenderer::DrawEmptyFrame(const std::shared_ptr<FrameData>& data)
 	data->sync->curframeTimeLine->Signal(std::numeric_limits<uint32_t>::max() / 2u);
 }
 
-void VulkanRenderer::PresentImage(std::shared_ptr<FrameData>& data)
-{
-	auto& state = data->state;
-	auto& renderTarget = data->renderTarget;
-
-	uint32_t semaphoreIndex = state->renderRecord.frameIndex % _vulkanSwapchain->GetSwapchainImageCount();
-	auto& imageAcquiredSemaphore = _imageAcquiredSemaphores[semaphoreIndex];
-	auto& renderFinishedSemaphore = _renderFinishedSemaphores[semaphoreIndex];
-
-	//获取交换链图像索引
-	uint32_t imageIndex = 0;
-	_vulkanSwapchain->SwapImage(*imageAcquiredSemaphore, imageIndex);
-	auto swapchainImage = _vulkanSwapchain->SwapchainImage()[imageIndex];
-
-	auto cmd = VKCONTEXT->GetCommandBuffer();
-
-	vk::ImageMemoryBarrier barrier;
-	barrier
-		.setOldLayout(vk::ImageLayout::eUndefined)
-		.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-		.setImage(swapchainImage)
-		.setSubresourceRange(vk::ImageSubresourceRange()
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseMipLevel(0)
-			.setLevelCount(1)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1));
-
-	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, barrier, vk::DependencyFlagBits::eByRegion);
-
-	Texture2D::BlitImageAsync(cmd, *renderTarget->finalColorBuffer, swapchainImage, scr_width, scr_height, vk::Filter::eNearest);
-
-	vk::ImageMemoryBarrier presentBarrier;
-	presentBarrier
-		.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-		.setNewLayout(vk::ImageLayout::ePresentSrcKHR)
-		.setImage(swapchainImage)
-		.setSubresourceRange(vk::ImageSubresourceRange()
-			.setAspectMask(vk::ImageAspectFlagBits::eColor)
-			.setBaseMipLevel(0)
-			.setLevelCount(1)
-			.setBaseArrayLayer(0)
-			.setLayerCount(1));
-
-	cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, presentBarrier, vk::DependencyFlagBits::eByRegion);
-
-	auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
-	CmdSyncSeamphore syncData{ .waitSemaphores = {{imageAcquiredSemaphore}}, .signalSemaphores = {SignalSemaphoreData{.semaphore = renderFinishedSemaphore}} };
-	cmd->SubmitNow(syncData, fence);
-	_vulkanSwapchain->PresentImage(*renderFinishedSemaphore, imageIndex);
-	fence->Wait();
-
-}
-
-camera_compData VulkanRenderer::BuildCameraCompData(const RenderState& state) const
+camera_compData VKRenderer3D::BuildCameraCompData(const RenderState& state) const
 {
 	const auto& camera = state.camera;
 
@@ -1797,7 +1625,7 @@ camera_compData VulkanRenderer::BuildCameraCompData(const RenderState& state) co
 	return cameraData;
 }
 
-void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 {
 	if (!data || !data->state)
 		return;
@@ -1869,7 +1697,7 @@ void VulkanRenderer::ResolveFrameHistory(const std::shared_ptr<FrameData>& data)
 	commit(skinnedRenderData.transparentItems);
 }
 
-void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
+void VKRenderer3D::SetupRenderState(const std::shared_ptr<FrameData>& data)
 {
 	auto& state = data->state;
 	auto cmd = VKCONTEXT->GetCommandBuffer();
@@ -1887,7 +1715,7 @@ void VulkanRenderer::SetupRenderState(const std::shared_ptr<FrameData>& data)
 	state->renderRecord.prevEV100 = _record.prevEV100;
 }
 
-void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
+void VKRenderer3D::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 {
 	std::unordered_set<Material*> willUpdateMaterials;
 	std::unordered_set<Mesh*> willUpdateMeshs;
@@ -1994,13 +1822,13 @@ void VulkanRenderer::SetupIndirectDrawData(std::shared_ptr<RenderState>& state)
 	}
 }
 
-void VulkanRenderer::FinishRendering(std::shared_ptr<RenderState>& state)
+void VKRenderer3D::FinishRendering(std::shared_ptr<RenderState>& state)
 {
 	_record.prevEV100 = state->option.postProcessParams.EV100;
 	state->renderRecord.frameEndMicroTimeStamp = Tool::GetTimestampMircoseconds();
 }
 
-void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
+void VKRenderer3D::PushFrameState(std::shared_ptr<RenderState>& state)
 {
 	if (!state)
 		return;
@@ -2020,13 +1848,13 @@ void VulkanRenderer::PushFrameState(std::shared_ptr<RenderState>& state)
 	_executeCV.NotifyOne();
 }
 
-bool VulkanRenderer::HasPendingFrameState()
+bool VKRenderer3D::HasPendingFrameState()
 {
 	LockGuard guard(_candidateFrameStatesMutex);
 	return !_candidateFrameStates.empty();
 }
 
-void VulkanRenderer::WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
+void VKRenderer3D::WaitImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
 {
 	do
 	{
@@ -2042,7 +1870,7 @@ void VulkanRenderer::WaitImage(const std::function<void(std::shared_ptr<Texture2
 	} while (true);
 }
 
-bool VulkanRenderer::FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
+bool VKRenderer3D::FetchImage(const std::function<void(std::shared_ptr<Texture2D>, std::shared_ptr<RenderState>)>& callback)
 {
 	LockGuard guard(_doneFramesMutex);
 	if (_doneFrames.empty())
@@ -2061,17 +1889,17 @@ bool VulkanRenderer::FetchImage(const std::function<void(std::shared_ptr<Texture
 	return true;
 }
 
-void VulkanRenderer::Run()
+void VKRenderer3D::Run()
 {
 	if (!_stop)
 		return;
 
 	_frameTaskPool.start();
 	_stop = false;
-	_exeLoopThread = std::make_shared<std::thread>(&VulkanRenderer::ExecuteLoop, this);
+	_exeLoopThread = std::make_shared<std::thread>(&VKRenderer3D::ExecuteLoop, this);
 }
 
-void VulkanRenderer::Stop()
+void VKRenderer3D::Stop()
 {
 	if (_stop)
 		return;
@@ -2097,9 +1925,9 @@ void VulkanRenderer::Stop()
 	}
 }
 
-void VulkanRenderer::ExecuteLoop()
+void VKRenderer3D::ExecuteLoop()
 {
-	SetThreadDescription(GetCurrentThread(), L"VulkanRenderer::ExecuteLoop");
+	SetThreadDescription(GetCurrentThread(), L"VKRenderer3D::ExecuteLoop");
 
 	while (!_stop || !_runningFrames.empty())
 	{
@@ -2176,11 +2004,6 @@ void VulkanRenderer::ExecuteLoop()
 			auto data = std::move(_runningFrames.front());
 			_runningFrames.pop();
 			RenderFrameProfile* profile = (data->state && data->state->profile) ? data->state->profile.get() : nullptr;
-			if (_mode == RenderMode::Present)
-			{
-				RenderProfileScope scope(profile, RenderProfileStep::Present);
-				PresentImage(data);
-			}
 			if (profile)
 			{
 				profile->endTimeUs = RenderProfileNowUs();
@@ -2208,6 +2031,6 @@ void VulkanRenderer::ExecuteLoop()
 	}
 }
 
-uint32_t VulkanRenderer::GetMaxFramesInFlight() const {
+uint32_t VKRenderer3D::GetMaxFramesInFlight() const {
 	return _maxFramesInFlight;
 }

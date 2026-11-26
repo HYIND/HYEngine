@@ -26,7 +26,7 @@ class AudioDevice;
 class EngineInputContext;
 class SceneCodec;
 namespace Render { class Renderer; class Renderer3D; class Renderer2D; }
-class VulkanRenderer;
+class VKRenderer3D;
 
 enum class EngineHostType : uint32_t
 {
@@ -183,7 +183,7 @@ public:
 
 private:
 	void RegisterBaseSystems(World& world);
-	void BindVulkanRenderer(std::shared_ptr<VulkanRenderer> renderer);
+	void BindVulkanRenderer(std::shared_ptr<VKRenderer3D> renderer);
 	void SceneThreadLoop();
 	// 查到的 meta 是否是可用的图像：类型是 Sprite / Texture / AnimatedImage 且能加载出贴图 / 帧；无效时 why 写原因
 	Render2D::ImageSource LoadImageAsset(const AssetMeta& meta, std::string& why);

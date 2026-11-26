@@ -158,9 +158,6 @@
     <ClInclude Include="source\include\VulkanRenderEngine\VKContext.h">
       <Filter>头文件\VulkanRenderEngine</Filter>
     </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\VulkanRenderer.h">
-      <Filter>头文件\VulkanRenderEngine</Filter>
-    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\DependencySolver.h">
       <Filter>头文件\VulkanRenderEngine\RenderGraph</Filter>
     </ClInclude>
@@ -201,9 +198,6 @@
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderContext2D.h">
-      <Filter>头文件\VulkanRenderEngine\General</Filter>
-    </ClInclude>
-    <ClInclude Include="source\include\VulkanRenderEngine\General\VKRenderer2D.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderItem.h">
@@ -410,6 +404,12 @@
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture3D.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer2D.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\VKRenderer3D.h">
+      <Filter>头文件\VulkanRenderEngine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -505,9 +505,6 @@
     <ClCompile Include="source\src\VulkanRenderEngine\VKWrapper\VKSampler.cpp">
       <Filter>源文件\VulkanRenderEngine\VKWrapper</Filter>
     </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\VulkanRenderer.cpp">
-      <Filter>源文件\VulkanRenderEngine</Filter>
-    </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\VKContext.cpp">
       <Filter>源文件\VulkanRenderEngine</Filter>
     </ClCompile>
@@ -551,9 +548,6 @@
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\RenderHelper.cpp">
-      <Filter>源文件\VulkanRenderEngine\General</Filter>
-    </ClCompile>
-    <ClCompile Include="source\src\VulkanRenderEngine\General\VKRenderer2D.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\LightingPass.cpp">
@@ -702,6 +696,12 @@
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\Texture3D.cpp">
       <Filter>源文件\VulkanRenderEngine\Base</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer3D.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\VKRenderer2D.cpp">
+      <Filter>源文件\VulkanRenderEngine</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

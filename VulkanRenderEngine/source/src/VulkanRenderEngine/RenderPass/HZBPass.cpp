@@ -467,6 +467,9 @@ void HZBPass::GetOcclusionCulling(const std::shared_ptr<VKWrapper::VKCommandBuff
 	_occlusionCullShader->Bind(cmd, occlusionCullShaderBinding);
 	cmd->dispatch((allAabbs.size() + GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y - 1) / (GlobalConfig::Global_WorkSize_X * GlobalConfig::Global_WorkSize_Y), 1, 1);
 
+	// 剔除结果由 compute 写入，回读拷贝（transfer）之前要等写完并可见
+	result_ssbo->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::TransferRead);
+
 	// 内含隐式Submit
 	result_ssbo->GetBuffer()->Readback(cmd, cullResult.data(), cullResult.size() * sizeof(int));
 	std::copy(cullResult.begin(), cullResult.end(), frustumOcclusionCullResult.begin());
