@@ -62,17 +62,18 @@ private:
 		uint32_t indexCount = 0;
 		uint32_t firstIndex = 0;
 		int32_t vertexOffset = 0;
-		std::shared_ptr<Material> material;
+		uint32_t meshInfoIndex = 0;		// 材质不缓存（缓存持有材质会让它和贴图一直活着，占着 bindless 槽位），用时按下标从模型取
 	};
 
 	struct ModelGeometry
 	{
+		std::weak_ptr<StaticModel> owner;	// 不持有模型：模型释放后这一项作废；地址被新模型复用时也能认出来
 		uint32_t version = 0;
 		float localRadius = 0.0f;		// 局部空间包围半径（剔除用）
 		std::vector<ModelSubMeshGeometry> subMeshes;
 	};
 
-	// 自定义模型的几何区间缓存（跨帧，按子网格版本失效）
+	// 自定义模型的几何区间缓存（跨帧，按子网格版本失效；模型释放后的项每帧开头清掉）
 	const ModelGeometry* GetModelGeometry(const std::shared_ptr<StaticModel>& model);
 	std::unordered_map<const StaticModel*, ModelGeometry> _modelGeometries;
 

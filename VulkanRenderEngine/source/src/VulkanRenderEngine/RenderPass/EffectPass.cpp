@@ -273,15 +273,19 @@ const EffectPass::ModelGeometry* EffectPass::GetModelGeometry(const std::shared_
 			modelVersion += info.mesh->GetVerticesIndicesVsrsion();
 	}
 
+	// owner 失效：原来的模型已经释放、这个地址被新模型复用了，不能用旧的区间
 	auto cached = _modelGeometries.find(model.get());
-	if (cached == _modelGeometries.end() || cached->second.version != modelVersion)
+	if (cached == _modelGeometries.end() || cached->second.owner.expired() || cached->second.version != modelVersion)
 	{
 		ModelGeometry geometry;
+		geometry.owner = model;
 		geometry.version = modelVersion;
 		geometry.localRadius = MeshBoundRadius(model);
 
-		for (auto& info : model->GetMeshInfos())
+		auto& meshInfos = model->GetMeshInfos();
+		for (uint32_t infoIndex = 0; infoIndex < meshInfos.size(); ++infoIndex)
 		{
+			auto& info = meshInfos[infoIndex];
 			if (!info.mesh)
 				continue;
 
@@ -293,7 +297,7 @@ const EffectPass::ModelGeometry* EffectPass::GetModelGeometry(const std::shared_
 			subMesh.indexCount = meta.indexCount;
 			subMesh.firstIndex = meta.firstIndex;
 			subMesh.vertexOffset = meta.vertexOffset;
-			subMesh.material = info.material;
+			subMesh.meshInfoIndex = infoIndex;
 			geometry.subMeshes.push_back(std::move(subMesh));
 		}
 
@@ -307,6 +311,9 @@ void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderStat
 	auto& drawGroups = registry.Get<std::vector<DrawGroup>>("Groups");
 
 	auto indirectManager = IndirectDrawManager::Instance();
+
+	// 模型已经释放的缓存项清掉（切场景、切工程后不再用的自定义粒子模型）
+	std::erase_if(_modelGeometries, [](const auto& item) { return item.second.owner.expired(); });
 
 	if (!_unitMeshRegistered)
 	{
@@ -421,8 +428,13 @@ void EffectPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderStat
 				case ParticleMeshType::Custom:
 					if (const ModelGeometry* geometry = GetModelGeometry(renderInfo.model))
 					{
+						// 材质从模型现取：这一帧的 renderInfo 持有模型，指针在本帧内有效
+						auto& meshInfos = renderInfo.model->GetMeshInfos();
 						for (auto& subMesh : geometry->subMeshes)
-							subDraws.push_back(SubDraw{ subMesh.indexCount, subMesh.firstIndex, subMesh.vertexOffset, &subMesh.material, geometry->localRadius });
+						{
+							const std::shared_ptr<Material>* material = subMesh.meshInfoIndex < meshInfos.size() ? &meshInfos[subMesh.meshInfoIndex].material : nullptr;
+							subDraws.push_back(SubDraw{ subMesh.indexCount, subMesh.firstIndex, subMesh.vertexOffset, material, geometry->localRadius });
+						}
 					}
 					break;
 				default:
