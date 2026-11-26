@@ -374,6 +374,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\IBLImageBuilder.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\HDRIEnvironment.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\Base\Texture2DArray.h">
       <Filter>头文件\VulkanRenderEngine\Base</Filter>
     </ClInclude>
@@ -662,6 +665,9 @@
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\IBLImageBuilder.cpp">
+      <Filter>源文件\VulkanRenderEngine\General</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\General\HDRIEnvironment.cpp">
       <Filter>源文件\VulkanRenderEngine\General</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\Base\TextureGeneralDef.cpp">

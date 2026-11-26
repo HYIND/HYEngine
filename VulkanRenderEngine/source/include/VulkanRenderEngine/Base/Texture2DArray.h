@@ -44,6 +44,11 @@ public:
 	TextureConfig GetConfig() const;
 
 	void GenerateTextureMipMaps();
+
+	// 生成完内容后调一次：所有层、所有 mip 固定为 SHADER_READ_ONLY_OPTIMAL，之后可以在不同线程 / 不同帧同时采样，
+	// 写入、生成 mip、上传都会被拒绝（同 Texture2D::MakeSampledImmutable，见 BaseVKImage::MakeSampledImmutable）
+	bool MakeSampledImmutable();
+	bool IsSampledImmutable() const;
 public:
 	void TransitionLayout(
 		std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,

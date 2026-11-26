@@ -1,0 +1,85 @@
+#version 460 core
+
+// 经纬图（equirectangular）→ cube 的一个 mip 级（HDRIEnvironment 用）
+//   方向约定：Y 朝上；u = 0.5 对着 -Z，u 增大往 +X 转；v = 0 是正上方（+Y）
+//   cube 面方向和 cubeDiffuseGenerate.comp / cubePrefilterGenerate.comp 的 GetViewDirForCube 完全一致
+//   每个输出像素取 samplesPerAxis × samplesPerAxis 个子样本求平均（输出比源图小时相当于盒式滤波，不走样）
+
+#ifndef work_size_x
+#define work_size_x 16
+#endif
+#ifndef work_size_y
+#define work_size_y 16
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout (binding = 0, rgba16f) uniform writeonly image2DArray outputCube;
+layout (binding = 1) uniform sampler2D equirectMap;
+
+// 和 HDRIEnvironment.cpp 的 EquirectToCubeParams 一致
+layout (push_constant) uniform Params
+{
+    uint samplesPerAxis;
+    float maxValue;
+    uint pad0;
+    uint pad1;
+} pc;
+
+#ifndef PI_DEFINE
+#define PI_DEFINE
+const float PI = 3.14159265359;
+#endif
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    vec2 localRayXY = ndc;      // tan(45°) = 1
+
+    vec3 dir;
+    switch (face)
+    {
+        case 0: dir = vec3(1, localRayXY.y, -localRayXY.x); break;     // +X
+        case 1: dir = vec3(-1, localRayXY.y, localRayXY.x); break;     // -X
+        case 2: dir = vec3(localRayXY.x, 1, -localRayXY.y); break;     // +Y
+        case 3: dir = vec3(localRayXY.x, -1, localRayXY.y); break;     // -Y
+        case 4: dir = vec3(localRayXY.x, localRayXY.y, 1); break;      // +Z
+        case 5: dir = vec3(-localRayXY.x, localRayXY.y, -1); break;    // -Z
+        default: dir = vec3(localRayXY.x, localRayXY.y, 1); break;
+    }
+    return normalize(dir);
+}
+
+vec2 DirectionToEquirectUV(vec3 dir)
+{
+    float u = 0.5 + atan(dir.x, -dir.z) / (2.0 * PI);
+    float v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
+    return vec2(u, v);
+}
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputCube);
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    int face = int(gl_GlobalInvocationID.z);
+    if (coord.x >= arraySize.x || coord.y >= arraySize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    uint n = clamp(pc.samplesPerAxis, 1u, 8u);
+    vec3 color = vec3(0.0);
+    for (uint j = 0u; j < n; ++j)
+    {
+        for (uint i = 0u; i < n; ++i)
+        {
+            vec2 offset = (vec2(float(i), float(j)) + 0.5) / float(n);
+            vec2 uv = (vec2(coord) + offset) / vec2(arraySize.xy);
+            vec3 dir = GetViewDirForCube(uv, face);
+            color += textureLod(equirectMap, DirectionToEquirectUV(dir), 0.0).rgb;
+        }
+    }
+    color /= float(n * n);
+    color = clamp(color, vec3(0.0), vec3(pc.maxValue));
+
+    imageStore(outputCube, ivec3(coord, face), vec4(color, 1.0));
+}

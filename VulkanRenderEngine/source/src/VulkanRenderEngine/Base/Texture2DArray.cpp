@@ -336,6 +336,18 @@ void Texture2DArray::GenerateTextureMipMaps()
 		img->GenerateMipMaps();
 }
 
+bool Texture2DArray::MakeSampledImmutable()
+{
+	auto image = _image;
+	return image && image->MakeSampledImmutable();
+}
+
+bool Texture2DArray::IsSampledImmutable() const
+{
+	auto image = _image;
+	return image && image->IsSampledImmutable();
+}
+
 void Texture2DArray::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, ImageLayout::BindStage stage, ImageLayout::BindUsage usage, uint32_t level)
 {
 	if (!cmd) return;

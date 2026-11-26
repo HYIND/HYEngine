@@ -6,6 +6,11 @@
 //   跟着主光方向走的柔光箱高光，镜面部分用 Karis 的 EnvBRDFApprox 近似分离求和），
 //   不依赖场景的光照 SSBO、IBL 贴图和阴影图集；
 //   最后在这里做曝光 + ACES + gamma，直接输出可以显示的 LDR（RGBA8 UNORM，和编辑器缩略图约定一致）。
+//
+// 定义 PREVIEW_IBL 时（HDRIEnvironment）：环境光换成 IBL，公式和场景 lightingHelper.comp 的 CalculateIBLLightingSplit 一致：
+//   漫反射 = texture(辐照度, N) × albedo / π × (1 - metallic)；镜面 = textureLod(预过滤, R, roughness × (级数 - 1)) × (F0 × A + B)
+//   主光 / 轮廓光按开关叠加（HDRI 本身已经带了灯光）；输出不透明，Blend 材质在这里直接和背后的 HDRI 混合。
+//   push constant 的 params.y = 环境旋转（弧度），params.z = 环境亮度，params.w > 0.5 = 叠加直接光，keyLightDir.w = 背景 mip
 
 #include "shader/dataDef/MaterialTextureDef.comp"
 #include "shader/Helper/bdrfHelper.comp"
@@ -25,6 +30,21 @@ layout (push_constant) uniform PreviewParams
 } pc;
 
 layout (location = 0) out vec4 FragColor;
+
+#ifdef PREVIEW_IBL
+layout (set = 0, binding = 0) uniform samplerCube iblDiffuse;
+layout (set = 0, binding = 1) uniform samplerCube iblPrefilter;
+layout (set = 0, binding = 2) uniform sampler2D iblBrdfLUT;
+layout (set = 0, binding = 3) uniform samplerCube iblBackground;
+
+// 世界方向 → 环境贴图里的方向：环境绕 Y 轴转了 yaw，查表时把方向反着转回去
+vec3 ToEnvironment(vec3 dir)
+{
+	float s = sin(pc.params.y);
+	float c = cos(pc.params.y);
+	return vec3(c * dir.x - s * dir.z, dir.y, s * dir.x + c * dir.z);
+}
+#endif
 
 // ---------------- 摄影棚光照 ----------------
 const vec3 KEY_LIGHT_COLOR = vec3(1.00, 0.97, 0.92) * 3.2;
@@ -124,20 +144,51 @@ void main()
 	vec3 keyLightDir = normalize(pc.keyLightDir.xyz);
 	vec3 rimLightDir = normalize(pc.rimLightDir.xyz);
 
-	// 直接光
 	vec3 color = vec3(0.0);
+	vec3 F0 = mix(vec3(0.02), prop.albedo, prop.metallic);
+	vec3 R = reflect(-V, N);
+
+#ifdef PREVIEW_IBL
+	// 直接光（可选）
+	if (pc.params.w > 0.5)
+	{
+		color += DirectLight(N, V, keyLightDir, KEY_LIGHT_COLOR, prop);
+		color += DirectLight(N, V, rimLightDir, RIM_LIGHT_COLOR, prop);
+	}
+
+	// IBL
+	float environmentIntensity = max(pc.params.z, 0.0);
+	vec3 kdAlbedo;
+	CalcBDRFDiffuse(prop.albedo, prop.metallic, kdAlbedo);
+	vec3 iblDiffuseColor = texture(iblDiffuse, ToEnvironment(N)).rgb * kdAlbedo;
+	float prefilterLevel = prop.roughness * float(textureQueryLevels(iblPrefilter) - 1);
+	vec3 prefiltered = textureLod(iblPrefilter, ToEnvironment(R), prefilterLevel).rgb;
+	vec2 AB = texture(iblBrdfLUT, vec2(NdotV, prop.roughness)).xy;
+	vec3 iblSpecularColor = prefiltered * (F0 * AB.x + AB.y);
+	color += (iblDiffuseColor + iblSpecularColor) * environmentIntensity * prop.ambientOcclusion;
+#else
+	// 直接光
 	color += DirectLight(N, V, keyLightDir, KEY_LIGHT_COLOR, prop);
 	color += DirectLight(N, V, rimLightDir, RIM_LIGHT_COLOR, prop);
 
 	// 环境光（漫反射 + 镜面，F0 约定和 bdrfHelper 一致）
-	vec3 F0 = mix(vec3(0.02), prop.albedo, prop.metallic);
-	vec3 R = reflect(-V, N);
 	vec3 ambientDiffuse = EnvironmentColor(N, 1.0, keyLightDir) * prop.albedo * (1.0 - prop.metallic);
 	vec3 ambientSpecular = EnvironmentColor(R, prop.roughness, keyLightDir) * EnvBRDFApprox(F0, prop.roughness, NdotV);
 	color += (ambientDiffuse + ambientSpecular) * prop.ambientOcclusion;
+#endif
 
 	// 自发光
 	color += calculateEmission(material, FragTextureCoords);
+
+#ifdef PREVIEW_IBL
+	// 和背后的 HDRI 混合（在线性空间、色调映射之前，和背景 Pass 的结果一致），输出不透明
+	if (opacity < 1.0)
+	{
+		vec3 behind = textureLod(iblBackground, ToEnvironment(-V), pc.keyLightDir.w).rgb * environmentIntensity;
+		color = mix(behind, color, opacity);
+	}
+	opacity = 1.0;
+#endif
 
 	// 曝光 + 色调映射 + gamma
 	float exposure = pc.params.x > 0.0 ? pc.params.x : 1.0;

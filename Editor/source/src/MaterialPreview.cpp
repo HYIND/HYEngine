@@ -2,13 +2,20 @@
 
 #include "Sprite2DEditor.h"
 #include "VulkanRenderEngine/RenderPass/MaterialPreviewPass.h"
+#include "VulkanRenderEngine/General/HDRIEnvironment.h"
 #include "VulkanRenderEngine/Base/Material.h"
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "imgui.h"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <future>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -25,6 +32,9 @@ namespace
 
 	constexpr float kMinDistance = 2.2f;
 	constexpr float kMaxDistance = 10.0f;
+
+	// HDRI 放在工作目录（bin）下的这个文件夹里，打开材质编辑器时扫一次 *.hdr
+	constexpr const char* kHDRIDirectory = "HDRI";
 
 	// 每种网格自己的默认视角：
 	//   球体：侧上方一点，看得到高光和明暗过渡；
@@ -94,7 +104,10 @@ namespace
 		return a.shape == b.shape
 			&& a.yaw == b.yaw && a.pitch == b.pitch && a.distance == b.distance && a.fovY == b.fovY
 			&& a.lightYaw == b.lightYaw && a.lightPitch == b.lightPitch && a.lightFollowCamera == b.lightFollowCamera
-			&& a.exposure == b.exposure && a.supersample == b.supersample;
+			&& a.exposure == b.exposure && a.supersample == b.supersample
+			&& a.environment == b.environment && a.environmentYaw == b.environmentYaw
+			&& a.environmentIntensity == b.environmentIntensity && a.backgroundBlur == b.backgroundBlur
+			&& a.environmentDirectLights == b.environmentDirectLights;
 	}
 
 	bool Same(const Snapshot& a, const Snapshot& b)
@@ -103,10 +116,27 @@ namespace
 			&& a.textures == b.textures && a.size == b.size && SameView(a.view, b.view);
 	}
 
+	// 一张 HDRI：第一次选中时在后台线程生成（读文件 + IBLImageBuilder），生成好之前预览先用棋盘格 + 摄影棚灯光
+	struct EnvironmentEntry
+	{
+		std::string path;
+		std::string name;
+		std::shared_ptr<HDRIEnvironment> environment;
+		std::future<std::pair<std::shared_ptr<HDRIEnvironment>, std::string>> pending;
+		std::string error;
+		bool failed = false;
+
+		bool IsLoading() const { return pending.valid(); }
+	};
+
 	struct State
 	{
 		MaterialPreviewView view = DefaultView();
-		bool checker = true;
+
+		// 背景：-1 = 棋盘格（摄影棚灯光，不开 IBL），>= 0 = environments 里的 HDRI（IBL + HDRI 背景）
+		int environmentIndex = -1;
+		std::vector<EnvironmentEntry> environments;
+		bool environmentsScanned = false;
 
 		std::array<std::shared_ptr<Texture2D>, kRingSize> ring;
 		std::array<int, kRingSize> lastShownFrame{};		// 每张最后一次交给 ImGui 显示的帧号
@@ -123,6 +153,69 @@ namespace
 		return state;
 	}
 
+	void ScanEnvironments(State& state)
+	{
+		state.environmentsScanned = true;
+		namespace fs = std::filesystem;
+		std::error_code ec;
+		std::vector<fs::path> files;
+		for (fs::directory_iterator it(kHDRIDirectory, ec), end; !ec && it != end; it.increment(ec))
+		{
+			if (!it->is_regular_file(ec))
+				continue;
+			std::string extension = it->path().extension().string();
+			std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+			if (extension == ".hdr")
+				files.push_back(it->path());
+		}
+		std::sort(files.begin(), files.end());
+		for (const auto& file : files)
+		{
+			EnvironmentEntry entry;
+			entry.path = file.string();
+			entry.name = file.stem().string();
+			state.environments.push_back(std::move(entry));
+		}
+		// 默认用第一张 HDRI；文件夹里没有就是棋盘格
+		state.environmentIndex = state.environments.empty() ? -1 : 0;
+	}
+
+	// 选中的 HDRI：没开始生成就开始；后台生成完了收结果。返回已经可以用的环境（还没好 / 失败 / 棋盘格时为空）
+	std::shared_ptr<const HDRIEnvironment> UpdateEnvironment(State& state)
+	{
+		for (auto& entry : state.environments)
+		{
+			if (entry.IsLoading() && entry.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+			{
+				auto [environment, error] = entry.pending.get();
+				entry.environment = std::move(environment);
+				entry.failed = !entry.environment;
+				entry.error = std::move(error);
+			}
+		}
+
+		if (state.environmentIndex < 0 || state.environmentIndex >= static_cast<int>(state.environments.size()))
+			return nullptr;
+		EnvironmentEntry& entry = state.environments[state.environmentIndex];
+		if (!entry.environment && !entry.failed && !entry.IsLoading())
+		{
+			entry.pending = std::async(std::launch::async, [path = entry.path]()
+				{
+					std::string error;
+					auto environment = HDRIEnvironment::LoadFromFile(path, &error);
+					return std::make_pair(std::move(environment), std::move(error));
+				});
+		}
+		return entry.environment;
+	}
+
+	const EnvironmentEntry* SelectedEnvironment(const State& state)
+	{
+		if (state.environmentIndex < 0 || state.environmentIndex >= static_cast<int>(state.environments.size()))
+			return nullptr;
+		return &state.environments[state.environmentIndex];
+	}
+
 	void ReleaseImages(State& state)
 	{
 		for (auto& texture : state.ring)
@@ -134,6 +227,7 @@ namespace
 		state.lastShownFrame.fill(0);
 		state.current = -1;
 		state.hasLast = false;
+		state.last = Snapshot{};		// 快照里还拿着 HDRI 环境的引用
 		state.failed = false;
 	}
 
@@ -218,6 +312,12 @@ namespace
 		drawList->PopClipRect();
 	}
 
+	// HDRI 模式下没叠加摄影棚灯光时，右键拖动改为旋转环境
+	bool RightDragRotatesEnvironment(const State& state)
+	{
+		return state.environmentIndex >= 0 && !state.view.environmentDirectLights;
+	}
+
 	void HandleCanvasInput(State& state, bool hovered, bool active)
 	{
 		MaterialPreviewView& view = state.view;
@@ -229,6 +329,10 @@ namespace
 			{
 				view.yaw = WrapDegrees(view.yaw - io.MouseDelta.x * 0.4f);
 				view.pitch = std::clamp(view.pitch + io.MouseDelta.y * 0.4f, -85.0f, 85.0f);
+			}
+			else if (ImGui::IsMouseDown(ImGuiMouseButton_Right) && RightDragRotatesEnvironment(state))
+			{
+				view.environmentYaw = WrapDegrees(view.environmentYaw + io.MouseDelta.x * 0.5f);
 			}
 			else if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
 			{
@@ -248,6 +352,7 @@ namespace
 	{
 		MaterialPreviewView& view = state.view;
 		ImGui::PushID("MaterialPreviewToolbar");
+		const float itemWidth = std::max(80.0f, width * 0.55f);
 
 		static const char* kShapeNames[] = { "球体", "立方体", "平面" };
 		static_assert(std::size(kShapeNames) == static_cast<size_t>(MaterialPreviewShape::Count));
@@ -262,9 +367,63 @@ namespace
 				ApplyDefaultCamera(view);	// 换网格时换到它的默认视角（平面正视），灯光不动
 			}
 		}
-		ImGui::SameLine();
-		ImGui::Checkbox("棋盘格", &state.checker);
 
+		// ---- 背景 / 环境 ----
+		{
+			const EnvironmentEntry* selected = SelectedEnvironment(state);
+			const char* preview = selected ? selected->name.c_str() : "棋盘格";
+			ImGui::SetNextItemWidth(itemWidth);
+			if (ImGui::BeginCombo("背景", preview))
+			{
+				if (ImGui::Selectable("棋盘格", state.environmentIndex < 0))
+					state.environmentIndex = -1;
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("摄影棚灯光（主光 + 轮廓光 + 简单环境光），不开 IBL；透明部分看得到棋盘格。缩略图也是这个效果");
+				for (int i = 0; i < static_cast<int>(state.environments.size()); ++i)
+				{
+					const EnvironmentEntry& entry = state.environments[i];
+					std::string label = entry.name;
+					if (entry.IsLoading())
+						label += "（生成中…）";
+					else if (entry.failed)
+						label += "（失败）";
+					ImGui::PushID(i);
+					if (ImGui::Selectable(label.c_str(), state.environmentIndex == i))
+						state.environmentIndex = i;
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s\nHDRI 照明（IBL），HDRI 作为背景%s%s", entry.path.c_str(),
+							entry.failed ? "\n加载失败：" : "", entry.failed ? entry.error.c_str() : "");
+					ImGui::PopID();
+				}
+				if (state.environments.empty())
+					ImGui::TextDisabled("%s 文件夹里没有 .hdr 文件", kHDRIDirectory);
+				ImGui::EndCombo();
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("棋盘格：摄影棚灯光，不开 IBL\nHDRI：用 %s 文件夹里的 .hdr 生成 IBL 照明，并显示为背景", kHDRIDirectory);
+		}
+
+		const bool environmentMode = state.environmentIndex >= 0;
+		if (environmentMode)
+		{
+			ImGui::SetNextItemWidth(itemWidth);
+			ImGui::SliderFloat("环境旋转", &view.environmentYaw, -180.0f, 180.0f, "%.0f°");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("HDRI 绕竖直轴旋转（照明和背景一起转）。不叠加摄影棚灯光时，预览上右键拖动也是转它");
+			ImGui::SetNextItemWidth(itemWidth);
+			ImGui::DragFloat("环境亮度", &view.environmentIntensity, 0.01f, 0.0f, 16.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SetNextItemWidth(itemWidth);
+			ImGui::SliderFloat("背景模糊", &view.backgroundBlur, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("只影响背景显示，不影响照明");
+			ImGui::Checkbox("叠加摄影棚灯光", &view.environmentDirectLights);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("HDRI 本身已经带了光照；勾上后再加主光 + 轮廓光（方向用下面的灯光设置）");
+		}
+
+		// ---- 摄影棚灯光：HDRI 模式下没叠加时变灰 ----
+		const bool lightsUsed = !environmentMode || view.environmentDirectLights;
+		ImGui::BeginDisabled(!lightsUsed);
 		// 切换"跟随视角"时换算一下，灯光的实际方向保持不动
 		bool follow = view.lightFollowCamera;
 		if (ImGui::Checkbox("灯光跟随视角", &follow))
@@ -272,19 +431,40 @@ namespace
 			view.lightYaw = WrapDegrees(follow ? view.lightYaw - view.yaw : view.lightYaw + view.yaw);
 			view.lightFollowCamera = follow;
 		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("勾上时灯光水平角是相对视角的偏移：转动视角时灯光跟着转");
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(lightsUsed ? "勾上时灯光水平角是相对视角的偏移：转动视角时灯光跟着转" : "HDRI 模式下没有叠加摄影棚灯光，灯光设置不起作用");
 
-		const float itemWidth = std::max(80.0f, width * 0.55f);
 		ImGui::SetNextItemWidth(itemWidth);
 		ImGui::SliderFloat("灯光水平", &view.lightYaw, -180.0f, 180.0f, "%.0f°");
 		ImGui::SetNextItemWidth(itemWidth);
 		ImGui::SliderFloat("灯光高度", &view.lightPitch, -10.0f, 89.0f, "%.0f°");
+		ImGui::EndDisabled();
+
 		ImGui::SetNextItemWidth(itemWidth);
 		ImGui::DragFloat("曝光", &view.exposure, 0.01f, 0.1f, 8.0f, "%.2f");
 
 		if (ImGui::Button("复位视角和灯光"))
-			view = DefaultView(view.shape);
+		{
+			// 只复位视角和灯光；环境的选择、旋转、亮度、模糊保留
+			MaterialPreviewView reset = DefaultView(view.shape);
+			reset.environmentYaw = view.environmentYaw;
+			reset.environmentIntensity = view.environmentIntensity;
+			reset.backgroundBlur = view.backgroundBlur;
+			reset.environmentDirectLights = view.environmentDirectLights;
+			view = reset;
+		}
+		if (environmentMode)
+		{
+			ImGui::SameLine();
+			if (ImGui::Button("复位环境"))
+			{
+				const MaterialPreviewView defaults;
+				view.environmentYaw = defaults.environmentYaw;
+				view.environmentIntensity = defaults.environmentIntensity;
+				view.backgroundBlur = defaults.backgroundBlur;
+				view.environmentDirectLights = defaults.environmentDirectLights;
+			}
+		}
 		ImGui::PopID();
 	}
 }
@@ -295,6 +475,9 @@ namespace MaterialPreview
 	{
 		auto& state = GetState();
 		side = std::max(side, 64.0f);
+		if (!state.environmentsScanned)
+			ScanEnvironments(state);
+		const auto environment = UpdateEnvironment(state);
 
 		ImGui::PushID("MaterialPreview");
 		const ImVec2 p0 = ImGui::GetCursorScreenPos();
@@ -306,7 +489,9 @@ namespace MaterialPreview
 		ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);		// 悬停时滚轮给预览缩放，不滚动外面的面板
 		HandleCanvasInput(state, hovered, active);
 		if (hovered && !active)
-			ImGui::SetItemTooltip("左键拖动：旋转视角\n右键拖动：旋转灯光\n滚轮：缩放\n双击：复位视角");
+			ImGui::SetItemTooltip(RightDragRotatesEnvironment(state)
+				? "左键拖动：旋转视角\n右键拖动：旋转环境\n滚轮：缩放\n双击：复位视角"
+				: "左键拖动：旋转视角\n右键拖动：旋转灯光\n滚轮：缩放\n双击：复位视角");
 
 		// ---------------- 有变化且看得见才重画 ----------------
 		if (material && visible)
@@ -322,6 +507,7 @@ namespace MaterialPreview
 					snapshot.textures.push_back({ type, texture.get(), texture->GetDescBindEntryVersion() });
 			}
 			snapshot.view = state.view;
+			snapshot.view.environment = environment;		// HDRI 还没生成好（或选的是棋盘格）时为空：棋盘格 + 摄影棚灯光
 			snapshot.size = QuantizeSize(side);
 
 			if (!state.hasLast || !Same(snapshot, state.last))
@@ -339,7 +525,7 @@ namespace MaterialPreview
 
 		// ---------------- 画 ----------------
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
-		DrawBackground(drawList, p0, p1, state.checker);
+		DrawBackground(drawList, p0, p1, true);		// HDRI 模式下输出不透明，会整张盖住棋盘格
 		if (material && state.current >= 0 && state.ring[state.current])
 		{
 			if (ImTextureID id = Sprite2DEditor::TextureCache().Get(state.ring[state.current]); id != 0)
@@ -354,6 +540,15 @@ namespace MaterialPreview
 			const ImVec2 size = ImGui::CalcTextSize(text);
 			drawList->AddText(ImVec2(p0.x + (side - size.x) * 0.5f, p0.y + (side - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), text);
 		}
+		if (const EnvironmentEntry* selected = SelectedEnvironment(state); selected && material)
+		{
+			const char* status = selected->IsLoading() ? "正在生成 IBL…" : (selected->failed ? "HDRI 加载失败（见背景下拉的提示）" : nullptr);
+			if (status)
+			{
+				const ImVec2 textPos(p0.x + 6.0f, p1.y - ImGui::GetTextLineHeight() - 4.0f);
+				drawList->AddText(textPos, selected->failed ? IM_COL32(255, 110, 110, 255) : IM_COL32(220, 220, 220, 255), status);
+			}
+		}
 		drawList->AddRect(p0, p1, active ? IM_COL32(70, 130, 200, 255) : IM_COL32(95, 95, 95, 255), 3.0f);
 
 		DrawToolbar(state, side);
@@ -367,6 +562,18 @@ namespace MaterialPreview
 
 	void Shutdown()
 	{
-		ReleaseImages(GetState());
+		auto& state = GetState();
+		ReleaseImages(state);
+		// HDRI 环境（GPU 贴图）要在设备销毁前放掉；还在后台生成的先等它做完
+		for (auto& entry : state.environments)
+		{
+			if (entry.pending.valid())
+				entry.pending.wait();
+			entry.pending = {};
+			entry.environment.reset();
+		}
+		state.environments.clear();
+		state.environmentsScanned = false;
+		state.environmentIndex = -1;
 	}
 }

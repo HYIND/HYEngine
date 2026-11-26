@@ -380,5 +380,6 @@ config/*
 ![Bb]in/shader/
 ![Bb]in/Icons/
 ![Bb]in/noise/
+![Bb]in/HDRI/
 
 !.gitattributes

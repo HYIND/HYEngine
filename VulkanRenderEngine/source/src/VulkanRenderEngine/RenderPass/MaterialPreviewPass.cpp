@@ -3,6 +3,8 @@
 #include "VulkanRenderEngine/Base/GraphicsPipeline.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
 #include "VulkanRenderEngine/Base/StaticMesh.h"
+#include "VulkanRenderEngine/Base/TextureCube.h"
+#include "VulkanRenderEngine/General/HDRIEnvironment.h"
 #include "VulkanRenderEngine/VKContext.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -16,6 +18,8 @@ namespace
 {
 	constexpr const char* kVertexShaderPath = "shader/Preview/material_preview.vs";
 	constexpr const char* kFragmentShaderPath = "shader/Preview/material_preview.fs";
+	constexpr const char* kSkyVertexShaderPath = "shader/Preview/material_preview_sky.vs";
+	constexpr const char* kSkyFragmentShaderPath = "shader/Preview/material_preview_sky.fs";
 
 	constexpr vk::Format kColorFormat = vk::Format::eR8G8B8A8Unorm;
 	constexpr vk::Format kDepthFormat = vk::Format::eD24UnormS8Uint;
@@ -41,6 +45,17 @@ namespace
 		glm::vec4 rimLightDir;		// xyz：轮廓光方向（指向光源）
 	};
 	static_assert(sizeof(PreviewPushConstants) == 128, "PreviewPushConstants 布局要和着色器一致，且不能超过 128 字节");
+	// HDRI 模式下各字段的额外含义（摄影棚模式不用）：
+	//   params.y：环境绕 Y 轴旋转（弧度），params.z：环境亮度，params.w：> 0.5 时叠加主光 + 轮廓光
+	//   keyLightDir.w：背景 mip 级（Blend 材质和背后的 HDRI 混合时用）
+
+	// 和 material_preview_sky.vs / .fs 一致
+	struct SkyPushConstants
+	{
+		glm::mat4 invViewProjRotation;	// (投影 × 只有旋转的视图矩阵) 的逆：NDC → 世界方向
+		glm::vec4 params;				// x：曝光，y：环境旋转（弧度），z：环境亮度，w：背景 mip 级
+	};
+	static_assert(sizeof(SkyPushConstants) == 80);
 
 	// 方向约定：yaw 绕 Y 轴、0 = +Z 一侧；pitch 为高度角
 	glm::vec3 DirectionFromAngles(float yawDeg, float pitchDeg)
@@ -196,30 +211,74 @@ std::shared_ptr<MaterialPreviewPass::Resources> MaterialPreviewPass::CreateResou
 	auto resources = std::make_shared<Resources>();
 
 	// ---------------- 管线：单附件前向着色，只用 set 2（材质 SSBO + 贴图数组）和 push constant ----------------
+	//   ibl = true：同一个着色器定义 PREVIEW_IBL，多 set 0 的四张环境贴图
+	const auto createMeshPipeline = [](bool ibl) -> std::shared_ptr<GraphicsPipeline>
+		{
+			GraphicsPipelineConfig config;
+			config.vertexPath = kVertexShaderPath;
+			config.fragmentPath = kFragmentShaderPath;
+			if (ibl)
+				config.AddDefineMacro("PREVIEW_IBL");
+
+			config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+			config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
+
+			// 不做帧缓冲混合：摄影棚模式 Blend 材质把透明度直接写进 alpha，交给 ImGui 叠在棋盘格上；
+			// HDRI 模式在着色器里自己和背后的 HDRI 混合，输出不透明
+			config.AddColorAttachment(kColorFormat, GraphicsPipelineConfig::DefaultColorAttachmentBlend);
+			config.SetDepthStencilAttachmentFormat(kDepthFormat);
+			config.SetDepthTest(true, true);
+			// 不剔除：球和立方体是闭合凸体，深度测试只留最前面的表面；平面要双面看；也不用关心投影翻转后的绕序
+			config.SetCullMode(vk::CullModeFlagBits::eNone);
+
+			if (ibl)
+			{
+				config
+					.AddUnifromTexture(0)		// 漫反射辐照度 cube
+					.AddUnifromTexture(1)		// 镜面预过滤 cube
+					.AddUnifromTexture(2)		// BRDF LUT
+					.AddUnifromTexture(3);		// 背景 cube
+			}
+			config.AddBindlessMaterialTextureBinding();		// set 2
+			config.AddPushConstant(sizeof(PreviewPushConstants));
+
+			if (!config.Validate())
+				return nullptr;
+			auto pipeline = std::make_shared<GraphicsPipeline>();
+			if (!pipeline->Create(config) || !pipeline->IsValid())
+				return nullptr;
+			return pipeline;
+		};
+
+	resources->pipeline = createMeshPipeline(false);
+	if (!resources->pipeline)
+		return nullptr;
+
+	// HDRI 用的两条管线失败不影响摄影棚模式（缩略图照常），只是 HDRI 预览退回摄影棚
+	resources->iblPipeline = createMeshPipeline(true);
 	{
 		GraphicsPipelineConfig config;
-		config.vertexPath = kVertexShaderPath;
-		config.fragmentPath = kFragmentShaderPath;
-
+		config.vertexPath = kSkyVertexShaderPath;
+		config.fragmentPath = kSkyFragmentShaderPath;
+		// 全屏三角形也用 Vertex 的顶点格式（只用位置），和网格共用顶点缓冲的写法
 		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
 		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
-
-		// 不做帧缓冲混合：Blend 材质把透明度直接写进 alpha，交给 ImGui 叠在背景上
 		config.AddColorAttachment(kColorFormat, GraphicsPipelineConfig::DefaultColorAttachmentBlend);
 		config.SetDepthStencilAttachmentFormat(kDepthFormat);
-		config.SetDepthTest(true, true);
-		// 不剔除：球和立方体是闭合凸体，深度测试只留最前面的表面；平面要双面看；也不用关心投影翻转后的绕序
+		config.SetDepthTest(false, false);
 		config.SetCullMode(vk::CullModeFlagBits::eNone);
+		config.AddUnifromTexture(0);		// 背景 cube
+		config.AddPushConstant(sizeof(SkyPushConstants));
 
-		config.AddBindlessMaterialTextureBinding();		// set 2
-		config.AddPushConstant(sizeof(PreviewPushConstants));
-
-		if (!config.Validate())
-			return nullptr;
-
-		resources->pipeline = std::make_shared<GraphicsPipeline>();
-		if (!resources->pipeline->Create(config) || !resources->pipeline->IsValid())
-			return nullptr;
+		auto pipeline = std::make_shared<GraphicsPipeline>();
+		if (config.Validate() && pipeline->Create(config) && pipeline->IsValid())
+			resources->skyPipeline = std::move(pipeline);
+	}
+	if (!resources->iblPipeline || !resources->skyPipeline)
+	{
+		resources->iblPipeline.reset();
+		resources->skyPipeline.reset();
+		std::cerr << "[ MaterialPreviewPass ] HDRI 预览管线创建失败，HDRI 模式退回摄影棚灯光\n";
 	}
 
 	// ---------------- 网格：自己的小顶点 / 索引缓冲，不进 IndirectDrawManager ----------------
@@ -240,6 +299,22 @@ std::shared_ptr<MaterialPreviewPass::Resources> MaterialPreviewPass::CreateResou
 		mesh.vertices->WriteData(vertices.data(), vertexBytes);
 		mesh.indices->WriteData(indices.data(), indexBytes);
 		mesh.indexCount = static_cast<uint32_t>(indices.size());
+	}
+
+	// ---------------- 全屏三角形（HDRI 背景）：位置直接是 NDC ----------------
+	{
+		std::vector<Vertex> vertices(3);
+		vertices[0].Position = glm::vec3(-1.0f, -1.0f, 0.0f);
+		vertices[1].Position = glm::vec3(3.0f, -1.0f, 0.0f);
+		vertices[2].Position = glm::vec3(-1.0f, 3.0f, 0.0f);
+		const unsigned int indices[3] = { 0, 1, 2 };
+
+		auto& mesh = resources->fullscreenTriangle;
+		mesh.vertices = std::make_shared<VertexBufferBlock>(sizeof(Vertex) * 3);
+		mesh.indices = std::make_shared<IndexBufferBlock>(sizeof(indices));
+		mesh.vertices->WriteData(vertices.data(), sizeof(Vertex) * 3);
+		mesh.indices->WriteData(indices, sizeof(indices));
+		mesh.indexCount = 3;
 	}
 
 	// ---------------- 占位图：贴图数组至少要有一项 ----------------
@@ -341,6 +416,27 @@ bool MaterialPreviewPass::Render(const MaterialPreviewInput& input, const Materi
 	push.keyLightDir = glm::vec4(keyLight, 0.0f);
 	push.rimLightDir = glm::vec4(rimLight, 0.0f);
 
+	// ---------------- HDRI 环境（HDRI 管线没建成功时退回摄影棚） ----------------
+	const HDRIEnvironment* environment = view.environment.get();
+	const bool useEnvironment = environment && resources->iblPipeline && resources->skyPipeline
+		&& environment->GetBackground() && environment->GetDiffuse() && environment->GetPrefilter() && environment->GetBRDFLUT();
+	SkyPushConstants skyPush{};
+	if (useEnvironment)
+	{
+		const float environmentYaw = glm::radians(view.environmentYaw);
+		const float environmentIntensity = std::max(view.environmentIntensity, 0.0f);
+		const uint32_t backgroundLevels = std::max(environment->GetBackground()->GetMaxLevel(), 1u);
+		const float backgroundLod = std::clamp(view.backgroundBlur, 0.0f, 1.0f) * static_cast<float>(backgroundLevels - 1);
+
+		push.params = glm::vec4(view.exposure, environmentYaw, environmentIntensity, view.environmentDirectLights ? 1.0f : 0.0f);
+		push.keyLightDir.w = backgroundLod;
+
+		// 背景只看方向：视图矩阵去掉平移
+		const glm::mat4 viewRotation = glm::mat4(glm::mat3(viewMatrix));
+		skyPush.invViewProjRotation = glm::inverse(projection * viewRotation);
+		skyPush.params = glm::vec4(view.exposure, environmentYaw, environmentIntensity, backgroundLod);
+	}
+
 	// ---------------- 这次渲染自己的资源 ----------------
 	auto colorTarget = std::make_shared<Texture2D>(width, height, kColorFormat, TextureConfig{}, 1, false);
 	auto depthTarget = std::make_shared<Texture2D>(width, height, kDepthFormat, TextureConfig{}, 1, false);
@@ -362,6 +458,17 @@ bool MaterialPreviewPass::Render(const MaterialPreviewInput& input, const Materi
 		if (!texture->IsSampledImmutable())
 			texture->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Sample);
 	}
+	if (useEnvironment)
+	{
+		// HDRIEnvironment 生成完已经是只读布局；万一没切成功，在这里（动态渲染外面）转一次
+		for (const auto& cube : { environment->GetDiffuse(), environment->GetPrefilter(), environment->GetBackground() })
+		{
+			if (!cube->IsSampledImmutable())
+				cube->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Sample);
+		}
+		if (!environment->GetBRDFLUT()->IsSampledImmutable())
+			environment->GetBRDFLUT()->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Sample);
+	}
 	colorTarget->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	depthTarget->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 
@@ -374,10 +481,30 @@ bool MaterialPreviewPass::Render(const MaterialPreviewInput& input, const Materi
 	cmd->beginRendering(renderInfo);
 	cmd->setDynamicViewport(width, height);
 
+	// HDRI 背景：先画全屏三角形（不写深度），物体画在上面
+	if (useEnvironment)
+	{
+		GraphicsBindingRecord skyBinding;
+		skyBinding.SetUniformTextureCube(environment->GetBackground(), vk::ImageAspectFlagBits::eColor, 0);
+		resources->skyPipeline->Bind(cmd, skyBinding);
+		resources->skyPipeline->SetPushConstants(cmd, &skyPush, sizeof(skyPush));
+		cmd->bindVertexBuffers(resources->fullscreenTriangle.vertices);
+		cmd->bindIndexBuffer(resources->fullscreenTriangle.indices);
+		cmd->drawIndexed(resources->fullscreenTriangle.indexCount, 1, 0, 0, 0);
+	}
+
+	const auto& meshPipeline = useEnvironment ? resources->iblPipeline : resources->pipeline;
 	GraphicsBindingRecord binding;
 	binding.SetBindlessMaterialTexture(materialBlock, std::make_shared<BaseTextureArrayProvider>(textures));
-	resources->pipeline->Bind(cmd, binding);
-	resources->pipeline->SetPushConstants(cmd, &push, sizeof(push));
+	if (useEnvironment)
+	{
+		binding.SetUniformTextureCube(environment->GetDiffuse(), vk::ImageAspectFlagBits::eColor, 0);
+		binding.SetUniformTextureCube(environment->GetPrefilter(), vk::ImageAspectFlagBits::eColor, 1);
+		binding.SetUniformTexture(environment->GetBRDFLUT(), vk::ImageAspectFlagBits::eColor, 2);
+		binding.SetUniformTextureCube(environment->GetBackground(), vk::ImageAspectFlagBits::eColor, 3);
+	}
+	meshPipeline->Bind(cmd, binding);
+	meshPipeline->SetPushConstants(cmd, &push, sizeof(push));
 
 	cmd->bindVertexBuffers(mesh.vertices);
 	cmd->bindIndexBuffer(mesh.indices);
