@@ -104,7 +104,6 @@ namespace RenderGraph
 			bool isEnd = false;
 			int batchIndex = -1;
 			std::vector<PassData> passes;
-			std::vector<RenderGraphResource> batchLifeCycleResource;
 		};
 
 		bool GetBatch(int& startIndex, std::vector<BatchData::PassData>& passes, int& batchIndex);
@@ -116,9 +115,11 @@ namespace RenderGraph
 			FrameLocalResourceRecord& frameLocalResRecord,
 			ExternalResourceManager& externalResManager,
 			std::atomic<uint32_t>& doneCounter,
+			std::atomic<uint32_t>* transientRefs,
 			std::shared_ptr<CriticalSectionLock>& _cmdMutex
 		);
 		void BuildProfileLayout();
+		void BuildTransientRefCounts();
 
 		// 返回是否真的执行了（ShouldExecute 为 false 时返回 false）
 		bool ExecutePass(
@@ -142,6 +143,14 @@ namespace RenderGraph
 		std::vector<PassNode*> _sortedPasses;
 
 		std::unordered_map<RenderGraphResource, ResourceUsage> _lifecycles;
+
+		// 临时资源（Input / InputOption / Output / Temp）按 Pass 粒度回收：
+		// 编译时给每个资源编号、统计用到它的 Pass 数（同一 Pass 多次声明只算一次）；
+		// 每帧拷一份计数，用到它的 Pass 执行完（含 ShouldExecute 为 false、被禁用）就减一，减到 0 立即还给纹理池。
+		// Persistent / PersistentOption / External / FrameLocal 不参与
+		std::vector<RenderGraphResource> _transientResources;		// 编号 -> 资源
+		std::vector<uint32_t> _transientInitRefs;					// 编号 -> 使用它的 Pass 数
+		std::vector<std::vector<uint32_t>> _passTransientIds;		// 排序后的 Pass 下标 -> 它用到的资源编号
 
 		bool _needsCompile = true;
 		int _compiledVersion = 0;

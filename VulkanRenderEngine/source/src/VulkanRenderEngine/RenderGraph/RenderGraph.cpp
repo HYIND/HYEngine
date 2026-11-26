@@ -101,9 +101,40 @@ void Graph::Compile() {
 	_lifecycles = DependencySolver::CalculateLifetimes(_sortedPasses);
 	DependencySolver::PrintLifecycles(_name, _lifecycles);
 
+	BuildTransientRefCounts();
+
 	_needsCompile = false;
 	_compiledVersion++;
 	BuildProfileLayout();
+}
+
+void Graph::BuildTransientRefCounts()
+{
+	_transientResources.clear();
+	_transientInitRefs.clear();
+	_passTransientIds.assign(_sortedPasses.size(), {});
+
+	std::unordered_map<RenderGraphResource, uint32_t> idOf;
+	for (size_t passIdx = 0; passIdx < _sortedPasses.size(); ++passIdx)
+	{
+		auto& ids = _passTransientIds[passIdx];
+		// GetLifeCycleResource = Input + InputOption + Output + Temp
+		for (const auto& res : _sortedPasses[passIdx]->GetLifeCycleResource())
+		{
+			auto [it, inserted] = idOf.try_emplace(res, uint32_t(_transientResources.size()));
+			if (inserted)
+			{
+				_transientResources.push_back(res);
+				_transientInitRefs.push_back(0);
+			}
+
+			const uint32_t id = it->second;
+			if (std::find(ids.begin(), ids.end(), id) != ids.end())
+				continue;		// 同一 Pass 里读写同一资源只算一次
+			ids.push_back(id);
+			_transientInitRefs[id]++;
+		}
+	}
 }
 
 void Graph::BuildProfileLayout()
@@ -166,6 +197,7 @@ void Graph::FindReadyNodeAndExcute(
 	FrameLocalResourceRecord& frameLocalResRecord,
 	ExternalResourceManager& externalResManager,
 	std::atomic<uint32_t>& doneCounter,
+	std::atomic<uint32_t>* transientRefs,
 	std::shared_ptr<CriticalSectionLock>& _cmdMutex
 )
 {
@@ -180,7 +212,7 @@ void Graph::FindReadyNodeAndExcute(
 			if (handle->is_ready() && ctx.dependency.load() <= 0)
 			{
 				executeHandle = _executeParallelPool.submit(
-					[&, idx, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
+					[&, idx, transientRefs, &ctx = passCtxs[idx], &passCtxs = passCtxs]()->void {
 						RenderFrameProfile* profile = state.profile.get();
 						RenderPassProfile* passProfile = (profile && size_t(idx) < profile->passes.size()) ? &profile->passes[idx] : nullptr;
 						const int64_t start = passProfile ? RenderProfileNowUs() : 0;
@@ -190,6 +222,12 @@ void Graph::FindReadyNodeAndExcute(
 						{
 							passProfile->executeUs = RenderProfileNowUs() - start;
 							passProfile->executed = executed;
+						}
+						// 先归还资源再放行后继：后继 Pass 取资源时能直接复用刚还回池子的纹理
+						for (uint32_t id : _passTransientIds[idx])
+						{
+							if (transientRefs[id].fetch_sub(1, std::memory_order_acq_rel) == 1)
+								_resManager.ReleaseTexture(_transientResources[id], resPrefix);
 						}
 						for (auto& next : ctx.nextIndexs)
 							--passCtxs[next].dependency;
@@ -205,13 +243,6 @@ void Graph::FindReadyNodeAndExcute(
 		auto& executeHandle = passData.executeHandle;
 		if (executeHandle && executeHandle->is_ready())
 		{
-			int idx = passData.passIndex;
-			auto& ctx = passCtxs[idx];
-			auto& passLifeTimeResource = ctx.node->GetLifeCycleResource();
-			batchdata.batchLifeCycleResource.insert(
-				batchdata.batchLifeCycleResource.end(),
-				passLifeTimeResource.begin(),
-				passLifeTimeResource.end());
 			it = batchdata.passes.erase(it);
 			continue;
 		}
@@ -373,7 +404,6 @@ void Graph::Execute(
 
 	std::vector<BatchData> running_batchs;
 	running_batchs.reserve(_sortedPasses.size());
-	std::map<int, std::vector<BatchData>, std::less<int>> end_batchs_map;
 
 	int passIndex = 0;
 	int batchIndex = -1;
@@ -384,56 +414,11 @@ void Graph::Execute(
 		batchpasses.clear();
 	}
 
-	int endPassClearIndex = -1;
-
-	auto ClearBatch = [&]()
-		{
-			for (auto it = end_batchs_map.begin(); it != end_batchs_map.end();)
-			{
-				int index = it->first;
-				auto& batchs = it->second;
-				if (index > endPassClearIndex)
-				{
-					it++;
-					continue;
-				}
-				else
-				{
-					for (auto& batch : batchs)
-					{
-						for (auto& res : batch.batchLifeCycleResource)
-						{
-							auto it = _lifecycles.find(res);
-							if (it == _lifecycles.end())
-								continue;
-
-							auto& lifecycle = it->second;
-							if (lifecycle.lastBatch <= batch.batchIndex)
-							{
-								_resManager.ReleaseTexture(res, resPrefix);
-								//std::cout << std::format("release res [{}]\n", res.name);
-							}
-						}
-					}
-					it = end_batchs_map.erase(it);
-				}
-			}
-		};
-
-	auto OnBatchEnd = [&](BatchData&& endbatch)
-		{
-			end_batchs_map[endbatch.batchIndex].push_back(std::move(endbatch));
-			for (auto& it : end_batchs_map)
-			{
-				int index = it.first;
-				if (index == (endPassClearIndex + 1))
-				{
-					endPassClearIndex = index;
-					//sync->SignalDoneProgress();
-				}
-			}
-			ClearBatch();
-		};
+	// 临时资源引用计数（本帧一份）
+	const size_t transientCount = _transientResources.size();
+	std::unique_ptr<std::atomic<uint32_t>[]> transientRefs(new std::atomic<uint32_t>[std::max<size_t>(transientCount, 1)]);
+	for (size_t i = 0; i < transientCount; ++i)
+		transientRefs[i].store(_transientInitRefs[i], std::memory_order_relaxed);
 
 	uint32_t targetDoneCounter = passExeContext.size();
 	uint32_t lastBeginCounter = std::numeric_limits<uint32_t>::max();
@@ -459,23 +444,21 @@ void Graph::Execute(
 		{
 			auto& batch = *it;
 			if (!batch.isEnd)
-				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, frameLocalResRecord, externalResManager, doneCounter, _cmdMutex);
+				FindReadyNodeAndExcute(BeginHandles, batch, passExeContext, *state, resPrefix, frameLocalResRecord, externalResManager, doneCounter, transientRefs.get(), _cmdMutex);
 
 			if (batch.isEnd)
-			{
-				OnBatchEnd(std::move(batch));
 				it = running_batchs.erase(it);
-			}
 			else
 				it++;
 		}
 
 	}
 
-	if (!end_batchs_map.empty())
+	// 兜底：正常情况下每个临时资源都在最后一个使用者执行完时已经归还
+	for (size_t i = 0; i < transientCount; ++i)
 	{
-		endPassClearIndex = INT_MAX;
-		ClearBatch();
+		if (transientRefs[i].load(std::memory_order_relaxed) != 0)
+			_resManager.ReleaseTexture(_transientResources[i], resPrefix);
 	}
 
 	//std::cout << "===========================\n";
@@ -507,6 +490,9 @@ void Graph::Clear() {
 	_sortedPasses.clear();
 	_ownedPasses.clear();
 	_lifecycles.clear();
+	_transientResources.clear();
+	_transientInitRefs.clear();
+	_passTransientIds.clear();
 	_needsCompile = true;
 	_compiledVersion++;
 }
