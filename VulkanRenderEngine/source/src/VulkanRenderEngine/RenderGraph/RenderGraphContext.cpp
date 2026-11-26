@@ -191,8 +191,10 @@ void PassFrameCmdContext::Need()
 	if (_submitCtx->queryPool && _gpuQuery != UINT32_MAX)
 		barriercmd->writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, _submitCtx->queryPool, _gpuQuery);
 
-	// FrameBegin、图之前的阶段直接用 VKCONTEXT 提交的工作不在链上（它们已经 SubmitNowAndWait 做完），
-	// 一条全局屏障让它们的写入对本 Pass 可见
+	// FrameBegin、图之前的阶段直接用 VKCONTEXT 提交的工作不在链上，也不一定已经在 GPU 上做完
+	// （例如 LightShadowDepthPass 的阴影剔除提交后不等）。它们和这里在同一个图形队列上、提交得更早：
+	// 屏障的第一同步范围包含提交顺序更早的所有命令，所以这条全局屏障让它们执行完、写入对本 Pass 可见。
+	// 这条屏障不能删，也不能收窄阶段 / 访问掩码，除非这些提交都改成接到链上
 	barriercmd->pipelineBarrier(
 		vk::PipelineStageFlagBits::eAllCommands,
 		vk::PipelineStageFlagBits::eAllCommands,

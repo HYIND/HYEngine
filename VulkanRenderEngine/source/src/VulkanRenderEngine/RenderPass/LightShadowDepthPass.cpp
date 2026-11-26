@@ -673,9 +673,9 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 	if (dirLightsInfo.empty() && spotLightsInfo.empty())
 		return;
 
-	std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> cullingCmds;
-	std::vector<std::shared_ptr<VKWrapper::VKFence>> cullingSyncs;
-
+	// 剔除提交后不等 GPU：Execute 第一次提交前 PassFrameCmdContext::Need() 会在同一图形队列上提交一条全局屏障，
+	// 它的第一同步范围包含提交顺序更早的所有命令（这里的剔除在 FrameBegin 里提交，一定更早），间接命令的写入对绘制可见。
+	// 命令缓冲和临时缓冲释放时都走延迟销毁，GPU 用完之前不会真的销毁
 	PreRecordData data(PreRecordLightType::Dir);
 
 	std::vector<bool> shouldCullings;
@@ -688,15 +688,12 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 
 	auto render = [&]()->void {
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
 
 		data.ssbo_ShadowMatrices->WriteDataAsync(cmd, data.shadowMatrices.data(), data.shadowMatrices.size() * sizeof(glm::mat4));
 
 		PreRecordCulling(cmd, ctx, data, shouldCullings);
-		cmd->SubmitNow({}, fence);
+		cmd->SubmitNow();
 
-		cullingCmds.push_back(std::move(cmd));
-		cullingSyncs.push_back(std::move(fence));
 		datas.push_back(std::move(data));
 
 		data.shadowMatrices.reserve(batch_max);
@@ -767,9 +764,6 @@ void LightShadowDepthPass::PreRecordDirAndSpotLight(std::vector<PreRecordData>& 
 
 	if (count > 0)
 		render();
-
-	for (auto& fence : cullingSyncs)
-		fence->Wait();
 }
 
 void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas, SelfContext& ctx, RenderState& state)
@@ -779,9 +773,7 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 	if (pointLightsInfo.empty())
 		return;
 
-	std::vector<std::shared_ptr<VKWrapper::VKCommandBuffer>> cullingCmds;
-	std::vector<std::shared_ptr<VKWrapper::VKFence>> cullingSyncs;
-
+	// 剔除提交后不等 GPU，原因见 PreRecordDirAndSpotLight
 	PreRecordData data(PreRecordLightType::Point);
 
 	std::vector<bool> shouldCullings;
@@ -796,16 +788,13 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 
 	auto render = [&]()->void {
 		auto cmd = VKCONTEXT->GetCommandBuffer();
-		auto fence = std::make_shared<VKWrapper::VKFence>(VKCONTEXT->GetDevice().get());
 
 		data.ssbo_ShadowMatrices->WriteDataAsync(cmd, data.shadowMatrices.data(), data.shadowMatrices.size() * sizeof(glm::mat4));
 		data.ssbo_LightProps->WriteDataAsync(cmd, lightProps.data(), lightProps.size() * sizeof(LightProp));
 
 		PreRecordCulling(cmd, ctx, data, shouldCullings);
-		cmd->SubmitNow({}, fence);
+		cmd->SubmitNow();
 
-		cullingCmds.push_back(std::move(cmd));
-		cullingSyncs.push_back(std::move(fence));
 		datas.push_back(std::move(data));
 
 		data.shadowMatrices.reserve(batch_max);
@@ -875,9 +864,6 @@ void LightShadowDepthPass::PreRecordPointLight(std::vector<PreRecordData>& datas
 
 	if (count > 0)
 		render();
-
-	for (auto& fence : cullingSyncs)
-		fence->Wait();
 }
 
 void LightShadowDepthPass::PreRecordCulling(
@@ -953,7 +939,11 @@ void LightShadowDepthPass::PreRecordCulling(
 
 				_frustumCullingShader->Bind(cmd, fustumCullingBinding);
 				cmd->dispatch((params.commandCount + fustumWorksize - 1) / fustumWorksize, 1, 1);
+				// 剔除写完 → 绘制读间接命令。Execute 前的全局屏障也覆盖这一依赖，这里显式写上，不依赖它
+				staticOneSideInidrectCommands->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::IndirectRead);
 			}
+			else
+				staticOneSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
 
 		}
 		if (ctx.staticTwoSideCommandSize > 0)
@@ -988,7 +978,10 @@ void LightShadowDepthPass::PreRecordCulling(
 
 				_frustumCullingShader->Bind(cmd, fustumCullingBinding);
 				cmd->dispatch((params.commandCount + fustumWorksize - 1) / fustumWorksize, 1, 1);
+				staticTwoSideInidrectCommands->Barrier(cmd, BufferUsage::StorageWrite, BufferUsage::IndirectRead);
 			}
+			else
+				staticTwoSideInidrectCommands->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::IndirectRead);
 		}
 	}
 
