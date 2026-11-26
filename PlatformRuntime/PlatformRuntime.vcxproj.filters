@@ -243,6 +243,9 @@
     <ClInclude Include="source\include\Render\Components\DDGIVolume.h">
       <Filter>头文件\Render\Components</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\RenderEngine\ImGuiTextureCache.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\include\imconfig.h">
@@ -291,6 +294,9 @@
     </ClCompile>
     <ClCompile Include="source\src\UI\Message.cpp">
       <Filter>源文件\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\RenderEngine\ImGuiTextureCache.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
