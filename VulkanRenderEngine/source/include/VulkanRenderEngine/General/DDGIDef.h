@@ -128,7 +128,7 @@ inline void DDGIAddLayoutDefines(PipelineConfigT& config)
 // std140，GLSL 镜像在 shader/DDGI/DDGIUniforms.comp
 struct alignas(16) DDGIUniforms
 {
-	glm::vec4  shadingParams;	// x normalBias，y viewBias，z energy，w skyIntensity
+	glm::vec4  shadingParams;	// x normalBias，y viewBias（均为体积最小间距的倍数），z energy，w skyIntensity
 	glm::vec4  filterParams;	// x 背面权重指数，y 时域混合系数 1-hysteresis，z 光照突变阈值，w maxRayDistance
 	glm::vec4  drawParams;		// x 探针球半径（相对最小间距）
 	glm::uvec4 counts;			// x 体积数，y 已用槽位上界（槽位区间之间可能有空隙），z 本帧更新数，w frameIndex
@@ -316,7 +316,7 @@ private:
 	void AllocateVolumes(DDGIFrame& frame, std::vector<DDGIResolvedVolume>& candidates, std::vector<DDGIResolvedVolume>& dropped);
 	void AssignPeriods(const RenderState& state, DDGIFrame& frame, uint32_t budget);
 	void RebuildProbeCache(const DDGIFrame& frame);
-	void BuildCoveredRanges(const DDGIFrame& frame);
+	void BuildCoveredRanges(const DDGIFrame& frame, float biasSum);	// biasSum = 限制后的 normalBias + viewBias
 	bool IsCovered(size_t volumeIndex, const glm::ivec3& local) const;
 	void BuildResetAndUpdateLists(DDGIFrame& frame, uint32_t budget, bool probeCacheRebuilt);
 	void UploadGPUData(DDGIFrame& frame, const RenderState& state);

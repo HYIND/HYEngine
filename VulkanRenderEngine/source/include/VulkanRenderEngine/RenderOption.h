@@ -178,7 +178,9 @@ struct Scene3DRenderOption
 		bool cascadeAutoRelocate = true;					// 级联探针自动避开几何
 
 		// 采样偏移：沿法线 normalBias、朝观察者 viewBias（Apply 朝相机，多次反弹朝探针），
-		// 抑制自遮挡与掠射角漏光。建议均为 spacing 的 0.1~0.3 倍
+		// 抑制自遮挡与掠射角漏光。单位是「所在体积最小间距的倍数」，各级级联 / 手动体积各自缩放，
+		// 建议 0.1~0.3。两者之和不要超过 0.5：覆盖剔除的余量（BuildCoveredRanges / ddgiProbeCovered）
+		// 只给采样偏移留了 0.5 格
 		float normalBias = 0.1f;
 		float viewBias = 0.10f;
 		float maxRayDistance = 15.0f;					// 探针光线最远距离，未命中视为看到天空

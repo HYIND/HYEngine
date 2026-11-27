@@ -84,6 +84,13 @@ void ddgiLeakVolumeWeight(uint index, float w)
         leak.volumeWeights[index] = w;
 }
 
+// 偏移后的采样点按体积间距缩放、每个体积不同：只记录第一个体积（记录下标 0，优先级最高）的
+void ddgiLeakBiasedPos(uint volumeIndex, vec3 p)
+{
+    if (volumeIndex == 0u)
+        leak.biasedPos = vec4(p, 1.0);
+}
+
 void ddgiLeakProbe(uint volumeIndex, vec3 pos, ivec3 cell, uint slot, vec4 weights, vec4 extra)
 {
     uint i = leak.header.y;
@@ -136,6 +143,11 @@ void main()
         float camDist = length(toCamera);
         toCamera = camDist > 1e-4 ? toCamera / camDist : normal;
 
+#ifdef DDGI_LEAK_ENABLE
+        if (gDDGIDebug)
+            leak.biasedPos = vec4(worldPos, 1.0);   // 不在任何体积里时保持为原始位置
+#endif
+
         float remaining;
         vec3 Lbar = ddgiSampleIrradianceEx(worldPos, normal, toCamera, remaining);
         vec3 kdAlbedo = albedo * (1.0 - metallic);
@@ -150,7 +162,6 @@ void main()
             leak.header.x = 1u;
             leak.worldPos = vec4(worldPos, 1.0);
             leak.normal = vec4(normal, 0.0);
-            leak.biasedPos = vec4(worldPos + normal * ddgi.shadingParams.x + toCamera * ddgi.shadingParams.y, 1.0);
             leak.result = vec4(Lbar, 1.0);
         }
 #endif

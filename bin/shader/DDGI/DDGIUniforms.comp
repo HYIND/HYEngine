@@ -19,7 +19,7 @@ const uint DDGI_PROBE_SELECTED = 8u;
 
 layout(set = 0, binding = DDGI_UBO_BINDING) uniform DDGIParamsUBO
 {
-    vec4  shadingParams;    // x normalBias，y viewBias，z energy，w skyIntensity
+    vec4  shadingParams;    // x normalBias，y viewBias（均为体积最小间距的倍数），z energy，w skyIntensity
     vec4  filterParams;     // x 背面权重指数，y 时域混合系数，z 光照突变阈值，w maxRayDistance
     vec4  drawParams;       // x 探针球半径（相对最小间距）
     uvec4 counts;           // x 体积数，y 已用槽位上界（槽位可能不连续），z 本帧更新数，w frameIndex
@@ -112,7 +112,8 @@ vec3 ddgiCellCenter(uint v, ivec3 c)
 // 体积 v 的格子 c 是否被更高优先级（表里排在前面）的体积完全覆盖：该体积在这一带的权重恒为 1，
 // 本体积的探针用不到，不更新、不参与采样、可视化时只在「状态」模式下显示为灰色。
 // 与 CPU 的 DDGISharedState::BuildCoveredRanges 逐项一致（改一边必须改另一边）：
-//   margin = 对方过渡带 fadeCells·spacing_h + 本体积 1.5 格（三线性插值的一格 + 采样偏移）
+//   margin = 对方过渡带 fadeCells·spacing_h + 本体积 1.5 格（三线性插值的一格 + 半格余量）
+//          + biasSum·|minSpacing_v − minSpacing_h|（采样偏移按各体积间距缩放，两个体积里的采样点不重合）
 bool ddgiProbeCovered(uint v, ivec3 c)
 {
     vec3 origin = ddgiVolumes[v].origin.xyz;
@@ -120,11 +121,14 @@ bool ddgiProbeCovered(uint v, ivec3 c)
     vec3 pos = vec3(origin.x + (float(c.x) + 0.5) * spacing.x,
                     origin.y + (float(c.y) + 0.5) * spacing.y,
                     origin.z + (float(c.z) + 0.5) * spacing.z);
+    float biasSum = ddgi.shadingParams.x + ddgi.shadingParams.y;   // CPU 已限制在 0.5 以内
+    float vMinSpacing = min(spacing.x, min(spacing.y, spacing.z));
     for (uint h = 0u; h < v; ++h)
     {
         vec3 hOrigin = ddgiVolumes[h].origin.xyz;
         vec3 hSpacing = ddgiVolumes[h].spacing.xyz;
-        vec3 margin = ddgiVolumes[h].origin.w * hSpacing + 1.5 * spacing;
+        float biasShift = biasSum * abs(vMinSpacing - min(hSpacing.x, min(hSpacing.y, hSpacing.z)));
+        vec3 margin = ddgiVolumes[h].origin.w * hSpacing + 1.5 * spacing + vec3(biasShift);
         vec3 mn = hOrigin + margin;
         vec3 mx = hOrigin + vec3(ddgiVolumes[h].counts.xyz) * hSpacing - margin;
         if (all(greaterThan(pos, mn)) && all(lessThan(pos, mx)))

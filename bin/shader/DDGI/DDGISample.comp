@@ -16,6 +16,10 @@
 // 屏幕端 Apply 用它回退到 IBL 漫反射；ddgiSampleIrradiance 直接丢弃 remaining（体积外为 0，多次反弹用）。
 // 体积内部按 RTXGI 的权重：背面 wrap + 0.2 下限、Chebyshev³（下限 0.05）、小权重三次方压低、剔除埋在几何里的探针。
 // 未更新过的探针（n = 0）不参与；一个体积的有效角点太少时把权重让给下一个体积。
+// 采样偏移按体积缩放：biasedPos = worldPos + (normal·normalBias + toViewer·viewBias) × 该体积最小间距，
+// 所以 normalBias / viewBias 是「间距的倍数」，每个体积（含各级级联）各算一次，边缘过渡也用各自的偏移点。
+// 三线性权重保持线性：smoothstep 在探针处导数为 0，会把平滑的光照斜坡变成以 spacing 为周期的台阶，
+// 投到与网格对齐的墙面上就是方形光斑。
 
 // 单个体积：返回有效角点归一化后的辐照度；coverage = 有效角点的三线性权重和（0~1）
 vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, vec3 normal,
@@ -27,13 +31,15 @@ vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, ve
     vec3 q = (biasedPos - origin) / spacing - 0.5;    // 探针中心在 i + 0.5
     ivec3 base3 = ivec3(floor(q));
     vec3 alpha = clamp(q - vec3(base3), 0.0, 1.0);
-    alpha = alpha * alpha * (3.0 - 2.0 * alpha);       // 格子边界处梯度连续
 
     ivec3 maxCoord = ivec3(counts) - ivec3(1);
     vec2 irrAtlasSize = vec2(textureSize(ddgiIrradianceTex, 0));
     vec2 depthAtlasSize = vec2(textureSize(ddgiDepthTex, 0));
     float backfaceExp = max(ddgi.filterParams.x, 0.001);
-    const float minVariance = 1e-4;
+    // Chebyshev 的 variance / (variance + d²) 是尺度无关的，方差下限也要随 spacing² 缩放，
+    // 否则大间距级联上下限相对过小，可见性判定过于尖锐（1m 间距时与原来的 1e-4 相同）
+    float minSpacing = min(spacing.x, min(spacing.y, spacing.z));
+    float minVariance = 1e-4 * minSpacing * minSpacing;
 
     vec3 sum = vec3(0.0);
     float weightSum = 0.0;
@@ -115,8 +121,7 @@ vec3 ddgiSampleVolume(uint v, uint leakVolume, vec3 worldPos, vec3 biasedPos, ve
 
 vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float remaining)
 {
-    vec3 biasedPos = worldPos + normal * ddgi.shadingParams.x + toViewer * ddgi.shadingParams.y;
-
+    vec3 biasDir = normal * ddgi.shadingParams.x + toViewer * ddgi.shadingParams.y;   // 单位：间距的倍数
     vec3 result = vec3(0.0);
     remaining = 1.0;
     uint leakVolume = 0u;
@@ -125,6 +130,7 @@ vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float
     {
         vec3 origin = ddgiVolumes[v].origin.xyz;
         uvec3 counts = ddgiVolumeCounts(v);
+        vec3 biasedPos = worldPos + biasDir * ddgiMinSpacing(v);
 
         vec3 gridPos = (biasedPos - origin) / ddgiVolumes[v].spacing.xyz;
         vec3 edge = min(gridPos, vec3(counts) - gridPos);
@@ -144,7 +150,10 @@ vec3 ddgiSampleIrradianceEx(vec3 worldPos, vec3 normal, vec3 toViewer, out float
 
 #ifdef DDGI_LEAK_DEBUG
         if (gDDGIDebug)
+        {
             leakVolume = ddgiLeakVolume(ddgiVolumes[v].info.x);
+            ddgiLeakBiasedPos(leakVolume, biasedPos);     // 偏移按体积不同，记录第一个（优先级最高的）体积的
+        }
 #endif
         float coverage;
         vec3 irr = ddgiSampleVolume(v, leakVolume, worldPos, biasedPos, normal, origin, counts, coverage);

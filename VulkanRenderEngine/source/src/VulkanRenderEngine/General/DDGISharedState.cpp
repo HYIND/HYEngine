@@ -51,6 +51,23 @@ namespace
 		const int32_t p = int32_t(period);
 		return uint32_t(((key % p) + p) % p);
 	}
+
+	// 采样偏移（normalBias, viewBias），单位为体积最小间距的倍数。两者之和限制在 kMaxSampleBias 以内，
+	// 超出时按比例缩小（保持法线 / 视线方向的比例）：偏移太大采样点会离开表面所在的格子，
+	// 自遮挡判定失真；覆盖剔除的余量（BuildCoveredRanges / ddgiProbeCovered）也按这个上限设计
+	constexpr float kMaxSampleBias = 0.5f;
+
+	template <typename Params>
+	glm::vec2 ClampedSampleBias(const Params& p)
+	{
+		glm::vec2 b(std::max(0.0f, p.normalBias), std::max(0.0f, p.viewBias));
+		const float sum = b.x + b.y;
+		if (sum > kMaxSampleBias)
+			b *= kMaxSampleBias / sum;
+		return b;
+	}
+
+	float MinComponent(const glm::vec3& v) { return std::min(v.x, std::min(v.y, v.z)); }
 }
 
 DDGISharedState::DDGISharedState(std::shared_ptr<DDGIDebugChannel> channel)
@@ -121,7 +138,8 @@ std::shared_ptr<const DDGIFrame> DDGISharedState::Resolve(const RenderState& sta
 	}
 	frame->probeInfo = _cache.probeInfo;
 
-	BuildCoveredRanges(*frame);
+	const glm::vec2 sampleBias = ClampedSampleBias(p);
+	BuildCoveredRanges(*frame, sampleBias.x + sampleBias.y);
 	BuildResetAndUpdateLists(*frame, budget, probeCacheRebuilt);
 
 	// 烘焙请求：渲染器在这一帧把该体积的 probeData 拷到回读缓冲（见 DDGIBlendPass）
@@ -441,10 +459,13 @@ void DDGISharedState::RebuildProbeCache(const DDGIFrame& frame)
 // 被更高优先级体积完全覆盖：该体积在这一带的权重恒为 1，本体积的探针用不到，不更新、不参与采样。
 // 判定（与 shader 的 ddgiProbeCovered 逐项一致，改一边必须改另一边）：
 //   探针格子中心 pos = origin_i + (local + 0.5) · spacing_i
-//   余量 margin = fadeCells_j · spacing_j + 1.5 · spacing_i（对方的过渡带 + 本体积三线性插值的一格与采样偏移）
+//   余量 margin = fadeCells_j · spacing_j + 1.5 · spacing_i + biasSum · |minSpacing_i − minSpacing_j|
+//     前两项：对方的过渡带 + 本体积三线性插值的一格（再留半格）；
+//     第三项：采样偏移按各体积自己的间距缩放，同一个像素在 i、j 里的采样点相差 biasDir · (minSpacing_i − minSpacing_j)，
+//     |biasDir| ≤ normalBias + viewBias = biasSum
 //   origin_j + margin < pos < origin_j + counts_j · spacing_j − margin（三个轴都满足）
 // 每个轴独立，满足条件的下标是一段连续区间，逐轴扫一遍即可（每轴最多 255 个）
-void DDGISharedState::BuildCoveredRanges(const DDGIFrame& frame)
+void DDGISharedState::BuildCoveredRanges(const DDGIFrame& frame, float biasSum)
 {
 	const size_t count = frame.volumes.size();
 	_covered.resize(count);
@@ -455,11 +476,13 @@ void DDGISharedState::BuildCoveredRanges(const DDGIFrame& frame)
 
 		const auto& v = frame.volumes[i];
 		const glm::vec3 origin = v.Origin();
+		const float vMinSpacing = MinComponent(v.spacing);
 		for (size_t j = 0; j < i; ++j)
 		{
 			const auto& h = frame.volumes[j];
 			const glm::vec3 hOrigin = h.Origin();
-			const glm::vec3 margin = h.fadeCells * h.spacing + 1.5f * v.spacing;
+			const float biasShift = biasSum * std::abs(vMinSpacing - MinComponent(h.spacing));
+			const glm::vec3 margin = h.fadeCells * h.spacing + 1.5f * v.spacing + glm::vec3(biasShift);
 			const glm::vec3 mn = hOrigin + margin;
 			const glm::vec3 mx = hOrigin + glm::vec3(h.counts) * h.spacing - margin;
 
@@ -690,7 +713,9 @@ void DDGISharedState::UploadGPUData(DDGIFrame& frame, const RenderState& state)
 	const bool leak = debug.leakDebug && debug.leakPixelValid;
 
 	DDGIUniforms& u = frame.uniforms;
-	u.shadingParams = glm::vec4(std::max(0.0f, p.normalBias), std::max(0.0f, p.viewBias), std::max(0.0f, p.energy), std::max(0.0f, p.skyIntensity));
+	// 与 BuildCoveredRanges 用同一份限制后的偏移（覆盖剔除的余量依赖它）
+	const glm::vec2 sampleBias = ClampedSampleBias(p);
+	u.shadingParams = glm::vec4(sampleBias.x, sampleBias.y, std::max(0.0f, p.energy), std::max(0.0f, p.skyIntensity));
 	u.filterParams = glm::vec4(
 		std::max(0.001f, p.backfaceThreshold),
 		1.0f - std::clamp(p.hysteresis, 0.0f, 0.98f),

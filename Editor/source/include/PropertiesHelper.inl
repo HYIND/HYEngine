@@ -700,16 +700,16 @@ inline bool PropertiesHelper::DrawComponent(Scene3DRenderOption::DDGIParams& p)
 
 	// ── 着色 ──
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::DragFloat("normalBias", &p.normalBias, 0.01f, 0.0f, 5.0f))
+	if (ImGui::DragFloat("normalBias", &p.normalBias, 0.005f, 0.0f, 0.5f))
 		changed = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("采样点沿法线外推（米），抑制自遮挡与薄墙漏光。\n建议 spacing 的 0.1~0.3 倍。");
+		ImGui::SetTooltip("采样点沿法线外推，单位为所在体积最小间距的倍数（各级级联各自缩放），\n抑制自遮挡与薄墙漏光。建议 0.1~0.3，与 viewBias 之和不超过 0.5。");
 	changed |= ResetButton("normalBias", p.normalBias, d.normalBias);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
-	if (ImGui::DragFloat("viewBias", &p.viewBias, 0.01f, 0.0f, 2.0f))
+	if (ImGui::DragFloat("viewBias", &p.viewBias, 0.005f, 0.0f, 0.5f))
 		changed = true;
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("采样点朝观察者方向外推（米），与 normalBias 配合抑制掠射角漏光。\n建议 spacing 的 0.1~0.3 倍。");
+		ImGui::SetTooltip("采样点朝观察者方向外推，单位为所在体积最小间距的倍数（各级级联各自缩放），\n与 normalBias 配合抑制掠射角漏光。建议 0.1~0.3，与 normalBias 之和不超过 0.5。");
 	changed |= ResetButton("viewBias", p.viewBias, d.viewBias);
 	SetNextPropertyFieldWidth(130.0f, 0.55f);
 	if (ImGui::DragFloat("maxRayDistance", &p.maxRayDistance, 0.5f, 0.5f, 500.0f))
