@@ -8,7 +8,7 @@
 //   sampler2D ddgiProbeDataTex   // xyz = 偏移，w = 已更新次数 n + 背面命中比例（小数部分）
 // 图集原地更新、按世界格子滚动寻址：探针更新 Pass 在混合之前读，读到的就是上一帧的结果（多次反弹）。
 // 定义 DDGI_SAMPLE_SINGLE 时只取第一个（优先级最高）包含该点的体积，不做体积间过渡（多次反弹用，省一半采样）。
-// 定义 DDGI_LEAK_DEBUG 时，使用方需先提供 ddgiLeakVolume / ddgiLeakProbe / gDDGIDebug。
+// 定义 DDGI_LEAK_DEBUG 时，使用方需先提供 ddgiLeakVolume / ddgiLeakVolumeWeight / ddgiLeakProbe / ddgiLeakBiasedPos / gDDGIDebug。
 //
 // 返回 Lbar = E/π，乘漫反射反照率即出射辐亮度。
 // 多体积：按表顺序（优先级从高到低）累加，每个体积按边缘过渡拿走权重 w，剩下的 1 - w 交给下一个；

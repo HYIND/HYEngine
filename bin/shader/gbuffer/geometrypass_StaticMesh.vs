@@ -14,14 +14,20 @@ layout (location = 3) out mat3 TBN;
 layout (location = 6) out vec4 CurClipPos;
 layout (location = 8) out vec4 PrevClipPos;
 layout (location = 7) flat out uint materialIndex;
+#ifdef EDITOR_ENTITY_ID
+// 编辑器的实体 ID 缓冲：entityId + 1（UINT32_MAX 溢出成 0 = 没有物体）
+layout (location = 9) flat out uint EntityId;
+#endif
 
 #include "shader/dataDef/camerauboDef.comp"
 
+// C++ 镜像：RenderState.h 的 GeometryRenderData（std430，144 字节）
 struct RenderData
 {
 	mat4 model;
 	mat4 prevModel;
 	uint materialIndex;
+	uint entityId;
 };
 
 layout(set = 0, binding = 2) buffer RenderDatas
@@ -35,6 +41,9 @@ void main()
 	mat4 model = renderdata[gl_BaseInstance].model;
 	mat4 prevModel = renderdata[gl_BaseInstance].prevModel;
 	materialIndex = renderdata[gl_BaseInstance].materialIndex;
+#ifdef EDITOR_ENTITY_ID
+	EntityId = renderdata[gl_BaseInstance].entityId + 1u;
+#endif
 
     vec4 worldPos = model * vec4(aPos, 1.0f);
 	FragPos = worldPos.xyz;

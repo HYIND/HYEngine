@@ -128,6 +128,7 @@ void SkinnedPass::Execute(const std::shared_ptr<VKWrapper::VKCommandBuffer> cmd,
 			geometryRenderData[i].curTransform = source.model;
 			geometryRenderData[i].prevTransform = source.model;
 			geometryRenderData[i].materialIndex = source.materialIndex;
+			geometryRenderData[i].entityId = source.entityId;
 		}
 		ssbo_SkinnedMesh_GeometryRenderData->WriteDataAsync(cmd, geometryRenderData.data(), geometryRenderData.size() * sizeof(GeometryRenderData));
 		ssbo_SkinnedMesh_GeometryRenderData->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
@@ -209,6 +210,7 @@ std::vector<IndirectDrawCommand> SkinnedPass::AnlysisSkinnedIndirectCommands(
 					auto& transformAndMaterial = skinnedMesh_TransformAndMaterialIndices[transformIndex];
 					transformAndMaterial.model = item.transform;
 					transformAndMaterial.materialIndex = 0;
+					transformAndMaterial.entityId = item.entityId;
 
 					const auto& mesh = item.meshinfo.mesh;
 					const auto& material = item.meshinfo.material;

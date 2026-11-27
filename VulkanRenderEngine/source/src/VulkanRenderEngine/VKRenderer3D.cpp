@@ -31,11 +31,17 @@
 #include "VulkanRenderEngine/RenderPass/DDGIBlendPass.h"
 #include "VulkanRenderEngine/RenderPass/DDGIApplyPass.h"
 #include "VulkanRenderEngine/RenderPass/DDGIProbeDrawPass.h"
+#include "VulkanRenderEngine/RenderPass/EditorPickPass.h"
+#include "VulkanRenderEngine/RenderPass/EditorSelectionMaskPass.h"
+#include "VulkanRenderEngine/General/EditorViewport.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 
 #include <chrono>
+#include <optional>
 
 const std::string Ext_RenderTargetColorBuffer_Name = "renderTargetColorBuffer";
+// 编辑器选中遮罩（RenderTargetData::editorSelectionMask，每个在途帧一张）
+const std::string Ext_EditorSelectionMask_Name = "editorSelectionMask";
 
 // ---------------------------------------------------------------------------------------------------
 // Pass 并行构造
@@ -139,6 +145,10 @@ void VKRenderer3D::Init_Internal()
 		if (preCalculateTask) _preCalculatePass = preCalculateTask->get();
 	}
 
+	// 编辑器：选中描边（后处理之后画在最终画面上）。游戏里不创建
+	if (GlobalConfig::EditorViewportFeatures && !_editorOutlinePass)
+		_editorOutlinePass = std::make_unique<EditorOutlinePass>();
+
 	InitRenderTarget();
 }
 
@@ -181,6 +191,10 @@ void VKRenderer3D::InitRenderTarget()
 			uint32_t currH = std::max(1u, scr_height >> level);
 			renderTarget->bloomMipBuffers.push_back(std::make_shared<Texture2D>(currW, currH, vk::Format::eR16G16B16A16Sfloat, config));
 		}
+
+		// 编辑器选中遮罩：只用 texelFetch 读，过滤方式无所谓
+		if (GlobalConfig::EditorViewportFeatures)
+			renderTarget->editorSelectionMask = std::make_shared<Texture2D>(scr_width, scr_height, EditorSelectionMaskPass::GetMaskFormat(), config);
 
 		_renderTargets.push_back(std::move(renderTarget));
 	}
@@ -728,6 +742,16 @@ void VKRenderer3D::InitSceneRenderGraph()
 		passes->effect = std::move(effectPass);
 		passes->autoExposure = std::move(autoExposurePass);
 		passes->gBufferHistoryCopy = std::move(gBufferHistoryCopyPass);
+
+		// 编辑器视口：拾取（读回实体 ID 缓冲）。游戏里不创建
+		if (GlobalConfig::EditorViewportFeatures)
+		{
+			auto editorPickPass = std::make_unique<EditorPickPass>();
+			editorPickPass->SetChannel(_editorViewportChannel);
+			passes->editorPick = std::move(editorPickPass);
+			passes->editorSelectionMask = std::make_unique<EditorSelectionMaskPass>();
+		}
+
 		_scenePasses = std::move(passes);
 	}
 	auto& P = *_scenePasses;
@@ -750,6 +774,12 @@ void VKRenderer3D::InitSceneRenderGraph()
 	auto gAlbedoOpacity = resbuilder.CreateTexture(width, height, vk::Format::eR8G8B8A8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gAlbedoOpacity");
 	auto gMetallicRoughness = resbuilder.CreateTexture(width, height, vk::Format::eR16G16B16A16Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gMetallicRoughness");
 	auto gEmission = resbuilder.CreateTexture(width, height, GeometryPass::GetEmissionFormat(), vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEmission");
+
+	// 编辑器：实体 ID 缓冲（GeometryPass 的第 7 个输出，存 entityId + 1，0 = 没有物体），给拾取读回。
+	// 必须和 GeometryPass 管线有没有这个附件一致（两边都看 GlobalConfig::EditorViewportFeatures）
+	std::optional<RenderGraph::RenderGraphResource> gEntityId;
+	if (GeometryPass::HasEntityIdOutput())
+		gEntityId = resbuilder.CreateTexture(width, height, GeometryPass::GetEntityIdFormat(), vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "gEntityId");
 
 	auto ssaoOutPut = resbuilder.CreateTexture(width, height, vk::Format::eR8Unorm, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "ssaoOutPutBuffer");
 	// RTR / RTGI：按 2/3 分辨率追踪、时域累积、空域滤波（rtLowRes 的 Temp / Persistent），
@@ -880,6 +910,12 @@ void VKRenderer3D::InitSceneRenderGraph()
 		.After(hzbNode, preCalculateNode)
 		.Before(lightingNode)
 		.FrameLocal(ResourceData{ gDepthStencil, graphicsWriteLayout });
+	if (gEntityId)
+	{
+		geometryNode->Output(ResourceData{ *gEntityId, graphicsWriteLayout });		// Output 6
+		// 透明物体写实体 ID 时用的临时深度：不透明深度的拷贝，透明物体在上面做深度测试并写入（gDepthStencil 不动）
+		geometryNode->Temp(ResourceData{ resbuilder.CreateTexture(gDepthStencil, "geometry_editorTransparentDepth"), graphicsWriteLayout });	// Temp 0
+	}
 
 	ssaoNode->SetRenderPass(P.ssao)
 		.Input(ResourceData{ gPosition ,computeReadLayout }, ResourceData{ gNormal,computeReadLayout })
@@ -1238,6 +1274,31 @@ void VKRenderer3D::InitSceneRenderGraph()
 		.After(postProcessFence)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeReadLayout });
 
+	// 编辑器拾取：几何之后读实体 ID 缓冲和 gPosition。只有编辑器提交了请求的那一帧真正执行（见 EditorPickPass）。
+	// 两张图都按 computeReadLayout 读：gPosition 同时有 SSAO / 光照等读者，渲染图不给同一资源的多个读者排序，布局必须一致
+	RenderGraph::PassNode* editorPickNode = nullptr;
+	if (gEntityId && P.editorPick)
+	{
+		editorPickNode = _sceneRenderGraph->AddNode("editorPickNode");
+		editorPickNode->SetRenderPass(P.editorPick)
+			.Input(ResourceData{ *gEntityId, computeReadLayout })
+			.Input(ResourceData{ gPosition, computeReadLayout })
+			.After(geometryNode);
+	}
+
+	// 编辑器选中遮罩：几何（含蒙皮）之后，读实体 ID 缓冲判断可见性。排在拾取之后：两者都要切实体 ID 缓冲的布局，不能并行
+	if (gEntityId && P.editorSelectionMask)
+	{
+		auto Ext_EditorSelectionMask = _sceneRenderGraph->CreateExternalTexture(Ext_EditorSelectionMask_Name);
+		auto editorSelectionMaskNode = _sceneRenderGraph->AddNode("editorSelectionMaskNode");
+		editorSelectionMaskNode->SetRenderPass(P.editorSelectionMask)
+			.Input(ResourceData{ *gEntityId, graphicsReadLayout })
+			.External(ExternalResourceData{ Ext_EditorSelectionMask, graphicsWriteLayout })
+			.After(geometryNode);
+		if (editorPickNode)
+			editorSelectionMaskNode->After(editorPickNode);
+	}
+
 	_sceneRenderGraph->Compile();
 
 	if (oldGraph)
@@ -1286,6 +1347,20 @@ void VKRenderer3D::OnDispatch(FrameJob& job, const FrameJob* prev, uint32_t stag
 	// 相机历史只跟真正画过场景的帧走，3D 关闭的帧不参与
 	if (!data->skipScene)
 		ResolveFrameHistory(state, *data);
+
+	// 编辑器选中：这一帧用的快照（遮罩 Pass 和描边 Pass 读同一份）。没选东西时为空，两个 Pass 都跳过
+	state.editorSelection.reset();
+	if (GlobalConfig::EditorViewportFeatures && !data->skipScene)
+	{
+		auto selection = _editorViewportChannel->GetSelection();
+		if (selection && !selection->Empty())
+		{
+			auto frameSelection = std::make_shared<EditorFrameSelection>();
+			frameSelection->selection = std::move(selection);
+			frameSelection->style = _editorViewportChannel->GetStyle();
+			state.editorSelection = std::move(frameSelection);
+		}
+	}
 
 	job.stageData[stageIndex] = std::move(data);
 }
@@ -1368,6 +1443,8 @@ void VKRenderer3D::Execute(FrameJob& job, uint32_t stageIndex)
 			std::unordered_map<std::string, std::shared_ptr<Texture2D>> externalResources = {
 				{ Ext_RenderTargetColorBuffer_Name, renderTarget->sceneColorBuffer }
 			};
+			if (renderTarget->editorSelectionMask)
+				externalResources.emplace(Ext_EditorSelectionMask_Name, renderTarget->editorSelectionMask);
 			_sceneRenderGraph->Execute(state, externalResources);
 		}
 	}
@@ -1401,6 +1478,10 @@ void VKRenderer3D::Execute(FrameJob& job, uint32_t stageIndex)
 					option.flags.bloomOn, option.flags.gammaOn, false,
 					pow(2.0f, option.postProcessParams.EV100), option.postProcessParams.gamma
 				);
+
+				// 编辑器选中描边：画在最终画面上（2D 阶段在后面，2D 精灵会盖在 3D 描边上面）
+				if (_editorOutlinePass && state->editorSelection && renderTarget->editorSelectionMask)
+					_editorOutlinePass->Draw(job.finalColor, renderTarget->editorSelectionMask, *state->editorSelection);
 			}
 		}
 

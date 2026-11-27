@@ -142,6 +142,7 @@ namespace VKWrapper
 		void updateBuffer(vk::Buffer dstBuffer, vk::DeviceSize dstOffset, vk::DeviceSize dataSize, const void* pData);
 		void fillBuffer(vk::Buffer dstBuffer, vk::DeviceSize dstOffset, vk::DeviceSize size, uint32_t data);
 		void copyBufferToImage(vk::Buffer srcBuffer, vk::Image dstImage, vk::ImageLayout dstImageLayout, vk::ArrayProxy<vk::BufferImageCopy const> const& regions);
+		void copyImageToBuffer(vk::Image srcImage, vk::ImageLayout srcImageLayout, vk::Buffer dstBuffer, vk::ArrayProxy<vk::BufferImageCopy const> const& regions);
 
 		// 清除命令
 		void clearColorImage(vk::Image image, vk::ImageLayout imageLayout, const vk::ClearColorValue& color, vk::ArrayProxy<vk::ImageSubresourceRange const> const& ranges);

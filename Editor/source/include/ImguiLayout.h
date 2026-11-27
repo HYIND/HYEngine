@@ -10,6 +10,17 @@
 #include <functional>
 
 
+// 拖放到场景视口时鼠标下的目标：拖动过程中持续拾取得到（见 ImguiLayout.cpp 的 DragHoverPick），松手时直接用
+struct ViewportDropTarget
+{
+	Entity entity;									// 鼠标下的实体（视口图标 / 2D / 3D 网格），没有为空
+	bool hasSurface = false;						// 3D 网格表面的世界坐标是否可用
+	glm::vec3 surfacePosition{ 0.0f };
+	// 鼠标射线：没有命中表面时，拖进来的模型摆在射线前方 15 米
+	glm::vec3 rayOrigin{ 0.0f };
+	glm::vec3 rayDirection{ 0.0f, 0.0f, -1.0f };
+};
+
 class ImguiLayout
 {
 public:
@@ -27,7 +38,7 @@ public:
 	static void DropFile(const std::string& filePath, ProjectManager* projectManager, const ImVec2& mousePos);
 	static void DropFolder(const std::string& folderPath, ProjectManager* projectManager, const ImVec2& mousePos);
 
-	static void HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize);
+	static void HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize, const ViewportDropTarget& target);
 	static void HandleScriptFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);
 	static void ApplyScriptAsset(Entity target, const AssetMeta& meta, ProjectManager* projectManager);
 	static void HandleUIAssetFileDrop(const std::string& filePath, Entity target, ProjectManager* projectManager);

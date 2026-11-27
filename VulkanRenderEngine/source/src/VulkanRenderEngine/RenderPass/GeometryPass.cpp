@@ -2,6 +2,9 @@
 #include "VulkanRenderEngine/RenderPass/GeometryPass.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
+
+#include <iostream>
 
 namespace
 {
@@ -14,6 +17,56 @@ namespace
 			vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eStorageImage;
 		return (features & required) == required ? preferred : fallback;
 	}
+
+	// 编辑器的实体 ID 附件：整数格式不能混合，只写 R
+	void AddEntityIdAttachment(GraphicsPipelineConfig& config)
+	{
+		const auto state = vk::PipelineColorBlendAttachmentState()
+			.setBlendEnable(vk::False)
+			.setColorWriteMask(vk::ColorComponentFlagBits::eR);
+		config.AddColorAttachment(GeometryPass::GetEntityIdFormat(), state);
+		config.AddDefineMacro("EDITOR_ENTITY_ID");
+	}
+
+	constexpr const char* kTransparentIdFragmentShader = "shader/editor/transparentId.fs";
+
+	// 透明物体写实体 ID：只有 R32_UINT 一个附件；深度测试 + 写入（临时深度，不碰 gDepthStencil）
+	std::shared_ptr<GraphicsPipeline> CreateTransparentIdPipeline(const std::string& vertexPath, bool skinned)
+	{
+		auto pipeline = std::make_shared<GraphicsPipeline>();
+
+		GraphicsPipelineConfig config;
+		config.vertexPath = vertexPath;
+		config.fragmentPath = kTransparentIdFragmentShader;
+		config.AddVertexInputAttributeDescription(StaticMesh::GetVertexInputAttributeDescription());
+		config.AddVertexInputBindingDescription(StaticMesh::GetVertexInputBindingDescription());
+		config.AddDefineMacro("EDITOR_ENTITY_ID");
+		config.AddDefineMacro("EDITOR_TRANSPARENT_PICK_OPACITY", GeometryPass::TransparentPickOpacity);
+
+		const auto state = vk::PipelineColorBlendAttachmentState()
+			.setBlendEnable(vk::False)
+			.setColorWriteMask(vk::ColorComponentFlagBits::eR);
+		config.AddColorAttachment(GeometryPass::GetEntityIdFormat(), state);
+		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
+		config.SetDepthTest(true, true, vk::CompareOp::eLess);
+
+		config
+			.AddBindlessMaterialTextureBinding()
+			.AddCameraUnifromDataBinding()
+			.AddStorageBuffer(2);
+		if (skinned)
+			config.AddStorageBuffer(3).AddStorageBuffer(4);		// 蒙皮 VS 声明了 motion 数据、上一帧顶点，就要绑
+		config.AddDynamicState(vk::DynamicState::eCullMode);
+
+		if (config.Validate())
+			pipeline->Create(config);
+		return pipeline;
+	}
+}
+
+bool GeometryPass::HasEntityIdOutput()
+{
+	return GlobalConfig::EditorViewportFeatures;
 }
 
 vk::Format GeometryPass::GetMotionVectorFormat()
@@ -34,6 +87,8 @@ GeometryPass::GeometryPass(
 	const std::string& skinnedMeshVertexShaderPath
 )
 {
+	_hasEntityId = HasEntityIdOutput();
+
 	{
 		_staticShader = std::make_shared<GraphicsPipeline>();
 
@@ -50,6 +105,8 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(GetMotionVectorFormat());		// gMotionVector
 		config.AddColorAttachment(GetEmissionFormat());			// gEmission
+		if (_hasEntityId)
+			AddEntityIdAttachment(config);						// gEntityId（编辑器）
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 
@@ -80,6 +137,8 @@ GeometryPass::GeometryPass(
 		config.AddColorAttachment(vk::Format::eR16G16B16A16Sfloat);
 		config.AddColorAttachment(GetMotionVectorFormat());		// gMotionVector
 		config.AddColorAttachment(GetEmissionFormat());			// gEmission
+		if (_hasEntityId)
+			AddEntityIdAttachment(config);						// gEntityId（编辑器）
 
 		config.SetDepthStencilAttachmentFormat(vk::Format::eD24UnormS8Uint);
 
@@ -95,6 +154,13 @@ GeometryPass::GeometryPass(
 		if (config.Validate())
 			_skinnedShader->Create(config);
 	}
+
+	// 编辑器：透明物体写实体 ID（顶点着色器和 G-Buffer 用同一套）
+	if (_hasEntityId)
+	{
+		_transparentIdStaticShader = CreateTransparentIdPipeline(staticMeshVertexShaderPath, false);
+		_transparentIdSkinnedShader = CreateTransparentIdPipeline(skinnedMeshVertexShaderPath, true);
+	}
 }
 
 GeometryPass::~GeometryPass()
@@ -108,7 +174,8 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 	std::shared_ptr<Texture2D>& gMetallicRoughnessMap,
 	std::shared_ptr<Texture2D>& gMotionVectorMap,
 	std::shared_ptr<Texture2D>& gEmission,
-	std::shared_ptr<Texture2D>& gDepthStencilMap
+	std::shared_ptr<Texture2D>& gDepthStencilMap,
+	const std::shared_ptr<Texture2D>& gEntityId
 )
 {
 	DynamicRenderInfo info;
@@ -119,8 +186,11 @@ DynamicRenderInfo GeometryPass::GenerateDynamicRenderInfo(
 		.AddColorAttachment(gAlbedoOpacity->GetImageView(vk::ImageAspectFlagBits::eColor))
 		.AddColorAttachment(gMetallicRoughnessMap->GetImageView(vk::ImageAspectFlagBits::eColor))
 		.AddColorAttachment(gMotionVectorMap->GetImageView(vk::ImageAspectFlagBits::eColor))
-		.AddColorAttachment(gEmission->GetImageView(vk::ImageAspectFlagBits::eColor))
-		.AddDepthStencilAttachment(gDepthStencilMap->GetImageView(vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eDepth));
+		.AddColorAttachment(gEmission->GetImageView(vk::ImageAspectFlagBits::eColor));
+	// 清屏值全 0：按 uint 解释就是 0 = 没有物体
+	if (gEntityId)
+		info.AddColorAttachment(gEntityId->GetImageView(vk::ImageAspectFlagBits::eColor));
+	info.AddDepthStencilAttachment(gDepthStencilMap->GetImageView(vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eDepth));
 	return info;
 }
 
@@ -139,6 +209,18 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	auto gMotionVector = ctx.GetOutput(4);
 	auto gEmission = ctx.GetOutput(5);
 
+	// 管线带了实体 ID 附件，渲染图就必须给第 7 个输出（见 VKRenderer3D::InitSceneRenderGraph），否则附件数对不上，不能画
+	std::shared_ptr<Texture2D> gEntityId;
+	if (_hasEntityId)
+	{
+		gEntityId = ctx.GetOutput(6);
+		if (!gEntityId || gEntityId->IsEmpty())
+		{
+			std::cout << "[ GeometryPass ] 管线带实体 ID 附件，但渲染图没有给 gEntityId 输出，跳过本帧\n";
+			return;
+		}
+	}
+
 	auto cmd = cmdCtx.GetCmd();
 
 	gPosition->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
@@ -148,19 +230,169 @@ void GeometryPass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph
 	gMetallicRoughness->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	gMotionVector->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	gEmission->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	if (gEntityId)
+		gEntityId->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
 
 	DynamicRenderInfo renderInfo = GenerateDynamicRenderInfo(
 		state,
-		gPosition, gNormal, gAlbedoOpacity, gMetallicRoughness, gMotionVector, gEmission, gDepthStencil
+		gPosition, gNormal, gAlbedoOpacity, gMetallicRoughness, gMotionVector, gEmission, gDepthStencil, gEntityId
 	);
 	DynamicViewport viewPort(state.framebuffer.width, state.framebuffer.height);
 
 	RenderSceneGeometryPassStatic(registry, cmd, state, renderInfo, viewPort);
 
+	// 编辑器：透明物体也写进实体 ID 缓冲（透明物体不画时不写，和画面一致）
+	if (gEntityId && state.option.flags.drawTransparent)
+		RenderTransparentEntityIds(registry, cmd, state, gEntityId, gDepthStencil, ctx.GetTemp(0));
+
 	if (cmd->IsRecording())
 		cmd->SubmitToQueue();
+}
+
+void GeometryPass::RenderTransparentEntityIds(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state,
+	const std::shared_ptr<Texture2D>& gEntityId, const std::shared_ptr<Texture2D>& gDepthStencil, const std::shared_ptr<Texture2D>& tempDepth)
+{
+	if (!cmd || !gEntityId || !gDepthStencil || !tempDepth || tempDepth->IsEmpty()
+		|| tempDepth->GetWidth() != gDepthStencil->GetWidth() || tempDepth->GetHeight() != gDepthStencil->GetHeight())
+		return;
+
+	auto indirectManager = IndirectDrawManager::Instance();
+	auto materialSSBO = indirectManager->GetMaterialSSBO();
+	if (!materialSSBO)
+		return;
+
+	// ── 静态透明网格：和 TransparentPass 一样用剔除后的列表（不按远近排序：有深度写入，顺序无所谓） ──
+	std::vector<GeometryRenderData> staticData;
+	std::vector<IndirectDrawCommand> staticCommands;
+	const bool staticReady = _transparentIdStaticShader && _transparentIdStaticShader->IsValid();
+	if (staticReady)
+	{
+		const auto& items = state.objects.sceneStaticRenderData.transparentItems;
+		const auto& cullIndex = state.objects.sceneStaticRenderData.transparentItems_cullRenderIndex;
+		using SharedLockType = IndirectDrawManager::SharedLockType;
+		indirectManager->WithSharedLock({ SharedLockType::Mesh, SharedLockType::Material }, [&]()
+			{
+				for (const size_t index : cullIndex)
+				{
+					if (index >= items.size())
+						continue;
+					const auto& item = items[index];
+					if (item.entityId == UINT32_MAX || !item.meshinfo.mesh || !item.meshinfo.material)
+						continue;
+
+					IndirectDrawMeta meta;
+					if (!indirectManager->GetIndirectDrawMeta_LockFree(*item.meshinfo.mesh, meta))
+						continue;
+
+					GeometryRenderData data;
+					data.curTransform = item.transform;
+					data.prevTransform = item.prevTransform;
+					data.entityId = item.entityId;
+					uint64_t materialIndex = 0;
+					if (indirectManager->GetMaterialIndex_LockFree(*item.meshinfo.material, materialIndex))
+						data.materialIndex = uint32_t(materialIndex);
+
+					IndirectDrawCommand command{};
+					command.indexCount = meta.indexCount;
+					command.firstIndex = meta.firstIndex;
+					command.vertexOffset = meta.vertexOffset;
+					command.instanceCount = 1;
+					command.firstInstance = uint32_t(staticData.size());
+
+					staticData.push_back(data);
+					staticCommands.push_back(command);
+				}
+			});
+	}
+
+	// ── 蒙皮透明网格：SkinnedPass 已经生成了命令和带 entityId 的 GeometryRenderData（和 TransparentPass 用的同一份） ──
+	auto& indirect = state.indirectCommands;
+	const auto& skinnedCommands = indirect.transparentMesh_Command;
+	const auto& skinnedVertices = state.curFrameSkinnedData ? state.curFrameSkinnedData->skinnedMesh_VertexBuffer : nullptr;
+	const bool drawSkinned = !skinnedCommands.empty() && skinnedVertices && skinnedVertices->buffer
+		&& indirect.ssbo_SkinnedMesh_GeometryRenderData && indirect.ssbo_SkinnedMesh_MotionData
+		&& _transparentIdSkinnedShader && _transparentIdSkinnedShader->IsValid();
+	const bool drawStatic = !staticCommands.empty();
+	if (!drawStatic && !drawSkinned)
+		return;
+
+	// 不透明深度拷一份：透明物体在拷贝上做深度测试并写入（只留最近的透明面），gDepthStencil 保持不透明深度给后面的 Pass 用
+	if (!Texture2D::CopyTextureAsync(cmd, gDepthStencil, tempDepth))
+		return;
+	tempDepth->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gDepthStencil->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+	gEntityId->TransitionLayout(cmd, nullptr, ImageLayout::BindStage::Graphics, ImageLayout::BindUsage::Write);
+
+	std::shared_ptr<StorageBlock> staticDataBlock;
+	std::shared_ptr<IndirectBufferBlock> staticCommandBlock;
+	if (drawStatic)
+	{
+		staticDataBlock = registry.GetStorageBlock("geometry_transparentId_renderData");
+		staticCommandBlock = registry.GetIndirectBlock("geometry_transparentId_staticCommands");
+		staticDataBlock->WriteDataAsync(cmd, staticData.data(), staticData.size() * sizeof(GeometryRenderData));
+		staticDataBlock->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::StorageRead);
+		staticCommandBlock->WriteDataAsync(cmd, staticCommands.data(), staticCommands.size() * sizeof(IndirectDrawCommand));
+		staticCommandBlock->Barrier(cmd, BufferUsage::TransferWrite);
+	}
+	std::shared_ptr<IndirectBufferBlock> skinnedCommandBlock;
+	if (drawSkinned)
+	{
+		skinnedCommandBlock = registry.GetIndirectBlock("geometry_transparentId_skinnedCommands");
+		skinnedCommandBlock->WriteDataAsync(cmd, skinnedCommands.data(), skinnedCommands.size() * sizeof(IndirectDrawCommand));
+		skinnedCommandBlock->Barrier(cmd, BufferUsage::TransferWrite);
+	}
+
+	DynamicRenderInfo info;
+	info.SetRenderArea(state.framebuffer.width, state.framebuffer.height)
+		.AddColorAttachment(gEntityId->GetImageView(vk::ImageAspectFlagBits::eColor), vk::AttachmentLoadOp::eLoad)
+		.AddDepthStencilAttachment(tempDepth->GetImageView(vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil), vk::AttachmentLoadOp::eLoad);
+	DynamicViewport viewport(state.framebuffer.width, state.framebuffer.height);
+
+	cmd->setDynamicViewport(viewport);
+	cmd->beginRendering(info);
+
+	if (drawStatic)
+	{
+		GraphicsBindingRecord binding;
+		binding.SetBindlessMaterialTexture(materialSSBO, BindlessTextureManager::Instance());
+		binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+		binding.SetStorageBlock(staticDataBlock, 2);
+		_transparentIdStaticShader->Bind(cmd, binding);
+		cmd->setCullMode(vk::CullModeFlagBits::eBack);		// 和 TransparentPass 一样只画正面
+		cmd->bindVertexBuffers(indirectManager->GetVertexBlock());
+		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
+		cmd->drawIndexedIndirect(staticCommandBlock, uint32_t(staticCommands.size()));
+	}
+
+	if (drawSkinned)
+	{
+		std::shared_ptr<StorageBlock> prevSkinnedVertices;
+		if (state.preFrameSkinnedData && state.preFrameSkinnedData->skinnedMesh_VertexBuffer
+			&& state.preFrameSkinnedData->skinnedMesh_VertexBuffer->buffer)
+			prevSkinnedVertices = state.preFrameSkinnedData->skinnedMesh_VertexBuffer->buffer;
+		else
+		{
+			if (!_dummySkinnedVertexBuffer)
+				_dummySkinnedVertexBuffer = std::make_shared<VertexBufferBlock>(sizeof(Vertex));
+			prevSkinnedVertices = _dummySkinnedVertexBuffer;
+		}
+
+		GraphicsBindingRecord binding;
+		binding.SetBindlessMaterialTexture(materialSSBO, BindlessTextureManager::Instance());
+		binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
+		binding.SetStorageBlock(indirect.ssbo_SkinnedMesh_GeometryRenderData, 2);
+		binding.SetStorageBlock(indirect.ssbo_SkinnedMesh_MotionData, 3);
+		binding.SetStorageBlock(prevSkinnedVertices, 4);
+		_transparentIdSkinnedShader->Bind(cmd, binding);
+		cmd->setCullMode(vk::CullModeFlagBits::eBack);
+		cmd->bindVertexBuffers(skinnedVertices->buffer);
+		cmd->bindIndexBuffer(indirectManager->GetIndexBlock());
+		cmd->drawIndexedIndirect(skinnedCommandBlock, uint32_t(skinnedCommands.size()));
+	}
+
+	cmd->endRendering();
 }
 
 void GeometryPass::FrameEnd(RenderGraph::FrameDataRegistry& registry, RenderState& state)
@@ -251,6 +483,7 @@ bool GeometryPass::SetupStaticBufferData(
 
 						data.curTransform = item.transform;
 						data.prevTransform = item.prevTransform;
+						data.entityId = item.entityId;
 
 						uint64_t materialIndex;
 						if (indirectManager->GetMaterialIndex_LockFree(*material, materialIndex))

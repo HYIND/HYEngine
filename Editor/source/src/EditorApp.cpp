@@ -12,6 +12,7 @@
 
 #include "Input/EngineInputContext.h"
 #include "RenderEngine/Renderer3D.h"
+#include "VulkanRenderEngine/GlobalConfig.h"
 
 #include "EditorTags.h"
 #include <algorithm>
@@ -41,6 +42,9 @@ EditorApp::EditorApp()
 {
 	// 中键平移按视口高度把像素换算成世界单位，视口高度只有应用层知道。
 	m_scene.SetViewportHeightProvider([this] { return static_cast<float>(GetRenderTargetHeight()); });
+
+	// 编辑器视口功能（实体 ID 缓冲 / 拾取）：要在渲染器建管线之前打开，运行中不能改
+	GlobalConfig::EditorViewportFeatures = true;
 
 	EngineRuntimeConfig config;
 	config.hostType = EngineHostType::Editor;

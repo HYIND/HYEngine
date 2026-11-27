@@ -320,6 +320,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDebug.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\General\EditorViewport.h">
+      <Filter>头文件\VulkanRenderEngine\General</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
@@ -336,6 +339,15 @@
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIApplyPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorPickPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorSelectionMaskPass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorOutlinePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\RTCoreRayTraceGeneralPass.h">
@@ -626,6 +638,15 @@
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIApplyPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorPickPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorSelectionMaskPass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorOutlinePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.cpp">

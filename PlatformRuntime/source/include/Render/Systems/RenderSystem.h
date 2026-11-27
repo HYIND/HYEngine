@@ -9,6 +9,9 @@
 #include "VulkanRenderEngine/Base/Light.h"
 #include "Script/IScriptModule.h"
 
+#include <functional>
+#include <vector>
+
 class RenderableBaseModule : public IScriptModule
 {
 public:
@@ -60,6 +63,12 @@ public:
     // entity 有 Transform2D 且有已解析的 Sprite 或 AnimatedImagePlayer（Sprite 优先）时返回 true。
     // 不看 visible / 透明度：选中了隐藏或全透明的精灵也能看到它在哪。必须在场景线程调用
     static bool Get2DBounds(World& world, Entity entity, Bounds2D& out);
+
+    // 编辑器 2D 框选：可见的精灵 / 动图（筛选同 Pick2D）里，矩形经 toRectSpace 映射后和轴对齐矩形 [rectMin, rectMax] 有重叠的，
+    // 按实体 id 升序、去重。toRectSpace 把 2D 世界坐标映射到框选矩形所在的坐标系（比如视口屏幕坐标），必须是仿射变换
+    // （2D 相机的视图变换就是），这样矩形映射后仍是平行四边形。必须在场景线程调用
+    static std::vector<Entity> Pick2DRect(World& world, const std::function<glm::vec2(const glm::vec2&)>& toRectSpace,
+        const glm::vec2& rectMin, const glm::vec2& rectMax);
 
 public:
     virtual void postUpdate(float deltaTime) override;

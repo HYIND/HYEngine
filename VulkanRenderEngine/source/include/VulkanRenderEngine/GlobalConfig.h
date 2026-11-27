@@ -31,6 +31,10 @@ namespace GlobalConfig
 
 	inline bool VK_DESCRIPTOR_HEAP_Enable = false;
 
+	// 编辑器视口功能（实体 ID 缓冲 / 拾取，以后的选中描边）：编辑器在创建渲染器之前打开，游戏里保持关闭。
+	// 启动时决定、运行中不变：GeometryPass 管线的附件数量和它绑定，改了要重建管线
+	inline bool EditorViewportFeatures = false;
+
 	inline uint32_t Global_WorkSize_X = 8;
 	inline uint32_t Global_WorkSize_Y = 8;
 }

@@ -28,6 +28,17 @@ public:
 	static vk::Format GetMotionVectorFormat();
 	static vk::Format GetEmissionFormat();
 
+	// 编辑器的实体 ID 缓冲（GlobalConfig::EditorViewportFeatures 打开时是第 7 个颜色附件，Output 6）：
+	// 每像素存 entityId + 1，0 = 没有物体（清屏值）。不透明的静态 / 蒙皮网格在 G-Buffer 里一起写，镂空（opacity < 0.01）的像素被 discard；
+	// 透明网格随后单独写一遍（见 TransparentPickOpacity），这时渲染图要给 Temp 0（和 gDepthStencil 同格式的临时深度）。
+	// 整数格式，附件的混合必须关掉
+	static vk::Format GetEntityIdFormat() { return vk::Format::eR32Uint; }
+	static bool HasEntityIdOutput();
+	// 透明物体（AlphaMode::Blend）也写进实体 ID 缓冲：不透明物体画完之后，用不透明深度的一份拷贝（Temp 0）做深度测试并写入，
+	// 鼠标下最近的透明面覆盖后面物体的 ID。材质透明度低于这个值的地方不算物体（点得穿）。
+	// 选中遮罩（EditorSelectionMaskPass）画透明物体时用同一个阈值，描边和拾取范围一致
+	static constexpr float TransparentPickOpacity = 0.02f;
+
 private:
 	DynamicRenderInfo GenerateDynamicRenderInfo(
 		RenderState& state,
@@ -37,7 +48,8 @@ private:
 		std::shared_ptr<Texture2D>& gMetallicRoughnessMap,
 		std::shared_ptr<Texture2D>& gMotionVectorMap,
 		std::shared_ptr<Texture2D>& gEmission,
-		std::shared_ptr<Texture2D>& tempDepthStencilMap
+		std::shared_ptr<Texture2D>& tempDepthStencilMap,
+		const std::shared_ptr<Texture2D>& gEntityId		// 可以为空（没开编辑器视口功能）
 	);
 
 	bool SetupStaticBufferData(
@@ -49,6 +61,9 @@ private:
 		std::vector<IndirectDrawCommand>& twoSideCommands
 	);
 	void RenderSceneGeometryPassStatic(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, DynamicRenderInfo& renderInfo, DynamicViewport& viewPort);
+	// 编辑器：透明物体写实体 ID（见 TransparentPickOpacity）。tempDepth：和 gDepthStencil 同格式的临时深度
+	void RenderTransparentEntityIds(RenderGraph::FrameDataRegistry& registry, const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state,
+		const std::shared_ptr<Texture2D>& gEntityId, const std::shared_ptr<Texture2D>& gDepthStencil, const std::shared_ptr<Texture2D>& tempDepth);
 
 private:
 	std::shared_ptr<GraphicsPipeline> _staticShader;
@@ -56,6 +71,11 @@ private:
 	std::shared_ptr<GraphicsPipeline> _skinnedShader;
 	// 没有上一帧顶点缓冲时占位用的假缓冲（重投影关闭时 shader 不会读它）
 	std::shared_ptr<VertexBufferBlock> _dummySkinnedVertexBuffer;
+	// 构造时按 GlobalConfig::EditorViewportFeatures 决定的：两条管线是否带实体 ID 附件（之后不变）
+	bool _hasEntityId = false;
+	// 编辑器：透明物体写实体 ID 的两条管线（只有一个 R32_UINT 附件 + 深度），_hasEntityId 时才创建
+	std::shared_ptr<GraphicsPipeline> _transparentIdStaticShader;
+	std::shared_ptr<GraphicsPipeline> _transparentIdSkinnedShader;
 };
 
 // G-Buffer 历史的收尾拷贝：把本帧的 gPosition / gNormal / gDepthStencil 拷进三张历史纹理（Persistent），给下一帧的时域累积用。

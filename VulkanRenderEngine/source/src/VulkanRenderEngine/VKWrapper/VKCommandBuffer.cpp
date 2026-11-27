@@ -259,6 +259,11 @@ void VKWrapper::VKCommandBuffer::copyBufferToImage(vk::Buffer srcBuffer, vk::Ima
 	return _handle.copyBufferToImage(srcBuffer, dstImage, dstImageLayout, regions);
 }
 
+void VKWrapper::VKCommandBuffer::copyImageToBuffer(vk::Image srcImage, vk::ImageLayout srcImageLayout, vk::Buffer dstBuffer, vk::ArrayProxy<vk::BufferImageCopy const> const& regions) {
+	Need();
+	_handle.copyImageToBuffer(srcImage, srcImageLayout, dstBuffer, regions);
+}
+
 // 清除命令
 void VKWrapper::VKCommandBuffer::clearColorImage(vk::Image image, vk::ImageLayout imageLayout, const vk::ClearColorValue& color, vk::ArrayProxy<vk::ImageSubresourceRange const> const& ranges) {
 	Need();

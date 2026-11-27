@@ -5,6 +5,7 @@
 #include "CommonComponent.h"
 #include "PropertiesHelper.h"
 #include "DDGIEditor.h"
+#include "ViewportIcons.h"
 #include "RenderProfilerPanel.h"
 #include "LogicProfilerPanel.h"
 #include "RenderOptionPanels.h"
@@ -14,6 +15,8 @@
 #include "AssetThumbnails.h"
 #include "MaterialPreview.h"
 #include "Render/Systems/RenderSystem.h"
+#include "RenderEngine/Renderer3D.h"
+#include "VulkanRenderEngine/General/EditorViewport.h"
 #include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
 #include <filesystem>
@@ -21,6 +24,9 @@
 #include <cmath>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <array>
+#include <future>
 #include <vector>
 #include <mutex>
 #include <optional>
@@ -420,6 +426,124 @@ namespace
 
 	// ---------------- 编辑器视口里的 2D 层：点选、手柄 ----------------
 
+	// ---------------- 选中集合（多选 / 框选） ----------------
+	// ImguiLayout::selectedEntity 始终是选中列表里的第一个（DDGI、阴影调试、单选时的手柄 / 属性面板等照旧只看它）；
+	// 完整列表按加入顺序放在 s_selection 里。别处直接给 selectedEntity 赋值（删除、复制、切场景等）时，
+	// SyncSelection 发现两者对不上，就把列表重置成只有它一个。
+	// 多选只支持用手柄一起调整变换：属性面板只读、只显示变换组件，删除 / 复制在多选时不可用
+	enum class SelectMode { Replace, Add, Toggle };
+
+	std::vector<Entity> s_selection;
+	uint64_t s_selectionVersion = 1;		// 选中每变一次 +1：异步拾取的结果据此判断还能不能用
+	Entity s_hierarchyRangeAnchor;			// 层级面板 Shift 区间选的起点：上一次不带 Shift 点的那一行
+
+	// 按下时的修饰键：Ctrl = 切换，Shift = 加入，否则替换
+	SelectMode SelectModeFromKeys()
+	{
+		const ImGuiIO& io = ImGui::GetIO();
+		if (io.KeyCtrl)
+			return SelectMode::Toggle;
+		if (io.KeyShift)
+			return SelectMode::Add;
+		return SelectMode::Replace;
+	}
+
+	bool IsSelected(Entity entity)
+	{
+		return entity && std::find(s_selection.begin(), s_selection.end(), entity) != s_selection.end();
+	}
+
+	void SetSelectionList(const std::vector<Entity>& list)
+	{
+		std::vector<Entity> unique;
+		unique.reserve(list.size());
+		for (const Entity& e : list)
+		{
+			if (e && std::find(unique.begin(), unique.end(), e) == unique.end())
+				unique.push_back(e);
+		}
+		const Entity first = unique.empty() ? Entity() : unique.front();
+		if (unique == s_selection && ImguiLayout::selectedEntity == first)
+			return;
+		s_selection = std::move(unique);
+		ImguiLayout::selectedEntity = first;
+		++s_selectionVersion;
+	}
+
+	// 每帧用选中之前调一次：吸收别处对 selectedEntity 的直接赋值，去掉已经销毁的实体
+	void SyncSelection(World* world)
+	{
+		const Entity first = s_selection.empty() ? Entity() : s_selection.front();
+		if (ImguiLayout::selectedEntity != first)
+		{
+			s_selection.clear();
+			if (ImguiLayout::selectedEntity)
+				s_selection.push_back(ImguiLayout::selectedEntity);
+			++s_selectionVersion;
+		}
+		if (!world)
+			return;
+		const size_t before = s_selection.size();
+		std::erase_if(s_selection, [&](const Entity& e) { return !e || !world->IsValidWorldEntity(e); });
+		if (s_selection.size() != before)
+		{
+			ImguiLayout::selectedEntity = s_selection.empty() ? Entity() : s_selection.front();
+			++s_selectionVersion;
+		}
+	}
+
+	// picked 按顺序排；Replace 时原来的第一个也在 picked 里就让它继续排第一（框选后手柄不跳到别的物体上）
+	void ApplySelection(const std::vector<Entity>& picked, SelectMode mode)
+	{
+		std::vector<Entity> list;
+		switch (mode)
+		{
+		case SelectMode::Replace:
+		{
+			const Entity first = s_selection.empty() ? Entity() : s_selection.front();
+			if (first && std::find(picked.begin(), picked.end(), first) != picked.end())
+				list.push_back(first);
+			list.insert(list.end(), picked.begin(), picked.end());
+			break;
+		}
+		case SelectMode::Add:
+			list = s_selection;
+			list.insert(list.end(), picked.begin(), picked.end());
+			break;
+		case SelectMode::Toggle:
+			list = s_selection;
+			for (const Entity& e : picked)
+			{
+				auto it = std::find(list.begin(), list.end(), e);
+				if (it != list.end())
+					list.erase(it);
+				else
+					list.push_back(e);
+			}
+			break;
+		}
+		SetSelectionList(list);
+	}
+
+	// ---------------- 多选删除（确认后执行） ----------------
+	// 编辑器没有撤销，多选时右键菜单的 Delete 不直接删，先弹确认框；单选时照旧直接删。
+	// 请求时把当前选中拍个快照，确认框在 DrawSceneView 末尾（所有窗口之外）打开和绘制，层级面板、视口的菜单共用一个
+	struct MultiDeleteConfirm
+	{
+		bool requested = false;			// 本帧要打开确认框
+		std::vector<Entity> entities;	// 要删除的实体（请求时的选中）
+	};
+	MultiDeleteConfirm s_multiDelete;
+	constexpr const char* kMultiDeletePopup = "删除实体##ConfirmMultiDelete";
+	// 确认框里最多列出多少个名字，其余的只显示数量
+	constexpr size_t kMultiDeleteListMax = 10;
+
+	void RequestMultiDelete()
+	{
+		s_multiDelete.requested = true;
+		s_multiDelete.entities = s_selection;
+	}
+
 	// 最近一次从 2D 层点选到的实体：它用 2D 手柄直接改 Transform2D
 	Entity s_pickedBy2D;
 
@@ -470,13 +594,89 @@ namespace
 		return entity == s_pickedBy2D || !entity.tryGetComponent<Transform>();
 	}
 
-	// 2D 手柄：平移 X/Y、绕 Z 旋转、缩放 X/Y，结果写回 Transform2D
-	void Draw2DGizmo(EditorApp* app, Entity entity, const ImVec2& viewportSize, ImGuizmo::OPERATION operation, ImGuizmo::MODE mode, const float* snap)
+	// ---------------- 手柄（单选 / 多选） ----------------
+	// 只选一个时保持原来的规则（Use2DGizmo：从 2D 层点选到的、或者只有 Transform2D 的用 2D 手柄，否则用 3D 手柄）。
+	// 多选时：只要有一个实体有 Transform 就调 Transform（3D 手柄），否则有 Transform2D 就调 Transform2D（2D 手柄）；
+	// 手柄放在列表里第一个有对应组件的实体（anchor）上、跟着它走，属性面板也显示它；
+	// 改动作用于所有有对应组件的选中实体，没有对应组件的不受影响
+	struct GizmoTargets
+	{
+		bool is3D = false;
+		bool is2D = false;
+		Entity anchor;
+		std::vector<Entity> entities;		// 有对应组件的选中实体，第一个是 anchor
+	};
+
+	GizmoTargets ResolveGizmoTargets()
+	{
+		GizmoTargets targets;
+		if (s_selection.size() <= 1)
+		{
+			const Entity e = ImguiLayout::selectedEntity;
+			if (!e || !e.isValid())
+				return targets;
+			if (Use2DGizmo(e))
+				targets.is2D = true;
+			else if (e.tryGetComponent<Transform>())
+				targets.is3D = true;
+			else
+				return targets;
+			targets.anchor = e;
+			targets.entities.push_back(e);
+			return targets;
+		}
+
+		for (const Entity& e : s_selection)
+		{
+			if (e.isValid() && e.tryGetComponent<Transform>())
+				targets.entities.push_back(e);
+		}
+		if (!targets.entities.empty())
+			targets.is3D = true;
+		else
+		{
+			for (const Entity& e : s_selection)
+			{
+				if (e.isValid() && e.tryGetComponent<Transform2D>())
+					targets.entities.push_back(e);
+			}
+			targets.is2D = !targets.entities.empty();
+		}
+		if (!targets.entities.empty())
+			targets.anchor = targets.entities.front();
+		return targets;
+	}
+
+	// ── 2D 手柄 ──
+	// 拖动开始时记下每个实体的值；之后每帧按 anchor 相对开始时的变化，从各自的开始值算新值（绝对赋值，不累积误差）：
+	//   平移：加同样的位移；旋转：绕 anchor 的位置转同样的角度（位置跟着绕，各自的角度也加上）；缩放：各自的缩放乘同样的比例
+	struct Transform2DState
+	{
+		Entity entity;
+		glm::vec2 position{ 0.0f };
+		float rotation = 0.0f;
+		glm::vec2 scale{ 1.0f };
+	};
+
+	struct Gizmo2DDrag
+	{
+		bool active = false;
+		Transform2DState anchorStart;
+		Transform2DState current;				// 拖动中 anchor 的值（手柄用它，不等场景线程写回）
+		std::vector<Transform2DState> starts;	// 其它实体拖动开始时的值
+	};
+	Gizmo2DDrag s_gizmo2DDrag;
+
+	void Draw2DGizmo(EditorApp* app, const GizmoTargets& targets, const ImVec2& viewportSize, ImGuizmo::OPERATION operation, ImGuizmo::MODE mode, const float* snap)
 	{
 		World* world = app ? app->GetWorld() : nullptr;
-		auto* transform = entity.tryGetComponent<Transform2D>();
+		const Entity anchor = targets.anchor;
+		auto* transform = anchor ? anchor.tryGetComponent<Transform2D>() : nullptr;
 		if (!world || !transform)
+		{
+			s_gizmo2DDrag.active = false;
 			return;
+		}
 
 		world->SubmitCommand([](World& w)
 			{
@@ -499,9 +699,12 @@ namespace
 		const glm::mat4 projection = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, 1.0f)) * view2D.viewProj;
 		const glm::mat4 view(1.0f);
 
-		const glm::vec2 position = transform->position;
-		const float rotation = transform->rotation;
-		const glm::vec2 scale = transform->scale;
+		const bool continuing = s_gizmo2DDrag.active && s_gizmo2DDrag.anchorStart.entity == anchor;
+		const Transform2DState cur = continuing ? s_gizmo2DDrag.current
+			: Transform2DState{ anchor, transform->position, transform->rotation, transform->scale };
+		const glm::vec2 position = cur.position;
+		const float rotation = cur.rotation;
+		const glm::vec2 scale = cur.scale;
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f))
 			* glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f))
 			* glm::scale(glm::mat4(1.0f), glm::vec3(scale, 1.0f));
@@ -516,7 +719,10 @@ namespace
 		ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), op, mode, glm::value_ptr(model), nullptr, snap);
 		ImGuizmo::SetOrthographic(false);
 		if (!ImGuizmo::IsUsing())
+		{
+			s_gizmo2DDrag.active = false;
 			return;
+		}
 
 		// 拆回位置 / 旋转 / 缩放；只写当前操作改的那一项，免得浮点误差把别的分量慢慢带偏
 		glm::vec2 newPosition = position;
@@ -547,16 +753,262 @@ namespace
 			newPosition = glm::vec2(model[3]);
 		}
 
-		world->SubmitCommand([entity, newPosition, newRotation, newScale]() mutable
+		if (!continuing)
+		{
+			s_gizmo2DDrag.active = true;
+			s_gizmo2DDrag.anchorStart = cur;
+			s_gizmo2DDrag.starts.clear();
+			for (const Entity& e : targets.entities)
 			{
-				if (auto* t = entity.tryGetComponent<Transform2D>())
+				if (e == anchor)
+					continue;
+				if (auto* t = e.tryGetComponent<Transform2D>())
+					s_gizmo2DDrag.starts.push_back({ e, t->position, t->rotation, t->scale });
+			}
+		}
+		s_gizmo2DDrag.current = { anchor, newPosition, newRotation, newScale };
+
+		const Transform2DState& a0 = s_gizmo2DDrag.anchorStart;
+		std::vector<Transform2DState> results;
+		results.reserve(s_gizmo2DDrag.starts.size());
+		for (const auto& s : s_gizmo2DDrag.starts)
+		{
+			Transform2DState r = s;
+			if (operation == ImGuizmo::ROTATE)
+			{
+				// 和 Transform2D 的旋转同一个方向约定（x 轴 (1, 0) 转到 (cos, sin)）
+				const float delta = newRotation - a0.rotation;
+				const float c = std::cos(glm::radians(delta));
+				const float sn = std::sin(glm::radians(delta));
+				const glm::vec2 o = s.position - a0.position;
+				r.position = a0.position + glm::vec2(c * o.x - sn * o.y, sn * o.x + c * o.y);
+				r.rotation = s.rotation + delta;
+			}
+			else if (operation == ImGuizmo::SCALE)
+			{
+				for (int k = 0; k < 2; ++k)
 				{
-					t->position = newPosition;
-					t->rotation = newRotation;
-					t->scale = newScale;
+					if (std::abs(a0.scale[k]) > 1e-6f)
+						r.scale[k] = s.scale[k] * (newScale[k] / a0.scale[k]);
+				}
+			}
+			else
+				r.position = s.position + (newPosition - a0.position);
+			results.push_back(r);
+		}
+
+		world->SubmitCommand([anchorState = s_gizmo2DDrag.current, results = std::move(results)](World& w) mutable
+			{
+				auto apply = [&w](const Transform2DState& s)
+					{
+						if (!w.IsValidWorldEntity(s.entity))
+							return;
+						if (auto* t = s.entity.tryGetComponent<Transform2D>())
+						{
+							t->position = s.position;
+							t->rotation = s.rotation;
+							t->scale = s.scale;
+						}
+					};
+				apply(anchorState);
+				for (const auto& r : results)
+					apply(r);
+			});
+	}
+
+	// ── 3D 手柄 ──
+	// 和 2D 一样：拖动开始时记下每个实体的值，之后按 anchor 相对开始时的变化从各自的开始值算新值：
+	//   平移：加同样的世界位移；旋转：绕 anchor 的位置转同样的世界旋转；缩放：各自的缩放乘同样的（anchor 局部轴上的）比例。
+	// 变化量直接从 anchor 前后两个矩阵算（列向量），不走四元数分解
+	struct TransformState
+	{
+		Entity entity;
+		glm::vec3 position{ 0.0f };
+		glm::quat rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+		glm::vec3 scale{ 1.0f };
+	};
+
+	struct Gizmo3DDrag
+	{
+		bool active = false;
+		Entity anchor;
+		glm::mat4 startMatrix{ 1.0f };			// anchor 拖动开始时的矩阵
+		glm::mat4 current{ 1.0f };				// 拖动中 anchor 的矩阵（手柄用它，不等场景线程写回）
+		std::vector<TransformState> starts;		// 其它实体拖动开始时的值
+		std::vector<Entity> entities;			// 这次拖动改到的全部实体（含 anchor）
+	};
+	Gizmo3DDrag s_gizmo3DDrag;
+
+	// 拖动结束：DDGI 体积把缩放折算成探针数、中心吸附到网格（原来只对单个选中做，现在对每个被拖动的体积做）
+	void FinishGizmo3DDrag()
+	{
+		if (!s_gizmo3DDrag.active)
+			return;
+		for (const Entity& e : s_gizmo3DDrag.entities)
+		{
+			if (DDGIEditor::IsVolume(e))
+				DDGIEditor::FinalizeVolumeTransform(e);
+		}
+		s_gizmo3DDrag = Gizmo3DDrag{};
+	}
+
+	// 去掉缩放的旋转部分（列归一化；和 Transform::SetMatrix 的 decompose 一样不支持负缩放的镜像）
+	glm::mat3 RotationPart(const glm::mat4& m)
+	{
+		glm::mat3 r(m);
+		for (int i = 0; i < 3; ++i)
+		{
+			const float len = glm::length(r[i]);
+			if (len > 1e-8f)
+				r[i] /= len;
+		}
+		return r;
+	}
+
+	// 改了 Transform 的物理实体要同步到刚体并唤醒（场景线程上调用）
+	void SyncPhysicsTransform(Entity entity)
+	{
+		auto* physics = entity.tryGetComponent<Physics>();
+		auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
+		if (!physics || !runtime)
+			return;
+		physics->forceSyncTransform = true;
+		if (runtime->body && !runtime->body->isActive())
+			runtime->body->activate(true);
+		if (physics->isCharacter && runtime->character && runtime->ghostObject && !runtime->ghostObject->isActive())
+			runtime->ghostObject->activate(true);
+	}
+
+	void Draw3DGizmo(EditorApp* app, const GizmoTargets& targets, const glm::mat4& view, const glm::mat4& projection,
+		ImGuizmo::OPERATION operation, ImGuizmo::MODE mode, const float* snap)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		const Entity anchor = targets.anchor;
+		auto* transform = anchor ? anchor.tryGetComponent<Transform>() : nullptr;
+		if (!world || !transform)
+		{
+			FinishGizmo3DDrag();
+			return;
+		}
+
+		const bool continuing = s_gizmo3DDrag.active && s_gizmo3DDrag.anchor == anchor;
+		glm::mat4 matrix = continuing ? s_gizmo3DDrag.current : transform->GetMatrix();
+		const glm::mat4 before = matrix;
+
+		glm::mat4 projOG = projection;
+		projOG[1][1] *= -1;
+		glm::mat4 deltaMatrix(1.0f);
+
+		ImGuizmo::SetOrthographic(false);
+		ImGuizmo::Manipulate(
+			(float*)glm::value_ptr(view),
+			(float*)glm::value_ptr(projOG),
+			operation,
+			mode,
+			(float*)glm::value_ptr(matrix),
+			(float*)glm::value_ptr(deltaMatrix),
+			snap
+		);
+
+		if (!ImGuizmo::IsUsing())
+		{
+			FinishGizmo3DDrag();
+			return;
+		}
+
+		if (!continuing)
+		{
+			FinishGizmo3DDrag();
+			s_gizmo3DDrag.active = true;
+			s_gizmo3DDrag.anchor = anchor;
+			s_gizmo3DDrag.startMatrix = before;
+			s_gizmo3DDrag.entities = targets.entities;
+			for (const Entity& e : targets.entities)
+			{
+				if (e == anchor)
+					continue;
+				if (auto* t = e.tryGetComponent<Transform>())
+					s_gizmo3DDrag.starts.push_back({ e, t->position, t->rotation, t->scale });
+			}
+		}
+		s_gizmo3DDrag.current = matrix;
+
+		std::vector<TransformState> results;
+		if (!s_gizmo3DDrag.starts.empty())
+		{
+			const glm::mat4& m0 = s_gizmo3DDrag.startMatrix;
+			const glm::vec3 p0(m0[3]);
+			const glm::vec3 pN(matrix[3]);
+			glm::mat3 dR(1.0f);
+			glm::quat dq(1.0f, 0.0f, 0.0f, 0.0f);
+			glm::vec3 ratio(1.0f);
+			if (operation == ImGuizmo::ROTATE)
+			{
+				dR = RotationPart(matrix) * glm::transpose(RotationPart(m0));
+				dq = glm::normalize(glm::quat_cast(dR));
+			}
+			else if (operation == ImGuizmo::SCALE)
+			{
+				for (int k = 0; k < 3; ++k)
+				{
+					const float len0 = glm::length(glm::vec3(m0[k]));
+					if (len0 > 1e-6f)
+						ratio[k] = glm::length(glm::vec3(matrix[k])) / len0;
+				}
+			}
+
+			results.reserve(s_gizmo3DDrag.starts.size());
+			for (const auto& s : s_gizmo3DDrag.starts)
+			{
+				TransformState r = s;
+				if (operation == ImGuizmo::ROTATE)
+				{
+					r.position = p0 + dR * (s.position - p0);
+					r.rotation = glm::normalize(dq * s.rotation);
+				}
+				else if (operation == ImGuizmo::SCALE)
+					r.scale = s.scale * ratio;
+				else
+					r.position = s.position + (pN - p0);
+				results.push_back(r);
+			}
+		}
+
+		world->SubmitCommand([anchor, matrix, results = std::move(results)](World& w) mutable
+			{
+				if (w.IsValidWorldEntity(anchor))
+				{
+					if (auto* t = anchor.tryGetComponent<Transform>())
+					{
+						t->SetMatrix(matrix);
+						SyncPhysicsTransform(anchor);
+					}
+				}
+				for (const auto& r : results)
+				{
+					if (!w.IsValidWorldEntity(r.entity))
+						continue;
+					if (auto* t = r.entity.tryGetComponent<Transform>())
+					{
+						t->position = r.position;
+						t->rotation = r.rotation;
+						t->scale = r.scale;
+						SyncPhysicsTransform(r.entity);
+					}
 				}
 			});
 	}
+
+	// ---------------- 选中物体的包围盒（2D 矩形 / 3D OBB） ----------------
+	// 青色：和选中描边、图标选中圈（橙色）区分开
+	constexpr ImU32 kBoundsColor = IM_COL32(70, 200, 255, 255);
+	constexpr ImU32 kBoundsShadow = IM_COL32(0, 0, 0, 160);
+
+	// 视口工具栏的「包围盒」开关（2D 和 3D 一起）
+	bool s_showSelectionBounds = true;
+
+	// 多选时最多给多少个实体画包围盒（每帧都要在场景线程算一遍）
+	constexpr size_t kMaxBoundsEntities = 256;
 
 	// ---------------- 选中的 2D 精灵 / 动图的包围盒 ----------------
 
@@ -564,42 +1016,55 @@ namespace
 	struct Selection2DBoundsCache
 	{
 		std::mutex mutex;
-		Entity entity;
-		RenderSystem::Bounds2D bounds;
+		std::vector<Entity> entities;					// 这份结果是给哪些实体算的
+		std::vector<RenderSystem::Bounds2D> bounds;		// 只有算得出来的（精灵 / 动图）
 		VKRenderContext::Camera2DData camera;
 		bool valid = false;
 	};
 	Selection2DBoundsCache s_selection2DBounds;
+	std::future<void> s_selection2DBoundsTask;		// 上一次请求没执行完就不再提交
 
 	// 画在 Scene View 窗口的绘制列表上（在手柄之前调用，手柄盖在上面），裁剪到视口矩形
-	void DrawSelection2DBounds(EditorApp* app, Entity entity, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	void DrawSelection2DBounds(EditorApp* app, const std::vector<Entity>& selection, const ImVec2& viewportPos, const ImVec2& viewportSize)
 	{
 		World* world = app ? app->GetWorld() : nullptr;
-		if (!world || !entity || !entity.isValid() || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+		if (!world || selection.empty() || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
 			return;
+		const std::vector<Entity> entities(selection.begin(), selection.begin() + std::min(selection.size(), kMaxBoundsEntities));
 
-		world->SubmitCommand([entity](World& w)
-			{
-				RenderSystem::Bounds2D bounds;
-				const bool ok = RenderSystem::Get2DBounds(w, entity, bounds);
-				const auto camera = RenderSystem::GetActiveCamera2D(w);
-				std::lock_guard lock(s_selection2DBounds.mutex);
-				s_selection2DBounds.entity = entity;
-				s_selection2DBounds.bounds = bounds;
-				s_selection2DBounds.camera = camera;
-				s_selection2DBounds.valid = ok;
-			});
+		using namespace std::chrono_literals;
+		if (!s_selection2DBoundsTask.valid() || s_selection2DBoundsTask.wait_for(0s) == std::future_status::ready)
+		{
+			s_selection2DBoundsTask = world->SubmitCommand([entities](World& w)
+				{
+					std::vector<RenderSystem::Bounds2D> bounds;
+					for (const Entity& e : entities)
+					{
+						RenderSystem::Bounds2D b;
+						if (RenderSystem::Get2DBounds(w, e, b))
+							bounds.push_back(b);
+					}
+					const auto camera = RenderSystem::GetActiveCamera2D(w);
+					std::lock_guard lock(s_selection2DBounds.mutex);
+					s_selection2DBounds.entities = entities;
+					s_selection2DBounds.bounds = std::move(bounds);
+					s_selection2DBounds.camera = camera;
+					s_selection2DBounds.valid = true;
+				});
+		}
 
-		RenderSystem::Bounds2D bounds;
+		std::vector<RenderSystem::Bounds2D> bounds;
 		VKRenderContext::Camera2DData camera;
 		{
 			std::lock_guard lock(s_selection2DBounds.mutex);
-			// 刚切换选中时缓存还是上一个实体的，不画，等下一帧
-			if (!s_selection2DBounds.valid || s_selection2DBounds.entity != entity)
+			// 刚改了选中时缓存还是上一份选中的，不画，等下一帧
+			if (!s_selection2DBounds.valid || s_selection2DBounds.entities != entities)
 				return;
 			bounds = s_selection2DBounds.bounds;
 			camera = s_selection2DBounds.camera;
 		}
+		if (bounds.empty())
+			return;
 
 		// 2D 世界 -> 渲染目标像素 -> 视口屏幕坐标（与 Pick2DAtMouse 的换算互逆）
 		const auto view = Viewport2DView(camera, app, viewportSize);
@@ -611,20 +1076,822 @@ namespace
 					viewportPos.y + pixel.y / target.y * viewportSize.y);
 			};
 
-		ImVec2 pts[4];
-		for (int i = 0; i < 4; ++i)
-			pts[i] = toScreen(bounds.corners[i]);
-		const ImVec2 pivot = toScreen(bounds.pivot);
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		drawList->PushClipRect(viewportPos, ImVec2(viewportPos.x + viewportSize.x, viewportPos.y + viewportSize.y), true);
+		for (const auto& b : bounds)
+		{
+			ImVec2 pts[4];
+			for (int i = 0; i < 4; ++i)
+				pts[i] = toScreen(b.corners[i]);
+			const ImVec2 pivot = toScreen(b.pivot);
+			// 先画一圈深色描边再画亮色线，浅色 / 深色背景上都看得清
+			drawList->AddPolyline(pts, 4, kBoundsShadow, ImDrawFlags_Closed, 3.0f);
+			drawList->AddPolyline(pts, 4, kBoundsColor, ImDrawFlags_Closed, 1.5f);
+			for (const ImVec2& p : pts)
+				drawList->AddRectFilled(ImVec2(p.x - 2.5f, p.y - 2.5f), ImVec2(p.x + 2.5f, p.y + 2.5f), kBoundsColor);
+			drawList->AddCircle(pivot, 4.0f, IM_COL32(255, 255, 255, 230), 12, 1.5f);
+		}
+		drawList->PopClipRect();
+	}
+
+	// 3D：选中的静态模型（RenderStaticModel）画 OBB 线框——整个模型的局部 AABB（所有网格合并）乘上渲染用的矩阵，
+	// 跟着物体旋转 / 缩放。和 2D 一样在场景线程算角点、界面用上一份结果；只画线不做深度测试（被挡住也看得见）
+	struct Selection3DBoundsCache
+	{
+		std::mutex mutex;
+		std::vector<Entity> entities;							// 这份结果是给哪些实体算的
+		std::vector<std::array<glm::vec3, 8>> boxes;			// 只有静态模型的；下标的第 0 / 1 / 2 位分别选 x / y / z 的 min / max
+		bool valid = false;
+	};
+	Selection3DBoundsCache s_selection3DBounds;
+	std::future<void> s_selection3DBoundsTask;		// 上一次请求没执行完就不再提交
+
+	// 场景线程上调用
+	bool Get3DModelBounds(World& world, Entity entity, std::array<glm::vec3, 8>& out)
+	{
+		if (!entity || !world.IsValidWorldEntity(entity))
+			return false;
+		const auto* transform = entity.tryGetComponent<Transform>();
+		const auto* renderModel = entity.tryGetComponent<RenderStaticModel>();
+		if (!transform || !renderModel || !renderModel->model)
+			return false;
+
+		const auto aabb = renderModel->model->GetAABB();
+		if (!aabb.isValid())
+			return false;
+
+		// 和 RenderSystem::ProcessStaticModel 用同一个矩阵
+		const glm::mat4 model = transform->GetMatrix() * renderModel->trans;
+		for (int i = 0; i < 8; ++i)
+		{
+			const glm::vec3 local((i & 1) ? aabb.max.x : aabb.min.x, (i & 2) ? aabb.max.y : aabb.min.y, (i & 4) ? aabb.max.z : aabb.min.z);
+			out[i] = glm::vec3(model * glm::vec4(local, 1.0f));
+		}
+		return true;
+	}
+
+	// viewProjGL：投影已翻回 GL 约定（projection[1][1] *= -1，同视口图标 / DDGIEditor）
+	void DrawSelection3DBounds(EditorApp* app, const std::vector<Entity>& selection, const glm::mat4& viewProjGL, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world || selection.empty() || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return;
+		const std::vector<Entity> entities(selection.begin(), selection.begin() + std::min(selection.size(), kMaxBoundsEntities));
+
+		using namespace std::chrono_literals;
+		if (!s_selection3DBoundsTask.valid() || s_selection3DBoundsTask.wait_for(0s) == std::future_status::ready)
+		{
+			s_selection3DBoundsTask = world->SubmitCommand([entities](World& w)
+				{
+					std::vector<std::array<glm::vec3, 8>> boxes;
+					for (const Entity& e : entities)
+					{
+						std::array<glm::vec3, 8> corners{};
+						if (Get3DModelBounds(w, e, corners))
+							boxes.push_back(corners);
+					}
+					std::lock_guard lock(s_selection3DBounds.mutex);
+					s_selection3DBounds.entities = entities;
+					s_selection3DBounds.boxes = std::move(boxes);
+					s_selection3DBounds.valid = true;
+				});
+		}
+
+		std::vector<std::array<glm::vec3, 8>> boxes;
+		{
+			std::lock_guard lock(s_selection3DBounds.mutex);
+			// 刚改了选中时缓存还是上一份选中的，不画，等下一帧
+			if (!s_selection3DBounds.valid || s_selection3DBounds.entities != entities)
+				return;
+			boxes = s_selection3DBounds.boxes;
+		}
+		if (boxes.empty())
+			return;
+
+		auto toScreen = [&](const glm::vec4& clip)
+			{
+				const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+				return ImVec2(viewportPos.x + (ndc.x * 0.5f + 0.5f) * viewportSize.x, viewportPos.y + (0.5f - ndc.y * 0.5f) * viewportSize.y);
+			};
+
+		// 12 条棱：两个角点的下标只差一位。一端在相机后面时先在裁剪空间截到 w = eps 再投影（同 DDGIEditor 的 Projector::Line）
+		std::vector<std::pair<ImVec2, ImVec2>> lines;
+		lines.reserve(boxes.size() * 12);
+		constexpr float eps = 1e-3f;
+		for (const auto& corners : boxes)
+		{
+			std::array<glm::vec4, 8> clip;
+			for (int i = 0; i < 8; ++i)
+				clip[i] = viewProjGL * glm::vec4(corners[i], 1.0f);
+			for (int i = 0; i < 8; ++i)
+			{
+				for (int bit = 1; bit < 8; bit <<= 1)
+				{
+					if (i & bit)
+						continue;
+					glm::vec4 a = clip[i];
+					glm::vec4 b = clip[i | bit];
+					if (a.w <= eps && b.w <= eps)
+						continue;
+					if (a.w <= eps)
+						a = glm::mix(a, b, (eps - a.w) / (b.w - a.w));
+					else if (b.w <= eps)
+						b = glm::mix(b, a, (eps - b.w) / (a.w - b.w));
+					lines.push_back({ toScreen(a), toScreen(b) });
+				}
+			}
+		}
+		if (lines.empty())
+			return;
 
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		drawList->PushClipRect(viewportPos, ImVec2(viewportPos.x + viewportSize.x, viewportPos.y + viewportSize.y), true);
-		// 先画一圈深色描边再画亮色线，浅色 / 深色背景上都看得清
-		drawList->AddPolyline(pts, 4, IM_COL32(0, 0, 0, 160), ImDrawFlags_Closed, 3.0f);
-		drawList->AddPolyline(pts, 4, IM_COL32(255, 160, 40, 255), ImDrawFlags_Closed, 1.5f);
-		for (const ImVec2& p : pts)
-			drawList->AddRectFilled(ImVec2(p.x - 2.5f, p.y - 2.5f), ImVec2(p.x + 2.5f, p.y + 2.5f), IM_COL32(255, 160, 40, 255));
-		drawList->AddCircle(pivot, 4.0f, IM_COL32(255, 255, 255, 230), 12, 1.5f);
+		// 先画一圈深色再画亮色线，浅色 / 深色背景上都看得清
+		for (const auto& line : lines)
+			drawList->AddLine(line.first, line.second, kBoundsShadow, 3.0f);
+		for (const auto& line : lines)
+			drawList->AddLine(line.first, line.second, kBoundsColor, 1.5f);
 		drawList->PopClipRect();
+	}
+
+	// ---------------- 3D 拾取：实体 ID 缓冲（异步） ----------------
+	// 点击时把请求交给渲染器（EditorViewportChannel），下一次场景渲染时读回鼠标附近的实体 ID，
+	// 过 2 ~ 3 帧拿到结果再改选中。等待期间再点一次，新请求直接覆盖旧的；晚到的旧结果对不上 id，丢掉
+	// 「添加物体」菜单的落点：对视口中心做一次 3D 拾取（带世界坐标），放在中心处的网格表面上；
+	// 没命中（天空）、3D 层关掉、超时时放在相机前方 15 米。和点选 / 拖放共用一个通道，同一时间只有一个请求在途
+	struct PendingAddPlacement
+	{
+		bool submitted = false;		// 请求已提交、在等结果
+		uint64_t requestId = 0;
+		std::chrono::steady_clock::time_point submitTime;
+	};
+	PendingAddPlacement s_addPlacement;
+
+	struct Pending3DPick
+	{
+		bool active = false;
+		uint64_t requestId = 0;
+		std::chrono::steady_clock::time_point submitTime;
+		uint64_t selectionVersion = 0;		// 提交时的选中版本：等待期间选中被别处改了（层级面板等），结果就不再应用
+		SelectMode mode = SelectMode::Replace;	// 结果怎么并进选中（按下时的 Ctrl / Shift）
+		bool isBox = false;
+		std::vector<Entity> extra;			// 框选：同步得到的图标 / 2D 实体，和 3D 结果一起应用
+	};
+	Pending3DPick s_pending3DPick;
+	uint64_t s_nextPickRequestId = 1;
+	// 渲染器正常每帧出图，几十毫秒内就有结果；超过这个时间按「没点中」处理
+	constexpr auto kPickTimeout = std::chrono::milliseconds(500);
+	// 点选时读鼠标周围 (2r+1)² 的像素，鼠标下没有物体时取最近的那个，细小物体也点得中
+	constexpr int kPickRadius = 2;
+
+	std::shared_ptr<EditorViewportChannel> GetViewportChannel(EditorApp* app)
+	{
+		auto* renderer3D = app ? app->Runtime().GetRenderer3D() : nullptr;
+		auto renderer = renderer3D ? renderer3D->GetVulkanRenderer() : nullptr;
+		return renderer ? renderer->GetEditorViewportChannel() : nullptr;
+	}
+
+	// 鼠标 -> 渲染目标像素（渲染目标和视口尺寸可能不一致，和 Pick2DAtMouse 一样按渲染目标尺寸换算）
+	bool MouseToTargetPixel(EditorApp* app, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize,
+		glm::ivec2& pixel, glm::uvec2& targetSize)
+	{
+		if (!app || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return false;
+		targetSize = glm::uvec2(app->GetRenderTargetWidth(), app->GetRenderTargetHeight());
+		if (targetSize.x == 0 || targetSize.y == 0)
+			return false;
+		const glm::vec2 uv((mouse.x - viewportPos.x) / viewportSize.x, (mouse.y - viewportPos.y) / viewportSize.y);
+		if (uv.x < 0.0f || uv.y < 0.0f || uv.x >= 1.0f || uv.y >= 1.0f)
+			return false;
+		pixel = glm::clamp(glm::ivec2(glm::floor(uv * glm::vec2(targetSize))), glm::ivec2(0), glm::ivec2(targetSize) - glm::ivec2(1));
+		return true;
+	}
+
+	// 提交拾取请求（点选 / 框选共用）：撤掉之前在等的点选和「添加物体」落点请求
+	void SubmitPickRequest(const std::shared_ptr<EditorViewportChannel>& channel, EditorPickRequest request, SelectMode mode, std::vector<Entity> extra)
+	{
+		if (s_pending3DPick.active)
+			channel->CancelPick(s_pending3DPick.requestId);
+		// 点选优先：「添加物体」的落点请求还在等就撤掉，点选结果出来后它会重新提交
+		if (s_addPlacement.submitted)
+		{
+			channel->CancelPick(s_addPlacement.requestId);
+			s_addPlacement.submitted = false;
+		}
+
+		request.id = s_nextPickRequestId++;
+		channel->SubmitPick(request);
+
+		s_pending3DPick.active = true;
+		s_pending3DPick.requestId = request.id;
+		s_pending3DPick.submitTime = std::chrono::steady_clock::now();
+		s_pending3DPick.selectionVersion = s_selectionVersion;
+		s_pending3DPick.mode = mode;
+		s_pending3DPick.isBox = request.isBox;
+		s_pending3DPick.extra = std::move(extra);
+	}
+
+	// 提交点选请求。返回 false：渲染器不可用 / 鼠标不在视口里，调用方按「没点中」处理
+	bool Submit3DPick(EditorApp* app, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize, SelectMode mode)
+	{
+		auto channel = GetViewportChannel(app);
+		glm::ivec2 pixel;
+		glm::uvec2 targetSize;
+		if (!channel || !MouseToTargetPixel(app, mouse, viewportPos, viewportSize, pixel, targetSize))
+			return false;
+
+		EditorPickRequest request;
+		request.targetSize = targetSize;
+		request.focus = pixel;
+		request.rectMin = pixel - glm::ivec2(kPickRadius);
+		request.rectMax = pixel + glm::ivec2(kPickRadius);
+		request.isBox = false;
+		SubmitPickRequest(channel, request, mode, {});
+		return true;
+	}
+
+	// 提交框选请求（屏幕矩形 [a, b]，任意两个对角）。extra：图标 / 2D 层同步框到的实体。
+	// 返回 false：渲染器不可用 / 矩形整个在视口外，调用方直接用 extra
+	bool Submit3DBoxPick(EditorApp* app, const ImVec2& a, const ImVec2& b, const ImVec2& viewportPos, const ImVec2& viewportSize,
+		SelectMode mode, std::vector<Entity> extra)
+	{
+		auto channel = GetViewportChannel(app);
+		const glm::uvec2 targetSize(app ? app->GetRenderTargetWidth() : 0u, app ? app->GetRenderTargetHeight() : 0u);
+		if (!channel || targetSize.x == 0 || targetSize.y == 0 || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return false;
+
+		auto toPixel = [&](const ImVec2& p)
+			{
+				const glm::vec2 uv((p.x - viewportPos.x) / viewportSize.x, (p.y - viewportPos.y) / viewportSize.y);
+				return glm::ivec2(glm::floor(uv * glm::vec2(targetSize)));
+			};
+		const glm::ivec2 pa = toPixel(a);
+		const glm::ivec2 pb = toPixel(b);
+		const glm::ivec2 lo = glm::max(glm::min(pa, pb), glm::ivec2(0));
+		const glm::ivec2 hi = glm::min(glm::max(pa, pb), glm::ivec2(targetSize) - glm::ivec2(1));
+		if (lo.x > hi.x || lo.y > hi.y)
+			return false;
+
+		EditorPickRequest request;
+		request.targetSize = targetSize;
+		request.rectMin = lo;
+		request.rectMax = hi;
+		request.focus = (lo + hi) / 2;
+		request.isBox = true;
+		SubmitPickRequest(channel, request, mode, std::move(extra));
+		return true;
+	}
+
+	// 不再等正在进行的请求（选中被别的途径改了、点到了 2D 物体等）
+	void Cancel3DPick(EditorApp* app)
+	{
+		if (!s_pending3DPick.active)
+			return;
+		if (auto channel = GetViewportChannel(app))
+			channel->CancelPick(s_pending3DPick.requestId);
+		s_pending3DPick.active = false;
+	}
+
+	// 每帧调一次。有结论（拿到结果或超时）时返回 true，picked 为拾取到的实体：
+	// 点选最多一个（没点中为空），框选是矩形里的全部（按实体 id 升序）
+	bool Poll3DPick(EditorApp* app, std::vector<Entity>& picked)
+	{
+		picked.clear();
+		if (!s_pending3DPick.active)
+			return false;
+		auto channel = GetViewportChannel(app);
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!channel || !world)
+		{
+			s_pending3DPick.active = false;
+			return true;
+		}
+
+		if (auto result = channel->PollPick(s_pending3DPick.requestId))
+		{
+			s_pending3DPick.active = false;
+			if (!result->valid)
+				return true;
+			auto add = [&](uint32_t id)
+				{
+					if (id == UINT32_MAX)
+						return;
+					const Entity entity(world, static_cast<EntityID>(id));
+					if (world->IsValidWorldEntity(entity))
+						picked.push_back(entity);
+				};
+			if (s_pending3DPick.isBox)
+			{
+				for (uint32_t id : result->entities)
+					add(id);
+			}
+			else
+				add(result->focusEntity);
+			return true;
+		}
+
+		if (std::chrono::steady_clock::now() - s_pending3DPick.submitTime > kPickTimeout)
+		{
+			channel->CancelPick(s_pending3DPick.requestId);
+			s_pending3DPick.active = false;
+			return true;
+		}
+		return false;
+	}
+
+	// 多选删除的确认框：每帧在所有窗口之外调用一次（DrawSceneView 末尾），打开和绘制在同一个 ID 栈里
+	void DrawMultiDeleteConfirm(EditorApp* app)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (s_multiDelete.requested)
+		{
+			s_multiDelete.requested = false;
+			if (world && !s_multiDelete.entities.empty())
+				ImGui::OpenPopup(kMultiDeletePopup);
+		}
+
+		ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		if (!ImGui::BeginPopupModal(kMultiDeletePopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+			return;
+
+		// 打开期间实体可能被别处销毁（脚本、切场景等）：只算还在的
+		std::vector<Entity> alive;
+		if (world)
+		{
+			for (const Entity& e : s_multiDelete.entities)
+			{
+				if (e && world->IsValidWorldEntity(e))
+					alive.push_back(e);
+			}
+		}
+
+		ImGui::Text("确定删除选中的 %d 个实体？", static_cast<int>(alive.size()));
+		ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f), "编辑器没有撤销，删除后无法恢复。");
+		ImGui::Separator();
+		const size_t listed = std::min(alive.size(), kMultiDeleteListMax);
+		for (size_t i = 0; i < listed; ++i)
+		{
+			const Entity& e = alive[i];
+			if (const auto* tag = e.tryGetComponent<TagEditorName>(); tag && !tag->name.empty())
+				ImGui::BulletText("%s", tag->name.c_str());
+			else
+				ImGui::BulletText("Unnamed_Entity_%d", static_cast<int>(e.getId()));
+		}
+		if (alive.size() > listed)
+			ImGui::TextDisabled("……还有 %d 个", static_cast<int>(alive.size() - listed));
+		ImGui::Spacing();
+
+		bool close = false;
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.20f, 0.18f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.27f, 0.24f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.15f, 0.13f, 1.0f));
+		const bool confirm = ImGui::Button("删除", ImVec2(120.0f, 0.0f));
+		ImGui::PopStyleColor(3);
+		ImGui::SameLine();
+		// 默认焦点放在「取消」上：误按回车 / 空格不会删
+		if (ImGui::IsWindowAppearing())
+			ImGui::SetKeyboardFocusHere();
+		if (ImGui::Button("取消", ImVec2(120.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+			close = true;
+
+		if (confirm && world && !alive.empty())
+		{
+			// 父子都选中时删父节点可能已经连带删掉子节点，逐个再检查一次
+			world->SubmitCommand([entities = alive](World& w)
+				{
+					for (const Entity& e : entities)
+					{
+						if (w.IsValidWorldEntity(e))
+							w.destroyEntity(e);
+					}
+				});
+			Cancel3DPick(app);
+			s_pickedBy2D = Entity();
+			SetSelectionList({});
+			close = true;
+		}
+		else if (confirm)
+			close = true;
+
+		if (close)
+		{
+			s_multiDelete.entities.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
+	// ---------------- 视口点选 / 框选 ----------------
+	// 左键在视口里按下（没点在手柄上、没被 DDGI 探针编辑用掉）后：松手时移动不到 kBoxSelectThreshold 像素按点选处理，
+	// 否则按框选处理。点选和以前一样按 图标 → 2D → 3D（异步）的顺序；框选三层一起：
+	//   图标看中心点在不在框里，2D 看精灵 / 动图的矩形和框有没有重叠，3D 看实体 ID 缓冲里框内出现过的网格（异步）
+	struct BoxSelectState
+	{
+		bool armed = false;			// 左键按下了，在等松手
+		bool dragging = false;		// 已经拖过阈值，按框选处理
+		ImVec2 start{ 0.0f, 0.0f };
+		SelectMode mode = SelectMode::Replace;
+	};
+	BoxSelectState s_boxSelect;
+	constexpr float kBoxSelectThreshold = 4.0f;
+
+	// 上一帧视口的屏幕矩形：鼠标在里面时 Scene View 窗口不响应左键拖动移动窗口（框选要用左键拖动）
+	struct LastViewportRect
+	{
+		bool valid = false;
+		ImVec2 min{ 0.0f, 0.0f };
+		ImVec2 max{ 0.0f, 0.0f };
+	};
+	LastViewportRect s_lastViewportRect;
+
+	void ClickSelect(EditorApp* app, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize, SelectMode mode)
+	{
+		const auto visibility = app->GetLayerVisibility();
+		bool pickedBy2D = false;
+		// 图标只在 3D 层打开时画（ViewportIcons::Draw），没画时 Pick 什么都点不中
+		Entity picked = ViewportIcons::Pick(app, mouse);
+		if (!picked && visibility.layer2D)
+		{
+			picked = Pick2DAtMouse(app, mouse, viewportPos, viewportSize);
+			pickedBy2D = static_cast<bool>(picked);
+		}
+		if (mode == SelectMode::Replace)
+			s_pickedBy2D = pickedBy2D ? picked : Entity();
+		if (picked)
+		{
+			Cancel3DPick(app);
+			ApplySelection({ picked }, mode);
+		}
+		// 3D：读实体 ID 缓冲，异步。结果到了（几帧后）在 DrawSceneView 开头的 Poll3DPick 里改选中
+		else if (!visibility.layer3D || !Submit3DPick(app, mouse, viewportPos, viewportSize, mode))
+		{
+			Cancel3DPick(app);
+			if (mode == SelectMode::Replace)
+				ApplySelection({}, SelectMode::Replace);		// 点在空白处：取消选中（Ctrl / Shift 时保持不变）
+		}
+	}
+
+	// 框选里的 2D 实体：在场景线程上把每个精灵 / 动图的矩形映射到视口屏幕坐标再和框比（2D 相机旋转 / 缩放都不影响）
+	std::vector<Entity> Pick2DRectAtScreen(EditorApp* app, const ImVec2& a, const ImVec2& b, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return {};
+		const glm::vec2 lo(std::min(a.x, b.x), std::min(a.y, b.y));
+		const glm::vec2 hi(std::max(a.x, b.x), std::max(a.y, b.y));
+		std::vector<Entity> result;
+		world->SubmitCommand([&](World& w)
+			{
+				const auto view = Viewport2DView(RenderSystem::GetActiveCamera2D(w), app, viewportSize);
+				const glm::vec2 target = glm::max(view.targetSize, glm::vec2(1.0f));
+				const auto toViewport = [&](const glm::vec2& p)
+					{
+						const glm::vec2 pixel = view.WorldToScreen(p);
+						return glm::vec2(viewportPos.x + pixel.x / target.x * viewportSize.x, viewportPos.y + pixel.y / target.y * viewportSize.y);
+					};
+				result = RenderSystem::Pick2DRect(w, toViewport, lo, hi);
+			}).get();
+		return result;
+	}
+
+	void BoxSelect(EditorApp* app, const ImVec2& a, const ImVec2& b, const ImVec2& viewportPos, const ImVec2& viewportSize, SelectMode mode)
+	{
+		const auto visibility = app->GetLayerVisibility();
+		std::vector<Entity> extra;
+		if (visibility.layer3D)
+			extra = ViewportIcons::PickRect(app, a, b);
+		if (visibility.layer2D)
+		{
+			auto picked2D = Pick2DRectAtScreen(app, a, b, viewportPos, viewportSize);
+			extra.insert(extra.end(), picked2D.begin(), picked2D.end());
+		}
+		if (mode == SelectMode::Replace)
+			s_pickedBy2D = Entity();
+		// 3D 结果几帧后才到，到了和 extra 一起应用；3D 层关掉 / 渲染器不可用时直接用 extra
+		if (!visibility.layer3D || !Submit3DBoxPick(app, a, b, viewportPos, viewportSize, mode, extra))
+		{
+			Cancel3DPick(app);
+			ApplySelection(extra, mode);
+		}
+	}
+
+	// 每帧在 Scene View 里调一次（视口图标 Draw 之后：点选图标要用本帧的屏幕矩形）。按下后鼠标移出视口也照常跟踪
+	void UpdateBoxSelect(EditorApp* app, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		if (!s_boxSelect.armed)
+			return;
+		if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGuizmo::IsUsing())
+		{
+			s_boxSelect.armed = false;
+			return;
+		}
+
+		const ImVec2 vpMax(viewportPos.x + viewportSize.x, viewportPos.y + viewportSize.y);
+		ImVec2 mouse = ImGui::GetMousePos();
+		mouse.x = std::clamp(mouse.x, viewportPos.x, vpMax.x);
+		mouse.y = std::clamp(mouse.y, viewportPos.y, vpMax.y);
+		const float dx = mouse.x - s_boxSelect.start.x;
+		const float dy = mouse.y - s_boxSelect.start.y;
+		if (!s_boxSelect.dragging && dx * dx + dy * dy > kBoxSelectThreshold * kBoxSelectThreshold)
+			s_boxSelect.dragging = true;
+
+		if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+		{
+			if (s_boxSelect.dragging)
+			{
+				const ImVec2 lo(std::min(s_boxSelect.start.x, mouse.x), std::min(s_boxSelect.start.y, mouse.y));
+				const ImVec2 hi(std::max(s_boxSelect.start.x, mouse.x), std::max(s_boxSelect.start.y, mouse.y));
+				ImDrawList* drawList = ImGui::GetWindowDrawList();
+				drawList->PushClipRect(viewportPos, vpMax, true);
+				drawList->AddRectFilled(lo, hi, IM_COL32(70, 200, 255, 40));
+				drawList->AddRect(lo, hi, IM_COL32(70, 200, 255, 220), 0.0f, 0, 1.0f);
+				drawList->PopClipRect();
+			}
+			return;
+		}
+
+		// 松手
+		s_boxSelect.armed = false;
+		if (s_boxSelect.dragging)
+			BoxSelect(app, s_boxSelect.start, mouse, viewportPos, viewportSize, s_boxSelect.mode);
+		else
+			ClickSelect(app, s_boxSelect.start, viewportPos, viewportSize, s_boxSelect.mode);
+	}
+
+	// Delete 键：在当前窗口（层级面板 / 场景视口）获得焦点时调用。单选直接删除，多选弹确认框（同右键菜单）。
+	// 正在输入文字（重命名等）、有弹窗或菜单打开、正在拖手柄或框选时不响应
+	void HandleDeleteShortcut(EditorApp* app)
+	{
+		if (!app || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+			return;
+		const ImGuiIO& io = ImGui::GetIO();
+		if (io.WantTextInput || ImGuizmo::IsUsing() || s_boxSelect.armed
+			|| ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+			return;
+		if (!ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+			return;
+
+		World* world = app->GetWorld();
+		SyncSelection(world);
+		if (!world || s_selection.empty())
+			return;
+		if (s_selection.size() > 1)
+		{
+			RequestMultiDelete();
+			return;
+		}
+		world->SubmitCommand([entity = s_selection.front()](World& w)
+			{
+				if (w.IsValidWorldEntity(entity))
+					w.destroyEntity(entity);
+			});
+		Cancel3DPick(app);
+		s_pickedBy2D = Entity();
+		SetSelectionList({});
+	}
+
+	// ---------------- 拖放：拖动过程中持续拾取 ----------------
+	// 资源 / 文件拖在场景视口上方时，对鼠标位置不停地做 3D 拾取（一次只有一个请求在途），记下最近一次的结果：
+	// 松手时直接用，不用等几帧；要挂到物体上的资源（脚本、UI、材质）还会把鼠标下的网格当成选中描边高亮出来。
+	// 和点选共用一个通道：点选的请求还在等时不提交，免得把它挤掉
+	enum class DropKind
+	{
+		None,
+		Surface,		// 摆放物体（模型）：要鼠标下的表面位置
+		Entity			// 挂到物体上（脚本、UI、材质）：要鼠标下的实体
+	};
+
+	struct DragHoverPick
+	{
+		bool hovering = false;			// 有资源拖在视口上方
+		DropKind kind = DropKind::None;
+		bool pending = false;			// 有请求在途
+		uint64_t requestId = 0;
+		std::chrono::steady_clock::time_point submitTime;
+		// 最近一次 3D 结果
+		bool hasResult = false;
+		uint32_t entity = UINT32_MAX;
+		bool hasSurface = false;
+		glm::vec3 surface{ 0.0f };
+		// 鼠标在视口图标上（图标优先于 3D，也不需要描边高亮：图标自己有悬停高亮）
+		bool overIcon = false;
+	};
+	DragHoverPick s_dragHover;
+
+	DropKind ClassifyDragPayload(const ImGuiPayload* payload, ProjectManager* projectManager)
+	{
+		if (!payload || !payload->Data || payload->DataSize <= 0)
+			return DropKind::None;
+		const char* data = static_cast<const char*>(payload->Data);
+		if (payload->IsDataType("ASSET_GUID"))
+		{
+			if (!projectManager || strlen(data) == 0)
+				return DropKind::None;
+			auto meta = projectManager->GetDatabase()->GetAssetMetaByGuid(AssetGUID(data));
+			if (!meta)
+				return DropKind::None;
+			switch (meta->type)
+			{
+			case AssetType::StaticMesh:
+			case AssetType::SkinnedMesh:
+			case AssetType::StaticModel:
+			case AssetType::SkinnedModel:
+				return DropKind::Surface;
+			case AssetType::Material:
+			case AssetType::Script:
+			case AssetType::UiDocument:
+				return DropKind::Entity;
+			default:
+				return DropKind::None;
+			}
+		}
+		if (payload->IsDataType("ASSET_FILE"))
+		{
+			const std::string ext = fs::path(std::string(data)).extension().string();
+			return (ext == ".lua" || ext == ".ui") ? DropKind::Entity : DropKind::None;
+		}
+		return DropKind::None;
+	}
+
+	void EndDragHover(EditorApp* app)
+	{
+		if (s_dragHover.pending)
+		{
+			if (auto channel = GetViewportChannel(app))
+				channel->CancelPick(s_dragHover.requestId);
+		}
+		s_dragHover = DragHoverPick{};
+	}
+
+	// 拖在视口上方的每一帧调一次：取上一个请求的结果，再按当前鼠标位置提交下一个
+	void UpdateDragHover(EditorApp* app, DropKind kind, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		s_dragHover.hovering = true;
+		s_dragHover.kind = kind;
+		// 图标用上一帧画出来的屏幕矩形（这段在图标绘制之前），不经过场景线程，每帧调也没有开销
+		s_dragHover.overIcon = static_cast<bool>(ViewportIcons::Pick(app, mouse));
+
+		auto channel = GetViewportChannel(app);
+		if (!channel || !app->GetLayerVisibility().layer3D)
+		{
+			if (s_dragHover.pending && channel)
+				channel->CancelPick(s_dragHover.requestId);
+			s_dragHover.pending = false;
+			s_dragHover.hasResult = false;
+			return;
+		}
+
+		if (s_dragHover.pending)
+		{
+			if (auto result = channel->PollPick(s_dragHover.requestId))
+			{
+				s_dragHover.pending = false;
+				s_dragHover.hasResult = result->valid;
+				s_dragHover.entity = result->valid ? result->focusEntity : UINT32_MAX;
+				s_dragHover.hasSurface = result->valid && result->hasPosition;
+				s_dragHover.surface = result->focusPosition;
+			}
+			else if (std::chrono::steady_clock::now() - s_dragHover.submitTime > kPickTimeout)
+			{
+				channel->CancelPick(s_dragHover.requestId);
+				s_dragHover.pending = false;
+			}
+		}
+
+		if (s_dragHover.pending || s_pending3DPick.active || s_addPlacement.submitted)
+			return;
+
+		glm::ivec2 pixel;
+		glm::uvec2 targetSize;
+		if (!MouseToTargetPixel(app, mouse, viewportPos, viewportSize, pixel, targetSize))
+			return;
+
+		EditorPickRequest request;
+		request.id = s_nextPickRequestId++;
+		request.targetSize = targetSize;
+		request.focus = pixel;
+		request.rectMin = pixel - glm::ivec2(kPickRadius);
+		request.rectMax = pixel + glm::ivec2(kPickRadius);
+		request.wantPosition = true;
+		channel->SubmitPick(request);
+
+		s_dragHover.pending = true;
+		s_dragHover.requestId = request.id;
+		s_dragHover.submitTime = std::chrono::steady_clock::now();
+	}
+
+	// 选中描边顺带高亮的拖放目标：要挂到物体上的资源拖在一个网格上方时，就是那个网格
+	Entity DragHighlightEntity(EditorApp* app)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world || !s_dragHover.hovering || s_dragHover.kind != DropKind::Entity || s_dragHover.overIcon
+			|| !s_dragHover.hasResult || s_dragHover.entity == UINT32_MAX)
+			return Entity();
+		const Entity entity(world, static_cast<EntityID>(s_dragHover.entity));
+		return world->IsValidWorldEntity(entity) ? entity : Entity();
+	}
+
+	// 松手时的目标：和点选同样的顺序（视口图标 → 2D → 3D）。3D 用拖动过程中最近一次的拾取结果，
+	// 2D 只在这里同步拾取一次（要等场景线程，不适合每帧做）
+	ViewportDropTarget ResolveDropTarget(EditorApp* app, const ImVec2& mouse, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		ViewportDropTarget target;
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world)
+			return target;
+
+		glm::mat4 view(1.f), projection(1.f);
+		glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
+		if (app->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection))
+		{
+			glm::mat4 projOG = projection;
+			projOG[1][1] *= -1;
+			ImGuizmo::ComputeMouseRay((float*)&view, (float*)&projOG, mouse, viewportPos, viewportSize,
+				(float*)&target.rayOrigin, (float*)&target.rayDirection);
+		}
+		else
+		{
+			target.rayOrigin = cameraPosition;
+			target.rayDirection = cameraDirection;
+		}
+
+		const auto visibility = app->GetLayerVisibility();
+		Entity entity = ViewportIcons::Pick(app, mouse);
+		if (!entity && visibility.layer2D)
+			entity = Pick2DAtMouse(app, mouse, viewportPos, viewportSize);
+		if (!entity && visibility.layer3D && s_dragHover.hasResult && s_dragHover.entity != UINT32_MAX)
+		{
+			const Entity picked(world, static_cast<EntityID>(s_dragHover.entity));
+			if (world->IsValidWorldEntity(picked))
+				entity = picked;
+		}
+		target.entity = entity;
+
+		if (visibility.layer3D && s_dragHover.hasResult && s_dragHover.hasSurface)
+		{
+			target.hasSurface = true;
+			target.surfacePosition = s_dragHover.surface;
+		}
+		return target;
+	}
+
+	// 「添加物体」的落点。返回 true 表示有结果（position 已填好），false 表示还在等拾取结果（下一帧再调）
+	bool ResolveAddPlacement(EditorApp* app, const ImVec2& viewportPos, const ImVec2& viewportSize, glm::vec3& position)
+	{
+		glm::mat4 view(1.f), projection(1.f);
+		glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
+		const bool hasCamera = app && app->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection);
+		const glm::vec3 fallback = cameraPosition + cameraDirection * 15.f;
+
+		auto channel = GetViewportChannel(app);
+		auto finish = [&](const glm::vec3& p) {
+			position = p;
+			s_addPlacement = PendingAddPlacement{};
+			return true;
+			};
+		if (!hasCamera || !channel || !app->GetLayerVisibility().layer3D)
+		{
+			if (s_addPlacement.submitted && channel)
+				channel->CancelPick(s_addPlacement.requestId);
+			return finish(fallback);
+		}
+
+		if (!s_addPlacement.submitted)
+		{
+			// 点选 / 拖放的请求还在等：等它们出结果再提交，免得把它们挤掉
+			if (s_pending3DPick.active || s_dragHover.pending)
+				return false;
+
+			glm::ivec2 pixel;
+			glm::uvec2 targetSize;
+			const ImVec2 center(viewportPos.x + viewportSize.x * 0.5f, viewportPos.y + viewportSize.y * 0.5f);
+			if (!MouseToTargetPixel(app, center, viewportPos, viewportSize, pixel, targetSize))
+				return finish(fallback);
+
+			EditorPickRequest request;
+			request.id = s_nextPickRequestId++;
+			request.targetSize = targetSize;
+			request.focus = pixel;
+			request.rectMin = pixel;		// 只看正中心那一个像素：旁边的小物体不该抢走落点
+			request.rectMax = pixel;
+			request.wantPosition = true;
+			channel->SubmitPick(request);
+
+			s_addPlacement.submitted = true;
+			s_addPlacement.requestId = request.id;
+			s_addPlacement.submitTime = std::chrono::steady_clock::now();
+			return false;
+		}
+
+		if (auto result = channel->PollPick(s_addPlacement.requestId))
+			return finish((result->valid && result->hasPosition) ? result->focusPosition : fallback);
+
+		if (std::chrono::steady_clock::now() - s_addPlacement.submitTime > kPickTimeout)
+		{
+			channel->CancelPick(s_addPlacement.requestId);
+			return finish(fallback);
+		}
+		return false;
 	}
 
 	// 找 code.cmd：先查 PATH，再查两个常见安装位置。
@@ -2331,6 +3598,14 @@ void ImguiLayout::DrawPlayControls(EditorApp* editorApp, ProjectManager* project
 		ImGui::SameLine();
 		changed |= ImGui::Checkbox("UI", &visibility.layerUI);
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip("显示 UI 层（关掉时 UI 也不响应点击）");
+		ImGui::SameLine(0.0f, 16.0f);
+		ImGui::Checkbox("图标", &ViewportIcons::Visible());
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("显示灯光、相机、DDGI 体积、特效、音源、空实体的视口图标（关掉时也不能点选它们；3D 层关掉时不显示）");
+		ImGui::SameLine();
+		ImGui::Checkbox("包围盒", &s_showSelectionBounds);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("选中物体的3D/2D包围盒（青色）");
 		if (changed)
 			editorApp->SetLayerVisibility(visibility);
 	}
@@ -2411,7 +3686,9 @@ void ImguiLayout::SetDockspace(bool firstFrame)
 
 void ImguiLayout::DrawSceneObjectList(EditorApp* editorApp)
 {
+	SyncSelection(editorApp->GetWorld());
 	ImGui::Begin("Scene Objects");
+	HandleDeleteShortcut(editorApp);
 	ImGui::Text("场景对象");
 	ImGui::Separator();
 
@@ -2458,7 +3735,7 @@ void ImguiLayout::DrawSceneObjectList(EditorApp* editorApp)
 		ImGui::PushID(item.entity.getId());
 
 		// 高亮选中的实体
-		bool isSelected = (selectedEntity && selectedEntity == item.entity);
+		bool isSelected = IsSelected(item.entity);
 		bool isShowRename = false;
 		if (isSelected)
 		{
@@ -2511,20 +3788,45 @@ void ImguiLayout::DrawSceneObjectList(EditorApp* editorApp)
 			// 使用实体 ID 作为树节点的唯一 ID
 			ImGui::TreeNodeEx("##node", flags, "%s", item.name.c_str());
 
-			// 处理点击选中
+			// 处理点击选中：Ctrl 切换、Shift 从上一次点的那一行选到这一行（加入）、否则只选这一个
 			if (ImGui::IsItemClicked())
 			{
-				selectedEntity = item.entity;
+				const SelectMode mode = SelectModeFromKeys();
+				if (mode == SelectMode::Add && s_hierarchyRangeAnchor && s_hierarchyRangeAnchor != item.entity)
+				{
+					const auto anchorIt = std::find_if(items.begin(), items.end(), [](const auto& other) { return other.entity == s_hierarchyRangeAnchor; });
+					if (anchorIt != items.end())
+					{
+						const size_t from = static_cast<size_t>(anchorIt - items.begin());
+						const size_t to = static_cast<size_t>(&item - items.data());
+						std::vector<Entity> range;
+						for (size_t k = std::min(from, to); k <= std::max(from, to); ++k)
+							range.push_back(items[k].entity);
+						// 区间里点的那一行之外的按列表顺序；手柄和面板跟着原来的第一个（没有就是区间起点）
+						ApplySelection(range, SelectMode::Add);
+					}
+					else
+						ApplySelection({ item.entity }, SelectMode::Add);
+				}
+				else
+				{
+					ApplySelection({ item.entity }, mode);
+					s_hierarchyRangeAnchor = item.entity;
+				}
 			}
 
-			// 处理右键菜单（可选）
+			// 处理右键菜单：点在没选中的行上先只选它；点在选中的行上保留多选
 			if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
 			{
-				selectedEntity = item.entity;
+				if (!IsSelected(item.entity))
+				{
+					ApplySelection({ item.entity }, SelectMode::Replace);
+					s_hierarchyRangeAnchor = item.entity;
+				}
 				ImGui::OpenPopup("EntityContextMenu");
 			}
 
-			if (isSelected && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+			if (isSelected && s_selection.size() <= 1 && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 			{
 				// 填充当前名称
 				strncpy_s(renameBuffer, item.name.c_str(), sizeof(renameBuffer) - 1);
@@ -2536,7 +3838,14 @@ void ImguiLayout::DrawSceneObjectList(EditorApp* editorApp)
 			// 右键菜单（可选功能）
 			if (ImGui::BeginPopup("EntityContextMenu"))
 			{
-				if (ImGui::MenuItem("Delete"))
+				// 多选：删除全部选中（先弹确认框）；复制不可用
+				const bool multi = s_selection.size() > 1;
+				if (multi)
+				{
+					if (ImGui::MenuItem(std::format("Delete Selected ({})...", s_selection.size()).c_str()))
+						RequestMultiDelete();
+				}
+				else if (ImGui::MenuItem("Delete"))
 				{
 					editorApp->GetWorld()->SubmitCommand([entity = item.entity, world = editorApp->GetWorld()]() -> void {
 						if (!entity || !world)
@@ -2545,7 +3854,7 @@ void ImguiLayout::DrawSceneObjectList(EditorApp* editorApp)
 						}
 					);
 				}
-				if (ImGui::MenuItem("Duplicate"))
+				if (ImGui::MenuItem("Duplicate", nullptr, false, !multi))
 				{
 					if (Entity newEntity; editorApp->Scene().DuplicateEntity(item.entity, newEntity) && newEntity)
 						selectedEntity = newEntity;
@@ -2567,8 +3876,35 @@ void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 	ImGui::Text("属性");
 	ImGui::Separator();
 	auto world = EditorApp::Instance()->GetWorld();
+	SyncSelection(world);
 	const bool entitySelected = world && selectedEntity && world->IsValidWorldEntity(selectedEntity);
-	if (entitySelected)
+	if (entitySelected && s_selection.size() > 1)
+	{
+		// 多选：只读显示手柄所在实体（第一个有对应组件的）的 Transform / Transform2D，改动只能用手柄一起调
+		const GizmoTargets targets = ResolveGizmoTargets();
+		ImGui::Text("已选择 %d 个实体", static_cast<int>(s_selection.size()));
+		if (targets.anchor)
+		{
+			ImGui::Text("%s：%d（%d 个实体有%s）", targets.is3D ? "Transform 显示" : "Transform2D 显示",
+				static_cast<int>(targets.anchor.getId()), static_cast<int>(targets.entities.size()), targets.is3D ? " Transform" : " Transform2D");
+			ImGui::TextDisabled("多选时属性只读，用手柄一起调整；没有对应组件的实体不受影响");
+		}
+		else
+			ImGui::TextDisabled("选中的实体都没有 Transform / Transform2D，无法调整");
+		ImGui::Separator();
+		if (targets.anchor)
+		{
+			const IComponent* shown = targets.is3D
+				? static_cast<const IComponent*>(targets.anchor.tryGetComponent<Transform>())
+				: static_cast<const IComponent*>(targets.anchor.tryGetComponent<Transform2D>());
+			auto components = PropertiesHelper::GetAllComponents(targets.anchor);
+			std::erase_if(components, [shown](const ComponentData& data) { return !shown || data.component != shown; });
+			ImGui::BeginDisabled();
+			PropertiesHelper::DrawAllProperties(targets.anchor, components, projectManager);
+			ImGui::EndDisabled();
+		}
+	}
+	else if (entitySelected)
 	{
 		ImGui::Text("已选择: %d", selectedEntity.getId());
 		ImGui::Separator();
@@ -3244,7 +4580,15 @@ void ImguiLayout::DrawAssetBrowser(ProjectManager* projectManager)
 
 void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectManager)
 {
-	ImGui::Begin("Scene View");
+	// 鼠标在视口画面上（上一帧的矩形）或正在框选时不让左键拖动移动窗口，标题栏 / 标签照常能拖
+	{
+		const ImVec2 mouse = ImGui::GetMousePos();
+		const bool overViewport = s_lastViewportRect.valid
+			&& mouse.x >= s_lastViewportRect.min.x && mouse.y >= s_lastViewportRect.min.y
+			&& mouse.x < s_lastViewportRect.max.x && mouse.y < s_lastViewportRect.max.y;
+		ImGui::Begin("Scene View", nullptr, (overViewport || s_boxSelect.armed) ? ImGuiWindowFlags_NoMove : ImGuiWindowFlags_None);
+	}
+	HandleDeleteShortcut(editorApp);
 
 	ImGuizmo::BeginFrame();
 	ImGuizmo::SetDrawlist();
@@ -3252,11 +4596,55 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 	// 获取场景视口区域
 	ImVec2 viewportPos = ImGui::GetCursorScreenPos();
 	ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+	s_lastViewportRect = { true, viewportPos, ImVec2(viewportPos.x + viewportSize.x, viewportPos.y + viewportSize.y) };
 	// 引擎 UI（ImGui 拾取）要知道渲染目标摆在窗口的哪块矩形里。
 	if (auto inputContext = editorApp->GetInputContext())
 		inputContext->SetViewportRect(viewportPos.x, viewportPos.y, viewportSize.x, viewportSize.y);
 	ImGuizmo::SetRect(viewportPos.x, viewportPos.y,
 		viewportSize.x, viewportSize.y);
+
+	// 吸收别处对 selectedEntity 的直接赋值（删除、复制、切场景等），去掉已销毁的实体
+	SyncSelection(editorApp->GetWorld());
+
+	// 3D 拾取（点选 / 框选）的异步结果：提交后选中没被别处改过才应用（手柄、属性面板等本帧就能看到新选中）
+	if (std::vector<Entity> picked3D; Poll3DPick(editorApp, picked3D))
+	{
+		if (s_selectionVersion == s_pending3DPick.selectionVersion)
+		{
+			std::vector<Entity> picked = std::move(s_pending3DPick.extra);
+			picked.insert(picked.end(), picked3D.begin(), picked3D.end());
+			if (!s_pending3DPick.isBox && picked.size() == 1 && s_pending3DPick.mode == SelectMode::Replace)
+				s_pickedBy2D = Entity();		// 点到的是 3D 网格
+			ApplySelection(picked, s_pending3DPick.mode);
+		}
+		s_pending3DPick.extra.clear();
+	}
+	else if (s_pending3DPick.active && s_selectionVersion != s_pending3DPick.selectionVersion)
+		Cancel3DPick(editorApp);
+
+	// 选中描边：把当前选中推给渲染器（内容没变时什么都不做）。本帧稍后点击改的选中，下一帧推送
+	if (auto channel = GetViewportChannel(editorApp))
+	{
+		World* world = editorApp->GetWorld();
+		// 主选中（主色描边）：手柄所在的实体；都没有变换组件时用列表第一个
+		const Entity anchor = ResolveGizmoTargets().anchor;
+		const Entity primary = anchor ? anchor : selectedEntity;
+		const bool valid = primary && world && world->IsValidWorldEntity(primary);
+		const uint32_t id = valid ? static_cast<uint32_t>(primary.getId()) : UINT32_MAX;
+		// 拖动结束（松手 / 取消）时清掉拖放状态，免得高亮残留
+		if (!ImGui::GetDragDropPayload())
+			EndDragHover(editorApp);
+		std::vector<uint32_t> ids;
+		for (const Entity& e : s_selection)
+		{
+			if (world && world->IsValidWorldEntity(e))
+				ids.push_back(static_cast<uint32_t>(e.getId()));
+		}
+		// 脚本 / UI / 材质拖在网格上方：把它当成非主选中一起描边，提示会挂到哪个物体上
+		if (Entity highlight = DragHighlightEntity(editorApp))
+			ids.push_back(static_cast<uint32_t>(highlight.getId()));
+		channel->SetSelection(std::move(ids), id);
+	}
 
 	// DDGI：推送调试设置（可视化、选中体积 / 探针、漏光像素）、处理烘焙结果
 	DDGIEditor::UpdateFrame(editorApp, selectedEntity);
@@ -3292,45 +4680,41 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 
 	if (WantToAddDirLight || WantToAddPointLight || WantToAddSpotLight || WantToAddCube || WantToAddSphere || WantToAddEmptyEntity || WantToAddDDGIVolume)
 	{
-		glm::mat4 addView(1.f), addProjection(1.f);
-		glm::vec3 rayOrigin(0.f), rayDirection(0.f, 0.f, -1.f);
-		if (!editorApp->GetCameraSnapshot(addView, addProjection, rayOrigin, rayDirection))
-			return;
+		// 落点：视口中心的网格表面（实体 ID 缓冲拾取，异步，一般 2 ~ 3 帧）。结果到之前菜单的请求保留，下一帧再来
+		glm::vec3 position(0.f);
+		const bool placed = ResolveAddPlacement(editorApp, viewportPos, viewportSize, position);
 
-		auto result = editorApp->Scene().RayCast(rayOrigin, rayDirection);
-		glm::vec3 position = result.hit ? result.hitPoint : rayOrigin + rayDirection * 15.f;
-
-		if (WantToAddDirLight)
+		if (placed && WantToAddDirLight)
 		{
 			editorApp->Scene().AddLight(LightType::Directional, position);
 			WantToAddDirLight = false;
 		}
-		if (WantToAddPointLight)
+		if (placed && WantToAddPointLight)
 		{
 			editorApp->Scene().AddLight(LightType::Point, position);
 			WantToAddPointLight = false;
 		}
-		if (WantToAddSpotLight)
+		if (placed && WantToAddSpotLight)
 		{
 			editorApp->Scene().AddLight(LightType::Spot, position);
 			WantToAddSpotLight = false;
 		}
-		if (WantToAddCube)
+		if (placed && WantToAddCube)
 		{
 			editorApp->Scene().AddGeometry(GeometryType::Cube, position);
 			WantToAddCube = false;
 		}
-		if (WantToAddSphere)
+		if (placed && WantToAddSphere)
 		{
 			editorApp->Scene().AddGeometry(GeometryType::Sphere, position);
 			WantToAddSphere = false;
 		}
-		if (WantToAddEmptyEntity)
+		if (placed && WantToAddEmptyEntity)
 		{
 			editorApp->Scene().AddEmptyEntity(position);
 			WantToAddEmptyEntity = false;
 		}
-		if (WantToAddDDGIVolume)
+		if (placed && WantToAddDDGIVolume)
 		{
 			editorApp->Scene().AddDDGIVolume(position);
 			WantToAddDDGIVolume = false;
@@ -3550,14 +4934,26 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 
 		if (ImGui::BeginDragDropTarget())
 		{
+			// 拖在视口上方的每一帧：持续拾取鼠标下的目标，松手时直接用（见 DragHoverPick）
+			const ImVec2 dropMouse = ImGui::GetMousePos();
+			const DropKind dropKind = ClassifyDragPayload(ImGui::GetDragDropPayload(), projectManager);
+			if (dropKind != DropKind::None)
+				UpdateDragHover(editorApp, dropKind, dropMouse, viewportPos, viewportSize);
+			else
+				EndDragHover(editorApp);
+
 			if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_GUID"))
 			{
 				const char* data = (const char*)payload->Data;
 				if (data && strlen(data) > 0) {
 					AssetGUID guid(data);
 					if (auto meta = projectManager->GetDatabase()->GetAssetMetaByGuid(guid))
-						HandleAssetDrop(*meta, editorApp, projectManager, viewportPos, viewportSize);
+					{
+						const ViewportDropTarget target = ResolveDropTarget(editorApp, dropMouse, viewportPos, viewportSize);
+						HandleAssetDrop(*meta, editorApp, projectManager, viewportPos, viewportSize, target);
+					}
 				}
+				EndDragHover(editorApp);
 			}
 			if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_FILE"))
 			{
@@ -3568,108 +4964,65 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 					std::string ext = fs::path(fileFullPath).extension().string();
 					if (ext == ".lua" || ext == ".ui")
 					{
-						glm::mat4 view(1.f), projection(1.f);
-						glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
-						if (!editorApp->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection))
-							return;
-
-						glm::mat4 projOG = projection;
-						projOG[1][1] *= -1;
-
-						glm::vec3 rayOrigin, rayDirection;
-						ImGuizmo::ComputeMouseRay(
-							(float*)&view,
-							(float*)&projOG,
-							ImGui::GetMousePos(),
-							viewportPos,
-							viewportSize,
-							(float*)&rayOrigin,
-							(float*)&rayDirection
-						);
-
-						auto entity = editorApp->Scene().PickObject(rayOrigin, rayDirection);
-						if (entity && editorApp->GetWorld()->IsValidWorldEntity(entity))
+						const ViewportDropTarget target = ResolveDropTarget(editorApp, dropMouse, viewportPos, viewportSize);
+						if (target.entity)
 						{
 							if (ext == ".ui")
-								HandleUIAssetFileDrop(fileFullPath, entity, projectManager);
+								HandleUIAssetFileDrop(fileFullPath, target.entity, projectManager);
 							else
-								HandleScriptFileDrop(fileFullPath, entity, projectManager);
+								HandleScriptFileDrop(fileFullPath, target.entity, projectManager);
 						}
 					}
 				}
+				EndDragHover(editorApp);
 			}
 			ImGui::EndDragDropTarget();
 		}
+		else if (s_dragHover.hovering)
+			EndDragHover(editorApp);		// 拖出视口
 
 		// 相机矩阵取渲染线程最近一帧的快照（不再从生产者的三缓冲里抢）。
 		glm::mat4 view(1.f), projection(1.f);
 		glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
 		const bool hasCamera = editorApp->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection);
 
-		// 选中的 2D 精灵 / 动图：画包围盒（先画，手柄盖在上面）。2D 层关掉时不画
-		if (selectedEntity && editorApp->GetLayerVisibility().layer2D)
-			DrawSelection2DBounds(editorApp, selectedEntity, viewportPos, viewportSize);
-
-		const bool use2DGizmo = Use2DGizmo(selectedEntity);
-		if (selectedEntity && (hasCamera || use2DGizmo))
+		// 没有网格的 3D 实体的图标（先画，2D 包围盒和手柄盖在上面）。点选在下面的点击处理里，用本帧算出的屏幕矩形
+		if (hasCamera && editorApp->GetLayerVisibility().layer3D)
 		{
-			auto* transform = selectedEntity.tryGetComponent<Transform>();
-			auto* physics = selectedEntity.tryGetComponent<Physics>();
-			if (use2DGizmo)
+			glm::mat4 projGL = projection;
+			projGL[1][1] *= -1;
+			ViewportIcons::Draw(editorApp, s_selection, projGL * view, cameraPosition, viewportPos, viewportSize);
+		}
+		else
+			ViewportIcons::Clear();
+
+		// 选中物体的包围盒（先画，手柄盖在上面）：2D 精灵 / 动图画矩形，3D 静态模型画 OBB。对应的层关掉时不画
+		if (!s_selection.empty() && s_showSelectionBounds)
+		{
+			const auto boundsVisibility = editorApp->GetLayerVisibility();
+			if (boundsVisibility.layer2D)
+				DrawSelection2DBounds(editorApp, s_selection, viewportPos, viewportSize);
+			if (boundsVisibility.layer3D && hasCamera)
 			{
-				Draw2DGizmo(editorApp, selectedEntity, viewportSize, mCurrentGizmoOperation, mCurrentGizmoMode, useSnap ? snap : nullptr);
+				glm::mat4 projGL = projection;
+				projGL[1][1] *= -1;
+				DrawSelection3DBounds(editorApp, s_selection, projGL * view, viewportPos, viewportSize);
 			}
-			else if (transform && hasCamera)
+		}
+
+		// 手柄：单选沿用原来的规则；多选时按 ResolveGizmoTargets 选 3D / 2D，放在第一个有对应组件的实体上，改动作用于所有有该组件的选中实体
+		const GizmoTargets gizmoTargets = ResolveGizmoTargets();
+		if (gizmoTargets.anchor && (gizmoTargets.is2D || hasCamera))
+		{
+			if (gizmoTargets.is2D)
 			{
-				glm::mat4 projOG = projection;
-				projOG[1][1] *= -1;
-
-				auto transformMatrix = transform->GetMatrix();
-				glm::mat4 deltaMatrix = glm::mat4(1.0f);
-
-				// 显示 Gizmo 并操作
-				ImGuizmo::SetOrthographic(false);
-				ImGuizmo::Manipulate(
-					(float*)glm::value_ptr(view),
-					(float*)glm::value_ptr(projOG),
-					mCurrentGizmoOperation,
-					mCurrentGizmoMode,
-					(float*)glm::value_ptr(transformMatrix),
-					(float*)glm::value_ptr(deltaMatrix),
-					useSnap ? snap : nullptr
-				);
-
-				// DDGI 体积：松开 Gizmo 时把缩放折算成探针数、中心吸附到网格
-				static bool s_gizmoWasUsing = false;
-				const bool gizmoUsing = ImGuizmo::IsUsing();
-				if (s_gizmoWasUsing && !gizmoUsing && DDGIEditor::IsVolume(selectedEntity))
-					DDGIEditor::FinalizeVolumeTransform(selectedEntity);
-				s_gizmoWasUsing = gizmoUsing;
-
-				if (ImGuizmo::IsUsing())
-				{
-					editorApp->GetWorld()->SubmitCommand(
-						[newMatrix = transformMatrix, entity = selectedEntity]() mutable ->void {
-							auto* transform = entity.tryGetComponent<Transform>();
-							auto* physics = entity.tryGetComponent<Physics>();
-							auto* runtime = entity.tryGetComponent<PhysicsRuntime>();
-							if (!transform)
-								return;
-
-							transform->SetMatrix(newMatrix);
-
-							if (physics && runtime)
-							{
-								physics->forceSyncTransform = true;
-								if (runtime->body && !runtime->body->isActive())
-									runtime->body->activate(true);
-								if (physics->isCharacter && runtime->character && runtime->ghostObject && !runtime->ghostObject->isActive())
-									runtime->ghostObject->activate(true);
-							}
-
-						}
-					);
-				}
+				FinishGizmo3DDrag();
+				Draw2DGizmo(editorApp, gizmoTargets, viewportSize, mCurrentGizmoOperation, mCurrentGizmoMode, useSnap ? snap : nullptr);
+			}
+			else
+			{
+				s_gizmo2DDrag.active = false;
+				Draw3DGizmo(editorApp, gizmoTargets, view, projection, mCurrentGizmoOperation, mCurrentGizmoMode, useSnap ? snap : nullptr);
 			}
 
 			ImGuiIO& io = ImGui::GetIO();
@@ -3696,6 +5049,12 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 					ImGui::OpenPopup("EntityContextMenu");
 			}
 		}
+		else
+		{
+			// 没有可调整的实体（或者没有相机）：结束进行中的拖动（DDGI 体积照常收尾）
+			FinishGizmo3DDrag();
+			s_gizmo2DDrag.active = false;
+		}
 
 		if (hasCamera)
 		{
@@ -3707,7 +5066,14 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 
 		if (ImGui::BeginPopup("EntityContextMenu"))
 		{
-			if (ImGui::MenuItem("Delete"))
+			// 多选：删除全部选中（先弹确认框）；复制不可用
+			const bool multi = s_selection.size() > 1;
+			if (multi)
+			{
+				if (ImGui::MenuItem(std::format("Delete Selected ({})...", s_selection.size()).c_str()))
+					RequestMultiDelete();
+			}
+			else if (ImGui::MenuItem("Delete"))
 			{
 				editorApp->GetWorld()->SubmitCommand([entity = selectedEntity, world = editorApp->GetWorld()]() -> void {
 					if (!entity || !world)
@@ -3717,7 +5083,7 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 				);
 				selectedEntity = Entity();
 			}
-			if (ImGui::MenuItem("Duplicate"))
+			if (ImGui::MenuItem("Duplicate", nullptr, false, !multi))
 			{
 				if (Entity newEntity; editorApp->Scene().DuplicateEntity(selectedEntity, newEntity) && newEntity)
 					selectedEntity = newEntity;
@@ -3759,23 +5125,15 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 						(float*)&rayDirection
 					);
 
-					// 拾取（DDGI 探针编辑模式下先点选探针）。和绘制顺序一致：2D 层在上面先选，2D 没点中才选 3D；关掉的层不参与
+					// DDGI 探针编辑模式下先点选探针；没被它用掉时先不选：松手时没拖动就是点选，拖动超过几个像素就是框选
+					// （见 UpdateBoxSelect）。Ctrl = 切换、Shift = 加入，按下那一刻的修饰键为准
 					if (!DDGIEditor::HandleViewportClick(selectedEntity, rayOrigin, rayDirection, io.KeyShift))
 					{
-						const auto visibility = editorApp->GetLayerVisibility();
-						Entity picked;
-						if (visibility.layer2D)
-							picked = Pick2DAtMouse(editorApp, mousePos, viewportPos, viewportSize);
-						s_pickedBy2D = picked;
-						if (!picked && visibility.layer3D)
-							picked = editorApp->Scene().PickObject(rayOrigin, rayDirection);
-						selectedEntity = picked;
+						s_boxSelect.armed = true;
+						s_boxSelect.dragging = false;
+						s_boxSelect.start = mousePos;
+						s_boxSelect.mode = SelectModeFromKeys();
 					}
-
-					//if (selectedEntity)
-					//	editorApp->SelectObject(selectedEntity);
-					//else
-					//	editorApp->DeselectObject();
 				}
 
 				// 3. 鼠标右键拖拽 - 旋转摄像机
@@ -3800,6 +5158,9 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 				}
 			}
 		}
+
+		// 点选 / 框选：松手时结算（框选时画框）
+		UpdateBoxSelect(editorApp, viewportPos, viewportSize);
 
 		std::string sceneLabel;
 		if (m_currentSceneAssetGuid.empty())
@@ -3837,6 +5198,9 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 	}
 
 	ImGui::End();
+
+	// 多选删除的确认框（在所有窗口之外打开 / 绘制）
+	DrawMultiDeleteConfirm(editorApp);
 }
 
 void ImguiLayout::DrawOptions(EditorApp* editorApp)
@@ -3942,7 +5306,10 @@ void ImguiLayout::DrawStatusBar(EditorApp* editorApp)
 
 		// ---- 第2列：选中的物体 ----
 		ImGui::TableNextColumn();
-		if (selectedEntity) {
+		if (s_selection.size() > 1) {
+			ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "选择实体: %d 个（第一个 %d）", static_cast<int>(s_selection.size()), selectedEntity.getId());
+		}
+		else if (selectedEntity) {
 			ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "选择实体: %d", selectedEntity.getId());
 		}
 		else {
@@ -4042,7 +5409,7 @@ void ImguiLayout::DropFolder(const std::string& folderPath, ProjectManager* proj
 	}
 }
 
-void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize)
+void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, ProjectManager* projectManager, const ImVec2& viewportPos, const ImVec2& viewportSize, const ViewportDropTarget& target)
 {
 	// 获取鼠标在场景中的世界坐标位置
 	ImVec2 mousePos = ImGui::GetMousePos();
@@ -4053,62 +5420,11 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 	if (!assetObject)
 		return;
 
-	auto GetMouseRay =
-		[&](glm::vec3& rayOrigin, glm::vec3& rayDirection)
-		{
-			glm::mat4 view(1.f), projection(1.f);
-			glm::vec3 snapPos(0.f), snapDir(0.f, 0.f, -1.f);
-			editorApp->GetCameraSnapshot(view, projection, snapPos, snapDir);
-
-			glm::mat4 projOG = projection;
-			projOG[1][1] *= -1;
-
-			// 计算射线
-			ImGuizmo::ComputeMouseRay(
-				(float*)&view,
-				(float*)&projOG,
-				mousePos,
-				viewportPos,
-				viewportSize,
-				(float*)&rayOrigin,
-				(float*)&rayDirection
-			);
-		};
-
-	auto RayCast =
-		[&](const glm::vec3& rayOrigin, const glm::vec3& rayDirection,
-			World& world, Entity& entity,
-			glm::vec3* hitPos = nullptr, float* distance = nullptr, glm::vec3* hitNormal = nullptr
-			) -> bool
-		{
-			auto result = editorApp->Scene().RayCast(rayOrigin, rayDirection);
-			if (!result.hit)
-				return false;
-			if (!world.IsValidWorldEntity(result.hitEntity))
-				return false;
-
-			entity = result.hitEntity;
-			if (hitPos)
-				*hitPos = result.hitPoint;
-			if (distance)
-				*distance = result.distance;
-			if (hitNormal)
-				*hitNormal = result.hitNormal;
-
-			return true;
-		};
-
-
-	auto RayCastFromMouse =
-		[&](World& world, Entity& entity,
-			glm::vec3* hitPos = nullptr, float* distance = nullptr, glm::vec3* hitNormal = nullptr
-			) -> bool
-		{
-			// 计算射线
-			glm::vec3 rayOrigin;
-			glm::vec3 rayDirection;
-			GetMouseRay(rayOrigin, rayDirection);
-			return RayCast(rayOrigin, rayDirection, world, entity, hitPos, distance, hitNormal);
+	// 拖放目标在拖动过程中就拾取好了（ResolveDropTarget）：
+	//   模型摆在鼠标下的网格表面上，没有命中表面时摆在鼠标射线前方 15 米；脚本 / UI / 材质挂到鼠标下的实体上
+	const glm::vec3 dropPosition = target.hasSurface ? target.surfacePosition : target.rayOrigin + target.rayDirection * 15.f;
+	auto dropEntity = [&](World& world) -> Entity {
+		return (target.entity && world.IsValidWorldEntity(target.entity)) ? target.entity : Entity();
 		};
 
 	switch (meta.type)
@@ -4130,12 +5446,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 			{
 				editorApp->GetWorld()->SubmitCommand([&](World& world)
 					{
-						glm::vec3 rayOrigin, rayDirection;
-						GetMouseRay(rayOrigin, rayDirection);
-
-						Entity entity;
-						glm::vec3 hitPos;
-						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+						trans->position = dropPosition;
 
 					}).get();
 			}
@@ -4160,12 +5471,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 			{
 				editorApp->GetWorld()->SubmitCommand([&](World& world)
 					{
-						glm::vec3 rayOrigin, rayDirection;
-						GetMouseRay(rayOrigin, rayDirection);
-
-						Entity entity;
-						glm::vec3 hitPos;
-						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+						trans->position = dropPosition;
 
 					}).get();
 			}
@@ -4205,8 +5511,8 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 			editorApp->GetWorld()->SubmitCommand([&](World& world)
 				{
 
-					Entity entity;
-					if (!RayCastFromMouse(world, entity))
+					Entity entity = dropEntity(world);
+					if (!entity)
 						return;
 
 					auto rModel = entity.tryGetComponent<RenderStaticModel>();
@@ -4252,12 +5558,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 			{
 				editorApp->GetWorld()->SubmitCommand([&](World& world)
 					{
-						glm::vec3 rayOrigin, rayDirection;
-						GetMouseRay(rayOrigin, rayDirection);
-
-						Entity entity;
-						glm::vec3 hitPos;
-						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+						trans->position = dropPosition;
 
 					}).get();
 
@@ -4277,12 +5578,7 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 			{
 				editorApp->GetWorld()->SubmitCommand([&](World& world)
 					{
-						glm::vec3 rayOrigin, rayDirection;
-						GetMouseRay(rayOrigin, rayDirection);
-
-						Entity entity;
-						glm::vec3 hitPos;
-						trans->position = RayCast(rayOrigin, rayDirection, world, entity, &hitPos) ? hitPos : rayOrigin + rayDirection * 15.f;
+						trans->position = dropPosition;
 
 					}).get();
 			}
@@ -4307,17 +5603,15 @@ void ImguiLayout::HandleAssetDrop(const AssetMeta& meta, EditorApp* editorApp, P
 	}
 	case AssetType::Script:
 	{
-		Entity entity;
 		auto world = editorApp->GetWorld();
-		if (world && RayCastFromMouse(*world, entity))
+		if (Entity entity = world ? dropEntity(*world) : Entity())
 			ApplyScriptAsset(entity, meta, projectManager);
 		break;
 	}
 	case AssetType::UiDocument:
 	{
-		Entity entity;
 		auto world = editorApp->GetWorld();
-		if (world && RayCastFromMouse(*world, entity))
+		if (Entity entity = world ? dropEntity(*world) : Entity())
 			ApplyUIAsset(entity, meta, projectManager);
 		break;
 	}

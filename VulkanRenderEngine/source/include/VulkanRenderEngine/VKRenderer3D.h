@@ -10,6 +10,7 @@
 #include "VulkanRenderEngine/RenderPass/BloomPass.h"
 #include "VulkanRenderEngine/RenderPass/CombinPass.h"
 #include "VulkanRenderEngine/RenderPass/GlobalPostProcessPass.h"
+#include "VulkanRenderEngine/RenderPass/EditorOutlinePass.h"
 
 #include "VulkanRenderEngine/SharedTexture.h"
 
@@ -20,6 +21,7 @@
 #include "VulkanRenderEngine/Base/Texture2D.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
 #include "VulkanRenderEngine/General/DDGIDebug.h"
+#include "VulkanRenderEngine/General/EditorViewport.h"
 #include "VulkanRenderEngine/General/RenderProfiler.h"
 
 struct alignas(16) camera_compData
@@ -78,6 +80,10 @@ public:
     // DDGI 调试通道（编辑器 <-> 渲染器），跨渲染图重建保持不变
     std::shared_ptr<DDGIDebugChannel> GetDDGIDebugChannel();
 
+    // 编辑器视口通道（拾取等），跨渲染图重建保持不变。没开 GlobalConfig::EditorViewportFeatures 时
+    // 也能取到，只是没有 Pass 处理里面的请求
+    std::shared_ptr<EditorViewportChannel> GetEditorViewportChannel() const { return _editorViewportChannel; }
+
 private:
     void Init_Internal();
 
@@ -93,6 +99,9 @@ private:
         std::shared_ptr<Texture2D> firstPersonColorBuffer;
         std::shared_ptr<Texture2D> combinColorBuffer, combinBrightColorBuffer;
         std::vector<std::shared_ptr<Texture2D>> bloomMipBuffers;
+        // 编辑器选中遮罩（EditorSelectionMaskPass 写、EditorOutlinePass 读）：要活到渲染图之后的后处理段，所以归这里。
+        // 只在 GlobalConfig::EditorViewportFeatures 打开时创建
+        std::shared_ptr<Texture2D> editorSelectionMask;
     };
 
     // 挂在 FrameJob 上的 3D 每帧数据
@@ -131,6 +140,7 @@ private:
     std::unique_ptr<CombinPass> _combinPass;
     std::unique_ptr<BloomPass> _globalBloomPass;
     std::unique_ptr<GlobalPostProcessPass> _globalPostProcessPass;
+    std::unique_ptr<EditorOutlinePass> _editorOutlinePass;     // 只在 GlobalConfig::EditorViewportFeatures 打开时创建
 
     std::vector<std::shared_ptr<RenderTargetData>> _renderTargets;
 
@@ -152,6 +162,8 @@ private:
         std::shared_ptr<RenderPassBase> ddgiUpdate, ddgiBlend, ddgiApply, ddgiProbeDraw;
         std::shared_ptr<RenderPassBase> indirectDiffuseCombin, indirectSpecularCombin, indirectPathTracingCombin, combinIndirectLighting;
         std::shared_ptr<RenderPassBase> lightDraw, volumeLut, volumeCombine, transparent, effect, autoExposure, gBufferHistoryCopy;
+        // 只在 GlobalConfig::EditorViewportFeatures 打开时创建
+        std::shared_ptr<RenderPassBase> editorPick, editorSelectionMask;
         uint32_t hzbMaxLevel = 1;
 
         template<typename F>
@@ -162,7 +174,7 @@ private:
                 &rayTraceGeneral, &rayTraceReflect, &rayTraceGI, &ssr, &ssgi,
                 &ddgiUpdate, &ddgiBlend, &ddgiApply, &ddgiProbeDraw,
                 &indirectDiffuseCombin, &indirectSpecularCombin, &indirectPathTracingCombin, &combinIndirectLighting,
-                &lightDraw, &volumeLut, &volumeCombine, &transparent, &effect, &autoExposure, &gBufferHistoryCopy })
+                &lightDraw, &volumeLut, &volumeCombine, &transparent, &effect, &autoExposure, &gBufferHistoryCopy, &editorPick, &editorSelectionMask })
             {
                 if (*pass)
                     f(**pass);
@@ -174,6 +186,8 @@ private:
     Scene3DRenderOption _option;
 
     std::shared_ptr<DDGIDebugChannel> _ddgiDebugChannel;
+
+    const std::shared_ptr<EditorViewportChannel> _editorViewportChannel = std::make_shared<EditorViewportChannel>();
 
     std::atomic<bool> _sceneRenderEnabled{ true };
 };

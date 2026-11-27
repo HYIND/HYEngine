@@ -1,0 +1,92 @@
+#version 460 core
+
+// 编辑器选中描边（EditorOutlinePass）：在最终画面（后处理之后、2D 之前，RGBA8）上原地叠加描边。
+// 读选中遮罩（EditorSelectionMaskPass：r = 覆盖，g = 看得见，b = 主选中）：
+//   - 遮罩外、离覆盖区域不超过 width 的像素：画描边。邻域里有看得见的像素 → 不透明；全被挡住 → 乘 occludedAlpha。
+//     邻域里有主选中的像素 → primaryColor，否则 secondaryColor。边缘按距离做 1 像素抗锯齿
+//   - 遮罩内、被挡住的像素：叠一层很淡的颜色（occludedFill），表示「在后面」
+//   - 其它像素不动
+// 每个像素只读写自己的颜色、读遮罩的邻域，原地修改没有冲突。
+
+#ifndef work_size_x
+#define work_size_x 8
+#endif
+#ifndef work_size_y
+#define work_size_y 8
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba8) uniform image2D colorImage;
+layout(set = 0, binding = 1) uniform sampler2D selectionMask;
+
+layout(push_constant) uniform OutlineParams
+{
+	vec4 primaryColor;
+	vec4 secondaryColor;
+	vec4 params;		// x 宽度（像素），y 被挡住部分的透明度，z 被挡住部分的内部叠色强度
+} pc;
+
+const int MAX_RADIUS = 6;
+
+void main()
+{
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(colorImage);
+	if (any(greaterThanEqual(p, size)))
+		return;
+
+	float width = clamp(pc.params.x, 1.0, float(MAX_RADIUS));
+	vec4 self = texelFetch(selectionMask, p, 0);
+
+	if (self.r > 0.5)
+	{
+		// 遮罩内：只处理被挡住的部分
+		if (self.g < 0.5 && pc.params.z > 0.0)
+		{
+			vec4 color = imageLoad(colorImage, p);
+			vec3 tint = self.b > 0.5 ? pc.primaryColor.rgb : pc.secondaryColor.rgb;
+			color.rgb = mix(color.rgb, tint, pc.params.z);
+			imageStore(colorImage, p, color);
+		}
+		return;
+	}
+
+	// 遮罩外：在半径内找最近的覆盖像素
+	int radius = int(ceil(width));
+	float best = 1e9;
+	float visible = 0.0;
+	float primary = 0.0;
+	float reach = (width + 0.5) * (width + 0.5);
+	for (int dy = -radius; dy <= radius; ++dy)
+	{
+		for (int dx = -radius; dx <= radius; ++dx)
+		{
+			ivec2 q = p + ivec2(dx, dy);
+			if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, size)))
+				continue;
+			float d2 = float(dx * dx + dy * dy);
+			if (d2 > reach)
+				continue;
+			vec4 m = texelFetch(selectionMask, q, 0);
+			if (m.r < 0.5)
+				continue;
+			best = min(best, d2);
+			visible = max(visible, m.g);
+			primary = max(primary, m.b);
+		}
+	}
+	if (best > 1e8)
+		return;
+
+	float alpha = clamp(width + 0.5 - sqrt(best), 0.0, 1.0);
+	if (visible < 0.5)
+		alpha *= pc.params.y;
+	if (alpha <= 0.0)
+		return;
+
+	vec4 color = imageLoad(colorImage, p);
+	vec4 outline = primary > 0.5 ? pc.primaryColor : pc.secondaryColor;
+	color.rgb = mix(color.rgb, outline.rgb, alpha * outline.a);
+	imageStore(colorImage, p, color);
+}

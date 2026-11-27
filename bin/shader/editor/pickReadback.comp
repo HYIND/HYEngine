@@ -1,0 +1,53 @@
+#version 460 core
+
+// 编辑器拾取读回（EditorPickPass）：把请求矩形内的实体 ID（以及点选时的世界坐标）紧密写进缓冲，CPU 再读回。
+// 用计算着色器采样而不是 copyImageToBuffer：gPosition 同时被 SSAO / 光照等 Pass 以 SHADER_READ_ONLY 读，
+// 渲染图不会给同一张图的多个读者排序，这里也用同样的布局读，才不会和它们抢布局。
+// 输出布局（uint 数组，count = rectSize.x * rectSize.y，行优先）：
+//   [0, count)                      实体 ID 缓冲的原值（entityId + 1，0 = 没有物体）
+//   [count, count * 4)（wantPosition） 每像素 3 个 float 的世界坐标（floatBitsToUint）
+
+#ifndef work_size_x
+#define work_size_x 8
+#endif
+#ifndef work_size_y
+#define work_size_y 8
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform usampler2D entityIdTex;
+layout(set = 0, binding = 1) uniform sampler2D positionTex;		// gPosition：xyz = 世界坐标
+
+layout(std430, set = 0, binding = 2) writeonly buffer PickOutput
+{
+	uint pickData[];
+};
+
+layout(push_constant) uniform PickParams
+{
+	ivec2 rectMin;
+	ivec2 rectSize;
+	uint wantPosition;
+} pc;
+
+void main()
+{
+	ivec2 local = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(local, pc.rectSize)))
+		return;
+
+	ivec2 p = pc.rectMin + local;
+	uint index = uint(local.y * pc.rectSize.x + local.x);
+	pickData[index] = texelFetch(entityIdTex, p, 0).r;
+
+	if (pc.wantPosition != 0u)
+	{
+		uint count = uint(pc.rectSize.x * pc.rectSize.y);
+		vec3 position = texelFetch(positionTex, p, 0).xyz;
+		uint base = count + index * 3u;
+		pickData[base + 0u] = floatBitsToUint(position.x);
+		pickData[base + 1u] = floatBitsToUint(position.y);
+		pickData[base + 2u] = floatBitsToUint(position.z);
+	}
+}

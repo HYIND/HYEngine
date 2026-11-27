@@ -31,35 +31,6 @@ static std::filesystem::path GetEditorExecutableDirectory()
     return std::filesystem::path(std::wstring(pathBuffer.data(), length)).parent_path();
 }
 
-void AddPickProxy(Entity& entity)
-{
-    if (!entity.hasComponent<Transform>())
-        return;
-
-    if (!entity.hasComponent<Physics>())
-    {
-        auto& physics = entity.addComponent<Physics>();
-        physics.bodyType = Physics::BodyType::Kinematic;
-        physics.isSensor = true;
-        physics.allowSleep = false;
-        physics.collisionShape.AddBoxShape(glm::vec3(0.5));
-
-        if (auto renderModel = entity.tryGetComponent<RenderStaticModel>(); renderModel && renderModel->model)
-        {
-            auto aabb = renderModel->model->GetAABB();
-            auto halfExtend = (aabb.max - aabb.min) / 2.f;
-            if (halfExtend.x > 0.5 || halfExtend.y > 0.5 || halfExtend.z > 0.5)
-                physics.collisionShape.AddBoxShape(halfExtend);
-        }
-    }
-    else
-    {
-        auto& physics = entity.getComponent<Physics>();
-        physics.allowSleep = false;
-    }
-    entity.addComponent<TageEditorPick>();
-}
-
 void SetNameTag(Entity entity, const std::string& name)
 {
     if (!entity)
@@ -84,7 +55,6 @@ static void GeneralDefaultWorld(World& world)
 {
     {
         Entity entity = LightFactory::CreateDirLight(world, glm::vec3(1, -1, 1), glm::vec3(1.0f), 3.5, true, 4, 3000);
-        AddPickProxy(entity);
         SetNameTag(entity, "DirLight");
     }
 
@@ -124,7 +94,6 @@ static void GeneralDefaultWorld(World& world)
         auto& rendermodel = cube.addComponent<RenderStaticModel>();
         rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-        AddPickProxy(cube);
         SetNameTag(cube, "cube_1");
     }
 
@@ -145,7 +114,6 @@ static void GeneralDefaultWorld(World& world)
         auto& rendermodel = entity.addComponent<RenderStaticModel>();
         rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-        AddPickProxy(entity);
         SetNameTag(entity, "cube_script_test");
 
         static auto ReadFromFile = [](const std::string& path) ->std::string
@@ -207,7 +175,6 @@ static void GeneralDefaultWorld(World& world)
             material->SetAlbedo(glm::vec3(1.0f));
         }
 
-        AddPickProxy(sphere);
         SetNameTag(sphere, "sphere_1");
     }
 
@@ -234,7 +201,6 @@ static void GeneralDefaultWorld(World& world)
         auto& rendermodel = floor.addComponent<RenderStaticModel>();
         rendermodel.model = model;
 
-        AddPickProxy(floor);
         SetNameTag(floor, "floor");
     }
 }
@@ -484,17 +450,6 @@ bool SceneEditor::LoadFromSceneCodec(const std::shared_ptr<SceneCodec>& scene)
 void SceneEditor::RegisterSceneComponentCodecs()
 {
 
-    NComponentCodec::ComponentEditorBehavior editorPickBehavior;
-    editorPickBehavior.visible = false;
-    editorPickBehavior.addable = false;
-    editorPickBehavior.removable = false;
-    NComponentCodec::RegisterComponentCodec<TageEditorPick>(
-        "editor.pick",
-        "Editor",
-        [](const TageEditorPick&) { return nlohmann::json::object(); },
-        [](TageEditorPick&, const nlohmann::json& data) { return data.is_object(); },
-        {}, {}, {}, 1, std::move(editorPickBehavior));
-
     NComponentCodec::RegisterComponentCodec<TagEditorName>(
         "editor.name",
         "EditorNameTag",
@@ -679,14 +634,6 @@ void SceneEditor::StopWorld()
     _editorState = EditorWorldState::Editing;
 }
 
-Entity SceneEditor::PickObject(const glm::vec3& origin, const glm::vec3& direction)
-{
-    auto result = RayCast(origin, direction);
-    if (result.hit && result.hitEntity.hasComponents<Transform, TageEditorPick>())
-        return result.hitEntity;
-    return Entity();
-}
-
 RaycastHit SceneEditor::RayCast(const glm::vec3& origin, const glm::vec3& direction)
 {
     if (_world->isRunning())
@@ -729,7 +676,6 @@ Entity SceneEditor::CreateStaticModelEntity(std::shared_ptr<StaticModel> model)
         auto& rendermodel = entity.addComponent<RenderStaticModel>();
         rendermodel.model = model;
 
-        AddPickProxy(entity);
         SetNameTag(entity, std::format("static_model_entity_{}", entity.getId()));
         }).get();
 
@@ -752,7 +698,6 @@ Entity SceneEditor::CreateSkinnedModelEntity(std::shared_ptr<SkinnedModel> model
         rendermodel.model = model;
 
         entity.addComponent<SkeletonPose>();
-        AddPickProxy(entity);
         SetNameTag(entity, std::format("skinned_model_entity_{}", entity.getId()));
         }).get();
 
@@ -797,7 +742,6 @@ void SceneEditor::AddLight(LightType type, const glm::vec3& position, const std:
             Entity entity = LightFactory::CreateDirLight(world, glm::vec3(0, -1, 0));
             if (auto* trans = entity.tryGetComponent<Transform>())
                 trans->position = position;
-            AddPickProxy(entity);
             if (!name.empty())
                 SetNameTag(entity, name);
             });
@@ -808,7 +752,6 @@ void SceneEditor::AddLight(LightType type, const glm::vec3& position, const std:
             Entity entity = LightFactory::CreatePointLight(world, position);
             if (auto* trans = entity.tryGetComponent<Transform>())
                 trans->position = position;
-            AddPickProxy(entity);
             });
     }
     else if (type == LightType::Spot)
@@ -817,7 +760,6 @@ void SceneEditor::AddLight(LightType type, const glm::vec3& position, const std:
             Entity entity = LightFactory::CreateSpotLight(world, position, glm::vec3(0, -1, 0));
             if (auto* trans = entity.tryGetComponent<Transform>())
                 trans->position = position;
-            AddPickProxy(entity);
             if (!name.empty())
                 SetNameTag(entity, name);
             });
@@ -845,7 +787,6 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             auto& rendermodel = entity.addComponent<RenderStaticModel>();
             rendermodel.model = RenderHelper::GetCubeModel(glm::vec3(0.5f), 1.0f, "DefaultCube");
 
-            AddPickProxy(entity);
             if (!name.empty())
                 SetNameTag(entity, name);
             });
@@ -870,7 +811,6 @@ void SceneEditor::AddGeometry(GeometryType type, const glm::vec3& position, cons
             auto& rendermodel = entity.addComponent<RenderStaticModel>();
             rendermodel.model = RenderHelper::GetSphereModel(0.5, 72, 36, "DefaultSphere");
 
-            AddPickProxy(entity);
             if (!name.empty())
                 SetNameTag(entity, name);
             });
@@ -884,7 +824,6 @@ void SceneEditor::AddEmptyEntity(const glm::vec3& position, const std::string& n
         auto& trans = entity.addComponent<Transform>();
         trans.position = position;
 
-        AddPickProxy(entity);
         if (!name.empty())
             SetNameTag(entity, name);
         });
@@ -901,7 +840,6 @@ void SceneEditor::AddDDGIVolume(const glm::vec3& position, const std::string& na
         auto& trans = entity.addComponent<Transform>();
         trans.position = glm::vec3(origin) * volume.spacing + volume.Extent() * 0.5f;
 
-        AddPickProxy(entity);
         SetNameTag(entity, name.empty() ? std::format("DDGIVolume_{}", entity.getId()) : name);
         });
 }

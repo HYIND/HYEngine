@@ -173,6 +173,7 @@
     <ClInclude Include="source\include\ImguiLayout.h" />
     <ClInclude Include="source\include\PropertiesHelper.h" />
     <ClInclude Include="source\include\DDGIEditor.h" />
+    <ClInclude Include="source\include\ViewportIcons.h" />
     <ClInclude Include="source\include\RenderProfilerPanel.h" />
     <ClInclude Include="source\include\LogicProfilerPanel.h" />
     <ClInclude Include="source\include\RenderOptionPanels.h" />
@@ -205,6 +206,7 @@
     <ClCompile Include="source\src\ImguiLayout.cpp" />
     <ClCompile Include="source\src\PropertiesHelper.cpp" />
     <ClCompile Include="source\src\DDGIEditor.cpp" />
+    <ClCompile Include="source\src\ViewportIcons.cpp" />
     <ClCompile Include="source\src\RenderProfilerPanel.cpp" />
     <ClCompile Include="source\src\LogicProfilerPanel.cpp" />
     <ClCompile Include="source\src\RenderOptionPanels.cpp" />

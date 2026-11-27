@@ -17,6 +17,7 @@ namespace VKRenderObjectData
 		glm::mat4 transform;
 		glm::mat4 prevTransform;
 		std::shared_ptr<VKRenderContext::TransformHistory> transformHistory;
+		uint32_t entityId = UINT32_MAX;		// 所属实体，见 ModelRenderData::entityId
 	};
 
 	struct SceneStaticRenderData

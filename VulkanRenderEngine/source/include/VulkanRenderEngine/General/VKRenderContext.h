@@ -28,6 +28,7 @@ namespace VKRenderContext
 	{
 		glm::mat4 transform;
 		std::shared_ptr<TransformHistory> transformHistory;
+		uint32_t entityId = UINT32_MAX;	// 所属实体（编辑器：写进实体 ID 缓冲，做拾取 / 选中显示）
 	};
 
 	struct BaseLightData :public BaseRenderData

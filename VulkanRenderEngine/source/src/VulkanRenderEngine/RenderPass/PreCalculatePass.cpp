@@ -94,6 +94,7 @@ void PreCalculatePass::AnlysisIndirectCommands(RenderState& state, std::vector<T
 
 						auto& data = staticMesh_TransformAndMaterialIndices[startInedx + index];
 						data.model = item.transform;
+						data.entityId = item.entityId;
 
 						auto& aabb = worldAABBs[startInedx + index];
 						aabb = mesh->GetAABB();

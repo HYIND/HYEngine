@@ -125,6 +125,7 @@ namespace Render
 			item.transform = transform;
 			item.prevTransform = transform;
 			item.transformHistory = transformHistory;
+			item.entityId = data->entityId;
 			item.meshinfo = info;
 
 			bool isTransprant = (mode == AlphaMode::Blend);
@@ -174,6 +175,7 @@ namespace Render
 			item.transform = transform;
 			item.prevTransform = transform;
 			item.transformHistory = transformHistory;
+			item.entityId = data->entityId;
 			item.meshinfo = info;
 			item.palette = (meshIndex < data->palettes.size()) ? data->palettes[meshIndex] : nullptr;
 			item.poseHistory = data->poseHistory;

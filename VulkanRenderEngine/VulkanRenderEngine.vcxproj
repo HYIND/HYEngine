@@ -173,6 +173,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDef.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIVolumeDesc.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\DDGIDebug.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\General\EditorViewport.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\IndirectLightingPolicy.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\RenderProfiler.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\General\GeneralSegmentBuffer.h" />
@@ -224,6 +225,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeUpdatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIBlendPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIApplyPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorPickPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorSelectionMaskPass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\EditorOutlinePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkinnedPass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\SkyBoxPass.h" />
@@ -332,6 +336,9 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeUpdatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIBlendPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIApplyPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorPickPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorSelectionMaskPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\EditorOutlinePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\DDGIProbeDrawPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\General\DDGISharedState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkinnedPass.cpp" />

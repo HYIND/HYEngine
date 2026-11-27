@@ -46,7 +46,8 @@ public:
 
 	World* GetWorld();
 
-	Entity PickObject(const glm::vec3& origin, const glm::vec3& direction);
+	// 物理射线检测（只打得中真正的碰撞体）。编辑器的点选、拖放、「添加物体」落点都改走实体 ID 缓冲（EditorPickPass），
+	// 编辑器里目前没有调用
 	RaycastHit RayCast(const glm::vec3& origin, const glm::vec3& direction);
 
 	void SetInputActive(bool enable);

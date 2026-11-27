@@ -8,6 +8,8 @@
 #include "Render/Systems/Render2DResourceSystem.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
 
+#include <algorithm>
+#include <cfloat>
 #include <execution>
 #include <tuple>
 #include <functional>
@@ -406,6 +408,63 @@ Entity RenderSystem::Pick2D(World& world, const glm::vec2& point)
 	return best;
 }
 
+std::vector<Entity> RenderSystem::Pick2DRect(World& world, const std::function<glm::vec2(const glm::vec2&)>& toRectSpace,
+	const glm::vec2& rectMin, const glm::vec2& rectMax)
+{
+	const glm::vec2 lo = glm::min(rectMin, rectMax);
+	const glm::vec2 hi = glm::max(rectMin, rectMax);
+	std::vector<Entity> result;
+
+	// 四边形（Get2DBounds 的四个角映射之后，平行四边形）和轴对齐矩形的分离轴判定：矩形的 x / y 轴 + 四边形的两条边的法线
+	auto overlaps = [&](const Bounds2D& b)
+		{
+			auto separated = [&](const glm::vec2& axis)
+				{
+					const glm::vec2 rc[4] = { lo, { hi.x, lo.y }, hi, { lo.x, hi.y } };
+					float aMin = FLT_MAX, aMax = -FLT_MAX, bMin = FLT_MAX, bMax = -FLT_MAX;
+					for (int i = 0; i < 4; ++i)
+					{
+						const float pa = glm::dot(rc[i], axis);
+						const float pb = glm::dot(b.corners[i], axis);
+						aMin = std::min(aMin, pa); aMax = std::max(aMax, pa);
+						bMin = std::min(bMin, pb); bMax = std::max(bMax, pb);
+					}
+					return aMax < bMin || bMax < aMin;
+				};
+			const glm::vec2 e0 = b.corners[1] - b.corners[0];
+			const glm::vec2 e1 = b.corners[3] - b.corners[0];
+			return !separated({ 1.0f, 0.0f }) && !separated({ 0.0f, 1.0f })
+				&& !separated({ -e0.y, e0.x }) && !separated({ -e1.y, e1.x });
+		};
+
+	auto consider = [&](Entity entity)
+		{
+			Bounds2D bounds;
+			if (!Get2DBounds(world, entity, bounds))
+				return;
+			for (glm::vec2& corner : bounds.corners)
+				corner = toRectSpace(corner);
+			if (overlaps(bounds))
+				result.push_back(entity);
+		};
+	for (auto [entity, transform, sprite] : world.getViewWith<Transform2D, Sprite>())
+	{
+		if (!sprite.visible || !sprite.resource || sprite.color.a <= 0.0f)
+			continue;
+		consider(entity);
+	}
+	for (auto [entity, transform, player] : world.getViewWith<Transform2D, AnimatedImagePlayer>())
+	{
+		if (!player.visible || !player.resource || player.color.a <= 0.0f)
+			continue;
+		consider(entity);
+	}
+
+	std::sort(result.begin(), result.end(), [](const Entity& a, const Entity& b) { return a.getId() < b.getId(); });
+	result.erase(std::unique(result.begin(), result.end()), result.end());
+	return result;
+}
+
 bool RenderSystem::Get2DBounds(World& world, Entity entity, Bounds2D& out)
 {
 	if (!entity || !entity.isValid() || !world.IsValidWorldEntity(entity))
@@ -618,6 +677,7 @@ void RenderSystem::ProcessStaticModel(std::shared_ptr<Render3DFrameData> framebu
 
 		renderdata->transform = transform.GetMatrix() * renderModel.trans;
 		renderdata->transformHistory = renderModel.transformHistory;
+		renderdata->entityId = entity.getId();
 
 		renderdata->model = renderModel.model;
 
@@ -660,6 +720,7 @@ void RenderSystem::ProcessSkinnedModel(std::shared_ptr<Render::Render3DFrameData
 
 		renderdata->transform = transform.GetMatrix() * renderModel.trans;
 		renderdata->transformHistory = renderModel.transformHistory;
+		renderdata->entityId = entity.getId();
 		renderdata->model = renderModel.model;
 
 		if (entity.hasComponent<SkeletonPose>())

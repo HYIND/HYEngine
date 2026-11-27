@@ -9,6 +9,7 @@
 #include "VulkanRenderEngine/General/DDGIVolumeDesc.h"
 
 struct RenderFrameProfile;	// VulkanRenderEngine/General/RenderProfiler.h
+struct EditorFrameSelection;	// VulkanRenderEngine/General/EditorViewport.h
 
 struct alignas(16) Plane {
 	glm::vec3 normal;
@@ -90,14 +91,20 @@ struct alignas(16) TransAndMaterialIndex
 {
 	glm::mat4 model;
 	uint32_t materialIndex = 0;
+	uint32_t entityId = UINT32_MAX;		// 放在 materialIndex 后面的填充里，大小不变（只读 model / materialIndex 的 shader 不用改）
 };
+static_assert(sizeof(TransAndMaterialIndex) == 80, "TransAndMaterialIndex 的大小变了：读它的 shader（FrustumCulling / 阴影等）数组步长要一起改");
 
 struct alignas(16) GeometryRenderData
 {
 	alignas(16) glm::mat4 curTransform = glm::mat4(1.0f);
 	alignas(16) glm::mat4 prevTransform = glm::mat4(1.0f);
 	uint32_t materialIndex = 0;
+	// 所属实体（编辑器的实体 ID 缓冲用）。shader 里写 entityId + 1，UINT32_MAX 溢出成 0 = 没有物体。
+	// 放在 materialIndex 后面的填充里，大小不变
+	uint32_t entityId = UINT32_MAX;
 };
+static_assert(sizeof(GeometryRenderData) == 144, "GeometryRenderData 的大小变了：geometrypass_*.vs 的 RenderData 要一起改");
 
 struct alignas(16) SkinnedMotionData
 {
@@ -244,6 +251,10 @@ struct RenderState
 
 	// 渲染性能统计：只有编辑器打开「渲染性能」窗口时才非空（见 RenderProfiler.h）
 	std::shared_ptr<RenderFrameProfile> profile;
+
+	// 编辑器选中显示：帧派发时从 EditorViewportChannel 取的快照（GlobalConfig::EditorViewportFeatures 关闭、
+	// 或者没选东西时为空）。选中遮罩 Pass 和描边 Pass 读同一份
+	std::shared_ptr<EditorFrameSelection> editorSelection;
 
 	Scene3DRenderOption option;
 };

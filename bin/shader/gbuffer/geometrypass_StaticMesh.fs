@@ -10,6 +10,9 @@ layout (location = 3) in mat3 TBN;
 layout (location = 6) in vec4 CurClipPos;
 layout (location = 8) in vec4 PrevClipPos;
 layout (location = 7) flat in uint materialIndex;
+#ifdef EDITOR_ENTITY_ID
+layout (location = 9) flat in uint EntityId;
+#endif
 
 layout (location = 0) out vec4 gPosition;		// xyz = 世界坐标，w = 打包的几何法线（GBufferPack.comp）
 layout (location = 1) out vec3 gNormal;
@@ -17,6 +20,9 @@ layout (location = 2) out vec4 gAlbedoOpacity;
 layout (location = 3) out vec4 gMetallicRoughness;
 layout (location = 4) out vec2 gMotionVector;
 layout (location = 5) out vec3 gEmission;
+#ifdef EDITOR_ENTITY_ID
+layout (location = 6) out uint gEntityId;		// 编辑器：entityId + 1，0 = 没有物体（见 GeometryPass::GetEntityIdFormat）
+#endif
 
 void main()
 {
@@ -53,4 +59,7 @@ void main()
 	}
 	gMotionVector = motion;
 	gEmission = emission;
+#ifdef EDITOR_ENTITY_ID
+	gEntityId = EntityId;
+#endif
 }
