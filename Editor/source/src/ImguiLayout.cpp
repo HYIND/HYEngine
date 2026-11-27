@@ -6,6 +6,8 @@
 #include "PropertiesHelper.h"
 #include "DDGIEditor.h"
 #include "ViewportIcons.h"
+#include "PhysicsDebugView.h"
+#include "PhysicsShapeFromModel.h"
 #include "RenderProfilerPanel.h"
 #include "LogicProfilerPanel.h"
 #include "RenderOptionPanels.h"
@@ -3606,6 +3608,8 @@ void ImguiLayout::DrawPlayControls(EditorApp* editorApp, ProjectManager* project
 		ImGui::Checkbox("包围盒", &s_showSelectionBounds);
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("选中物体的3D/2D包围盒（青色）");
+		ImGui::SameLine(0.0f, 16.0f);
+		PhysicsDebugView::DrawToolbar();
 		if (changed)
 			editorApp->SetLayerVisibility(visibility);
 	}
@@ -3877,6 +3881,8 @@ void ImguiLayout::DrawObjectProperties(ProjectManager* projectManager)
 	ImGui::Separator();
 	auto world = EditorApp::Instance()->GetWorld();
 	SyncSelection(world);
+	// 后台凸分解完成时把结果写回 Physics 组件（属性面板没显示这个实体时也要写回）
+	PhysicsShapeFromModel::Decomposition::Update(world);
 	const bool entitySelected = world && selectedEntity && world->IsValidWorldEntity(selectedEntity);
 	if (entitySelected && s_selection.size() > 1)
 	{
@@ -5008,6 +5014,14 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 				projGL[1][1] *= -1;
 				DrawSelection3DBounds(editorApp, s_selection, projGL * view, viewportPos, viewportSize);
 			}
+		}
+
+		// 物理碰撞体（Bullet 里实际的碰撞形状），画在手柄下面。3D 层关掉时不画
+		if (hasCamera && editorApp->GetLayerVisibility().layer3D)
+		{
+			glm::mat4 projGL = projection;
+			projGL[1][1] *= -1;
+			PhysicsDebugView::Draw(editorApp, s_selection, projGL * view, cameraPosition, viewportPos, viewportSize);
 		}
 
 		// 手柄：单选沿用原来的规则；多选时按 ResolveGizmoTargets 选 3D / 2D，放在第一个有对应组件的实体上，改动作用于所有有该组件的选中实体

@@ -7,6 +7,8 @@
 #include "Sprite2DEditor.h"
 #include "AssetThumbnails.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
+#include "PhysicsShapeFromModel.h"
+#include "PhysicsDebugView.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -287,7 +289,9 @@ void PropertiesHelper::RegisterComponent()
 				auto temp = std::make_unique<T>();
 				auto& component = *(static_cast<T*>(comp));
 				EditorSnapshot<T>::Make(component, *temp);
+				s_drawingEntity = entity;
 				bool changed = DrawComponent(*temp, assetManager);
+				s_drawingEntity = Entity();
 				if (changed)
 				{
 					auto world = entity.getWorld();
@@ -763,19 +767,31 @@ inline bool PropertiesHelper::DrawDataResettable(Scene3DRenderOption::DDGIParams
 	return DrawComponent(p);
 }
 
-// 物理组件：手写面板。原来走反射：15 个字段平铺、驼峰原名、没有范围，碰撞形状完全看不到也改不了。
-//   - 模式（刚体 / 角色控制器）决定显示哪一组参数；只对某种情况生效的选项变灰并说明原因（对照 PhysicsSystem）
-//   - 碰撞形状：每个子形状按类型显示有意义的尺寸（半径 / 高度 / 半边长），可以加、删、改类型、偏移和旋转；
-//     改的时候先复制再改（写时复制），提交时形状变了会重建物理体（见 EditorSnapshot<Physics>）
+// 物理组件：手写面板。
+//   布局：类型（分段按钮，点一下就切换）→ 刚体 / 角色参数 → 选项 → 碰撞形状
+//   - 只在某种模式下有意义的参数：换模式就不显示；只对某种物体类型生效的：变灰，悬停说明原因（对照 PhysicsSystem）
+//   - 会导致物理体建不出来、场景存不下的配置，集中提示在碰撞形状上方，并给一键修复按钮
+//   - 碰撞形状：列表（固定高度、可拖动调高、只画看得见的行，和材质槽一样）+ 选中形状的参数；
+//     右键行复制、移动、删除；悬停的行在视口里高亮；基本形状可以一键包住模型；从模型生成包围盒 / 三角网格 / 凸包 / 凸分解
+//   改的时候先复制再改（写时复制），提交时形状变了会重建物理体（见 EditorSnapshot<Physics>）
 template<>
 inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 {
+	using ChildShape = CollisionShape::ChildShape;
 	bool changed = false;
 	const ImGuiStyle& style = ImGui::GetStyle();
 	const float frameHeight = ImGui::GetFrameHeight();
 	const ImVec4 warnColor(1.0f, 0.75f, 0.3f, 1.0f);
 	const float labelWidth = ImGui::CalcTextSize("Max Penetration").x + style.ItemSpacing.x * 2.0f;
 	constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
+
+	const Entity entity = s_drawingEntity;
+	const bool hasModel = PhysicsShapeFromModel::HasStaticModel(entity);
+	auto& children = physics.collisionShape.children;
+	const auto countTriangleMeshes = [&]
+		{
+			return std::any_of(children.begin(), children.end(), [](const auto& c) { return c && c->shapeType == ShapeType::TriangleMesh; });
+		};
 
 	const auto beginTable = [&](const char* id) -> bool
 		{
@@ -811,44 +827,125 @@ inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 			}
 			return edited;
 		};
+	// 分段按钮：一排等宽按钮，当前项高亮，点一下就切换。返回点中的项（没点 / 点的是当前项返回 -1）
+	const auto segmented = [&](const char* id, int current, int count, const char* const* items, const char* const* tips, const bool* disabled) -> int
+		{
+			int clicked = -1;
+			ImGui::PushID(id);
+			const float spacing = style.ItemInnerSpacing.x;
+			const float width = std::max(1.0f, (ImGui::GetContentRegionAvail().x - spacing * static_cast<float>(count - 1)) / static_cast<float>(count));
+			for (int i = 0; i < count; ++i)
+			{
+				if (i > 0)
+					ImGui::SameLine(0.0f, spacing);
+				const bool active = i == current;
+				const bool off = disabled && disabled[i] && !active;
+				if (active)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+				}
+				if (off)
+					ImGui::BeginDisabled();
+				if (ImGui::Button(items[i], ImVec2(width, 0.0f)) && !active)
+					clicked = i;
+				if (off)
+					ImGui::EndDisabled();
+				if (active)
+					ImGui::PopStyleColor(2);
+				if (tips && tips[i] && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s", tips[i]);
+			}
+			ImGui::PopID();
+			return clicked;
+		};
 
-	const bool isDynamic = physics.bodyType == Physics::BodyType::Dynamic;
-	const bool isKinematic = physics.bodyType == Physics::BodyType::Kinematic;
+	// 按模型包围盒算一个基本形状（在场景线程上读模型；编辑时场景没在跑，命令直接执行）。读不到返回空
+	const auto fitToModel = [&](ShapeType type) -> std::shared_ptr<ChildShape>
+		{
+			glm::vec3 mn(0.0f), mx(0.0f);
+			std::string error;
+			bool ok = false;
+			if (World* world = entity ? entity.getWorld() : nullptr)
+				world->SubmitCommand([&](World& w) { ok = PhysicsShapeFromModel::GetModelBounds(w, entity, mn, mx, error); }).get();
+			if (!ok)
+				return nullptr;
+			auto shape = std::make_shared<ChildShape>();
+			shape->shapeType = type;
+			PhysicsShapeFromModel::FitPrimitive(type, mn, mx, shape->size, shape->position);
+			return shape;
+		};
+	// 新的基本形状：fit 且有模型时包住模型，否则用默认尺寸
+	const auto makeShape = [&](ShapeType type, bool fit) -> std::shared_ptr<ChildShape>
+		{
+			if (fit && hasModel)
+			{
+				if (auto fitted = fitToModel(type))
+					return fitted;
+			}
+			CollisionShape temp;
+			switch (type)
+			{
+			case ShapeType::Sphere: temp.AddSphereShape(); break;
+			case ShapeType::Capsule: temp.AddCapsuleShape(); break;
+			case ShapeType::Cylinder: temp.AddCylinderShape(); break;
+			default: temp.AddBoxShape(); break;
+			}
+			return temp.children.front();
+		};
 
 	// ======================== 类型 ========================
 	if (beginTable("##PhysicsBody"))
 	{
-		int mode = physics.isCharacter ? 1 : 0;
-		const char* modes[] = { "Rigid Body", "Character Controller" };
-		row("Mode", "Rigid Body：普通刚体，按质量 / 摩擦 / 弹性参与模拟\nCharacter Controller：Bullet 角色控制器，用 Movement 组件的输入行走、跳跃");
-		if (ImGui::Combo("##Mode", &mode, modes, IM_ARRAYSIZE(modes)))
+		const char* modes[] = { "Rigid Body", "Character" };
+		const char* modeTips[] = {
+			"普通刚体：按质量 / 摩擦 / 弹性参与物理模拟",
+			"Bullet 角色控制器：用 Movement 组件的输入行走、跳跃；只用第一个碰撞形状" };
+		row("Mode");
+		if (const int m = segmented("##Mode", physics.isCharacter ? 1 : 0, 2, modes, modeTips, nullptr); m >= 0)
 		{
-			physics.isCharacter = mode == 1;
+			physics.isCharacter = m == 1;
 			changed = true;
 		}
 
-		int bodyType = static_cast<int>(physics.bodyType);
-		const char* bodyTypes[] = { "Static", "Dynamic", "Kinematic" };
-		const char* bodyTypeTips[] = {
-			"不动，质量按 0 处理（地面、墙）",
-			"受重力和碰撞影响，由物理模拟驱动 Transform",
-			"不受力，每帧跟随 Transform 移动，能推开 Dynamic 物体（移动平台、门）" };
 		row("Body Type");
-		if (ImGui::BeginCombo("##BodyType", bodyTypes[std::clamp(bodyType, 0, 2)]))
+		if (!physics.isCharacter)
 		{
-			for (int i = 0; i < IM_ARRAYSIZE(bodyTypes); ++i)
+			// 有三角网格时只能 Static（Bullet 的三角网格不能动；SceneCodec 保存时也会校验），别的类型点不了
+			const bool meshOnly = countTriangleMeshes();
+			const char* meshReason = "有三角网格形状，只能是 Static（先删掉三角网格，或者换成凸包 / 凸分解）";
+			const char* types[] = { "Static", "Dynamic", "Kinematic" };
+			const char* tips[] = {
+				"不动，质量按 0 处理（地面、墙）",
+				meshOnly ? meshReason : "受重力和碰撞影响，由物理模拟驱动 Transform",
+				meshOnly ? meshReason : "不受力，每帧跟随 Transform 移动，能推开 Dynamic 物体（移动平台、门）" };
+			const bool disabled[] = { false, meshOnly, meshOnly };
+			if (const int t = segmented("##BodyType", static_cast<int>(physics.bodyType), 3, types, tips, disabled); t >= 0)
 			{
-				if (ImGui::Selectable(bodyTypes[i], i == bodyType))
-				{
-					physics.bodyType = static_cast<Physics::BodyType>(i);
-					changed = true;
-				}
-				ImGui::SetItemTooltip("%s", bodyTypeTips[i]);
+				physics.bodyType = static_cast<Physics::BodyType>(t);
+				changed = true;
 			}
-			ImGui::EndCombo();
+		}
+		else
+		{
+			// 角色控制器只看是不是 Kinematic（PhysicsSystem::createCharacter），Static / Dynamic 没有区别
+			const char* types[] = { "Normal", "Kinematic" };
+			const char* tips[] = {
+				"普通角色：受重力，按 Movement 的输入移动",
+				"加上 Kinematic 标记，并且始终保持激活（不休眠）" };
+			const bool kinematic = physics.bodyType == Physics::BodyType::Kinematic;
+			if (const int t = segmented("##CharacterType", kinematic ? 1 : 0, 2, types, tips, nullptr); t >= 0)
+			{
+				physics.bodyType = t == 1 ? Physics::BodyType::Kinematic : Physics::BodyType::Dynamic;
+				changed = true;
+			}
 		}
 		ImGui::EndTable();
 	}
+
+	const bool isStatic = physics.bodyType == Physics::BodyType::Static;
+	const bool isDynamic = physics.bodyType == Physics::BodyType::Dynamic;
+	const bool isKinematic = physics.bodyType == Physics::BodyType::Kinematic;
 
 	// ======================== 刚体 / 角色参数 ========================
 	if (!physics.isCharacter)
@@ -888,6 +985,7 @@ inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 	}
 
 	// ======================== 选项：两列勾选框 ========================
+	// 角色控制器用不到的（锁定旋转、CCD）不显示；只对某种物体类型生效的变灰
 	ImGui::SeparatorText("Options");
 	if (ImGui::BeginTable("##PhysicsOptions", 2, ImGuiTableFlags_SizingStretchSame))
 	{
@@ -896,32 +994,45 @@ inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 		changed |= ImGui::Checkbox("Sensor", &physics.isSensor);
 		ImGui::SetItemTooltip("只检测重叠、不产生碰撞响应（触发区域）");
 		ImGui::TableSetColumnIndex(1);
-		changed |= disabledIf(!isDynamic || physics.isCharacter, "只对 Dynamic 刚体生效",
-			[&] { return ImGui::Checkbox("Fixed Rotation", &physics.fixedRotation); });
-		if (isDynamic && !physics.isCharacter)
-			ImGui::SetItemTooltip("锁定旋转：碰撞不会让它翻倒");
-
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(0);
-		changed |= disabledIf(physics.isCharacter, "角色控制器不用连续碰撞检测",
-			[&] { return ImGui::Checkbox("Continuous (CCD)", &physics.isBullet); });
-		if (!physics.isCharacter)
-			ImGui::SetItemTooltip("连续碰撞检测：高速物体（子弹）不会穿过薄物体");
-		ImGui::TableSetColumnIndex(1);
-		changed |= disabledIf(isKinematic, "Kinematic 物体始终保持激活",
+		changed |= disabledIf(isKinematic, "Kinematic 始终保持激活",
 			[&] { return ImGui::Checkbox("Allow Sleep", &physics.allowSleep); });
 		if (!isKinematic)
 			ImGui::SetItemTooltip("静止一段时间后休眠，不参与模拟（省性能）");
+
+		if (!physics.isCharacter)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			changed |= disabledIf(!isDynamic, "只对 Dynamic 刚体生效",
+				[&] { return ImGui::Checkbox("Fixed Rotation", &physics.fixedRotation); });
+			if (isDynamic)
+				ImGui::SetItemTooltip("锁定旋转：碰撞不会让它翻倒");
+			ImGui::TableSetColumnIndex(1);
+			changed |= disabledIf(isStatic, "Static 物体不动，用不到连续碰撞检测",
+				[&] { return ImGui::Checkbox("Continuous (CCD)", &physics.isBullet); });
+			if (!isStatic)
+				ImGui::SetItemTooltip("连续碰撞检测：高速物体（子弹）不会穿过薄物体");
+		}
 		ImGui::EndTable();
 	}
 
 	// ======================== 碰撞形状 ========================
-	auto& children = physics.collisionShape.children;
 	ImGui::SeparatorText(std::format("Collision Shapes ({})", children.size()).c_str());
-	if (children.empty())
-		ImGui::TextColored(warnColor, "没有碰撞形状：不会创建物理体");
-	else if (physics.isCharacter && children.size() > 1)
-		ImGui::TextColored(warnColor, "角色控制器只用第一个形状（#0），其余忽略");
+
+	// 每个实体（ImGui ID 栈里有实体 id）一份列表状态：选中第几个形状、已经滚到哪一行
+	struct ShapePanelState
+	{
+		int selected = 0;
+		int scrolledTo = -1;
+	};
+	static std::unordered_map<ImGuiID, ShapePanelState> s_shapePanels;
+	ShapePanelState& shapePanel = s_shapePanels[ImGui::GetID("##physicsShapes")];
+	if (shapePanel.selected >= static_cast<int>(children.size()))
+		shapePanel.selected = children.empty() ? -1 : static_cast<int>(children.size()) - 1;
+	if (shapePanel.selected < 0 && !children.empty())
+		shapePanel.selected = 0;
+	// 加了形状以后选中新加的那个
+	const auto selectShape = [&](size_t index) { shapePanel.selected = static_cast<int>(index); };
 
 	const char* shapeNames[] = { "Box", "Sphere", "Capsule", "Cylinder", "Convex Hull", "Triangle Mesh" };
 	const auto shapeName = [&](ShapeType type) { return shapeNames[std::clamp(static_cast<int>(type), 0, 5)]; };
@@ -952,7 +1063,7 @@ inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 			}
 		};
 	// 尺寸摘要（标题行上显示）
-	const auto sizeSummary = [](const CollisionShape::ChildShape& shape) -> std::string
+	const auto sizeSummary = [](const ChildShape& shape) -> std::string
 		{
 			switch (shape.shapeType)
 			{
@@ -966,157 +1077,649 @@ inline bool PropertiesHelper::DrawComponent<Physics>(Physics& physics)
 			}
 		};
 
-	std::optional<size_t> removeIndex;
-	for (size_t i = 0; i < children.size(); ++i)
-	{
-		if (!children[i])
-			continue;
-		ImGui::PushID(static_cast<int>(i));
-		const CollisionShape::ChildShape& shape = *children[i];
-		const bool ignored = physics.isCharacter && i > 0;
-
-		// 标题行：#i 类型  尺寸摘要                                    [×]
-		const std::string title = std::format("#{} {}  {}", i, shapeName(shape.shapeType), sizeSummary(shape));
-		const ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth
-			| (children.size() <= 2 ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
-		if (ignored)
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		const bool open = ImGui::TreeNodeEx("##shape", nodeFlags, "%s", title.c_str());
-		if (ignored)
-			ImGui::PopStyleColor();
-		ImGui::SameLine(ImGui::GetContentRegionMax().x - frameHeight);
-		if (ImGui::Button("×", ImVec2(frameHeight, frameHeight)))
-			removeIndex = i;
-		ImGui::SetItemTooltip("删除这个形状");
-
-		if (open)
+	// ---- 问题提示 + 一键修复：fixLabel 非空时在提示下面画一个小按钮，点了返回 true ----
+	const auto problem = [&](const char* id, const char* text, const char* fixLabel) -> bool
 		{
-			// 先在局部副本上改；改了才复制一份子形状（写时复制，三角网格的顶点也只在改的时候复制一次）
-			ShapeType type = shape.shapeType;
-			glm::vec3 size = shape.size;
-			glm::vec3 position = shape.position;
-			glm::quat rotation = shape.rotation;
-			bool shapeChanged = false;
-			bool rotationChanged = false;
-
-			if (beginTable("##ShapeTable"))
+			ImGui::PushID(id);
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextColored(warnColor, "%s", text);
+			ImGui::PopTextWrapPos();
+			bool clicked = false;
+			if (fixLabel)
 			{
-				row("Type");
-				if (isPrimitive(type))
-				{
-					int typeIndex = static_cast<int>(type);
-					const char* primitives[] = { "Box", "Sphere", "Capsule", "Cylinder" };
-					if (ImGui::Combo("##Type", &typeIndex, primitives, IM_ARRAYSIZE(primitives)) && typeIndex != static_cast<int>(type))
-					{
-						const ShapeType newType = static_cast<ShapeType>(typeIndex);
-						size = convertSize(type, newType, size);
-						type = newType;
-						shapeChanged = true;
-					}
-				}
-				else
-				{
-					ImGui::AlignTextToFramePadding();
-					ImGui::TextDisabled("%s（%s，由模型生成，这里不能改）", shapeName(type), sizeSummary(shape).c_str());
-				}
-
-				const char* scaleNote = "尺寸会再乘上 Transform 的缩放";
-				switch (type)
-				{
-				case ShapeType::Box:
-				{
-					glm::vec3 full = size * 2.0f;
-					row("Size", scaleNote);
-					if (ImGui::DragFloat3("##Size", glm::value_ptr(full), 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
-					{
-						size = full * 0.5f;
-						shapeChanged = true;
-					}
-					break;
-				}
-				case ShapeType::Sphere:
-				{
-					float radius = size.x;
-					row("Radius", scaleNote);
-					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
-					{
-						size = glm::vec3(radius);
-						shapeChanged = true;
-					}
-					break;
-				}
-				case ShapeType::Capsule:
-				{
-					float radius = size.x;
-					float height = size.y;
-					row("Radius", scaleNote);
-					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
-						shapeChanged = true;
-					row("Height", "两端半球之间圆柱部分的高度（总高 = 高度 + 2 × 半径）");
-					if (ImGui::DragFloat("##Height", &height, 0.01f, 0.0f, 1.0e4f, "%.3f", kClamp))
-						shapeChanged = true;
-					size = glm::vec3(radius, height, radius);
-					break;
-				}
-				case ShapeType::Cylinder:
-				{
-					float radius = size.x;
-					float height = size.y * 2.0f;
-					row("Radius", scaleNote);
-					if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
-						shapeChanged = true;
-					row("Height", "总高度");
-					if (ImGui::DragFloat("##Height", &height, 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
-						shapeChanged = true;
-					size = glm::vec3(radius, height * 0.5f, radius);
-					break;
-				}
-				default:
-					break;
-				}
-
-				row("Offset", "相对实体中心的偏移");
-				shapeChanged |= ImGui::DragFloat3("##Offset", glm::value_ptr(position), 0.01f);
-				row("Rotation", "相对实体的旋转（度）");
-				rotationChanged = EditorRotation::DragEuler("##Rotation", rotation);
-				ImGui::EndTable();
+				ImGui::Indent();
+				clicked = ImGui::SmallButton(fixLabel);
+				ImGui::Unindent();
 			}
+			ImGui::PopID();
+			return clicked;
+		};
 
-			if (type == ShapeType::TriangleMesh && physics.bodyType != Physics::BodyType::Static)
-				ImGui::TextColored(warnColor, "三角网格只能用在 Static 物体上（Dynamic / Kinematic 请用凸包或基本形状）");
-
-			if (shapeChanged || rotationChanged)
+	if (children.empty())
+	{
+		const bool character = physics.isCharacter;
+		const char* fix = character ? (hasModel ? "按模型添加胶囊" : "添加胶囊")
+			: (hasModel ? "按模型包围盒添加 Box" : "添加 Box");
+		if (problem("##empty", "没有碰撞形状：不会创建物理体", fix))
+		{
+			children.push_back(makeShape(character ? ShapeType::Capsule : ShapeType::Box, true));
+			selectShape(children.size() - 1);
+			changed = true;
+		}
+	}
+	else if (physics.isCharacter)
+	{
+		const ChildShape* first = children.front().get();
+		if (first && first->shapeType == ShapeType::TriangleMesh)
+		{
+			if (problem("##charConvex", "角色控制器的第一个形状必须是凸形状（基本形状或凸包），现在是三角网格：不会创建角色",
+				hasModel ? "在最前面加一个按模型的胶囊" : "在最前面加一个胶囊"))
 			{
-				auto copy = std::make_shared<CollisionShape::ChildShape>(shape);
-				copy->shapeType = type;
-				copy->size = size;
-				copy->position = position;
-				if (rotationChanged)
-					copy->rotation = rotation;
-				children[i] = std::move(copy);
+				children.insert(children.begin(), makeShape(ShapeType::Capsule, true));
+				selectShape(0);
 				changed = true;
 			}
-			ImGui::TreePop();
+		}
+		else if (first && (glm::length(first->position) > 1e-5f || !EditorRotation::SameRotation(first->rotation, glm::identity<glm::quat>())))
+		{
+			if (problem("##charOffset", "角色控制器忽略形状的偏移和旋转：看到的位置和实际碰撞对不上", "清零偏移和旋转"))
+			{
+				auto copy = std::make_shared<ChildShape>(*first);
+				copy->position = glm::vec3(0.0f);
+				copy->rotation = glm::identity<glm::quat>();
+				children.front() = std::move(copy);
+				changed = true;
+			}
+		}
+		if (entity && !entity.tryGetComponent<Movement>())
+			problem("##charMove", "没有 Movement 组件：角色不会走动和跳跃", nullptr);
+		if (children.size() > 1)
+			ImGui::TextDisabled("角色控制器只用第一个形状（#0），其余（灰色）忽略");
+	}
+	if (!physics.isCharacter && !isStatic && countTriangleMeshes())
+	{
+		if (problem("##meshStatic", "三角网格只能用在 Static 物体上：物理会出错，保存场景也会失败", "改为 Static"))
+		{
+			physics.bodyType = Physics::BodyType::Static;
+			changed = true;
+		}
+	}
+
+	// ---- 工具栏：[+ 形状] [从模型...] [视口显示] [清空] ----
+	struct GenerateStatus
+	{
+		EntityID entity = 0;
+		bool valid = false;
+		bool ok = false;
+		std::string message;
+	};
+	static GenerateStatus s_generateStatus;
+	static bool s_replaceShapes = true;		// 从模型生成：替换现有形状还是追加
+	static bool s_fitNewShapes = true;		// 添加基本形状：有模型时包住模型
+	static PhysicsShapeFromModel::DecompositionParams s_decompParams;
+	static int s_resolutionLevel = 1;
+	bool openDecompose = false;
+
+	if (ImGui::Button("+ 形状"))
+		ImGui::OpenPopup("##AddShape");
+	ImGui::SetItemTooltip("添加基本形状（Box / Sphere / Capsule / Cylinder）");
+	ImGui::SameLine();
+	if (!hasModel)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("从模型..."))
+		ImGui::OpenPopup("##ShapeFromModel");
+	if (!hasModel)
+		ImGui::EndDisabled();
+	ImGui::SetItemTooltip(hasModel ? "按模型生成包围盒、三角网格、凸包，或者做凸分解"
+		: "需要同一实体上有静态模型（Static Model）组件，并且模型已加载");
+	ImGui::SameLine();
+	{
+		bool show = PhysicsDebugView::GetMode() != PhysicsDebugView::Mode::Off;
+		if (ImGui::Checkbox("视口显示", &show))
+			PhysicsDebugView::SetMode(show ? PhysicsDebugView::Mode::Selected : PhysicsDebugView::Mode::Off);
+		ImGui::SetItemTooltip("在场景视口里显示碰撞体（同视口工具栏的「碰撞体」，勾上时显示选中的实体）。\n"
+			"不勾时，鼠标悬停在下面的形状上也会临时显示；悬停的形状画成白色");
+	}
+	ImGui::SameLine();
+	if (children.empty())
+		ImGui::BeginDisabled();
+	if (ImGui::Button("清空"))
+		ImGui::OpenPopup("##ClearShapes");
+	if (children.empty())
+		ImGui::EndDisabled();
+
+	if (ImGui::BeginPopup("##ClearShapes"))
+	{
+		ImGui::Text("删除全部 %d 个碰撞形状？", static_cast<int>(children.size()));
+		ImGui::TextDisabled("编辑器没有撤销");
+		if (ImGui::Button("删除"))
+		{
+			children.clear();
+			changed = true;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消"))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+
+	if (ImGui::BeginPopup("##AddShape"))
+	{
+		if (!hasModel)
+			ImGui::BeginDisabled();
+		ImGui::Checkbox("包住模型", &s_fitNewShapes);
+		if (!hasModel)
+			ImGui::EndDisabled();
+		ImGui::SetItemTooltip(hasModel ? "按模型的包围盒设置尺寸和偏移；不勾用默认尺寸" : "同一实体上没有静态模型，用默认尺寸");
+		ImGui::Separator();
+		for (const ShapeType type : { ShapeType::Box, ShapeType::Sphere, ShapeType::Capsule, ShapeType::Cylinder })
+		{
+			if (ImGui::MenuItem(shapeName(type)))
+			{
+				children.push_back(makeShape(type, s_fitNewShapes));
+				selectShape(children.size() - 1);
+				changed = true;
+			}
+		}
+		ImGui::EndPopup();
+	}
+
+	const bool decompRunning = PhysicsShapeFromModel::Decomposition::IsRunning();
+	if (ImGui::BeginPopup("##ShapeFromModel"))
+	{
+		using PhysicsShapeFromModel::Kind;
+		std::optional<Kind> kind;
+		const bool character = physics.isCharacter;
+		ImGui::Checkbox("替换现有形状", &s_replaceShapes);
+		ImGui::SetItemTooltip("勾上：删掉现有的碰撞形状，换成生成的；不勾：追加在后面");
+		if (decompRunning)
+			ImGui::TextColored(warnColor, "凸分解正在运行，完成后再生成");
+		ImGui::Separator();
+		if (decompRunning)
+			ImGui::BeginDisabled();
+
+		if (ImGui::MenuItem("包围盒（Box）"))
+			kind = Kind::BoundingBox;
+		ImGui::SetItemTooltip("模型包围盒的 Box：最便宜，任何物体类型都能用");
+		if (ImGui::MenuItem("三角网格（Static）", nullptr, false, !character))
+			kind = Kind::TriangleMesh;
+		ImGui::SetItemTooltip(character
+			? "角色控制器不能用三角网格"
+			: "精确贴合模型表面，适合地形、建筑、场景里不动的物体。\n"
+			  "只能用在 Static 物体上：生成后物体类型会改成 Static。\n"
+			  "会焊接重复顶点、去掉退化三角形");
+		if (ImGui::MenuItem("凸包（整个模型）"))
+			kind = Kind::ConvexHull;
+		ImGui::SetItemTooltip("把整个模型包成一个凸多面体，Dynamic / Kinematic 也能用。\n"
+			"凹进去的部分会被填平；顶点超过 100 个时自动简化");
+		if (ImGui::MenuItem("凸包（每个子网格一个）", nullptr, false, !character))
+			kind = Kind::ConvexHullPerMesh;
+		ImGui::SetItemTooltip(character
+			? "角色控制器只用第一个形状"
+			: "每个子网格各包一个凸包，比整个模型一个凸包更贴合凹形模型。\n"
+			  "子网格本身凹的部分仍会被填平");
+		ImGui::Separator();
+		if (ImGui::MenuItem("凸分解（多个凸包）...", nullptr, false, !character))
+			openDecompose = true;
+		ImGui::SetItemTooltip(character
+			? "角色控制器只用第一个形状，不能用凸分解"
+			: "用 V-HACD 把凹形模型拆成多个凸包，Dynamic / Kinematic 也能贴合凹形模型。\n"
+			  "在后台计算，可以设置凸包数量和精度");
+
+		if (decompRunning)
+			ImGui::EndDisabled();
+
+		if (kind && entity)
+		{
+			PhysicsShapeFromModel::Result result;
+			if (World* world = entity.getWorld())
+				world->SubmitCommand([&](World& w) { result = PhysicsShapeFromModel::Build(w, entity, *kind); }).get();
+			else
+				result.message = "实体已经不存在";
+
+			if (result.ok)
+			{
+				if (s_replaceShapes)
+					children.clear();
+				selectShape(children.size());		// 选中生成的第一个
+				for (auto& shape : result.shapes)
+					children.push_back(std::move(shape));
+				if (*kind == Kind::TriangleMesh && physics.bodyType != Physics::BodyType::Static)
+				{
+					physics.bodyType = Physics::BodyType::Static;
+					result.message += "；物体类型已改为 Static";
+				}
+				changed = true;
+			}
+			s_generateStatus = { entity.getId(), true, result.ok, std::move(result.message) };
+		}
+		ImGui::EndPopup();
+	}
+
+	// 凸分解参数（从「从模型...」菜单打开；和它在同一层 ID 栈里打开、绘制）
+	if (openDecompose)
+		ImGui::OpenPopup("##Decompose");
+	if (ImGui::BeginPopup("##Decompose"))
+	{
+		static constexpr uint32_t kResolutions[] = { 50000, 100000, 400000, 1000000 };
+		static constexpr const char* kResolutionNames[] = { "低（5 万体素）", "中（10 万）", "高（40 万）", "很高（100 万，很慢）" };
+		const float fieldWidth = ImGui::GetFontSize() * 10.0f;
+
+		ImGui::TextUnformatted("凸分解（V-HACD）");
+		ImGui::Separator();
+		int maxHulls = static_cast<int>(s_decompParams.maxHulls);
+		int maxVertices = static_cast<int>(s_decompParams.maxVerticesPerHull);
+		ImGui::SetNextItemWidth(fieldWidth);
+		if (ImGui::SliderInt("最多凸包数", &maxHulls, 1, 64, "%d", kClamp))
+			s_decompParams.maxHulls = static_cast<uint32_t>(maxHulls);
+		ImGui::SetItemTooltip("凸包越多越贴合，碰撞检测也越慢。一般物体 8 ~ 32 个就够");
+		ImGui::SetNextItemWidth(fieldWidth);
+		if (ImGui::Combo("精度", &s_resolutionLevel, kResolutionNames, IM_ARRAYSIZE(kResolutionNames)))
+			s_decompParams.resolution = kResolutions[std::clamp(s_resolutionLevel, 0, 3)];
+		ImGui::SetItemTooltip("体素化的精细程度：越高越能保留细节（细杆、薄壁），计算也越慢");
+		ImGui::SetNextItemWidth(fieldWidth);
+		if (ImGui::SliderInt("每个凸包顶点", &maxVertices, 8, 128, "%d", kClamp))
+			s_decompParams.maxVerticesPerHull = static_cast<uint32_t>(maxVertices);
+		ImGui::SetItemTooltip("每个凸包最多几个顶点。Bullet 建议凸包顶点不要太多（64 左右）");
+		ImGui::SetNextItemWidth(fieldWidth);
+		ImGui::Combo("填充方式", &s_decompParams.fillMode, "洪水填充（默认）\0光线投射（模型不封闭）\0只取表面（空心）\0");
+		ImGui::SetItemTooltip("体素化后怎么判断哪里是物体内部：\n"
+			"洪水填充：默认，模型有破洞时可能变成空心；\n"
+			"光线投射：模型不封闭（有破洞、缺面）时用；\n"
+			"只取表面：只保留外壳，内部是空的");
+		ImGui::Checkbox("替换现有形状", &s_replaceShapes);
+		ImGui::Spacing();
+
+		if (decompRunning)
+			ImGui::BeginDisabled();
+		if (ImGui::Button("开始分解", ImVec2(fieldWidth, 0.0f)) && entity)
+		{
+			PhysicsShapeFromModel::MeshData mesh;
+			std::string error;
+			bool read = false;
+			World* world = entity.getWorld();
+			if (world)
+				world->SubmitCommand([&](World& w) { read = PhysicsShapeFromModel::ReadWeldedMesh(w, entity, mesh, error); }).get();
+			else
+				error = "实体已经不存在";
+			if (!read || !PhysicsShapeFromModel::Decomposition::Start(world, entity, std::move(mesh), s_decompParams, s_replaceShapes))
+				s_generateStatus = { entity.getId(), true, false, error.empty() ? std::string("无法开始分解") : error };
+			else
+				s_generateStatus.valid = false;		// 改为显示分解进度 / 结果
+			ImGui::CloseCurrentPopup();
+		}
+		if (decompRunning)
+		{
+			ImGui::EndDisabled();
+			ImGui::SetItemTooltip("已经有一个分解任务在运行");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("取消"))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+
+	// ---- 生成 / 分解的结果（只在同一个实体上显示）----
+	if (const auto decomp = PhysicsShapeFromModel::Decomposition::GetStatus();
+		decomp.valid && entity && decomp.entity == entity && !s_generateStatus.valid)
+	{
+		if (decomp.running)
+		{
+			ImGui::ProgressBar(decomp.progress, ImVec2(-FLT_MIN - frameHeight * 2.5f, 0.0f),
+				std::format("凸分解 {:.0f}% {}", decomp.progress * 100.0f, decomp.stage).c_str());
+			ImGui::SameLine();
+			if (ImGui::Button("取消##decomp"))
+				PhysicsShapeFromModel::Decomposition::Cancel();
+		}
+		else if (!decomp.message.empty())
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			if (decomp.ok)
+				ImGui::TextDisabled("%s", decomp.message.c_str());
+			else
+				ImGui::TextColored(warnColor, "凸分解没有完成：%s", decomp.message.c_str());
+			ImGui::PopTextWrapPos();
+		}
+	}
+	if (s_generateStatus.valid && entity && s_generateStatus.entity == entity.getId())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		if (s_generateStatus.ok)
+			ImGui::TextDisabled("%s", s_generateStatus.message.c_str());
+		else
+			ImGui::TextColored(warnColor, "生成失败：%s", s_generateStatus.message.c_str());
+		ImGui::PopTextWrapPos();
+	}
+
+	// ---- 形状列表：固定高度、可拖动调高、只画看得见的行（和材质槽列表一样）；单击选中，下面编辑选中的那个 ----
+	// 行：#序号 类型 尺寸摘要                      标签（角色忽略 / 三角网格不是 Static 等）
+	// 右键行：复制、上移、下移、移到最前、删除。悬停的行在视口里画成白色；没悬停时高亮选中的形状
+	enum class ShapeAction { None, Duplicate, MoveUp, MoveDown, MoveFirst, Remove };
+	ShapeAction action = ShapeAction::None;
+	size_t actionIndex = 0;
+	int hoveredRow = -1;
+
+	if (!children.empty())
+	{
+		const float rowHeight = frameHeight;
+		constexpr float kRowSpacing = 1.0f;
+		const float rowStride = rowHeight + kRowSpacing;
+		const size_t visibleRows = std::clamp<size_t>(children.size(), 1, 8);
+		const float listHeight = visibleRows * rowStride - kRowSpacing + style.WindowPadding.y * 2.0f;
+		ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, rowStride + style.WindowPadding.y * 2.0f), ImVec2(FLT_MAX, FLT_MAX));
+		if (ImGui::BeginChild("##ShapeList", ImVec2(0.0f, listHeight), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY))
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, kRowSpacing));
+			ImGuiListClipper clipper;
+			clipper.Begin(static_cast<int>(children.size()), rowStride);
+			if (shapePanel.selected >= 0 && shapePanel.scrolledTo != shapePanel.selected)
+				clipper.IncludeItemByIndex(shapePanel.selected);
+			while (clipper.Step())
+			{
+				for (int r = clipper.DisplayStart; r < clipper.DisplayEnd; ++r)
+				{
+					const size_t i = static_cast<size_t>(r);
+					ImGui::PushID(r);
+					const ChildShape* shape = children[i].get();
+					const bool selected = shapePanel.selected == r;
+					const ImVec2 p0 = ImGui::GetCursorScreenPos();
+					const float rowWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+					const ImVec2 p1(p0.x + rowWidth, p0.y + rowHeight);
+
+					ImGui::InvisibleButton("##row", ImVec2(rowWidth, rowHeight));
+					const bool rowHovered = ImGui::IsItemHovered();
+					if (rowHovered)
+						hoveredRow = r;
+					if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right))
+					{
+						shapePanel.selected = r;
+						shapePanel.scrolledTo = r;		// 自己点的不用再滚
+					}
+					if (ImGui::BeginPopupContextItem("##ShapeMenu"))
+					{
+						hoveredRow = r;
+						const auto pick = [&](ShapeAction a) { action = a; actionIndex = i; };
+						if (ImGui::MenuItem("复制"))
+							pick(ShapeAction::Duplicate);
+						if (ImGui::MenuItem("上移", nullptr, false, i > 0))
+							pick(ShapeAction::MoveUp);
+						if (ImGui::MenuItem("下移", nullptr, false, i + 1 < children.size()))
+							pick(ShapeAction::MoveDown);
+						if (ImGui::MenuItem("移到最前", nullptr, false, i > 0))
+							pick(ShapeAction::MoveFirst);
+						if (physics.isCharacter)
+							ImGui::SetItemTooltip("角色控制器只用第一个形状");
+						ImGui::Separator();
+						if (ImGui::MenuItem("删除"))
+							pick(ShapeAction::Remove);
+						ImGui::EndPopup();
+					}
+
+					ImDrawList* drawList = ImGui::GetWindowDrawList();
+					if (selected || rowHovered)
+						drawList->AddRectFilled(p0, p1, ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_HeaderHovered), style.FrameRounding);
+
+					if (shape)
+					{
+						const float textY = p0.y + (rowHeight - ImGui::GetTextLineHeight()) * 0.5f;
+						const float textX = p0.x + style.FramePadding.x;
+						const bool ignored = physics.isCharacter && i > 0;
+						const char* tag = ignored ? "忽略"
+							: (shape->shapeType == ShapeType::TriangleMesh && !isStatic && !physics.isCharacter) ? "需要 Static"
+							: (physics.isCharacter && i == 0 && shape->shapeType == ShapeType::TriangleMesh) ? "不能用"
+							: nullptr;
+						const float tagWidth = tag ? ImGui::CalcTextSize(tag).x : 0.0f;
+						const float tagX = p1.x - style.FramePadding.x - tagWidth;
+						if (tag)
+							drawList->AddText(ImVec2(tagX, textY), ignored ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : ImGui::ColorConvertFloat4ToU32(warnColor), tag);
+
+						const float nameRight = tag ? tagX - style.ItemSpacing.x : p1.x - style.FramePadding.x;
+						const std::string index = std::format("#{}", i);
+						const std::string name = std::format("{}  {}", shapeName(shape->shapeType), sizeSummary(*shape));
+						drawList->PushClipRect(ImVec2(textX, p0.y), ImVec2(std::max(textX, nameRight), p1.y), true);
+						drawList->AddText(ImVec2(textX, textY), ImGui::GetColorU32(ImGuiCol_TextDisabled), index.c_str());
+						const float nameX = textX + ImGui::CalcTextSize("#00").x + style.ItemSpacing.x * 0.5f;
+						drawList->AddText(ImVec2(std::max(nameX, textX + ImGui::CalcTextSize(index.c_str()).x + style.ItemSpacing.x * 0.5f), textY),
+							ImGui::GetColorU32(ignored ? ImGuiCol_TextDisabled : ImGuiCol_Text), name.c_str());
+						drawList->PopClipRect();
+					}
+
+					// 光标回到行底边再提交一个空 item：ImGui 不允许只用 SetCursorPos 撑大窗口
+					ImGui::SetCursorScreenPos(ImVec2(p0.x, p1.y));
+					ImGui::Dummy(ImVec2(0.0f, 0.0f));
+					if (selected && shapePanel.scrolledTo != shapePanel.selected)
+					{
+						ImGui::SetScrollHereY(0.5f);
+						shapePanel.scrolledTo = shapePanel.selected;
+					}
+					ImGui::PopID();
+				}
+			}
+			clipper.End();
+			ImGui::PopStyleVar();
+		}
+		ImGui::EndChild();
+		if (children.size() > 1)
+			ImGui::TextDisabled("单击选中 · 右键复制 / 移动 / 删除 · 悬停在视口里高亮");
+	}
+
+	// 视口高亮：悬停的行优先，否则选中的形状（只在显示了这个实体的碰撞体时看得到）
+	if (hoveredRow >= 0)
+		PhysicsDebugView::SetHoveredShape(entity, hoveredRow);
+	else if (shapePanel.selected >= 0 && shapePanel.selected < static_cast<int>(children.size())
+		&& PhysicsDebugView::GetMode() != PhysicsDebugView::Mode::Off)
+		PhysicsDebugView::SetHoveredShape(entity, shapePanel.selected);
+
+	// ======================== 选中形状的参数 ========================
+	if (shapePanel.selected >= 0 && shapePanel.selected < static_cast<int>(children.size()) && children[shapePanel.selected])
+	{
+		const size_t i = static_cast<size_t>(shapePanel.selected);
+		const ChildShape& shape = *children[i];
+		const bool characterShape = physics.isCharacter && i == 0;		// 角色控制器忽略它的偏移和旋转
+		ImGui::PushID(static_cast<int>(i));
+
+		// ---- 头部：#序号 类型                      [复制] [↑] [↓] [删除] ----
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text("#%d %s", static_cast<int>(i), shapeName(shape.shapeType));
+		if (physics.isCharacter && i > 0)
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("（角色控制器忽略）");
+		}
+		{
+			const char* labels[] = { "复制", "上移", "下移", "删除" };
+			float buttonsWidth = 0.0f;
+			for (const char* label : labels)
+				buttonsWidth += ImGui::CalcTextSize(label).x + style.FramePadding.x * 2.0f;
+			buttonsWidth += style.ItemInnerSpacing.x * 3.0f;
+			ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonsWidth));
+			const auto button = [&](const char* label, bool enabled, ShapeAction a)
+				{
+					if (!enabled)
+						ImGui::BeginDisabled();
+					if (ImGui::Button(label))
+					{
+						action = a;
+						actionIndex = i;
+					}
+					if (!enabled)
+						ImGui::EndDisabled();
+				};
+			button("复制", true, ShapeAction::Duplicate);
+			ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+			button("上移", i > 0, ShapeAction::MoveUp);
+			ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+			button("下移", i + 1 < children.size(), ShapeAction::MoveDown);
+			ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+			button("删除", true, ShapeAction::Remove);
+		}
+
+		// 先在局部副本上改；改了才复制一份子形状（写时复制，三角网格的顶点也只在改的时候复制一次）
+		ShapeType type = shape.shapeType;
+		glm::vec3 size = shape.size;
+		glm::vec3 position = shape.position;
+		glm::quat rotation = shape.rotation;
+		bool shapeChanged = false;
+		bool rotationChanged = false;
+
+		if (beginTable("##ShapeTable"))
+		{
+			row("Type");
+			if (isPrimitive(type))
+			{
+				int typeIndex = static_cast<int>(type);
+				const char* primitives[] = { "Box", "Sphere", "Capsule", "Cylinder" };
+				if (ImGui::Combo("##Type", &typeIndex, primitives, IM_ARRAYSIZE(primitives)) && typeIndex != static_cast<int>(type))
+				{
+					const ShapeType newType = static_cast<ShapeType>(typeIndex);
+					size = convertSize(type, newType, size);
+					type = newType;
+					shapeChanged = true;
+				}
+			}
+			else
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextDisabled("%s（%s，由模型生成，这里不能改）", shapeName(type), sizeSummary(shape).c_str());
+			}
+
+			const char* scaleNote = "尺寸会再乘上 Transform 的缩放";
+			switch (type)
+			{
+			case ShapeType::Box:
+			{
+				glm::vec3 full = size * 2.0f;
+				row("Size", scaleNote);
+				if (ImGui::DragFloat3("##Size", glm::value_ptr(full), 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
+				{
+					size = full * 0.5f;
+					shapeChanged = true;
+				}
+				break;
+			}
+			case ShapeType::Sphere:
+			{
+				float radius = size.x;
+				row("Radius", scaleNote);
+				if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+				{
+					size = glm::vec3(radius);
+					shapeChanged = true;
+				}
+				break;
+			}
+			case ShapeType::Capsule:
+			{
+				float radius = size.x;
+				float height = size.y;
+				row("Radius", scaleNote);
+				if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+					shapeChanged = true;
+				row("Height", "两端半球之间圆柱部分的高度（总高 = 高度 + 2 × 半径）");
+				if (ImGui::DragFloat("##Height", &height, 0.01f, 0.0f, 1.0e4f, "%.3f", kClamp))
+					shapeChanged = true;
+				size = glm::vec3(radius, height, radius);
+				break;
+			}
+			case ShapeType::Cylinder:
+			{
+				float radius = size.x;
+				float height = size.y * 2.0f;
+				row("Radius", scaleNote);
+				if (ImGui::DragFloat("##Radius", &radius, 0.01f, 0.001f, 1.0e4f, "%.3f", kClamp))
+					shapeChanged = true;
+				row("Height", "总高度");
+				if (ImGui::DragFloat("##Height", &height, 0.01f, 0.002f, 1.0e4f, "%.3f", kClamp))
+					shapeChanged = true;
+				size = glm::vec3(radius, height * 0.5f, radius);
+				break;
+			}
+			default:
+				break;
+			}
+
+			// 基本形状：一键包住模型（尺寸、偏移按模型包围盒，旋转清零）
+			if (isPrimitive(type) && hasModel)
+			{
+				row("Fit", "按模型的包围盒设置尺寸和偏移，旋转清零");
+				if (ImGui::Button("包住模型", ImVec2(-FLT_MIN, 0.0f)))
+				{
+					if (auto fitted = fitToModel(type))
+					{
+						size = fitted->size;
+						if (!characterShape)
+							position = fitted->position;
+						rotation = glm::identity<glm::quat>();
+						shapeChanged = true;
+						rotationChanged = true;
+					}
+				}
+			}
+
+			const char* characterReason = "角色控制器忽略第一个形状的偏移和旋转";
+			row("Offset", "相对实体中心的偏移");
+			shapeChanged |= disabledIf(characterShape, characterReason,
+				[&] { return ImGui::DragFloat3("##Offset", glm::value_ptr(position), 0.01f); });
+			row("Rotation", "相对实体的旋转（度）");
+			rotationChanged |= disabledIf(characterShape, characterReason,
+				[&] { return EditorRotation::DragEuler("##Rotation", rotation); });
+			ImGui::EndTable();
+		}
+
+		if (shapeChanged || rotationChanged)
+		{
+			auto copy = std::make_shared<ChildShape>(shape);
+			copy->shapeType = type;
+			copy->size = size;
+			copy->position = position;
+			if (rotationChanged)
+				copy->rotation = rotation;
+			children[i] = std::move(copy);
+			changed = true;
 		}
 		ImGui::PopID();
 	}
 
-	if (removeIndex && *removeIndex < children.size())
+	// 列表画完再改结构，免得循环里下标错位；选中跟着形状走
+	if (action != ShapeAction::None && actionIndex < children.size())
 	{
-		children.erase(children.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+		const auto at = children.begin() + static_cast<std::ptrdiff_t>(actionIndex);
+		int newSelected = static_cast<int>(actionIndex);
+		switch (action)
+		{
+		case ShapeAction::Duplicate:
+			if (children[actionIndex])
+				children.insert(at + 1, std::make_shared<ChildShape>(*children[actionIndex]));
+			newSelected = static_cast<int>(actionIndex) + 1;
+			break;
+		case ShapeAction::MoveUp:
+			if (actionIndex > 0)
+			{
+				std::swap(children[actionIndex], children[actionIndex - 1]);
+				newSelected = static_cast<int>(actionIndex) - 1;
+			}
+			break;
+		case ShapeAction::MoveDown:
+			if (actionIndex + 1 < children.size())
+			{
+				std::swap(children[actionIndex], children[actionIndex + 1]);
+				newSelected = static_cast<int>(actionIndex) + 1;
+			}
+			break;
+		case ShapeAction::MoveFirst:
+			std::rotate(children.begin(), at, at + 1);
+			newSelected = 0;
+			break;
+		case ShapeAction::Remove:
+			children.erase(at);
+			newSelected = children.empty() ? -1 : std::min(static_cast<int>(actionIndex), static_cast<int>(children.size()) - 1);
+			break;
+		default:
+			break;
+		}
+		shapePanel.selected = newSelected;
 		changed = true;
-	}
-
-	// 添加形状
-	if (ImGui::Button("+ 添加形状"))
-		ImGui::OpenPopup("##AddShape");
-	if (ImGui::BeginPopup("##AddShape"))
-	{
-		if (ImGui::MenuItem("Box")) { physics.collisionShape.AddBoxShape(); changed = true; }
-		if (ImGui::MenuItem("Sphere")) { physics.collisionShape.AddSphereShape(); changed = true; }
-		if (ImGui::MenuItem("Capsule")) { physics.collisionShape.AddCapsuleShape(); changed = true; }
-		if (ImGui::MenuItem("Cylinder")) { physics.collisionShape.AddCylinderShape(); changed = true; }
-		ImGui::EndPopup();
 	}
 
 	return changed;

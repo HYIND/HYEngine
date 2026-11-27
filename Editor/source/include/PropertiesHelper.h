@@ -59,6 +59,10 @@ public:
 private:
 	static std::unordered_map<ComponentTypeID, DrawFunction>& GetCustomDrawRegistry();
 
+	// 正在画的组件属于哪个实体（RegisterComponent 的绘制函数里设置，画完清空）。
+	// DrawComponent 只拿到组件快照，少数面板要看同一实体的其它组件时用（例如物理面板「从模型生成」）
+	inline static Entity s_drawingEntity;
+
 	// 通用绘制模板
 	template<typename T>
 	static bool DrawComponent(T& comp);

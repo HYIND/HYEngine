@@ -3,7 +3,9 @@
 #include "CommonComponent.h"
 #include "Helper/Tools.h"
 #include <algorithm>
+#include <functional>
 #include "Systems/ScriptSystem.h"
+#include "bullet/LinearMath/btConvexHullComputer.h"
 
 const float gravityScale = 1.f;
 
@@ -626,14 +628,11 @@ void PhysicsSystem::syncWorldToPhysics()
 						runtime.motionState = nullptr;
 					}
 					for (auto ptr : runtime.childShapePtrs)
-					{
-						if (ptr)
-							delete ptr;
-					}
+						DeleteCollisionShape(ptr);
 					runtime.childShapePtrs.clear();
 					if (runtime.shapePtr)
 					{
-						delete runtime.shapePtr;
+						DeleteCollisionShape(runtime.shapePtr);
 						runtime.shapePtr = nullptr;
 					}
 				};
@@ -1007,4 +1006,320 @@ void PhysicsSystem::updateCharacter(Physics& physics, PhysicsRuntime& runtime)
 	character->setMaxPenetrationDepth(physics.maxPenetrationDepth);
 
 	phyWorld->addAction(character);
+}
+
+// ======================== 碰撞体调试显示 ========================
+
+namespace
+{
+	// 收集 Bullet 调试绘制的线段。debugDrawObject 里的盒子、球、胶囊、圆柱等最后都走 drawLine
+	class DebugLineCollector : public btIDebugDraw
+	{
+	public:
+		DebugLineCollector(PhysicsDebugLines& out, size_t maxLines) : _out(out), _maxLines(maxLines) {}
+
+		uint32_t object = UINT32_MAX;
+		uint16_t child = UINT16_MAX;
+		PhysicsDebugLineKind kind = PhysicsDebugLineKind::Shape;
+
+		bool Full() const { return _out.lines.size() >= _maxLines; }
+
+		void Add(const btVector3& a, const btVector3& b)
+		{
+			if (Full())
+			{
+				_out.truncated = true;
+				return;
+			}
+			_out.lines.push_back({ BulletToGlm(a), BulletToGlm(b), object, child, kind });
+		}
+
+		void drawLine(const btVector3& from, const btVector3& to, const btVector3& /*color*/) override
+		{
+			Add(from, to);
+		}
+
+		// 接触点：沿法线的短线 + 一个小十字
+		void drawContactPoint(const btVector3& pointOnB, const btVector3& normalOnB, btScalar /*distance*/, int /*lifeTime*/, const btVector3& /*color*/) override
+		{
+			constexpr btScalar kNormalLength = 0.25f;
+			constexpr btScalar kCross = 0.04f;
+			Add(pointOnB, pointOnB + normalOnB * kNormalLength);
+			Add(pointOnB - btVector3(kCross, 0, 0), pointOnB + btVector3(kCross, 0, 0));
+			Add(pointOnB - btVector3(0, kCross, 0), pointOnB + btVector3(0, kCross, 0));
+			Add(pointOnB - btVector3(0, 0, kCross), pointOnB + btVector3(0, 0, kCross));
+		}
+
+		void reportErrorWarning(const char* /*warningString*/) override {}
+		void draw3dText(const btVector3& /*location*/, const char* /*textString*/) override {}
+		void setDebugMode(int debugMode) override { _mode = debugMode; }
+		int getDebugMode() const override { return _mode; }
+
+	private:
+		PhysicsDebugLines& _out;
+		size_t _maxLines = 0;
+		int _mode = DBG_DrawWireframe;
+	};
+
+	// 三角网格：只取查询包围盒里的三角形（Bullet 自己的 debugDrawObject 会遍历全部三角形）
+	class DebugTriangleCollector : public btTriangleCallback
+	{
+	public:
+		DebugTriangleCollector(DebugLineCollector& lines, const btTransform& transform) : _lines(lines), _transform(transform) {}
+
+		void processTriangle(btVector3* triangle, int /*partId*/, int /*triangleIndex*/) override
+		{
+			if (_lines.Full())
+			{
+				_lines.Add(triangle[0], triangle[1]);		// 只为了标记 truncated
+				return;
+			}
+			const btVector3 a = _transform * triangle[0];
+			const btVector3 b = _transform * triangle[1];
+			const btVector3 c = _transform * triangle[2];
+			_lines.Add(a, b);
+			_lines.Add(b, c);
+			_lines.Add(c, a);
+		}
+
+	private:
+		DebugLineCollector& _lines;
+		const btTransform& _transform;
+	};
+
+	// 包围盒 8 个角都在视锥同一个侧面外面就算看不见（只看 x / y 和相机背后）
+	bool AabbOutsideFrustum(const glm::mat4& viewProj, const btVector3& mn, const btVector3& mx, float margin)
+	{
+		int outside[5] = { 0, 0, 0, 0, 0 };
+		for (int i = 0; i < 8; ++i)
+		{
+			const glm::vec4 p((i & 1) ? mx.x() : mn.x(), (i & 2) ? mx.y() : mn.y(), (i & 4) ? mx.z() : mn.z(), 1.0f);
+			const glm::vec4 c = viewProj * p;
+			const float w = c.w * margin;
+			if (c.x < -w) ++outside[0];
+			if (c.x > w) ++outside[1];
+			if (c.y < -w) ++outside[2];
+			if (c.y > w) ++outside[3];
+			if (c.w <= 0.0f) ++outside[4];
+		}
+		for (int count : outside)
+		{
+			if (count == 8)
+				return true;
+		}
+		return false;
+	}
+
+	float DistanceToAabb(const btVector3& p, const btVector3& mn, const btVector3& mx)
+	{
+		const btVector3 q(std::clamp(p.x(), mn.x(), mx.x()), std::clamp(p.y(), mn.y(), mx.y()), std::clamp(p.z(), mn.z(), mx.z()));
+		return (p - q).length();
+	}
+
+	size_t HashHullPoints(const btConvexHullShape* hull)
+	{
+		const int n = hull->getNumPoints();
+		const btVector3* points = hull->getUnscaledPoints();
+		size_t hash = static_cast<size_t>(n);
+		const std::hash<btScalar> hasher;
+		for (int i = 0; i < n; ++i)
+		{
+			for (int k = 0; k < 3; ++k)
+				hash ^= hasher(points[i][k]) + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
+		}
+		return hash;
+	}
+
+	void DrawHullEdges(DebugLineCollector& lines, std::unordered_map<const btCollisionShape*, PhysicsDebugHullEdges>& cache,
+		uint64_t useCount, const btTransform& transform, const btConvexHullShape* hull)
+	{
+		const int n = hull->getNumPoints();
+		if (n <= 0)
+			return;
+
+		PhysicsDebugHullEdges& entry = cache[hull];
+		const size_t hash = HashHullPoints(hull);
+		if (entry.numPoints != n || entry.hash != hash)
+		{
+			entry = PhysicsDebugHullEdges{};
+			entry.numPoints = n;
+			entry.hash = hash;
+			btConvexHullComputer computer;
+			const btVector3* points = hull->getUnscaledPoints();
+			// btVector3 是 4 个 btScalar（x, y, z, w），步长按整个 btVector3 算
+			computer.compute(&points[0].x(), static_cast<int>(sizeof(btVector3)), n, 0.0f, 0.0f);
+			entry.vertices.reserve(computer.vertices.size());
+			for (int i = 0; i < computer.vertices.size(); ++i)
+				entry.vertices.push_back(computer.vertices[i]);
+			for (int i = 0; i < computer.edges.size(); ++i)
+			{
+				// 每条边有正反两个方向，只取一个
+				const auto& edge = computer.edges[i];
+				const int a = edge.getSourceVertex();
+				const int b = edge.getTargetVertex();
+				if (a < b)
+					entry.edges.emplace_back(a, b);
+			}
+		}
+		entry.lastUsed = useCount;
+
+		const btVector3 scale = hull->getLocalScaling();
+		for (const auto& [a, b] : entry.edges)
+			lines.Add(transform * (entry.vertices[a] * scale), transform * (entry.vertices[b] * scale));
+	}
+
+	void DrawShape(btCollisionWorld& world, DebugLineCollector& lines, std::unordered_map<const btCollisionShape*, PhysicsDebugHullEdges>& hullCache,
+		uint64_t useCount, const btTransform& transform, const btCollisionShape* shape, const PhysicsDebugDrawOptions& options)
+	{
+		if (!shape || lines.Full())
+			return;
+
+		// 复合形状：逐个子形状画（子形状的变换已经包含了 setLocalScaling 带来的位置缩放）
+		if (shape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
+		{
+			const auto* compound = static_cast<const btCompoundShape*>(shape);
+			for (int i = 0; i < compound->getNumChildShapes(); ++i)
+				DrawShape(world, lines, hullCache, useCount, transform * compound->getChildTransform(i), compound->getChildShape(i), options);
+			return;
+		}
+
+		// 三角网格等凹形状：只查相机周围的三角形。BVH 建在缩放后的局部空间里，transform 不含缩放，所以半径不用换算
+		if (shape->isConcave())
+		{
+			const auto* concave = static_cast<const btConcaveShape*>(shape);
+			btVector3 aabbMin(-BT_LARGE_FLOAT, -BT_LARGE_FLOAT, -BT_LARGE_FLOAT);
+			btVector3 aabbMax(BT_LARGE_FLOAT, BT_LARGE_FLOAT, BT_LARGE_FLOAT);
+			if (options.triangleMeshRadius > 0.0f)
+			{
+				const btVector3 local = transform.invXform(GlmToBullet(options.cameraPosition));
+				const btVector3 r(options.triangleMeshRadius, options.triangleMeshRadius, options.triangleMeshRadius);
+				aabbMin = local - r;
+				aabbMax = local + r;
+			}
+			DebugTriangleCollector callback(lines, transform);
+			concave->processAllTriangles(&callback, aabbMin, aabbMax);
+			return;
+		}
+
+		// 凸包：没有多面体特征时用自己算的边（不调 initializePolyhedralFeatures，免得改变碰撞的接触点生成）
+		if (shape->getShapeType() == CONVEX_HULL_SHAPE_PROXYTYPE)
+		{
+			const auto* hull = static_cast<const btConvexHullShape*>(shape);
+			if (!hull->getConvexPolyhedron())
+			{
+				DrawHullEdges(lines, hullCache, useCount, transform, hull);
+				return;
+			}
+		}
+
+		world.debugDrawObject(transform, shape, btVector3(1, 1, 1));
+	}
+}
+
+void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, PhysicsDebugLines& out)
+{
+	out.objects.clear();
+	out.lines.clear();
+	out.truncated = false;
+	if (!phyWorld || !m_world)
+		return;
+
+	const uint64_t useCount = ++m_debugDrawCount;
+	DebugLineCollector collector(out, options.maxLines);
+	btIDebugDraw* previousDrawer = phyWorld->getDebugDrawer();
+	phyWorld->setDebugDrawer(&collector);		// debugDrawObject 内部直接用 getDebugDrawer()，不检查空指针
+
+	auto wanted = [&](Entity entity)
+		{
+			return !options.filterByEntities
+				|| std::binary_search(options.onlyEntities.begin(), options.onlyEntities.end(), entity.getId());
+		};
+	const btVector3 cameraPos = GlmToBullet(options.cameraPosition);
+
+	for (Entity entity : m_world->getEntitiesWith<Physics, PhysicsRuntime>())
+	{
+		if (collector.Full())
+		{
+			out.truncated = true;
+			break;
+		}
+		if (!wanted(entity))
+			continue;
+		const auto& physics = entity.getComponent<Physics>();
+		const auto& runtime = entity.getComponent<PhysicsRuntime>();
+		const btCollisionObject* object = runtime.body ? static_cast<const btCollisionObject*>(runtime.body)
+			: static_cast<const btCollisionObject*>(runtime.ghostObject);
+		if (!object || !object->getCollisionShape())
+			continue;
+
+		const btTransform& transform = object->getWorldTransform();
+		btVector3 aabbMin, aabbMax;
+		object->getCollisionShape()->getAabb(transform, aabbMin, aabbMax);
+		if (options.maxDistance > 0.0f && DistanceToAabb(cameraPos, aabbMin, aabbMax) > options.maxDistance)
+			continue;
+		if (options.useFrustum && AabbOutsideFrustum(options.viewProj, aabbMin, aabbMax, options.frustumMargin))
+			continue;
+
+		collector.object = static_cast<uint32_t>(out.objects.size());
+		out.objects.push_back({ entity, physics.bodyType, physics.isSensor, physics.isCharacter,
+			object->getActivationState() == ISLAND_SLEEPING });
+
+		// 顶层复合形状的第 i 个子形状就是 Physics::collisionShape.children[i]（createCompoundShape 按顺序添加）；
+		// 角色控制器不用复合形状，只有 children[0]
+		collector.kind = PhysicsDebugLineKind::Shape;
+		const btCollisionShape* rootShape = object->getCollisionShape();
+		if (rootShape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
+		{
+			const auto* compound = static_cast<const btCompoundShape*>(rootShape);
+			for (int i = 0; i < compound->getNumChildShapes() && !collector.Full(); ++i)
+			{
+				collector.child = static_cast<uint16_t>(std::min(i, UINT16_MAX - 1));
+				DrawShape(*phyWorld, collector, m_debugHullCache, useCount, transform * compound->getChildTransform(i), compound->getChildShape(i), options);
+			}
+		}
+		else
+		{
+			collector.child = 0;
+			DrawShape(*phyWorld, collector, m_debugHullCache, useCount, transform, rootShape, options);
+		}
+		collector.child = UINT16_MAX;
+		if (options.drawAabb)
+		{
+			collector.kind = PhysicsDebugLineKind::Aabb;
+			collector.drawAabb(aabbMin, aabbMax, btVector3(1, 0, 0));
+		}
+	}
+
+	if (options.drawContacts && phyWorld->getDispatcher())
+	{
+		collector.object = UINT32_MAX;
+		collector.kind = PhysicsDebugLineKind::Contact;
+		btDispatcher* dispatcher = phyWorld->getDispatcher();
+		const int numManifolds = dispatcher->getNumManifolds();
+		for (int i = 0; i < numManifolds && !collector.Full(); ++i)
+		{
+			const btPersistentManifold* manifold = dispatcher->getManifoldByIndexInternal(i);
+			const int numContacts = manifold->getNumContacts();
+			if (numContacts == 0)
+				continue;
+			if (options.filterByEntities)
+			{
+				const auto* a = static_cast<const Entity*>(manifold->getBody0()->getUserPointer());
+				const auto* b = static_cast<const Entity*>(manifold->getBody1()->getUserPointer());
+				if (!(a && wanted(*a)) && !(b && wanted(*b)))
+					continue;
+			}
+			for (int j = 0; j < numContacts; ++j)
+			{
+				const btManifoldPoint& point = manifold->getContactPoint(j);
+				collector.drawContactPoint(point.m_positionWorldOnB, point.m_normalWorldOnB, point.getDistance(), point.getLifeTime(), btVector3(1, 1, 0));
+			}
+		}
+	}
+
+	phyWorld->setDebugDrawer(previousDrawer);
+
+	// 很久没画到的凸包缓存清掉（形状可能已经删了；指针只比较不解引用）
+	constexpr uint64_t kHullCacheKeep = 600;
+	std::erase_if(m_debugHullCache, [useCount](const auto& item) { return useCount - item.second.lastUsed > kHullCacheKeep; });
 }

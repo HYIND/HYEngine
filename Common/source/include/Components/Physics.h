@@ -143,6 +143,19 @@ struct Physics :public IComponent
 
 HY_DECLARE_ECS_TYPE(Physics, "engine.physics");
 
+// 删除碰撞形状。三角网格形状（btBvhTriangleMeshShape）不拥有它引用的顶点数据（createTriangleShape 里 new 的 btTriangleMesh），
+// 要一起删，否则每次重建物理体（改形状、从模型重新生成）都会泄漏一份网格
+inline void DeleteCollisionShape(btCollisionShape* shape)
+{
+	if (!shape)
+		return;
+	btStridingMeshInterface* meshInterface = nullptr;
+	if (shape->getShapeType() == TRIANGLE_MESH_SHAPE_PROXYTYPE)
+		meshInterface = static_cast<btBvhTriangleMeshShape*>(shape)->getMeshInterface();
+	delete shape;
+	delete meshInterface;
+}
+
 // === 运行时数据 ===
 struct PhysicsRuntime :public IComponent
 {
@@ -191,14 +204,11 @@ struct PhysicsRuntime :public IComponent
 		}
 
 		for (auto ptr : childShapePtrs)
-		{
-			if (ptr)
-				delete ptr;
-		}
+			DeleteCollisionShape(ptr);
 		childShapePtrs.clear();
 		if (shapePtr)
 		{
-			delete shapePtr;
+			DeleteCollisionShape(shapePtr);
 			shapePtr = nullptr;
 		}
 

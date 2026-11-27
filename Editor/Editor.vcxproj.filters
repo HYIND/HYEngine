@@ -58,6 +58,12 @@
     <ClInclude Include="source\include\ViewportIcons.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\PhysicsDebugView.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="source\include\PhysicsShapeFromModel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\RenderProfilerPanel.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -177,6 +183,15 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\ViewportIcons.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PhysicsDebugView.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\PhysicsShapeFromModel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VHACDImpl.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="source\src\RenderProfilerPanel.cpp">
