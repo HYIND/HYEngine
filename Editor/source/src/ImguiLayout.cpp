@@ -558,6 +558,75 @@ namespace
 			});
 	}
 
+	// ---------------- 选中的 2D 精灵 / 动图的包围盒 ----------------
+
+	// 和 2D 手柄的相机一样异步取：场景线程算好当前帧的四个角（动图每帧尺寸 / 轴心可能变），界面用上一份结果
+	struct Selection2DBoundsCache
+	{
+		std::mutex mutex;
+		Entity entity;
+		RenderSystem::Bounds2D bounds;
+		VKRenderContext::Camera2DData camera;
+		bool valid = false;
+	};
+	Selection2DBoundsCache s_selection2DBounds;
+
+	// 画在 Scene View 窗口的绘制列表上（在手柄之前调用，手柄盖在上面），裁剪到视口矩形
+	void DrawSelection2DBounds(EditorApp* app, Entity entity, const ImVec2& viewportPos, const ImVec2& viewportSize)
+	{
+		World* world = app ? app->GetWorld() : nullptr;
+		if (!world || !entity || !entity.isValid() || viewportSize.x <= 0.0f || viewportSize.y <= 0.0f)
+			return;
+
+		world->SubmitCommand([entity](World& w)
+			{
+				RenderSystem::Bounds2D bounds;
+				const bool ok = RenderSystem::Get2DBounds(w, entity, bounds);
+				const auto camera = RenderSystem::GetActiveCamera2D(w);
+				std::lock_guard lock(s_selection2DBounds.mutex);
+				s_selection2DBounds.entity = entity;
+				s_selection2DBounds.bounds = bounds;
+				s_selection2DBounds.camera = camera;
+				s_selection2DBounds.valid = ok;
+			});
+
+		RenderSystem::Bounds2D bounds;
+		VKRenderContext::Camera2DData camera;
+		{
+			std::lock_guard lock(s_selection2DBounds.mutex);
+			// 刚切换选中时缓存还是上一个实体的，不画，等下一帧
+			if (!s_selection2DBounds.valid || s_selection2DBounds.entity != entity)
+				return;
+			bounds = s_selection2DBounds.bounds;
+			camera = s_selection2DBounds.camera;
+		}
+
+		// 2D 世界 -> 渲染目标像素 -> 视口屏幕坐标（与 Pick2DAtMouse 的换算互逆）
+		const auto view = Viewport2DView(camera, app, viewportSize);
+		const glm::vec2 target = glm::max(view.targetSize, glm::vec2(1.0f));
+		auto toScreen = [&](const glm::vec2& p)
+			{
+				const glm::vec2 pixel = view.WorldToScreen(p);
+				return ImVec2(viewportPos.x + pixel.x / target.x * viewportSize.x,
+					viewportPos.y + pixel.y / target.y * viewportSize.y);
+			};
+
+		ImVec2 pts[4];
+		for (int i = 0; i < 4; ++i)
+			pts[i] = toScreen(bounds.corners[i]);
+		const ImVec2 pivot = toScreen(bounds.pivot);
+
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		drawList->PushClipRect(viewportPos, ImVec2(viewportPos.x + viewportSize.x, viewportPos.y + viewportSize.y), true);
+		// 先画一圈深色描边再画亮色线，浅色 / 深色背景上都看得清
+		drawList->AddPolyline(pts, 4, IM_COL32(0, 0, 0, 160), ImDrawFlags_Closed, 3.0f);
+		drawList->AddPolyline(pts, 4, IM_COL32(255, 160, 40, 255), ImDrawFlags_Closed, 1.5f);
+		for (const ImVec2& p : pts)
+			drawList->AddRectFilled(ImVec2(p.x - 2.5f, p.y - 2.5f), ImVec2(p.x + 2.5f, p.y + 2.5f), IM_COL32(255, 160, 40, 255));
+		drawList->AddCircle(pivot, 4.0f, IM_COL32(255, 255, 255, 230), 12, 1.5f);
+		drawList->PopClipRect();
+	}
+
 	// 找 code.cmd：先查 PATH，再查两个常见安装位置。
 	std::string FindVSCodeCommand()
 	{
@@ -3536,6 +3605,10 @@ void ImguiLayout::DrawSceneView(EditorApp* editorApp, ProjectManager* projectMan
 		glm::mat4 view(1.f), projection(1.f);
 		glm::vec3 cameraPosition(0.f), cameraDirection(0.f, 0.f, -1.f);
 		const bool hasCamera = editorApp->GetCameraSnapshot(view, projection, cameraPosition, cameraDirection);
+
+		// 选中的 2D 精灵 / 动图：画包围盒（先画，手柄盖在上面）。2D 层关掉时不画
+		if (selectedEntity && editorApp->GetLayerVisibility().layer2D)
+			DrawSelection2DBounds(editorApp, selectedEntity, viewportPos, viewportSize);
 
 		const bool use2DGizmo = Use2DGizmo(selectedEntity);
 		if (selectedEntity && (hasCamera || use2DGizmo))

@@ -406,6 +406,47 @@ Entity RenderSystem::Pick2D(World& world, const glm::vec2& point)
 	return best;
 }
 
+bool RenderSystem::Get2DBounds(World& world, Entity entity, Bounds2D& out)
+{
+	if (!entity || !entity.isValid() || !world.IsValidWorldEntity(entity))
+		return false;
+	const auto* transform = entity.tryGetComponent<Transform2D>();
+	if (!transform)
+		return false;
+
+	// 与 Pick2D 的 consider 相同：放置坐标系里相对轴心的矩形 [l0, l1]
+	auto build = [&](const RenderBase2D& base, const Render2D::SpriteFrame& frame,
+		const glm::vec2& requestedSize, const glm::vec2& pivot, bool flipX, bool flipY) -> bool
+		{
+			if (!frame.IsValid())
+				return false;
+			const glm::vec2 worldSize = ResolveWorldSize(requestedSize, frame.size, transform->scale);
+			if (worldSize.x == 0.0f || worldSize.y == 0.0f)
+				return false;
+
+			const Placement2D placement = MakePlacement(*transform, base.offset, flipX, flipY);
+			const glm::vec2 l0 = -pivot * worldSize;
+			const glm::vec2 l1 = l0 + worldSize;
+			auto at = [&](float x, float y) { return placement.position + placement.ex * x + placement.ey * y; };
+			out.corners[0] = at(l0.x, l0.y);
+			out.corners[1] = at(l1.x, l0.y);
+			out.corners[2] = at(l1.x, l1.y);
+			out.corners[3] = at(l0.x, l1.y);
+			out.pivot = placement.position;
+			return true;
+		};
+
+	if (const auto* sprite = entity.tryGetComponent<Sprite>(); sprite && sprite->resource)
+	{
+		const Render2D::SpriteFrame frame = sprite->ResolveFrame();
+		if (build(*sprite, frame, sprite->size, sprite->overridePivot ? sprite->pivot : frame.pivot, sprite->flipX, sprite->flipY))
+			return true;
+	}
+	if (const auto* player = entity.tryGetComponent<AnimatedImagePlayer>(); player && player->resource)
+		return build(*player, player->ResolveFrame(), player->size, player->pivot, player->flipX, player->flipY);
+	return false;
+}
+
 void RenderSystem::pushDebugLine(const Line2& line)
 {
 	LockGuard guard(_debugLineLock);

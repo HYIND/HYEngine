@@ -51,6 +51,16 @@ public:
     // 返回盖住 point（2D 世界坐标）的最上面那个实体：和绘制顺序一致，层级、层内顺序、实体 id 依次比大小；没有返回空实体
     static Entity Pick2D(World& world, const glm::vec2& point);
 
+    // 编辑器选中框：2D 精灵 / 动图当前帧的矩形（与 Pick2D、渲染同一套摆放规则，九宫格取整体外框）
+    struct Bounds2D
+    {
+        glm::vec2 corners[4] = {};      // 2D 世界坐标，按顺序相邻，可直接连成闭合四边形
+        glm::vec2 pivot = glm::vec2(0.0f);   // 轴心（Transform2D 位置 + offset）
+    };
+    // entity 有 Transform2D 且有已解析的 Sprite 或 AnimatedImagePlayer（Sprite 优先）时返回 true。
+    // 不看 visible / 透明度：选中了隐藏或全透明的精灵也能看到它在哪。必须在场景线程调用
+    static bool Get2DBounds(World& world, Entity entity, Bounds2D& out);
+
 public:
     virtual void postUpdate(float deltaTime) override;
     void pushDebugLine(const Line2& line);
