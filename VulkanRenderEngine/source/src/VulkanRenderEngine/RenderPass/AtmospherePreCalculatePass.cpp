@@ -68,7 +68,7 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		_skyViewLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR16G16B16A16Sfloat, config);
 
 
-		// 天空 cube 带完整 mip：IBL 预过滤 / 漫反射按立体角从低分辨率 mip 取值（太阳这类小而亮的区域靠它摊开）
+		// 天空 cube 带完整 mip：IBL 预过滤 / 漫反射按立体角从低分辨率 mip 取值
 		const uint32_t skyCubeSize = 256;
 		const uint32_t skyCubeLevels = static_cast<uint32_t>(floor(log2(float(skyCubeSize)))) + 1;
 		_skyCube = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), skyCubeLevels);
