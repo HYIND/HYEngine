@@ -41,6 +41,10 @@ CloudPreCalculatePass::CloudPreCalculatePass(const std::string& cubeShaderPath)
 	const uint32_t cloudCubeLevels = static_cast<uint32_t>(floor(log2(float(cloudCubeSize)))) + 1;
 	_cloudCube = std::make_shared<TextureCube>(cloudCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), cloudCubeLevels);
 	_dummyTransmittanceLut = std::make_shared<Texture2D>(1, 1, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
+
+	const glm::vec4 zeroTexel(0.0f);
+	_dummyTransmittanceLut->UpdateTextureData(const_cast<void*>(static_cast<const void*>(&zeroTexel)), 0);
+	_dummyTransmittanceLut->MakeSampledImmutable();
 }
 
 CloudCubeShaderParams CloudPreCalculatePass::BuildCloudParams(const RenderState& state)

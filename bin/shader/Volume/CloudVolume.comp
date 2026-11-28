@@ -100,6 +100,9 @@ float GetCloudSunTransmittance(vec3 p, vec3 toLight)
 
 vec3 CloudLighting(vec3 p, float density, vec3 viewDir)
 {
+    if (dirLightMetaData.dirLightCount == 0u)
+        return cloudParams.cloudAmbientColor;
+
     DirLight light = dirLightMetaData.info[0];
     vec3 toLight = -normalize(light.direction);
 
