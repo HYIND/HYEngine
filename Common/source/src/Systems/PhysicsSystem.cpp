@@ -3,6 +3,10 @@
 #include "CommonComponent.h"
 #include "Helper/Tools.h"
 #include <algorithm>
+#include <array>
+#include <cstring>
+#include <unordered_set>
+#include <chrono>
 #include <functional>
 #include "Systems/ScriptSystem.h"
 #include "bullet/LinearMath/btConvexHullComputer.h"
@@ -777,6 +781,7 @@ void PhysicsSystem::syncPhysicsToWorld()
 void PhysicsSystem::createBody(Entity entity, Physics& physics, Transform& trans, PhysicsRuntime& runtime)
 {
 	runtime.world = phyWorld;
+	runtime.debugRevision = ++m_bodyRevision;
 
 	if (physics.isCharacter) {
 		runtime.shapePtr = createShape(*physics.collisionShape.children[0]);
@@ -1012,26 +1017,66 @@ void PhysicsSystem::updateCharacter(Physics& physics, PhysicsRuntime& runtime)
 
 namespace
 {
-	// 收集 Bullet 调试绘制的线段。debugDrawObject 里的盒子、球、胶囊、圆柱等最后都走 drawLine
+	glm::mat4 ToGlm(const btTransform& t)
+	{
+		const btMatrix3x3& basis = t.getBasis();
+		const btVector3& origin = t.getOrigin();
+		glm::mat4 m(1.0f);
+		for (int c = 0; c < 3; ++c)
+			m[c] = glm::vec4(basis[0][c], basis[1][c], basis[2][c], 0.0f);		// btMatrix3x3::operator[] 取的是行
+		m[3] = glm::vec4(origin.x(), origin.y(), origin.z(), 1.0f);
+		return m;
+	}
+
+	// 收集 Bullet 调试绘制的线段。debugDrawObject 里的盒子、球、胶囊、圆柱等最后都走 drawLine。
+	// local 不为空：写一个物体局部空间的线框（缓存用）——顶点按位置焊接，同一个碰撞形状里重复的边只留一条
+	// （三角网格相邻三角形共享的边、球面 / 胶囊重复画的弧都在这里去掉）；否则写 out.lines（世界坐标的 AABB / 接触点）
 	class DebugLineCollector : public btIDebugDraw
 	{
 	public:
-		DebugLineCollector(PhysicsDebugLines& out, size_t maxLines) : _out(out), _maxLines(maxLines) {}
+		explicit DebugLineCollector(PhysicsDebugLines& out) : _out(out) {}
 
 		uint32_t object = UINT32_MAX;
 		uint16_t child = UINT16_MAX;
-		PhysicsDebugLineKind kind = PhysicsDebugLineKind::Shape;
+		PhysicsDebugLineKind kind = PhysicsDebugLineKind::Aabb;
+		bool usedCamera = false;			// 生成的线段和相机位置有关（三角网格只取了相机周围）
 
-		bool Full() const { return _out.lines.size() >= _maxLines; }
+		void BeginLocal(PhysicsDebugShapeLines* lines)
+		{
+			_local = lines;
+			_vertexIndex.clear();
+			_edgeSet.clear();
+			_edgeChild = UINT16_MAX;
+			usedCamera = false;
+		}
+		void EndLocal()
+		{
+			_local = nullptr;
+			_vertexIndex.clear();
+			_edgeSet.clear();
+		}
 
 		void Add(const btVector3& a, const btVector3& b)
 		{
-			if (Full())
+			if (!_local)
 			{
-				_out.truncated = true;
+				_out.lines.push_back({ BulletToGlm(a), BulletToGlm(b), object, child, kind });
 				return;
 			}
-			_out.lines.push_back({ BulletToGlm(a), BulletToGlm(b), object, child, kind });
+			const uint32_t ia = Weld(a);
+			const uint32_t ib = Weld(b);
+			if (ia == ib)
+				return;			// 退化的边
+			// 边去重只在同一个碰撞形状里做：不同形状的边分开记，属性面板悬停高亮才能按形状区分
+			if (child != _edgeChild)
+			{
+				_edgeSet.clear();
+				_edgeChild = child;
+			}
+			const uint64_t key = ia < ib ? (static_cast<uint64_t>(ia) << 32 | ib) : (static_cast<uint64_t>(ib) << 32 | ia);
+			if (!_edgeSet.insert(key).second)
+				return;
+			_local->edges.push_back({ ia, ib, child });
 		}
 
 		void drawLine(const btVector3& from, const btVector3& to, const btVector3& /*color*/) override
@@ -1056,12 +1101,44 @@ namespace
 		int getDebugMode() const override { return _mode; }
 
 	private:
+		// 位置逐位相同的顶点合成一个（共享顶点经过同一个变换，结果逐位相同）；-0 和 +0 当成同一个
+		using PointKey = std::array<uint32_t, 3>;
+		struct PointKeyHash
+		{
+			size_t operator()(const PointKey& k) const noexcept
+			{
+				size_t h = 1469598103934665603ull;
+				for (uint32_t v : k)
+					h = (h ^ v) * 1099511628211ull;
+				return h;
+			}
+		};
+
+		uint32_t Weld(const btVector3& p)
+		{
+			const glm::vec3 v = BulletToGlm(p);
+			PointKey key{};
+			for (int i = 0; i < 3; ++i)
+			{
+				const float f = v[i] == 0.0f ? 0.0f : v[i];
+				std::memcpy(&key[i], &f, sizeof(float));
+			}
+			const auto [it, inserted] = _vertexIndex.try_emplace(key, static_cast<uint32_t>(_local->vertices.size()));
+			if (inserted)
+				_local->vertices.push_back(v);
+			return it->second;
+		}
+
 		PhysicsDebugLines& _out;
-		size_t _maxLines = 0;
+		PhysicsDebugShapeLines* _local = nullptr;
+		std::unordered_map<PointKey, uint32_t, PointKeyHash> _vertexIndex;
+		std::unordered_set<uint64_t> _edgeSet;
+		uint16_t _edgeChild = UINT16_MAX;
 		int _mode = DBG_DrawWireframe;
 	};
 
-	// 三角网格：只取查询包围盒里的三角形（Bullet 自己的 debugDrawObject 会遍历全部三角形）
+	// 三角网格：只取查询包围盒里的三角形（Bullet 自己的 debugDrawObject 会遍历全部三角形）。
+	// 共享的边、共享的顶点由 DebugLineCollector 去重
 	class DebugTriangleCollector : public btTriangleCallback
 	{
 	public:
@@ -1069,11 +1146,6 @@ namespace
 
 		void processTriangle(btVector3* triangle, int /*partId*/, int /*triangleIndex*/) override
 		{
-			if (_lines.Full())
-			{
-				_lines.Add(triangle[0], triangle[1]);		// 只为了标记 truncated
-				return;
-			}
 			const btVector3 a = _transform * triangle[0];
 			const btVector3 b = _transform * triangle[1];
 			const btVector3 c = _transform * triangle[2];
@@ -1116,62 +1188,33 @@ namespace
 		return (p - q).length();
 	}
 
-	size_t HashHullPoints(const btConvexHullShape* hull)
-	{
-		const int n = hull->getNumPoints();
-		const btVector3* points = hull->getUnscaledPoints();
-		size_t hash = static_cast<size_t>(n);
-		const std::hash<btScalar> hasher;
-		for (int i = 0; i < n; ++i)
-		{
-			for (int k = 0; k < 3; ++k)
-				hash ^= hasher(points[i][k]) + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
-		}
-		return hash;
-	}
-
-	void DrawHullEdges(DebugLineCollector& lines, std::unordered_map<const btCollisionShape*, PhysicsDebugHullEdges>& cache,
-		uint64_t useCount, const btTransform& transform, const btConvexHullShape* hull)
+	// 凸包的边：btConvexHullShape 没有多面体特征时，Bullet 的 getEdge 只会把点按顺序连成折线，所以自己算。
+	// 只在生成缓存时调用，不再单独缓存
+	void DrawHullEdges(DebugLineCollector& lines, const btTransform& transform, const btConvexHullShape* hull)
 	{
 		const int n = hull->getNumPoints();
 		if (n <= 0)
 			return;
-
-		PhysicsDebugHullEdges& entry = cache[hull];
-		const size_t hash = HashHullPoints(hull);
-		if (entry.numPoints != n || entry.hash != hash)
-		{
-			entry = PhysicsDebugHullEdges{};
-			entry.numPoints = n;
-			entry.hash = hash;
-			btConvexHullComputer computer;
-			const btVector3* points = hull->getUnscaledPoints();
-			// btVector3 是 4 个 btScalar（x, y, z, w），步长按整个 btVector3 算
-			computer.compute(&points[0].x(), static_cast<int>(sizeof(btVector3)), n, 0.0f, 0.0f);
-			entry.vertices.reserve(computer.vertices.size());
-			for (int i = 0; i < computer.vertices.size(); ++i)
-				entry.vertices.push_back(computer.vertices[i]);
-			for (int i = 0; i < computer.edges.size(); ++i)
-			{
-				// 每条边有正反两个方向，只取一个
-				const auto& edge = computer.edges[i];
-				const int a = edge.getSourceVertex();
-				const int b = edge.getTargetVertex();
-				if (a < b)
-					entry.edges.emplace_back(a, b);
-			}
-		}
-		entry.lastUsed = useCount;
-
+		btConvexHullComputer computer;
+		// btVector3 是 4 个 btScalar（x, y, z, w），步长按整个 btVector3 算
+		computer.compute(&hull->getUnscaledPoints()[0].x(), static_cast<int>(sizeof(btVector3)), n, 0.0f, 0.0f);
 		const btVector3 scale = hull->getLocalScaling();
-		for (const auto& [a, b] : entry.edges)
-			lines.Add(transform * (entry.vertices[a] * scale), transform * (entry.vertices[b] * scale));
+		for (int i = 0; i < computer.edges.size(); ++i)
+		{
+			// 每条边有正反两个方向，只取一个
+			const auto& edge = computer.edges[i];
+			const int a = edge.getSourceVertex();
+			const int b = edge.getTargetVertex();
+			if (a < b)
+				lines.Add(transform * (computer.vertices[a] * scale), transform * (computer.vertices[b] * scale));
+		}
 	}
 
-	void DrawShape(btCollisionWorld& world, DebugLineCollector& lines, std::unordered_map<const btCollisionShape*, PhysicsDebugHullEdges>& hullCache,
-		uint64_t useCount, const btTransform& transform, const btCollisionShape* shape, const PhysicsDebugDrawOptions& options)
+	// camera：相机在 transform 所在坐标系里的位置（生成缓存时是物体局部空间）
+	void DrawShape(btCollisionWorld& world, DebugLineCollector& lines, const btTransform& transform, const btCollisionShape* shape,
+		const btVector3& camera, float meshRadius)
 	{
-		if (!shape || lines.Full())
+		if (!shape)
 			return;
 
 		// 复合形状：逐个子形状画（子形状的变换已经包含了 setLocalScaling 带来的位置缩放）
@@ -1179,7 +1222,7 @@ namespace
 		{
 			const auto* compound = static_cast<const btCompoundShape*>(shape);
 			for (int i = 0; i < compound->getNumChildShapes(); ++i)
-				DrawShape(world, lines, hullCache, useCount, transform * compound->getChildTransform(i), compound->getChildShape(i), options);
+				DrawShape(world, lines, transform * compound->getChildTransform(i), compound->getChildShape(i), camera, meshRadius);
 			return;
 		}
 
@@ -1189,12 +1232,13 @@ namespace
 			const auto* concave = static_cast<const btConcaveShape*>(shape);
 			btVector3 aabbMin(-BT_LARGE_FLOAT, -BT_LARGE_FLOAT, -BT_LARGE_FLOAT);
 			btVector3 aabbMax(BT_LARGE_FLOAT, BT_LARGE_FLOAT, BT_LARGE_FLOAT);
-			if (options.triangleMeshRadius > 0.0f)
+			if (meshRadius > 0.0f)
 			{
-				const btVector3 local = transform.invXform(GlmToBullet(options.cameraPosition));
-				const btVector3 r(options.triangleMeshRadius, options.triangleMeshRadius, options.triangleMeshRadius);
+				const btVector3 local = transform.invXform(camera);
+				const btVector3 r(meshRadius, meshRadius, meshRadius);
 				aabbMin = local - r;
 				aabbMax = local + r;
+				lines.usedCamera = true;
 			}
 			DebugTriangleCollector callback(lines, transform);
 			concave->processAllTriangles(&callback, aabbMin, aabbMax);
@@ -1207,7 +1251,7 @@ namespace
 			const auto* hull = static_cast<const btConvexHullShape*>(shape);
 			if (!hull->getConvexPolyhedron())
 			{
-				DrawHullEdges(lines, hullCache, useCount, transform, hull);
+				DrawHullEdges(lines, transform, hull);
 				return;
 			}
 		}
@@ -1218,14 +1262,17 @@ namespace
 
 void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, PhysicsDebugLines& out)
 {
+	const auto startTime = std::chrono::steady_clock::now();
 	out.objects.clear();
 	out.lines.clear();
-	out.truncated = false;
+	out.shapeLineCount = 0;
+	out.shapeVertexCount = 0;
+	out.rebuiltObjects = 0;
 	if (!phyWorld || !m_world)
 		return;
 
 	const uint64_t useCount = ++m_debugDrawCount;
-	DebugLineCollector collector(out, options.maxLines);
+	DebugLineCollector collector(out);
 	btIDebugDraw* previousDrawer = phyWorld->getDebugDrawer();
 	phyWorld->setDebugDrawer(&collector);		// debugDrawObject 内部直接用 getDebugDrawer()，不检查空指针
 
@@ -1235,14 +1282,10 @@ void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, Ph
 				|| std::binary_search(options.onlyEntities.begin(), options.onlyEntities.end(), entity.getId());
 		};
 	const btVector3 cameraPos = GlmToBullet(options.cameraPosition);
+	const float meshRadius = options.triangleMeshRadius;
 
 	for (Entity entity : m_world->getEntitiesWith<Physics, PhysicsRuntime>())
 	{
-		if (collector.Full())
-		{
-			out.truncated = true;
-			break;
-		}
 		if (!wanted(entity))
 			continue;
 		const auto& physics = entity.getComponent<Physics>();
@@ -1253,38 +1296,65 @@ void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, Ph
 			continue;
 
 		const btTransform& transform = object->getWorldTransform();
+		const btCollisionShape* rootShape = object->getCollisionShape();
 		btVector3 aabbMin, aabbMax;
-		object->getCollisionShape()->getAabb(transform, aabbMin, aabbMax);
+		rootShape->getAabb(transform, aabbMin, aabbMax);
 		if (options.maxDistance > 0.0f && DistanceToAabb(cameraPos, aabbMin, aabbMax) > options.maxDistance)
 			continue;
 		if (options.useFrustum && AabbOutsideFrustum(options.viewProj, aabbMin, aabbMax, options.frustumMargin))
 			continue;
 
-		collector.object = static_cast<uint32_t>(out.objects.size());
-		out.objects.push_back({ entity, physics.bodyType, physics.isSensor, physics.isCharacter,
-			object->getActivationState() == ISLAND_SLEEPING });
-
-		// 顶层复合形状的第 i 个子形状就是 Physics::collisionShape.children[i]（createCompoundShape 按顺序添加）；
-		// 角色控制器不用复合形状，只有 children[0]
-		collector.kind = PhysicsDebugLineKind::Shape;
-		const btCollisionShape* rootShape = object->getCollisionShape();
-		if (rootShape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
+		// ---- 局部空间线段：有缓存且没过期就直接用 ----
+		const btVector3 localCamera = transform.invXform(cameraPos);
+		PhysicsDebugShapeCacheEntry& entry = m_debugShapeCache[entity.getId()];
+		const bool stale = !entry.lines
+			|| entry.revision != runtime.debugRevision
+			|| entry.scaling != rootShape->getLocalScaling()
+			|| (entry.cameraDependent && (entry.queryRadius != meshRadius || (localCamera - entry.queryCenter).length() > meshRadius * 0.25f));
+		if (stale)
 		{
-			const auto* compound = static_cast<const btCompoundShape*>(rootShape);
-			for (int i = 0; i < compound->getNumChildShapes() && !collector.Full(); ++i)
+			auto lines = std::make_shared<PhysicsDebugShapeLines>();
+			collector.BeginLocal(lines.get());
+			// 顶层复合形状的第 i 个子形状就是 Physics::collisionShape.children[i]（createCompoundShape 按顺序添加）；
+			// 角色控制器不用复合形状，只有 children[0]
+			if (rootShape->getShapeType() == COMPOUND_SHAPE_PROXYTYPE)
 			{
-				collector.child = static_cast<uint16_t>(std::min(i, UINT16_MAX - 1));
-				DrawShape(*phyWorld, collector, m_debugHullCache, useCount, transform * compound->getChildTransform(i), compound->getChildShape(i), options);
+				const auto* compound = static_cast<const btCompoundShape*>(rootShape);
+				for (int i = 0; i < compound->getNumChildShapes(); ++i)
+				{
+					collector.child = static_cast<uint16_t>(std::min(i, UINT16_MAX - 1));
+					DrawShape(*phyWorld, collector, compound->getChildTransform(i), compound->getChildShape(i), localCamera, meshRadius);
+				}
 			}
+			else
+			{
+				collector.child = 0;
+				DrawShape(*phyWorld, collector, btTransform::getIdentity(), rootShape, localCamera, meshRadius);
+			}
+			collector.EndLocal();
+			collector.child = UINT16_MAX;
+			lines->vertices.shrink_to_fit();
+			lines->edges.shrink_to_fit();
+
+			entry.revision = runtime.debugRevision;
+			entry.scaling = rootShape->getLocalScaling();
+			entry.cameraDependent = collector.usedCamera;
+			entry.queryRadius = meshRadius;
+			entry.queryCenter = localCamera;
+			entry.lines = std::move(lines);
+			++out.rebuiltObjects;
 		}
-		else
-		{
-			collector.child = 0;
-			DrawShape(*phyWorld, collector, m_debugHullCache, useCount, transform, rootShape, options);
-		}
-		collector.child = UINT16_MAX;
+		entry.lastUsed = useCount;
+
+		const uint32_t objectIndex = static_cast<uint32_t>(out.objects.size());
+		out.objects.push_back({ entity, physics.bodyType, physics.isSensor, physics.isCharacter,
+			object->getActivationState() == ISLAND_SLEEPING, ToGlm(transform), entry.lines });
+		out.shapeLineCount += entry.lines->edges.size();
+		out.shapeVertexCount += entry.lines->vertices.size();
+
 		if (options.drawAabb)
 		{
+			collector.object = objectIndex;
 			collector.kind = PhysicsDebugLineKind::Aabb;
 			collector.drawAabb(aabbMin, aabbMax, btVector3(1, 0, 0));
 		}
@@ -1296,7 +1366,7 @@ void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, Ph
 		collector.kind = PhysicsDebugLineKind::Contact;
 		btDispatcher* dispatcher = phyWorld->getDispatcher();
 		const int numManifolds = dispatcher->getNumManifolds();
-		for (int i = 0; i < numManifolds && !collector.Full(); ++i)
+		for (int i = 0; i < numManifolds; ++i)
 		{
 			const btPersistentManifold* manifold = dispatcher->getManifoldByIndexInternal(i);
 			const int numContacts = manifold->getNumContacts();
@@ -1319,7 +1389,9 @@ void PhysicsSystem::CollectDebugLines(const PhysicsDebugDrawOptions& options, Ph
 
 	phyWorld->setDebugDrawer(previousDrawer);
 
-	// 很久没画到的凸包缓存清掉（形状可能已经删了；指针只比较不解引用）
-	constexpr uint64_t kHullCacheKeep = 600;
-	std::erase_if(m_debugHullCache, [useCount](const auto& item) { return useCount - item.second.lastUsed > kHullCacheKeep; });
+	// 很久没画到的物体缓存清掉（实体可能已经删了；只按 id 比较）
+	constexpr uint64_t kCacheKeep = 600;
+	std::erase_if(m_debugShapeCache, [useCount](const auto& item) { return useCount - item.second.lastUsed > kCacheKeep; });
+
+	out.collectMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - startTime).count();
 }

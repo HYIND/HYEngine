@@ -174,6 +174,10 @@ struct PhysicsRuntime :public IComponent
 	btCollisionShape* shapePtr = nullptr;
 	std::vector<btCollisionShape*> childShapePtrs;
 
+	// 每次 PhysicsSystem::createBody 换一个新值（不会重复）：碰撞体调试显示据此判断形状重建了没有。
+	// 不能比较形状指针——旧形状删掉后，新形状可能分到同一个地址
+	uint64_t debugRevision = 0;
+
 	virtual void OnRemove(const Entity& e) override
 	{
 		if (world && body) {

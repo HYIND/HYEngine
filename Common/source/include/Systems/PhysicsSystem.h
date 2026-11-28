@@ -12,6 +12,7 @@
 #include "Script/IScriptModule.h"
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -65,14 +66,30 @@ struct PhysicsDebugDrawOptions
 	glm::mat4 viewProj{ 1.0f };
 	float frustumMargin = 1.15f;			// 视锥放宽一点：结果晚一两帧才画出来，相机转动时边缘不会缺
 
-	float triangleMeshRadius = 60.0f;		// 三角网格（凹形状）只画相机周围这个半径内的三角形；<= 0 画全部
-	size_t maxLines = 60000;				// 线段总数上限，超过就停（PhysicsDebugLines::truncated）
+	float triangleMeshRadius = 60.0f;		// 三角网格（凹形状）只画相机周围这个半径内的三角形；<= 0 画全部。线段数不设上限
 
 	bool drawAabb = false;					// 额外画 Bullet 的世界 AABB
 	bool drawContacts = false;				// 额外画接触点（只有播放时有，编辑时不模拟）
 };
 
 enum class PhysicsDebugLineKind : uint8_t { Shape, Aabb, Contact };
+
+// 一个物体的碰撞形状线框，在物体的局部空间里（刚体的世界变换只有旋转和平移，缩放已经在形状里，setLocalScaling）。
+// 按顶点 + 边存：位置相同的顶点合成一个，同一个碰撞形状里重复的边只留一条。
+// 绘制时每个顶点只变换一次，边直接取两个端点的结果（三角网格一个顶点平均被约 6 条边共用）。
+// 按物体缓存：形状重建了（PhysicsRuntime::debugRevision 变了）、缩放变了、三角网格的查询中心离相机太远了才重新生成。
+// 生成后不再修改，界面线程拿着 shared_ptr 直接读，不用加锁
+struct PhysicsDebugShapeLines
+{
+	struct Edge
+	{
+		uint32_t a = 0;						// vertices 的下标
+		uint32_t b = 0;
+		uint16_t child = UINT16_MAX;		// 第几个碰撞形状（Physics::collisionShape.children 的下标）
+	};
+	std::vector<glm::vec3> vertices;
+	std::vector<Edge> edges;
+};
 
 struct PhysicsDebugObject
 {
@@ -81,31 +98,39 @@ struct PhysicsDebugObject
 	bool isSensor = false;
 	bool isCharacter = false;
 	bool sleeping = false;
+	glm::mat4 model{ 1.0f };								// 刚体 / 角色的世界变换（不含缩放）
+	std::shared_ptr<const PhysicsDebugShapeLines> lines;	// 局部空间的形状线段（缓存，多帧共用）
 };
 
+// 每帧现算的世界坐标线段：AABB、接触点（数量少）
 struct PhysicsDebugLine
 {
 	glm::vec3 a{ 0.0f };
 	glm::vec3 b{ 0.0f };
 	uint32_t object = UINT32_MAX;			// PhysicsDebugLines::objects 的下标；接触点为 UINT32_MAX
-	uint16_t child = UINT16_MAX;			// 第几个碰撞形状（Physics::collisionShape.children 的下标）；AABB / 接触点为 UINT16_MAX
-	PhysicsDebugLineKind kind = PhysicsDebugLineKind::Shape;
+	uint16_t child = UINT16_MAX;
+	PhysicsDebugLineKind kind = PhysicsDebugLineKind::Aabb;
 };
 
 struct PhysicsDebugLines
 {
 	std::vector<PhysicsDebugObject> objects;
-	std::vector<PhysicsDebugLine> lines;	// 世界坐标
-	bool truncated = false;					// 到了 maxLines，后面的没画
+	std::vector<PhysicsDebugLine> lines;	// 世界坐标的 AABB / 接触点
+	size_t shapeLineCount = 0;				// 所有物体的形状边数之和
+	size_t shapeVertexCount = 0;			// 所有物体的形状顶点数之和
+	size_t rebuiltObjects = 0;				// 这一次重新生成了几个物体的线段（其余用缓存）
+	float collectMs = 0.0f;					// CollectDebugLines 用时
 };
 
-// 凸包的边（btConvexHullShape 没有多面体特征时，Bullet 的 getEdge 只会把点按顺序连成折线，所以自己算一次缓存起来）
-struct PhysicsDebugHullEdges
+// 一个物体的线段缓存
+struct PhysicsDebugShapeCacheEntry
 {
-	int numPoints = 0;
-	size_t hash = 0;
-	std::vector<btVector3> vertices;		// 未缩放
-	std::vector<std::pair<int, int>> edges;
+	uint64_t revision = 0;					// 生成时的 PhysicsRuntime::debugRevision
+	btVector3 scaling{ 1, 1, 1 };			// 生成时根形状的 getLocalScaling()
+	bool cameraDependent = false;			// 有三角网格：只取了相机周围的三角形
+	float queryRadius = 0.0f;
+	btVector3 queryCenter{ 0, 0, 0 };		// 生成时相机在物体局部空间里的位置
+	std::shared_ptr<const PhysicsDebugShapeLines> lines;
 	uint64_t lastUsed = 0;
 };
 
@@ -155,9 +180,10 @@ private:
 	btDiscreteDynamicsWorld* phyWorld;
 	float fixedTimeStep = 1.f / 60.f;
 
-	// CollectDebugLines 用：凸包边的缓存（按形状指针，点数 / 内容变了就重算；很久没用到的清掉）
-	std::unordered_map<const btCollisionShape*, PhysicsDebugHullEdges> m_debugHullCache;
+	// CollectDebugLines 用：每个物体局部空间线段的缓存（按实体 id；很久没画到的清掉）
+	std::unordered_map<EntityID, PhysicsDebugShapeCacheEntry> m_debugShapeCache;
 	uint64_t m_debugDrawCount = 0;
+	uint64_t m_bodyRevision = 0;			// createBody 每次加 1，写进 PhysicsRuntime::debugRevision
 };
 
 HY_DECLARE_ECS_TYPE(PhysicsSystem, "hy.engine.system.Physics");

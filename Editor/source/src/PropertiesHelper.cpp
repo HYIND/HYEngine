@@ -4,6 +4,8 @@
 #include "PlatformRuntimeComponents.h"
 #include "SceneCodec/ComponentCodec.h"
 #include "DDGIEditor.h"
+#include "EditorTags.h"
+#include "SceneEditor.h"
 #include <rfl.hpp>
 #include <rfl/json.hpp>
 #include <format>
@@ -166,6 +168,78 @@ namespace
     }
 }
 
+namespace
+{
+    // ---------------- 名称（TagEditorName） ----------------
+    // 输入时每改一个字就提交（层级面板、视口图标的名字马上跟着变）；切换选中、点别处都不会丢掉正在输入的内容。
+    // 全是空白时不提交（保留原来的名字），输入框失去焦点后显示回实际的名字。Esc 恢复成开始编辑前的名字
+    struct NameEditState
+    {
+        EntityID entity = 0;
+        bool valid = false;
+        std::string buffer;
+    };
+    NameEditState s_nameEdit;
+
+    int ResizeStringCallback(ImGuiInputTextCallbackData* data)
+    {
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
+        {
+            auto* text = static_cast<std::string*>(data->UserData);
+            text->resize(static_cast<size_t>(data->BufTextLen));
+            data->Buf = text->data();
+        }
+        return 0;
+    }
+
+    std::string TrimName(const std::string& name)
+    {
+        const auto first = name.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos)
+            return {};
+        const auto last = name.find_last_not_of(" \t\r\n");
+        return name.substr(first, last - first + 1);
+    }
+
+    void DrawEditorNameTag(Entity entity, IComponent* comp, ProjectManager*)
+    {
+        auto* tag = static_cast<TagEditorName*>(comp);
+        if (!entity || !tag)
+            return;
+
+        const ImGuiID inputId = ImGui::GetID("##EditorName");
+        const bool editing = ImGui::GetActiveID() == inputId;
+        // 没在输入（或者换了实体）时，输入框显示实际的名字
+        if (!editing || !s_nameEdit.valid || s_nameEdit.entity != entity.getId())
+            s_nameEdit = { entity.getId(), true, tag->name };
+
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Name");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        // capacity + 1：InputText 需要缓冲区里留出结尾的 '\0'
+        s_nameEdit.buffer.reserve(s_nameEdit.buffer.size() + 1);
+        const bool changed = ImGui::InputTextWithHint("##EditorName", "实体名称", s_nameEdit.buffer.data(), s_nameEdit.buffer.capacity() + 1,
+            ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll, ResizeStringCallback, &s_nameEdit.buffer);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("编辑实体名称（层级面板里双击也可以重命名）。名称为空时不保存");
+
+        const std::string name = TrimName(s_nameEdit.buffer);
+        if (ImGui::IsItemActive() && name.empty())
+            ImGui::TextDisabled("名称为空，不会保存");
+
+        if (changed && !name.empty() && name != tag->name)
+        {
+            if (auto* world = entity.getWorld())
+                world->SubmitCommand([entity, name](World& w)
+                    {
+                        if (w.IsValidWorldEntity(entity))
+                            SetNameTag(entity, name);
+                    });
+        }
+    }
+}
+
 // 在程序初始化时注册所有组件
 static void RegisterAllComponents()
 {
@@ -188,6 +262,8 @@ static void RegisterAllComponents()
     PropertiesHelper::RegisterComponent<AnimatedImagePlayer>();
     PropertiesHelper::RegisterComponent<Camera2D>();
     PropertiesHelper::RegisterCustomDraw(ComponentType<DDGIVolumeComponent>::getId(), &DDGIEditor::DrawVolumeComponent);
+    // 名称：不依赖编解码器的注册顺序（RegisterComponent 要先找到 codec），直接注册绘制函数
+    PropertiesHelper::RegisterCustomDraw(ComponentType<TagEditorName>::getId(), &DrawEditorNameTag);
 }
 
 std::once_flag init_flag;
