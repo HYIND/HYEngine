@@ -223,12 +223,18 @@ struct RenderState
 	std::shared_ptr<FrameHistoryData> curFrameSkinnedData;
 	std::shared_ptr<FrameHistoryData> preFrameSkinnedData;
 
+	// 独立 IBL 资源：由 IBLPreCalculatePass 统一生产，消费者不关心来源（大气 / 天空盒 / 后续云）。
+	// 天空源 Pass 只负责产出自己的 skyCube 并通过 skyCubeRevision 上报变化。
+	struct IBLParams {
+		std::shared_ptr<TextureCube> diffuse;
+		std::shared_ptr<TextureCube> prefilter;
+		std::shared_ptr<Texture2D> brdfLUT;
+	} iblParams;
+
 	struct SkyBoxParams {
 		std::shared_ptr<TextureCube> skyCube;
+		uint64_t skyCubeRevision = 0;	// skyCube 内容变化时递增，供 IBLPreCalculatePass 判断 dirty
 		bool hasSkyBoxPreData = false;
-		std::shared_ptr<TextureCube> skyCubeDiffuse;
-		std::shared_ptr<TextureCube> skyCubePrefilter;
-		std::shared_ptr<Texture2D> brdfLUT;
 	} skyboxParams;
 
 	struct SkyAtmosphereParams {
@@ -236,9 +242,7 @@ struct RenderState
 		std::shared_ptr<Texture2D> transmittanceLut;
 		std::shared_ptr<Texture2D> skyViewLut;
 		std::shared_ptr<TextureCube> skyCube;
-		std::shared_ptr<TextureCube> skyCubeDiffuse;
-		std::shared_ptr<TextureCube> skyCubePrefilter;
-		std::shared_ptr<Texture2D> brdfLUT;
+		uint64_t skyCubeRevision = 0;	// skyCube 内容变化时递增，供 IBLPreCalculatePass 判断 dirty
 	} skyAtmosphereParams;
 
 	// 渲染记录，由renderer填入

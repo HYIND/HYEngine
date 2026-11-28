@@ -217,30 +217,13 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 
 	CubeParams cubeParams;
 	std::shared_ptr<TextureCube> cubeMap;
-	std::shared_ptr<TextureCube> IBLDiffuse;
-	std::shared_ptr<TextureCube> IBLPrefilter;
-	std::shared_ptr<Texture2D> IBLBrdfLUT;
+	// cubeMap（天空反射）仍按天空源选择；IBL 统一由 IBLPreCalculatePass 提供，不关心来源
 	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
 	{
 		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
 		{
 			cubeParams.CubeEnable = true;
 			cubeMap = state.skyAtmosphereParams.skyCube;
-		}
-
-		if (
-			state.skyAtmosphereParams.skyCubeDiffuse
-			&& !state.skyAtmosphereParams.skyCubeDiffuse->IsEmpty()
-			&& state.skyAtmosphereParams.skyCubePrefilter
-			&& !state.skyAtmosphereParams.skyCubePrefilter->IsEmpty()
-			&& state.skyAtmosphereParams.brdfLUT
-			&& !state.skyAtmosphereParams.brdfLUT->IsEmpty()
-			)
-		{
-			cubeParams.IBLEnable = true;
-			IBLDiffuse = state.skyAtmosphereParams.skyCubeDiffuse;
-			IBLPrefilter = state.skyAtmosphereParams.skyCubePrefilter;
-			IBLBrdfLUT = state.skyAtmosphereParams.brdfLUT;
 		}
 	}
 	else if (state.option.flags.skyboxOn)
@@ -250,21 +233,18 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 			cubeParams.CubeEnable = true;
 			cubeMap = state.skyboxParams.skyCube;
 		}
+	}
 
-		if (
-			state.skyboxParams.skyCubeDiffuse
-			&& !state.skyboxParams.skyCubeDiffuse->IsEmpty()
-			&& state.skyboxParams.skyCubePrefilter
-			&& !state.skyboxParams.skyCubePrefilter->IsEmpty()
-			&& state.skyboxParams.brdfLUT
-			&& !state.skyboxParams.brdfLUT->IsEmpty()
-			)
-		{
-			cubeParams.IBLEnable = true;
-			IBLDiffuse = state.skyboxParams.skyCubeDiffuse;
-			IBLPrefilter = state.skyboxParams.skyCubePrefilter;
-			IBLBrdfLUT = state.skyboxParams.brdfLUT;
-		}
+	std::shared_ptr<TextureCube> IBLDiffuse;
+	std::shared_ptr<TextureCube> IBLPrefilter;
+	std::shared_ptr<Texture2D> IBLBrdfLUT;
+	const IBLResources ibl = SelectIBLResources(state);
+	if (ibl.IBLReady())
+	{
+		cubeParams.IBLEnable = true;
+		IBLDiffuse = ibl.diffuse;
+		IBLPrefilter = ibl.prefilter;
+		IBLBrdfLUT = ibl.brdfLUT;
 	}
 
 	// 命中点漫反射间接光（与 RTR 相同，按命中点的世界位置 / 法线采样，不读屏幕空间的间接光合成结果）：

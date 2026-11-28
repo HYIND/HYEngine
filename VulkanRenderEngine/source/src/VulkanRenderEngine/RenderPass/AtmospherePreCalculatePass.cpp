@@ -68,18 +68,10 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		_skyViewLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR16G16B16A16Sfloat, config);
 
 
-		uint32_t skyCubeSize = 256;
-		float ratio = float(skyCubeSize) / 8.f;
-		uint32_t prefilterLevel = floor(log2(ratio)) + 1;
-		prefilterLevel = std::min(prefilterLevel, 8u);
-
 		// 天空 cube 带完整 mip：IBL 预过滤 / 漫反射按立体角从低分辨率 mip 取值（太阳这类小而亮的区域靠它摊开）
+		const uint32_t skyCubeSize = 256;
 		const uint32_t skyCubeLevels = static_cast<uint32_t>(floor(log2(float(skyCubeSize)))) + 1;
 		_skyCube = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), skyCubeLevels);
-		// 漫反射辐照度很平滑，每面 32 就够（原来 256）
-		constexpr uint32_t diffuseCubeSize = 32;
-		_skyCubeDiffuse = std::make_shared<TextureCube>(diffuseCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-		_skyCubePrefilter = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), prefilterLevel);
 	}
 
 }
@@ -138,7 +130,6 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 
 	bool shouldUpdateTransmittanceLut = !_lastParams || GetShouldUpdateTransmittanceLut(params, *_lastParams);
 	bool shouldUpdateSkyCube = shouldUpdateTransmittanceLut || GetShouldUpdateSkyCube(params, *_lastParams);
-	bool shouldCaulateBRDFLUT = _brdfLUT == nullptr;
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
@@ -148,9 +139,8 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 		_transmittanceLut->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
 
-	if (shouldUpdateSkyCube || shouldCaulateBRDFLUT)
+	if (shouldUpdateSkyCube)
 	{
-
 		{
 			ComputeBindingRecord skyCubeBinding;
 			skyCubeBinding.SetUniformBlock(paramsUBO, 0);
@@ -164,26 +154,7 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 		_skyCube->GenerateTextureMipMaps();
 		cmd = VKCONTEXT->GetCommandBuffer();
 
-		{
-			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
-			_iblBuilder.CalculateCubeDiffuse(cmd, _skyCubeDiffuse, _skyCube, diffuseParams);
-		}
-
-		{
-			IBLImageBuilder::PrefilterGenerateParams prefilterParams{};
-			_iblBuilder.CalculateCubePrefilter(cmd, _skyCubePrefilter, _skyCube, prefilterParams);
-		}
-
-		{
-			if (shouldCaulateBRDFLUT)
-			{
-				if (!_brdfLUT)
-					_brdfLUT = std::make_shared<Texture2D>(512, 512, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-				IBLImageBuilder::BRDFLUTGenerateParams lutParams{};
-				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, lutParams);
-			}
-		}
-
+		++_skyCubeRevision;
 	}
 
 
@@ -203,9 +174,7 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 	state.skyAtmosphereParams.transmittanceLut = _transmittanceLut;
 	state.skyAtmosphereParams.skyViewLut = _skyViewLut;
 	state.skyAtmosphereParams.skyCube = _skyCube;
-	state.skyAtmosphereParams.skyCubeDiffuse = _skyCubeDiffuse;
-	state.skyAtmosphereParams.skyCubePrefilter = _skyCubePrefilter;
-	state.skyAtmosphereParams.brdfLUT = _brdfLUT;
+	state.skyAtmosphereParams.skyCubeRevision = _skyCubeRevision;
 }
 
 void AtmospherePreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)

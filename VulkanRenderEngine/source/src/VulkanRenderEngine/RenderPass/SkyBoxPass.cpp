@@ -2,26 +2,7 @@
 #include "VulkanRenderEngine/RenderPass/SkyBoxPass.h"
 
 
-SkyBoxPreCalculatePass::SkyBoxPreCalculatePass()
-{
-	TextureConfig config;
-	config.minFilter = vk::Filter::eLinear;
-	config.magFilter = vk::Filter::eLinear;
-	config.wrapU = vk::SamplerAddressMode::eClampToEdge;
-	config.wrapV = vk::SamplerAddressMode::eClampToEdge;
-	config.anisotropy = false;
-	config.gammaCorrection = false;
-
-	uint32_t skyCubeSize = 256;
-	float ratio = float(skyCubeSize) / 8.f;
-	uint32_t prefilterLevel = floor(log2(ratio)) + 1;
-	prefilterLevel = std::min(prefilterLevel, 8u);
-
-	// 漫反射辐照度很平滑，每面 32 就够（原来 256，生成和采样都白费）
-	constexpr uint32_t diffuseCubeSize = 32;
-	_skyCubeDiffuse = std::make_shared<TextureCube>(diffuseCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-	_skyCubePrefilter = std::make_shared<TextureCube>(skyCubeSize, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig(), prefilterLevel);
-}
+SkyBoxPreCalculatePass::SkyBoxPreCalculatePass() = default;
 
 bool SkyBoxPreCalculatePass::ShouldExecute(RenderGraph::FrameDataRegistry& registry, RenderState& state)
 {
@@ -34,46 +15,17 @@ void SkyBoxPreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& registry
 	if (!ShouldExecute(registry, state))
 		return;
 
+	// 天空盒 cube 是加载进来的资产，本 Pass 不再派生 IBL；只上报源与内容版本，
+	// IBL 由 IBLPreCalculatePass 在 Execute 里统一生成。
 	auto& skyCube = state.skyboxParams.skyCube;
-
-	bool shouldUpdate = !_lastSkyCube || _lastSkyCube != skyCube;
-	bool shouldCaulateBRDFLUT = _brdfLUT == nullptr;
-
-	if (shouldUpdate || shouldCaulateBRDFLUT)
+	if (_lastSkyCube != skyCube)
 	{
-		auto cmd = VKCONTEXT->GetCommandBuffer();
-
-		{
-			// 源 cube（天空盒）最好带 mip（SceneEditor 默认天空盒已打开 autoMipMaps），没有也能用，只是亮点处有噪点
-			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
-			_iblBuilder.CalculateCubeDiffuse(cmd, _skyCubeDiffuse, skyCube, diffuseParams);
-		}
-
-		{
-			IBLImageBuilder::PrefilterGenerateParams prefilterParams{};
-			_iblBuilder.CalculateCubePrefilter(cmd, _skyCubePrefilter, skyCube, prefilterParams);
-		}
-
-		{
-			if (shouldCaulateBRDFLUT)
-			{
-				if (!_brdfLUT)
-					_brdfLUT = std::make_shared<Texture2D>(512, 512, vk::Format::eR16G16B16A16Sfloat, TextureConfig::GetDefaultSkyCubeConfig());
-				IBLImageBuilder::BRDFLUTGenerateParams lutParams{};
-				_iblBuilder.CalculateBRDFLUT(cmd, _brdfLUT, lutParams);
-			}
-		}
-
-		if (cmd->IsRecording())
-			cmd->SubmitNowAndWait();
-
 		_lastSkyCube = skyCube;
+		++_skyCubeRevision;
 	}
 
 	state.skyboxParams.hasSkyBoxPreData = true;
-	state.skyboxParams.skyCubeDiffuse = _skyCubeDiffuse;
-	state.skyboxParams.skyCubePrefilter = _skyCubePrefilter;
-	state.skyboxParams.brdfLUT = _brdfLUT;
+	state.skyboxParams.skyCubeRevision = _skyCubeRevision;
 }
 
 void SkyBoxPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)

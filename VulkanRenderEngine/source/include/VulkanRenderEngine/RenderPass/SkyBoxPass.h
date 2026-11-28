@@ -3,7 +3,6 @@
 #include "VulkanRenderEngine/Base/ComputePipeline.h"
 #include "VulkanRenderEngine/Base/Light.h"
 #include "VulkanRenderEngine/General/RenderState.h"
-#include "VulkanRenderEngine/General/IBLImageBuilder.h"
 #include "RenderPassBase.h"
 
 class SkyBoxPreCalculatePass :public RenderPassBase
@@ -16,13 +15,8 @@ public:
 	virtual void Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state);
 
 private:
-	IBLImageBuilder _iblBuilder;
-
-	std::shared_ptr<TextureCube> _skyCubeDiffuse;
-	std::shared_ptr<TextureCube> _skyCubePrefilter;
-	std::shared_ptr<Texture2D> _brdfLUT;
-
 	std::shared_ptr<TextureCube> _lastSkyCube;
+	uint64_t _skyCubeRevision = 0;	// 天空盒资产切换时递增，跨帧保存在 Pass 里（RenderState 每帧新建）
 };
 
 class SkyBoxPass :public RenderPassBase

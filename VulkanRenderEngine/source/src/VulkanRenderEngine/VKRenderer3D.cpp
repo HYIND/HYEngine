@@ -22,6 +22,7 @@
 #include "VulkanRenderEngine/RenderPass/HZBPass.h"
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/AtmospherePreCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/IBLPreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGeneralPass.h"
@@ -633,6 +634,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 		auto lightDrawTask = pool.Submit([] { return std::make_unique<LightDrawPass>("shader/lighting/lightMesh.vs", "shader/lighting/lightMesh.fs"); });
 		auto skyBoxTask = pool.Submit([] { return std::make_unique<SkyBoxPass>("shader/skybox/skybox.comp"); });
 		auto skyboxPreCalculateTask = pool.Submit([] { return std::make_unique<SkyBoxPreCalculatePass>(); });
+		auto iblPreCalculateTask = pool.Submit([] { return std::make_unique<IBLPreCalculatePass>(); });
 		auto ssrTask = pool.Submit([] { return std::make_unique<SSRPass>("shader/ssr/SSReflect.comp"); });
 		auto ssgiTask = pool.Submit([] { return std::make_unique<SSGIPass>("shader/ssr/SSGI.comp"); });
 
@@ -651,6 +653,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 		// ---- 3. 汇合 ----
 		auto atmospherePreCalculatePass = atmospherePreCalculateTask->get();
 		auto skyboxPreCalculatePass = skyboxPreCalculateTask->get();
+		auto iblPreCalculatePass = iblPreCalculateTask->get();
 		auto hzbPass = hzbTask->get();
 		auto lightingShadowDepthPass = lightingShadowDepthTask->get();
 		auto geometryPass = geometryTask->get();
@@ -716,6 +719,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 		passes->hzbMaxLevel = hzbPass->GetMaxLevel();
 		passes->atmospherePreCalculate = std::move(atmospherePreCalculatePass);
 		passes->skyboxPreCalculate = std::move(skyboxPreCalculatePass);
+		passes->iblPreCalculate = std::move(iblPreCalculatePass);
 		passes->hzb = std::move(hzbPass);
 		passes->lightingShadowDepth = std::move(lightingShadowDepthPass);
 		passes->geometry = std::move(geometryPass);
@@ -826,6 +830,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 	auto preCalculateNode = _sceneRenderGraph->AddNode("preCalculateNode");
 	auto atmospherePreCalculateNode = _sceneRenderGraph->AddNode("atmospherePreCalculateNode");
 	auto skyboxPreCalculateNode = _sceneRenderGraph->AddNode("skyboxPreCalculateNode");
+	auto iblPreCalculateNode = _sceneRenderGraph->AddNode("iblPreCalculateNode");
 	auto hzbNode = _sceneRenderGraph->AddNode("hzbNode");
 	auto geometryNode = _sceneRenderGraph->AddNode("geometry");
 	auto lightingShadowDepthNode = _sceneRenderGraph->AddNode("lightingShadowDepthNode");
@@ -887,6 +892,11 @@ void VKRenderer3D::InitSceneRenderGraph()
 
 	skyboxPreCalculateNode->SetRenderPass(P.skyboxPreCalculate);
 
+	// IBL 在 Execute 里读取两个天空源 Pass 的 FrameBegin 上报（cube / revision）后统一生成；
+	// 只做单向依赖，消费者再 After 本节点，避免引入 RenderGraph 环。
+	iblPreCalculateNode->SetRenderPass(P.iblPreCalculate)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode);
+
 	hzbNode->SetRenderPass(P.hzb)
 		.Temp(ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "hzbPass_temp"), graphicsWriteLayout })
 		.Output(ResourceData{ hzbMap, computeWriteLayout }, ResourceData{ hzbMinDepthMap, computeWriteLayout })
@@ -936,7 +946,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 			ResourceData{ gEmission, computeReadLayout }
 		)
 		.External(ExternalResourceData{ Ext_RenderTargetColorBuffer, computeWriteLayout })
-		.After(atmospherePreCalculateNode, lightingShadowDepthNode, ssaoNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, iblPreCalculateNode, lightingShadowDepthNode, ssaoNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -979,7 +989,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 			ResourceData{ gNormalHistory, computeReadLayout },
 			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
-		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode, ddgiBlendNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, iblPreCalculateNode, lightingShadowDepthNode, geometryNode, rayTraceGeneralNode, ddgiBlendNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -1048,7 +1058,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 			ResourceData{ gNormalHistory, computeReadLayout },
 			ResourceData{ gDepthStencilHistory, computeReadLayout }
 		)
-		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, geometryNode, lightingNode, ddgiBlendNode)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, iblPreCalculateNode, geometryNode, lightingNode, ddgiBlendNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 
@@ -1127,7 +1137,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 			ResourceData{ ddgiProbeData, computeReadLayout }
 		)
 		.Output(ResourceData{ ddgi_Output, computeWriteLayout })
-		.After(geometryNode, ssaoNode, ddgiBlendNode)
+		.After(geometryNode, ssaoNode, ddgiBlendNode, iblPreCalculateNode)
 		.Before(opaqueFence)
 		.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout });
 

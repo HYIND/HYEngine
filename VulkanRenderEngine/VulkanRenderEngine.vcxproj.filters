@@ -371,6 +371,9 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.h">
       <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
     </ClInclude>
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\IBLPreCalculatePass.h">
+      <Filter>头文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClInclude>
     <ClInclude Include="source\include\VulkanRenderEngine\General\AtrousBilateralFilter.h">
       <Filter>头文件\VulkanRenderEngine\General</Filter>
     </ClInclude>
@@ -671,6 +674,9 @@
       <Filter>源文件\VulkanRenderEngine\RenderGraph</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.cpp">
+      <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
+    </ClCompile>
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\IBLPreCalculatePass.cpp">
       <Filter>源文件\VulkanRenderEngine\RenderPass</Filter>
     </ClCompile>
     <ClCompile Include="source\src\VulkanRenderEngine\General\AtrousBilateralFilter.cpp">

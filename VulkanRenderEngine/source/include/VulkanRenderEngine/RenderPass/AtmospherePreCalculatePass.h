@@ -4,7 +4,6 @@
 #include "VulkanRenderEngine/General/RenderItem.h"
 #include "VulkanRenderEngine/General/RenderState.h"
 #include "VulkanRenderEngine/Base/DynamicBlock.h"
-#include "VulkanRenderEngine/General/IBLImageBuilder.h"
 #include "RenderPassBase.h"
 
 namespace Atmo
@@ -45,8 +44,6 @@ private:
 	void CaulateSkyCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding);
 
 private:
-	IBLImageBuilder _iblBuilder;
-
 	ComputePipeline _transmittanceLutShader;
 	ComputePipeline _skyViewLutshader;
 	ComputePipeline _skyCubeGenerateShader;
@@ -54,9 +51,7 @@ private:
 	std::shared_ptr<Texture2D> _transmittanceLut;
 	std::shared_ptr<Texture2D> _skyViewLut;
 	std::shared_ptr<TextureCube> _skyCube;
-	std::shared_ptr<TextureCube> _skyCubeDiffuse;
-	std::shared_ptr<TextureCube> _skyCubePrefilter;
-	std::shared_ptr<Texture2D> _brdfLUT;
 
 	std::shared_ptr<Atmo::AtmosphereParams> _lastParams;
+	uint64_t _skyCubeRevision = 0;	// skyCube 内容变化时递增，跨帧保存在 Pass 里（RenderState 每帧新建）
 };
