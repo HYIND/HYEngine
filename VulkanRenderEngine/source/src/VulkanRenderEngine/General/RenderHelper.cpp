@@ -426,7 +426,7 @@ std::shared_ptr<StaticModel> RenderHelper::RenderHelper::GetCylinderModel(float 
 	return model;
 }
 
-std::shared_ptr<Texture2D> RenderHelper::GetBlueNoise() {
+static std::shared_ptr<Texture2D> MakeBlueNoise() {
 	static TextureConfig config{
 		.minFilter = vk::Filter::eNearest,
 		.magFilter = vk::Filter::eNearest,
@@ -436,10 +436,18 @@ std::shared_ptr<Texture2D> RenderHelper::GetBlueNoise() {
 		.gammaCorrection = false,
 		.wrapW = vk::SamplerAddressMode::eRepeat
 	};
-	return std::make_shared<Texture2D>("noise\\bluenoise64_r8.png");
+	auto tex = std::make_shared<Texture2D>("noise\\bluenoise64_r8.png");
+	tex->MakeSampledImmutable();
+	return tex;
 }
 
-std::shared_ptr<Texture3D> RenderHelper::GetPerlinNoise() {
+std::shared_ptr<Texture2D> RenderHelper::GetBlueNoise() {
+	static auto tex = MakeBlueNoise();
+	return tex;
+}
+
+
+static std::shared_ptr<Texture3D> MakePerlinNoise() {
 	static TextureConfig config{
 		.minFilter = vk::Filter::eLinear,
 		.magFilter = vk::Filter::eLinear,
@@ -449,5 +457,12 @@ std::shared_ptr<Texture3D> RenderHelper::GetPerlinNoise() {
 		.gammaCorrection = false,
 		.wrapW = vk::SamplerAddressMode::eRepeat
 	};
-	return std::make_shared<Texture3D>("noise\\fractal_shape_128.dds", vk::Format::eR8Unorm, config);
+	auto tex = std::make_shared<Texture3D>("noise\\fractal_shape_128.dds", vk::Format::eR8Unorm, config);
+	tex->MakeSampledImmutable();
+	return tex;
+}
+
+std::shared_ptr<Texture3D> RenderHelper::GetPerlinNoise() {
+	static auto tex = MakePerlinNoise();
+	return tex;
 }

@@ -263,6 +263,27 @@ void Texture3D::GenerateTextureMipMaps()
 		img->GenerateMipMaps();
 }
 
+void Texture3D::GenerateTextureMipMapsAsync(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
+{
+	if (m_MaxLevel <= 1)
+		return;
+
+	if (auto img = _image)
+		img->GenerateMipMapsAsync(cmd);
+}
+
+bool Texture3D::MakeSampledImmutable()
+{
+	auto image = _image;
+	return image && image->MakeSampledImmutable();
+}
+
+bool Texture3D::IsSampledImmutable() const
+{
+	auto image = _image;
+	return image && image->IsSampledImmutable();
+}
+
 void Texture3D::TransitionLayout(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd, vk::ImageLayout* outLayout, ImageLayout::BindStage stage, ImageLayout::BindUsage usage, uint32_t level)
 {
 	if (!cmd || !_image) return;

@@ -99,6 +99,7 @@ namespace VKWrapper {
 		virtual void Release();
 
 		void GenerateMipMaps();
+		void GenerateMipMapsAsync(std::shared_ptr<VKCommandBuffer> cmd);
 
 		// ---- 只读资产贴图 ----
 		// 把所有 mip 切到 SHADER_READ_ONLY_OPTIMAL 并等 GPU 做完，之后这张图的布局永远不变：

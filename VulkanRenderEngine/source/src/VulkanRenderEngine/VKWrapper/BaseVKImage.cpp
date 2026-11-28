@@ -341,6 +341,22 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 	}
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
+	GenerateMipMapsAsync(cmd);
+
+	if (cmd->IsRecording())
+		cmd->SubmitNowAndWait();
+}
+
+void VKWrapper::BaseVKImage::GenerateMipMapsAsync(std::shared_ptr<VKCommandBuffer> cmd)
+{
+	if (!cmd)
+		return;
+	if (m_mipLevels <= 1)
+		return;
+	if (IsSampledImmutable()) {
+		ReportImmutableMisuse("生成 mip");
+		return;
+	}
 
 	uint32_t width = m_extent.width;
 	uint32_t height = m_extent.height;
@@ -390,9 +406,6 @@ void VKWrapper::BaseVKImage::GenerateMipMaps()
 		//if (level < m_mipLevels - 1)
 		//	TransitionLayout(cmd, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
-
-	if (cmd->IsRecording())
-		cmd->SubmitNowAndWait();
 }
 
 thread_local std::shared_ptr<PassImageStateRecord> _record;

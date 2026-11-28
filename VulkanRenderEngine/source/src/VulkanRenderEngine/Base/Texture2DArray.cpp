@@ -336,6 +336,15 @@ void Texture2DArray::GenerateTextureMipMaps()
 		img->GenerateMipMaps();
 }
 
+void Texture2DArray::GenerateTextureMipMapsAsync(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd)
+{
+	if (m_MaxLevel <= 1)
+		return;
+
+	if (auto img = _image)
+		img->GenerateMipMapsAsync(cmd);
+}
+
 bool Texture2DArray::MakeSampledImmutable()
 {
 	auto image = _image;

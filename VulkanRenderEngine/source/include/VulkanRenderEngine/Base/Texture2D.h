@@ -93,6 +93,7 @@ public:
 	vk::ImageLayout GetLayout(uint32_t level = 0) const;
 
 	void GenerateTextureMipMaps();
+	void GenerateTextureMipMapsAsync(std::shared_ptr<VKWrapper::VKCommandBuffer> cmd);
 
 	// 只读资产贴图：加载完调一次，之后布局固定为 SHADER_READ_ONLY_OPTIMAL，可以被 2D / 3D / UI / 编辑器
 	// 在不同线程、不同帧同时采样；写入、传输、生成 mip、上传数据都会被拒绝（见 BaseVKImage::MakeSampledImmutable）。
