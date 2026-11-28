@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceGIPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 
 struct CubeParams {
@@ -51,7 +52,8 @@ RayTraceGIPass::RayTraceGIPass(const std::string& rayTraceComputerShaderPath)
 			.AddUnifromTexture(13)
 			.AddUnifromTexture(14)
 			.AddUnifromTexture(15)
-			.AddStorageImage(16);		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddStorageImage(16)		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddUnifromBuffer(17);		// 反射部分高度雾（ReflectionFog.comp，和主画面同一份参数）
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -206,6 +208,7 @@ bool RayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCommandBu
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 	binding.SetUniformBlock(paramsUBO, 6);
+	binding.SetUniformBlock(CreateReflectionFogUniformBlock(cmd, state, state.option.rayTraceGIParams.fogVolumeMode), 17);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetStorageImage(specularTarget, vk::ImageAspectFlagBits::eColor, 16);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);

@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/RayTraceReflectPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 
 struct CubeParams {
@@ -54,7 +55,8 @@ RayTraceReflectPass::RayTraceReflectPass(const std::string& rayTraceComputerShad
 			.AddUnifromTexture(15)
 			.AddUnifromTexture(16)
 			.AddUnifromTexture(17)
-			.AddUnifromTexture(18);
+			.AddUnifromTexture(18)
+			.AddUnifromBuffer(19);		// 反射光线上的高度雾（ReflectionFog.comp，和主画面同一份参数）
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -244,6 +246,7 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 	binding.SetUniformBlock(paramsUBO, 6);
+	binding.SetUniformBlock(CreateReflectionFogUniformBlock(cmd, state, state.option.rayTraceReflectParams.fogVolumeMode), 19);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 9);

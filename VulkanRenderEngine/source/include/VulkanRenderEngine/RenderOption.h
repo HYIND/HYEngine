@@ -7,6 +7,12 @@ struct Scene3DRenderOption
 		OIT = 1
 	};
 
+	enum class ReflectionFogVolumeMode : uint32_t {
+		Off = 0,
+		DirectionalOnly = 1,
+		AllLights = 2
+	};
+
 	struct RayTraceGeneralParams {
 		float maxDistance = 750;				// 反射最大计算距离
 		float maxCacheClearDistance = 1000;		// mesh缓存清除距离
@@ -31,6 +37,7 @@ struct Scene3DRenderOption
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
+		ReflectionFogVolumeMode fogVolumeMode = ReflectionFogVolumeMode::DirectionalOnly;
 	} rayTraceReflectParams;
 
 	struct RayTraceGIParams {
@@ -53,6 +60,7 @@ struct Scene3DRenderOption
 
 		uint32_t maxAccumulateCount = 64;
 		uint32_t filterCount = 5;
+		ReflectionFogVolumeMode fogVolumeMode = ReflectionFogVolumeMode::DirectionalOnly;
 	} rayTraceGIParams;
 
 	struct SSRTraceParams {
@@ -76,6 +84,7 @@ struct Scene3DRenderOption
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
+		ReflectionFogVolumeMode fogVolumeMode = ReflectionFogVolumeMode::DirectionalOnly;
 	} ssrTraceParams;
 
 	struct SSGITraceParams {
@@ -101,6 +110,7 @@ struct Scene3DRenderOption
 
 		uint32_t maxAccumulateCount = 48;
 		uint32_t filterCount = 5;
+		ReflectionFogVolumeMode fogVolumeMode = ReflectionFogVolumeMode::DirectionalOnly;
 	} ssgiTraceParams;
 
 	struct alignas(16) ExponentialHeightFogParams {

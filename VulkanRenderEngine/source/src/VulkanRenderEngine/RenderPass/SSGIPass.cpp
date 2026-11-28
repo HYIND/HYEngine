@@ -1,6 +1,7 @@
 #include "vkstdafx.h"
 #include "VulkanRenderEngine/RenderPass/SSGIPass.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 
 struct CubeParams {
@@ -47,7 +48,8 @@ SSGIPass::SSGIPass(const std::string& computerShaderPath)
 			.AddUnifromTexture(9)
 			.AddUnifromTexture(10)
 			.AddUnifromTexture(11)
-			.AddStorageImage(12);		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddStorageImage(12)		// 镜面那一路的追踪结果（alpha = 第一次反弹的命中距离）
+			.AddUnifromBuffer(13);		// 反射部分高度雾（ReflectionFog.comp，和主画面同一份参数）
 
 		if (config.Validate())
 			_ssgiShader.Create(config);
@@ -210,6 +212,7 @@ bool SSGIPass::DrawSSGI(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, 
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetUniformBlock(paramsUBO, 1);
+	binding.SetUniformBlock(CreateReflectionFogUniformBlock(cmd, state, state.option.ssgiTraceParams.fogVolumeMode), 13);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 2);
 	binding.SetStorageImage(specularTarget, vk::ImageAspectFlagBits::eColor, 12);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 3);

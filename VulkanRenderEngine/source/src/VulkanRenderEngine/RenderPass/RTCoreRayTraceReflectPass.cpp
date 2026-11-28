@@ -4,6 +4,7 @@
 #include "VulkanRenderEngine/General/RenderHelper.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 #include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 namespace
 {
@@ -80,7 +81,8 @@ RTCoreRayTraceReflectPass::RTCoreRayTraceReflectPass(
 			.AddUnifromTexture(21)		// DDGI 辐照度图集
 			.AddUnifromTexture(22)		// DDGI 深度图集
 			.AddUnifromTexture(23)		// DDGI probeData
-			.AddStorageImage(24);		// 第一次反弹命中点的运动（时域累积的虚像重投影）
+			.AddStorageImage(24)		// 第一次反弹命中点的运动（时域累积的虚像重投影）
+			.AddUnifromBuffer(25);		// 反射光线上的高度雾（ReflectionFog.comp，和主画面同一份参数）
 
 		if (config.Validate())
 			_rayTraceShader.Create(config);
@@ -300,6 +302,7 @@ bool RTCoreRayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrap
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetBindlessMaterialTexture(IndirectDrawManager::Instance()->GetMaterialSSBO(), BindlessTextureManager::Instance());
 	binding.SetUniformBlock(paramsUBO, 6);
+	binding.SetUniformBlock(CreateReflectionFogUniformBlock(cmd, state, state.option.rayTraceReflectParams.fogVolumeMode), 25);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 7);
 	binding.SetStorageImage(data.hitMotionTexture, vk::ImageAspectFlagBits::eColor, 24);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);

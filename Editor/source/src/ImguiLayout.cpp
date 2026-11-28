@@ -1007,7 +1007,7 @@ namespace
 	constexpr ImU32 kBoundsShadow = IM_COL32(0, 0, 0, 160);
 
 	// 视口工具栏的「包围盒」开关（2D 和 3D 一起）
-	bool s_showSelectionBounds = true;
+	bool s_showSelectionBounds = false;
 
 	// 多选时最多给多少个实体画包围盒（每帧都要在场景线程算一遍）
 	constexpr size_t kMaxBoundsEntities = 256;

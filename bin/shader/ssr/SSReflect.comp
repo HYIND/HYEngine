@@ -62,6 +62,11 @@ layout (binding = 18) uniform sampler2D ddgiDepthTex;
 layout (binding = 19) uniform sampler2D ddgiProbeDataTex;
 #include "shader/DDGI/DDGISample.comp"
 
+// 反射光线上的高度雾（和主画面同一份参数，见 ReflectionFog.comp）。
+// 屏幕空间没有阴影可查：体积雾模式下方向光的散射一律按看得到算
+#define REFLECT_FOG_BINDING 20
+#include "shader/Volume/ReflectionFog.comp"
+
 const float RussianRouletteFactor = 0.8f;
 
 // 反射路径命中点自身的漫反射间接光（与 RTR 相同）：按命中点的世界位置 / 法线直接采样 DDGI 或 IBL，
@@ -95,9 +100,14 @@ vec3 traceRay(
 
     vec3 colors[Max_Bounce_limit + 1];
     vec3 contributeFacts[Max_Bounce_limit + 1];
+    // 每一段（起点 → 命中点 / 天空）的雾：到达起点的辐亮度 = L × fogT + fogS
+    vec3 fogT[Max_Bounce_limit + 1];
+    vec3 fogS[Max_Bounce_limit + 1];
     int hitCount = 0;
 
     float throughput = 1.0f;
+    // 光路从相机算起已经走过的距离（雾的起始距离按它扣）：先是相机 → 镜面
+    float pathLength = distance(viewPos, fragPos);
 
     uint seedbase = uint(gl_GlobalInvocationID.x) * 197u 
             + uint(gl_GlobalInvocationID.y) * 927u
@@ -146,6 +156,14 @@ vec3 traceRay(
             }
         }
 
+        // 这一段的雾（打到天空时按无穷远；体积雾散射仅首跳计算）
+        {
+            float segLength = captureCube ? 0.0 : distance(ray.origin, hitPosition);
+            vec3 segDir = captureCube ? ray.direction : (hitPosition - ray.origin) / max(segLength, 1e-6);
+            ReflectFogSegment(ray.origin, segDir, segLength, captureCube, pathLength, depth == 0u, 0.5, fogT[hitCount], fogS[hitCount]);
+            pathLength += segLength;
+        }
+
         if (depth == 0u && !captureCube)
             firstHitT = distance(hitPosition, ray.origin);
 
@@ -192,7 +210,8 @@ vec3 traceRay(
         vec3 result = vec3(0.f);
         for (int i = hitCount - 1; i >= 0; i--)
         {
-            result = (result + colors[i]) * contributeFacts[i];
+            // 命中点出射（自身 + 更深的反射）经过这一段的雾，再乘起点的镜面贡献
+            result = ((result + colors[i]) * fogT[i] + fogS[i]) * contributeFacts[i];
         }
         return result;
     }

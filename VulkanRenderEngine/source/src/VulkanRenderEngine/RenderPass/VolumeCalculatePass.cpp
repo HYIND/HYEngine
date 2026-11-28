@@ -39,20 +39,6 @@ struct alignas(16) VolumetricCloudShaderParams
 
 static_assert(sizeof(VolumetricCloudShaderParams) == 80);
 
-struct alignas(16) ExponentialHeightFogShaderParams
-{
-	glm::vec3 fogAlbedo;
-	float globalDensity;
-	float fogStartHeight;
-	float fogStartDistance;
-	float fogHeightFalloff;
-	uint32_t VolumeFogEnable;
-	float FogMaxOpacity;
-	uint32_t VolumeLightScatterPathSampleCount;
-};
-
-static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
-
 bool VolumePassShouldExecute(RenderState& state)
 {
 	bool atmoEnable = state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
@@ -95,13 +81,126 @@ VolumePassFlags VolumePassFlags::FromState(RenderState& state)
 	return flags;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// 高度雾参数：体积 Pass 和反射共用
+// ---------------------------------------------------------------------------------------------------
+
+// 主画面 shader 里的「体积雾」开关：高度雾开 + 体积雾选项开 + 场景里有灯（和以前 UploadVolumeCommonParams 的判断一样）
+static bool HeightFogUsesVolumeLight(RenderState& state)
+{
+	const bool hasLights = !state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty();
+	return state.option.flags.exponentialHeightFogOn && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
+}
+
+ExponentialHeightFogShaderParams BuildExponentialHeightFogShaderParams(RenderState& state)
+{
+	const auto& fogOptions = state.option.exponentialHeightFogParams;
+	return ExponentialHeightFogShaderParams
+	{
+		.fogAlbedo = fogOptions.fogAlbedo,
+		.globalDensity = fogOptions.globalDensity / 100.0f,
+		.fogStartHeight = fogOptions.fogStartHeight,
+		.fogStartDistance = fogOptions.fogStartDistance,
+		.fogHeightFalloff = fogOptions.fogHeightFalloff / 100.0f,
+		.VolumeFogEnable = HeightFogUsesVolumeLight(state) ? 1u : 0u,
+		.FogMaxOpacity = std::clamp(fogOptions.fogMaxOpacity, 0.0f, 1.0f),
+		.VolumeLightScatterPathSampleCount = std::max(1u, fogOptions.VolumeLightScatterPathSampleCount)
+	};
+}
+
+ReflectionFogShaderParams BuildReflectionFogShaderParams(RenderState& state, Scene3DRenderOption::ReflectionFogVolumeMode volumeMode)
+{
+	const ExponentialHeightFogShaderParams fog = BuildExponentialHeightFogShaderParams(state);
+
+	ReflectionFogShaderParams params{};
+	params.fogAlbedo = fog.fogAlbedo;
+	params.globalDensity = fog.globalDensity;
+	params.fogStartHeight = fog.fogStartHeight;
+	params.fogStartDistance = fog.fogStartDistance;
+	params.fogHeightFalloff = fog.fogHeightFalloff;
+	params.volumeFogEnable = (fog.VolumeFogEnable != 0u && volumeMode != Scene3DRenderOption::ReflectionFogVolumeMode::Off) ? 1u : 0u;
+	params.fogMaxOpacity = fog.FogMaxOpacity;
+	params.enable = state.option.flags.exponentialHeightFogOn ? 1u : 0u;
+
+	if (params.enable && params.volumeFogEnable)
+	{
+		for (const auto& info : state.lights.dirLightInfos)
+		{
+			if (params.sunCount >= kReflectionFogMaxSuns)
+				break;
+			if (!info || !info->light || !info->light->GetVolumeLightEnable())
+				continue;
+			const auto& light = info->light;
+			const glm::vec3 direction = light->GetDirection();
+			const float length = glm::length(direction);
+			if (length <= 1e-6f)
+				continue;
+			const glm::vec3 radiance = light->GetColor() * light->GetIntensity() * light->GetVolumetricScatteringIntensity();
+			params.sunToLight[params.sunCount] = glm::vec4(-direction / length, light->GetCastShadow() ? 1.0f : 0.0f);
+			params.sunRadiance[params.sunCount] = glm::vec4(radiance, 0.0f);
+			++params.sunCount;
+		}
+
+		if (volumeMode == Scene3DRenderOption::ReflectionFogVolumeMode::AllLights)
+		{
+			for (const auto& info : state.lights.pointLightInfos)
+			{
+				if (params.pointCount >= kReflectionFogMaxPointLights)
+					break;
+				if (!info || !info->light || !info->light->GetVolumeLightEnable())
+					continue;
+				const auto& light = info->light;
+				const float radius = light->GetRadius();
+				if (radius <= 0.0f)
+					continue;
+				const glm::vec3 radiance = light->GetColor() * light->GetIntensity() * light->GetVolumetricScatteringIntensity();
+				params.pointPosRadius[params.pointCount] = glm::vec4(light->GetPosition(), radius);
+				params.pointRadianceCast[params.pointCount] = glm::vec4(radiance, light->GetCastShadow() ? 1.0f : 0.0f);
+				++params.pointCount;
+			}
+
+			for (const auto& info : state.lights.spotLightInfos)
+			{
+				if (params.spotCount >= kReflectionFogMaxSpotLights)
+					break;
+				if (!info || !info->light || !info->light->GetVolumeLightEnable())
+					continue;
+				const auto& light = info->light;
+				const float radius = light->GetRadius();
+				if (radius <= 0.0f)
+					continue;
+				const glm::vec3 direction = light->GetDirection();
+				const float length = glm::length(direction);
+				if (length <= 1e-6f)
+					continue;
+				const glm::vec3 radiance = light->GetColor() * light->GetIntensity() * light->GetVolumetricScatteringIntensity();
+				const float cutOff = glm::cos(glm::radians(light->GetCutOffAngle()));
+				const float outerCutOff = glm::cos(glm::radians(light->GetOuterCutOffAngle()));
+				params.spotPosRadius[params.spotCount] = glm::vec4(light->GetPosition(), radius);
+				params.spotDirCos[params.spotCount] = glm::vec4(direction / length, cutOff);
+				params.spotRadianceOuter[params.spotCount] = glm::vec4(radiance, outerCutOff);
+				params.spotCastShadow[params.spotCount] = glm::vec4(light->GetCastShadow() ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+				++params.spotCount;
+			}
+		}
+	}
+	return params;
+}
+
+std::shared_ptr<UniformBlock> CreateReflectionFogUniformBlock(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, Scene3DRenderOption::ReflectionFogVolumeMode volumeMode)
+{
+	const ReflectionFogShaderParams params = BuildReflectionFogShaderParams(state, volumeMode);
+	auto ubo = std::make_shared<UniformBlock>(sizeof(params));
+	ubo->WriteDataAsync(cmd, &params, sizeof(params));
+	ubo->Barrier(cmd, BufferUsage::TransferWrite, BufferUsage::UniformRead);
+	return ubo;
+}
+
 // binding 0 / 1 / 2：大气、雾、体积开关。Lut 和 Combine 都要
 static void UploadVolumeCommonParams(std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, ComputeBindingRecord& binding)
 {
 	bool atmoEnable = state.option.flags.atmosphereOn && !state.lights.dirLightInfos.empty();
-	bool hasLights = !state.lights.dirLightInfos.empty() || !state.lights.pointLightInfos.empty() || !state.lights.spotLightInfos.empty();
 	bool exponentialHeightFogEnable = state.option.flags.exponentialHeightFogOn;
-	bool volumeFogEnable = exponentialHeightFogEnable && state.option.exponentialHeightFogParams.volumeFogOn && hasLights;
 	bool cloudEnable = state.option.flags.volumetricCloudOn;
 
 	glm::vec3 dirLightColor(0.0f);
@@ -132,18 +231,7 @@ static void UploadVolumeCommonParams(std::shared_ptr<VKWrapper::VKCommandBuffer>
 	atmosphereParamsUBO->WriteDataAsync(cmd, &atmosphereParams, sizeof(atmosphereParams));
 	binding.SetUniformBlock(atmosphereParamsUBO, 0);
 
-	const auto& fogOptions = state.option.exponentialHeightFogParams;
-	ExponentialHeightFogShaderParams fogParams
-	{
-		.fogAlbedo = fogOptions.fogAlbedo,
-		.globalDensity = fogOptions.globalDensity / 100.0f,
-		.fogStartHeight = fogOptions.fogStartHeight,
-		.fogStartDistance = fogOptions.fogStartDistance,
-		.fogHeightFalloff = fogOptions.fogHeightFalloff / 100.0f,
-		.VolumeFogEnable = volumeFogEnable,
-		.FogMaxOpacity = std::clamp(fogOptions.fogMaxOpacity, 0.0f, 1.0f),
-		.VolumeLightScatterPathSampleCount = std::max(1u, fogOptions.VolumeLightScatterPathSampleCount)
-	};
+	const ExponentialHeightFogShaderParams fogParams = BuildExponentialHeightFogShaderParams(state);
 	auto fogParamsUBO = std::make_shared<UniformBlock>(sizeof(fogParams));
 	fogParamsUBO->WriteDataAsync(cmd, &fogParams, sizeof(fogParams));
 	binding.SetUniformBlock(fogParamsUBO, 1);

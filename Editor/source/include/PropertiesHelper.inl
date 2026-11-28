@@ -443,6 +443,19 @@ inline bool PropertiesHelper::DrawField<Scene3DRenderOption::TransparentMode>(co
 	return false;
 }
 
+template<>
+inline bool PropertiesHelper::DrawField<Scene3DRenderOption::ReflectionFogVolumeMode>(const std::string& name, Scene3DRenderOption::ReflectionFogVolumeMode* value, PropertyWidget widget)
+{
+	int currentItem = static_cast<int>(*value);
+	const char* items[] = { "Off", "DirectionalOnly", "AllLights" };
+	SetNextPropertyFieldWidth(250.0f, 0.55f);
+	if (ImGui::Combo(name.c_str(), &currentItem, items, IM_ARRAYSIZE(items))) {
+		*value = static_cast<Scene3DRenderOption::ReflectionFogVolumeMode>(currentItem);
+		return true;
+	}
+	return false;
+}
+
 template <typename T, typename = void>
 struct has_reflector : std::false_type {};
 

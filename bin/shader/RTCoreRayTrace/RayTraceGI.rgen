@@ -10,6 +10,11 @@
 #include "shader/RTCoreRayTrace/RayTraceGeneral.comp"
 #include "shader/Filter/IndirectDemodulation.comp"
 
+// 反射部分（firstSpecular）光线上的高度雾（见 ReflectionFog.comp）；体积雾的散射用阴影光线判断可见性
+#define REFLECT_FOG_BINDING 18
+#define REFLECT_FOG_RAY_VISIBLE(p, toLight, maxDist) (!TraceShadowRay((p), (toLight), 0.01, (maxDist)))
+#include "shader/Volume/ReflectionFog.comp"
+
 
 //光追参数
 layout (binding = 5) uniform Params
@@ -61,10 +66,14 @@ vec3 traceRay(
 
     vec3 colors[Max_Bounce_limit + 1];
     vec3 contributeFacts[Max_Bounce_limit + 1];
+    // 每一段（起点 → 命中点 / 天空）的雾：到达起点的辐亮度 = L × fogT + fogS（仅镜面那一路计算）
+    vec3 fogT[Max_Bounce_limit + 1];
+    vec3 fogS[Max_Bounce_limit + 1];
     int hitCount = 0;
 
     float throughput = 1.0f;
     float coneWidth = coneWidth0;
+    float pathLength = distance(viewPos, fragPos);
 
     uint seedbase = uint(gl_LaunchIDEXT.x) * 197u 
             + uint(gl_LaunchIDEXT.y) * 927u
@@ -130,6 +139,20 @@ vec3 traceRay(
             contributeFacts[hitCount] = CalcContribute_CosineSample(diffuse) / (1.0 - p_spec);
         }
 
+        // 反射部分这一段的雾（打到天空时按无穷远；体积雾散射仅首跳采样）
+        if (firstSpecular)
+        {
+            float segLength = captureCube ? 0.0 : distance(ray.origin, hit.position);
+            float fogJitter = pcg_float(seed ^ 0x9e3779b9u);
+            ReflectFogSegment(ray.origin, ray.direction, segLength, captureCube, pathLength, depth == 0u, fogJitter, fogT[hitCount], fogS[hitCount]);
+            pathLength += segLength;
+        }
+        else
+        {
+            fogT[hitCount] = vec3(1.0);
+            fogS[hitCount] = vec3(0.0);
+        }
+
         if (depth == 0u && !captureCube)
         {
             firstHitT = distance(hit.position, ray.origin);
@@ -171,7 +194,7 @@ vec3 traceRay(
         vec3 result = vec3(0.f);
         for (int i = hitCount - 1; i >= 0; i--)
         {
-            result = (result + colors[i]) * contributeFacts[i];
+            result = ((result + colors[i]) * fogT[i] + fogS[i]) * contributeFacts[i];
         }
         return result;
     }

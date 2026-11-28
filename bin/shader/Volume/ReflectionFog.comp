@@ -1,0 +1,247 @@
+// ---------------------------------------------------------------------------------------------------
+// 反射光线上的指数高度雾（解析）
+//
+// 主画面的雾（VolumeLut.comp）只算「相机 → 屏幕上第一个表面」这一段；反射光线「镜面 → 命中点」那一段没有雾，
+// 镜子里的世界看起来是清澈的。这里给反射路径的每一段补上同一套高度雾：
+//
+//   到达这一段起点的辐亮度 = L(终点) × T + S
+//
+//   高度雾（主画面 VolumeFogEnable = 0）：T = exp(-光学厚度)，S = 雾颜色 × (1 - T)
+//                                       —— 和 VolumeCalculate.comp 的 mix(颜色, 雾颜色, 1 - T) 是同一个式子
+//   体积雾（主画面 VolumeFogEnable = 1）：T 同样解析（和 LightSingleScatterToFrag 最后算的透射率是同一个积分）；
+//                                       S 只算开了体积光的方向光：∫ T(s)·σ(s) ds = 1 - T，乘相函数、光强、到光源的透射率，
+//                                       后两项和可见性在段上取一个代表点（透射率加权的中位点）。点光 / 聚光、大气透射不算
+//
+// 光学厚度和 FogVolume.comp 的 IntegrateFogOpticalDepth 是同一个公式；fogStartDistance 按「从相机算起的光路长度」扣：
+// 反射段之前已经走过的距离（相机 → 镜面 → …）由调用方传入 pathOffset。
+//
+// 用法：
+//   #define REFLECT_FOG_BINDING n                        —— ReflectFogParams 的绑定号（必须）
+//   #define REFLECT_FOG_SUN_VISIBLE(p, toLight) ...      —— 可选：点 p 沿 toLight 能不能看到方向光（默认都看得到）
+//   #include "shader/Volume/ReflectionFog.comp"
+// 参数由 C++ 的 CreateReflectionFogUniformBlock（VolumeCalculatePass.h）生成，和主画面同一份雾参数
+// ---------------------------------------------------------------------------------------------------
+
+#ifndef REFLECTION_FOG_COMP
+#define REFLECTION_FOG_COMP
+
+#ifndef REFLECT_FOG_BINDING
+#error "REFLECT_FOG_BINDING must be defined before including ReflectionFog.comp"
+#endif
+
+#ifndef REFLECT_FOG_RAY_VISIBLE
+#ifdef REFLECT_FOG_SUN_VISIBLE
+#define REFLECT_FOG_RAY_VISIBLE(p, toLight, maxDist) REFLECT_FOG_SUN_VISIBLE((p), (toLight))
+#else
+#define REFLECT_FOG_RAY_VISIBLE(p, toLight, maxDist) true
+#endif
+#endif
+
+#define REFLECT_FOG_MAX_SUNS 4
+#define REFLECT_FOG_MAX_POINTS 8
+#define REFLECT_FOG_MAX_SPOTS 8
+
+layout (binding = REFLECT_FOG_BINDING) uniform ReflectFogParams
+{
+    vec3 fogAlbedo;
+    float globalDensity;
+    float fogStartHeight;
+    float fogStartDistance;
+    float fogHeightFalloff;
+    uint volumeFogEnable;
+    float fogMaxOpacity;
+    uint enable;                    // 主画面的指数高度雾开着
+    uint sunCount;
+    uint pointCount;
+    uint spotCount;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+    vec4 sunToLight[REFLECT_FOG_MAX_SUNS];
+    vec4 sunRadiance[REFLECT_FOG_MAX_SUNS];
+    vec4 pointPosRadius[REFLECT_FOG_MAX_POINTS];
+    vec4 pointRadianceCast[REFLECT_FOG_MAX_POINTS];
+    vec4 spotPosRadius[REFLECT_FOG_MAX_SPOTS];
+    vec4 spotDirCos[REFLECT_FOG_MAX_SPOTS];
+    vec4 spotRadianceOuter[REFLECT_FOG_MAX_SPOTS];
+    vec4 spotCastShadow[REFLECT_FOG_MAX_SPOTS];
+} reflectFog;
+
+const float ReflectFogInfinity = 1e5;       // 打到天空的段按这么远算（同 VolumeLut.comp 的 MAX_DISTANCE）
+const float ReflectFogLightDistance = 1e4;  // 到方向光的透射率按这么远算（同 FogVolume.comp）
+
+bool ReflectFogEnabled()
+{
+    return reflectFog.enable != 0u;
+}
+
+// 和 FogVolume.comp 的 IntegrateFogOpticalDepth 相同：start → start + dir × length，前 startOffset 米没有雾
+float ReflectFogOpticalDepth(vec3 start, vec3 dir, float len, float startOffset)
+{
+    float offset = clamp(startOffset, 0.0, len);
+    vec3 rayStart = start + dir * offset;
+    float rayLength = len - offset;
+    if (rayLength <= 0.0)
+        return 0.0;
+
+    float densityAtStart = max(reflectFog.globalDensity, 0.0) * exp(clamp(-reflectFog.fogHeightFalloff * (rayStart.y - reflectFog.fogStartHeight), -80.0, 80.0));
+    float exponent = reflectFog.fogHeightFalloff * dir.y;
+    if (abs(exponent) < 1e-5)
+        return densityAtStart * rayLength;
+    return densityAtStart * (1.0 - exp(-exponent * rayLength)) / exponent;
+}
+
+// 透射率加权的中位点：从有雾的起点开始，累计的光学厚度达到 targetDepth 的位置（解析反解，不步进）
+float ReflectFogMedianDistance(vec3 start, vec3 dir, float len, float startOffset, float targetDepth)
+{
+    float offset = clamp(startOffset, 0.0, len);
+    vec3 rayStart = start + dir * offset;
+    float rayLength = len - offset;
+    float densityAtStart = max(reflectFog.globalDensity, 0.0) * exp(clamp(-reflectFog.fogHeightFalloff * (rayStart.y - reflectFog.fogStartHeight), -80.0, 80.0));
+    if (rayLength <= 0.0 || densityAtStart <= 0.0)
+        return offset;
+
+    float exponent = reflectFog.fogHeightFalloff * dir.y;
+    float s;
+    if (abs(exponent) < 1e-5)
+        s = targetDepth / densityAtStart;
+    else
+    {
+        float x = 1.0 - targetDepth * exponent / densityAtStart;
+        s = x > 1e-6 ? -log(x) / exponent : rayLength;
+    }
+    return offset + clamp(s, 0.0, rayLength);
+}
+
+// Henyey-Greenstein（和 AtmoPublic.comp 的 HenyeyGreenstein 一样，FogVolume.comp 用 g = 0.2）
+float ReflectFogPhase(float cosTheta)
+{
+    const float g = 0.2;
+    float g2 = g * g;
+    return 0.07957747154594767 * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
+}
+
+// 点光 / 聚光距离衰减（与 lightingHelper.comp / FogVolume.comp 一致）
+float ReflectFogPointAttenuation(float dist, float radius)
+{
+    const float linearFactor = 0.8;
+    const float linearFactor2 = linearFactor * linearFactor;
+    const float oneMinusLinearFactor = 1.0 - linearFactor;
+    float linearRadius = radius * linearFactor;
+    return dist <= linearRadius
+        ? 1.0 / (dist * dist + 1.0)
+        : mix(1.0 / (linearFactor2 * radius * radius + 1.0), 0.0, (dist - linearRadius) / (oneMinusLinearFactor * radius));
+}
+
+// 一段光线的雾：起点 start，方向 dir（单位向量），长度 len；toSky = true 时这一段打到天空（长度按无穷远）。
+// pathOffset：这一段之前光线已经走过的距离（从相机算起）。
+// sampleVolumetric：体积雾模式下是否计算这一段的体积光散射（仅首跳开启，次级反弹只保留透射率）；
+// jitter：[0, 1) 随机抖动，用于按光学厚度 CDF 做 1~2 步分层重要性采样。到达起点的辐亮度 = L(终点) × T + S
+void ReflectFogSegment(vec3 start, vec3 dir, float len, bool toSky, float pathOffset, bool sampleVolumetric, float jitter, out vec3 T, out vec3 S)
+{
+    T = vec3(1.0);
+    S = vec3(0.0);
+    if (reflectFog.enable == 0u)
+        return;
+
+    float segLength = toSky ? ReflectFogInfinity : len;
+    float startOffset = max(reflectFog.fogStartDistance - pathOffset, 0.0);
+    float opticalDepth = ReflectFogOpticalDepth(start, dir, segLength, startOffset);
+    float t = clamp(exp(-opticalDepth), 0.0, 1.0);
+
+    if (reflectFog.volumeFogEnable == 0u)
+    {
+        // 天空和主画面一样受最大不透明度限制（VolumeLut.comp 只对天空用 FogMaxOpacity）
+        if (toSky)
+            t = max(t, 1.0 - reflectFog.fogMaxOpacity);
+        T = vec3(t);
+        S = reflectFog.fogAlbedo * (1.0 - t);
+        return;
+    }
+
+    T = vec3(t);
+    float fogAmount = 1.0 - t;
+    if (!sampleVolumetric || fogAmount < 1e-4 || (reflectFog.sunCount == 0u && reflectFog.pointCount == 0u && reflectFog.spotCount == 0u))
+        return;
+
+    // 按有效有雾距离决定 1~2 步分层抖动采样（每步按光学厚度 CDF 重要性采样）
+    float activeLength = max(segLength - startOffset, 0.0);
+    const float twoStepDistanceThreshold = 15.0;
+    uint stepCount = (toSky || activeLength > twoStepDistanceThreshold) ? 2u : 1u;
+    float j = clamp(jitter, 0.0, 0.9999);
+
+    vec3 scatter = vec3(0.0);
+    uint sunCnt = min(reflectFog.sunCount, uint(REFLECT_FOG_MAX_SUNS));
+    uint pointCnt = min(reflectFog.pointCount, uint(REFLECT_FOG_MAX_POINTS));
+    uint spotCnt = min(reflectFog.spotCount, uint(REFLECT_FOG_MAX_SPOTS));
+    for (uint k = 0u; k < stepCount; k++)
+    {
+        float u = clamp((float(k) + j) / float(stepCount), 1e-4, 1.0 - 1e-4);
+        float target = -log(max(1.0 - u * fogAmount, 1e-6));
+        vec3 p = start + dir * ReflectFogMedianDistance(start, dir, segLength, startOffset, target);
+
+        vec3 stepScatter = vec3(0.0);
+        for (uint i = 0u; i < sunCnt; i++)
+        {
+            vec3 toLight = reflectFog.sunToLight[i].xyz;
+            bool castShadow = reflectFog.sunToLight[i].w > 0.5;
+            if (castShadow && !(REFLECT_FOG_RAY_VISIBLE(p, toLight, ReflectFogLightDistance)))
+                continue;
+            float lightT = exp(-ReflectFogOpticalDepth(p, toLight, ReflectFogLightDistance, 0.0));
+            stepScatter += reflectFog.sunRadiance[i].rgb * (ReflectFogPhase(dot(toLight, dir)) * lightT);
+        }
+
+        for (uint i = 0u; i < pointCnt; i++)
+        {
+            vec3 lightPos = reflectFog.pointPosRadius[i].xyz;
+            float radius = reflectFog.pointPosRadius[i].w;
+            vec3 delta = lightPos - p;
+            float dist = length(delta);
+            if (dist >= radius || dist <= 1e-5)
+                continue;
+            vec3 toLight = delta / dist;
+            bool castShadow = reflectFog.pointRadianceCast[i].w > 0.5;
+            if (castShadow && !(REFLECT_FOG_RAY_VISIBLE(p, toLight, dist)))
+                continue;
+            float atten = ReflectFogPointAttenuation(dist, radius);
+            float lightT = exp(-ReflectFogOpticalDepth(p, toLight, dist, 0.0));
+            stepScatter += reflectFog.pointRadianceCast[i].rgb * (atten * ReflectFogPhase(dot(toLight, dir)) * lightT);
+        }
+
+        for (uint i = 0u; i < spotCnt; i++)
+        {
+            vec3 lightPos = reflectFog.spotPosRadius[i].xyz;
+            float radius = reflectFog.spotPosRadius[i].w;
+            vec3 delta = lightPos - p;
+            float dist = length(delta);
+            if (dist >= radius || dist <= 1e-5)
+                continue;
+            vec3 toLight = delta / dist;
+            vec3 spotDir = reflectFog.spotDirCos[i].xyz;
+            float cutOff = reflectFog.spotDirCos[i].w;
+            float outerCutOff = min(cutOff, reflectFog.spotRadianceOuter[i].w);
+            float theta = dot(-toLight, spotDir);
+            if (theta < outerCutOff)
+                continue;
+            float spotIntensity = theta < cutOff
+                ? clamp((theta - outerCutOff) / max(cutOff - outerCutOff, 1e-5), 0.0, 1.0)
+                : 1.0;
+            bool castShadow = reflectFog.spotCastShadow[i].x > 0.5;
+            if (castShadow && !(REFLECT_FOG_RAY_VISIBLE(p, toLight, dist)))
+                continue;
+            float atten = ReflectFogPointAttenuation(dist, radius) * spotIntensity;
+            float lightT = exp(-ReflectFogOpticalDepth(p, toLight, dist, 0.0));
+            stepScatter += reflectFog.spotRadianceOuter[i].rgb * (atten * ReflectFogPhase(dot(toLight, dir)) * lightT);
+        }
+
+        scatter += stepScatter;
+    }
+    S = reflectFog.fogAlbedo * (scatter / float(stepCount)) * fogAmount;
+}
+
+void ReflectFogSegment(vec3 start, vec3 dir, float len, bool toSky, float pathOffset, out vec3 T, out vec3 S)
+{
+    ReflectFogSegment(start, dir, len, toSky, pathOffset, true, 0.5, T, S);
+}
+
+#endif

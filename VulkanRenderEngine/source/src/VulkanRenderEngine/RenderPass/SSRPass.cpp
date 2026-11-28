@@ -3,6 +3,7 @@
 #include "VulkanRenderEngine/GlobalConfig.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 #include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
+#include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 namespace
 {
@@ -64,7 +65,8 @@ SSRPass::SSRPass(const std::string& computerShaderPath)
 			.AddStorageBuffer(16)		// DDGI 体积表
 			.AddUnifromTexture(17)		// DDGI 辐照度图集
 			.AddUnifromTexture(18)		// DDGI 深度图集
-			.AddUnifromTexture(19);		// DDGI probeData
+			.AddUnifromTexture(19)		// DDGI probeData
+			.AddUnifromBuffer(20);		// 反射光线上的高度雾（ReflectionFog.comp，和主画面同一份参数）
 
 		if (config.Validate())
 			_ssrShader.Create(config);
@@ -287,6 +289,7 @@ bool SSRPass::DrawSSR(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, Fr
 
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetUniformBlock(paramsUBO, 1);
+	binding.SetUniformBlock(CreateReflectionFogUniformBlock(cmd, state, state.option.ssrTraceParams.fogVolumeMode), 20);
 	binding.SetStorageImage(target, vk::ImageAspectFlagBits::eColor, 2);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 3);
 	binding.SetUniformTexture(data.gNormal, vk::ImageAspectFlagBits::eColor, 4);

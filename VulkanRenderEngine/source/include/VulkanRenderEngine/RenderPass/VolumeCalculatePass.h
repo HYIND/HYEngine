@@ -38,6 +38,65 @@ struct VolumePassShared
 // ShouldExecute 两个 Pass 共用
 bool VolumePassShouldExecute(RenderState& state);
 
+// ---------------------------------------------------------------------------------------------------
+// 指数高度雾参数：和 FogVolume.comp / VolumeCalculate.comp 的 FogParams 对应（std140）。
+// 体积 Pass 和反射（光追反射 / SSR）都从同一个函数取，保证镜子里外的雾浓度、起始距离完全一致
+// ---------------------------------------------------------------------------------------------------
+struct alignas(16) ExponentialHeightFogShaderParams
+{
+	glm::vec3 fogAlbedo;
+	float globalDensity;
+	float fogStartHeight;
+	float fogStartDistance;
+	float fogHeightFalloff;
+	uint32_t VolumeFogEnable;
+	float FogMaxOpacity;
+	uint32_t VolumeLightScatterPathSampleCount;
+};
+static_assert(sizeof(ExponentialHeightFogShaderParams) == 48);
+
+// 主画面用的高度雾参数（体积雾开关的判断和 VolumeLutPass 一致：高度雾开 + 体积雾开 + 场景里有灯）
+ExponentialHeightFogShaderParams BuildExponentialHeightFogShaderParams(RenderState& state);
+
+// 反射光线上的解析高度雾（shader/Volume/ReflectionFog.comp 的 ReflectFogParams，std140）。
+//   enable：主画面的指数高度雾开着（exponentialHeightFogOn）——和主画面同一个开关
+//   volumeFogEnable = 0（或 reflectionVolumeMode == Off）：和主画面一样按 1 - exp(-光学厚度) 混到雾颜色
+//   volumeFogEnable = 1：透射率同样解析；散射按 reflectionVolumeMode 计算方向光或全部光源（仅首跳最多 2 步分层抖动采样）
+constexpr uint32_t kReflectionFogMaxSuns = 4;
+constexpr uint32_t kReflectionFogMaxPointLights = 8;
+constexpr uint32_t kReflectionFogMaxSpotLights = 8;
+struct alignas(16) ReflectionFogShaderParams
+{
+	glm::vec3 fogAlbedo;
+	float globalDensity;
+	float fogStartHeight;
+	float fogStartDistance;
+	float fogHeightFalloff;
+	uint32_t volumeFogEnable;
+	float fogMaxOpacity;
+	uint32_t enable;
+	uint32_t sunCount;
+	uint32_t pointCount;
+	uint32_t spotCount;
+	uint32_t padding0;
+	uint32_t padding1;
+	uint32_t padding2;
+	glm::vec4 sunToLight[kReflectionFogMaxSuns];					// xyz：指向光源的单位方向；w：是否投射阴影（1 / 0）
+	glm::vec4 sunRadiance[kReflectionFogMaxSuns];					// rgb：颜色 × 照度 × 体积散射强度
+	glm::vec4 pointPosRadius[kReflectionFogMaxPointLights];			// xyz：位置；w：半径
+	glm::vec4 pointRadianceCast[kReflectionFogMaxPointLights];		// rgb：颜色 × 强度 × 体积散射强度；w：是否投射阴影（1 / 0）
+	glm::vec4 spotPosRadius[kReflectionFogMaxSpotLights];			// xyz：位置；w：半径
+	glm::vec4 spotDirCos[kReflectionFogMaxSpotLights];				// xyz：照射方向（单位向量）；w：cutOff (cos)
+	glm::vec4 spotRadianceOuter[kReflectionFogMaxSpotLights];		// rgb：颜色 × 强度 × 体积散射强度；w：outerCutOff (cos)
+	glm::vec4 spotCastShadow[kReflectionFogMaxSpotLights];			// x：是否投射阴影（1 / 0）
+};
+static_assert(sizeof(ReflectionFogShaderParams) == 960);
+
+ReflectionFogShaderParams BuildReflectionFogShaderParams(RenderState& state, Scene3DRenderOption::ReflectionFogVolumeMode volumeMode);
+
+// 反射 / GI Pass 用：建一个本帧的 ReflectFogParams UBO（写入 + 屏障都在 cmd 上）
+std::shared_ptr<UniformBlock> CreateReflectionFogUniformBlock(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, RenderState& state, Scene3DRenderOption::ReflectionFogVolumeMode volumeMode);
+
 class VolumeLutPass :public RenderPassBase
 {
 public:
