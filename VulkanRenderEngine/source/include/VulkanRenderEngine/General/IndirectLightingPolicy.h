@@ -49,14 +49,16 @@ inline IndirectLightingPolicy GetIndirectLightingPolicy(const RenderState& state
 	return policy;
 }
 
-// IBL 资源：由 IBLPreCalculatePass 统一生产，来源（大气 / 天空盒 / 后续云）对消费者透明。
+// IBL 资源：由 IBLPreCalculatePass 统一生产，来源（云 / 大气 / 天空盒）对消费者透明。
 // LightingPass、DDGIApply 与三组反射 Pass 都取这一份，保证不同维度的 IBL 回退一致。
+// skyCube 是云 + 背景合成后的最终天空 cube，反射未命中 / GI 天空回退用它采样，保证和 IBL 一致地显示云。
 // IBLPreCalculatePass 在 Execute 里写入 state.iblParams，因此只能在 Execute 里调用（不能在 FrameBegin）。
 struct IBLResources
 {
 	std::shared_ptr<TextureCube> diffuse;		// 辐照度 E
 	std::shared_ptr<TextureCube> prefilter;
 	std::shared_ptr<Texture2D> brdfLUT;
+	std::shared_ptr<TextureCube> skyCube;		// 最终天空 cube（含云），反射 / GI 天空回退用
 
 	bool IBLReady() const
 	{
@@ -73,5 +75,6 @@ inline IBLResources SelectIBLResources(const RenderState& state)
 	res.diffuse = p.diffuse;
 	res.prefilter = p.prefilter;
 	res.brdfLUT = p.brdfLUT;
+	res.skyCube = p.finalSkyCube;
 	return res;
 }

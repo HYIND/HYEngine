@@ -2,6 +2,7 @@
 #include "VulkanRenderEngine/RenderPass/DDGIProbeUpdatePass.h"
 #include "VulkanRenderEngine/General/DDGIDef.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
+#include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
 #include "VulkanRenderEngine/GlobalConfig.h"
 
 namespace
@@ -118,9 +119,12 @@ void DDGIProbeUpdatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 		return;
 	}
 
-	// 天空回退：来源与优先级同 RTCoreRayTraceGIPass。天空预计算是图内节点，必须在 Execute 里取
+	// 天空回退：优先用 IBL 产出的最终天空 cube（含云），和 IBL 一致；否则回退原始大气 / 天空盒 cube。
 	std::shared_ptr<TextureCube> skyCube;
-	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	const IBLResources ibl = SelectIBLResources(state);
+	if (ibl.skyCube && !ibl.skyCube->IsEmpty())
+		skyCube = ibl.skyCube;
+	else if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
 		skyCube = state.skyAtmosphereParams.skyCube;
 	else if (state.option.flags.skyboxOn)
 		skyCube = state.skyboxParams.skyCube;

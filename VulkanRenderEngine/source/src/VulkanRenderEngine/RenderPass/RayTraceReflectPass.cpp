@@ -177,9 +177,17 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 	auto& binding = registry.Get<ComputeBindingRecord>("binding");
 
 	CubeParams cubeParams;
+	const IBLResources ibl = SelectIBLResources(state);
+
+	// cubeMap（天空反射）优先用 IBL 产出的最终天空 cube（含云），和 IBL 一致；
+	// 没有 IBL 时回退到原始大气 / 天空盒 cube，保证关闭云与旧行为一致。
 	std::shared_ptr<TextureCube> cubeMap;
-	// cubeMap（天空反射）仍按天空源选择；IBL 统一由 IBLPreCalculatePass 提供，不关心来源
-	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	if (ibl.skyCube && !ibl.skyCube->IsEmpty())
+	{
+		cubeParams.CubeEnable = true;
+		cubeMap = ibl.skyCube;
+	}
+	else if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
 	{
 		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
 		{
@@ -199,7 +207,6 @@ bool RayTraceReflectPass::DrawRayTraceReflect(const std::shared_ptr<VKWrapper::V
 	std::shared_ptr<TextureCube> IBLDiffuse;
 	std::shared_ptr<TextureCube> IBLPrefilter;
 	std::shared_ptr<Texture2D> IBLBrdfLUT;
-	const IBLResources ibl = SelectIBLResources(state);
 	if (ibl.IBLReady())
 	{
 		cubeParams.IBLEnable = true;

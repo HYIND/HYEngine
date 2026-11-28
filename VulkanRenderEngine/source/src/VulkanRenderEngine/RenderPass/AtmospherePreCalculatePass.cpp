@@ -137,23 +137,16 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 	{
 		CaulateTransmittanceLut(cmd, binding);
 		_transmittanceLut->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+		++_transmittanceRevision;
 	}
 
 	if (shouldUpdateSkyCube)
 	{
-		{
-			ComputeBindingRecord skyCubeBinding;
-			skyCubeBinding.SetUniformBlock(paramsUBO, 0);
-			CaulateSkyCube(cmd, skyCubeBinding);
-			_skyCube->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
-		}
-
-		// 生成天空 cube 的 mip：GenerateTextureMipMaps 自己取命令缓冲并立即提交，先把前面录的提交掉，之后换一个新的继续录
-		if (cmd->IsRecording())
-			cmd->SubmitNowAndWait();
-		_skyCube->GenerateTextureMipMaps();
-		cmd = VKCONTEXT->GetCommandBuffer();
-
+		ComputeBindingRecord skyCubeBinding;
+		skyCubeBinding.SetUniformBlock(paramsUBO, 0);
+		CaulateSkyCube(cmd, skyCubeBinding);
+		_skyCube->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
+		_skyCube->GenerateTextureMipMapsAsync(cmd);
 		++_skyCubeRevision;
 	}
 
@@ -172,6 +165,7 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 
 	state.skyAtmosphereParams.hasSkyAtmospherePreData = true;
 	state.skyAtmosphereParams.transmittanceLut = _transmittanceLut;
+	state.skyAtmosphereParams.transmittanceRevision = _transmittanceRevision;
 	state.skyAtmosphereParams.skyViewLut = _skyViewLut;
 	state.skyAtmosphereParams.skyCube = _skyCube;
 	state.skyAtmosphereParams.skyCubeRevision = _skyCubeRevision;

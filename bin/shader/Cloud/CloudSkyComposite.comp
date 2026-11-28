@@ -1,0 +1,62 @@
+// 天空合成：把独立的云 cube（RGB=S, A=T）和可选背景 cube 合成为最终天空 cube。
+//   L_final = S + T * L_bg
+// 合成在 level 0 完成，再由 CPU 生成 mip；IBL 从这张最终天空 cube 采样，
+// 保证 mip 与最终颜色一致（先分别生成 S/T 和背景的 mip 再相乘会有非线性误差）。
+//
+// binding 0 CompositeParams -> BackgroundEnable（背景 cube 是否有效）
+// binding 1 samplerCube     -> cloud cube（RGB=S, A=T）
+// binding 2 samplerCube     -> 背景 cube（大气 / 天空盒；无背景时绑 1x1 黑 cube）
+// binding 3 image2DArray    -> 输出最终天空 cube（rgba16f，只写 level 0）
+
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 8
+#endif
+#ifndef work_size_y
+#define work_size_y 8
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/Cloud/CubeFaceDir.comp"
+
+layout (binding = 0) uniform CompositeParams
+{
+    bool BackgroundEnable;
+    uint Reserved0;
+    uint Reserved1;
+    uint Reserved2;
+};
+
+layout (binding = 1) uniform samplerCube cloudCube;
+layout (binding = 2) uniform samplerCube backgroundCube;
+layout (binding = 3, rgba16f) uniform image2DArray outputSkyCube;
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputSkyCube);
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= arraySize.x || coord.y >= arraySize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 uv = (vec2(coord) + vec2(0.5f)) / vec2(arraySize.xy);
+    vec3 viewDir = GetViewDirForCube(uv, face);
+
+    // compute 阶段没有隐式导数，必须显式指定 level 0：参与合成的都是 level-0 数据。
+    vec4 cloud = textureLod(cloudCube, viewDir, 0.0f);
+    vec3 bg = BackgroundEnable ? textureLod(backgroundCube, viewDir, 0.0f).rgb : vec3(0.0f);
+
+    vec3 color = cloud.rgb + cloud.a * bg;
+
+    // 云步进/光照若产生 NaN 或 Inf，会经 IBL 扩散到所有采样这张 cube 的像素：
+    // LightingPass 里 color += NaN 会让原本有直接光照的区域直接变黑。
+    // 这里兜底回退到纯背景天空，保证喂给 IBLBuilder 的 finalSkyCube 始终是有限值。
+    if (any(isnan(color)) || any(isinf(color)))
+        color = bg;
+    color = clamp(color, vec3(0.0), vec3(65504.0));
+
+    imageStore(outputSkyCube, ivec3(coord, face), vec4(color, 1.0f));
+}

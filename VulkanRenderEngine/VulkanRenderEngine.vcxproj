@@ -203,6 +203,7 @@
     <ClInclude Include="source\include\VulkanRenderEngine\RenderGraph\TexturePool.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderOption.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.h" />
+    <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\CloudPreCalculatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\IBLPreCalculatePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\AutoExposurePass.h" />
     <ClInclude Include="source\include\VulkanRenderEngine\RenderPass\BloomPass.h" />
@@ -317,6 +318,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\RenderGraphResourceManager.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderGraph\TexturePool.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AtmospherePreCalculatePass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\CloudPreCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\IBLPreCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\AutoExposurePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\BloomPass.cpp" />

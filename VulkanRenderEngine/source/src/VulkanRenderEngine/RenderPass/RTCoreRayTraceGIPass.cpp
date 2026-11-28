@@ -2,6 +2,7 @@
 #include "VulkanRenderEngine/RenderPass/RTCoreRayTraceGIPass.h"
 #include "VulkanRenderEngine/General/IndirectDrawManager.h"
 #include "VulkanRenderEngine/General/RenderHelper.h"
+#include "VulkanRenderEngine/General/IndirectLightingPolicy.h"
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
 struct CubeParams {
@@ -192,8 +193,15 @@ bool RTCoreRayTraceGIPass::DrawRayTraceGI(const std::shared_ptr<VKWrapper::VKCom
 	auto& binding = registry.Get<RayTracingBindingRecord>("binding");
 
 	CubeParams cubeParams;
+	// 天空回退优先用 IBL 产出的最终天空 cube（含云），和 IBL 一致；否则回退原始大气 / 天空盒 cube
+	const IBLResources ibl = SelectIBLResources(state);
 	std::shared_ptr<TextureCube> cubeMap;
-	if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
+	if (ibl.skyCube && !ibl.skyCube->IsEmpty())
+	{
+		cubeParams.CubeEnable = true;
+		cubeMap = ibl.skyCube;
+	}
+	else if (state.skyAtmosphereParams.hasSkyAtmospherePreData)
 	{
 		if (state.skyAtmosphereParams.skyCube && !state.skyAtmosphereParams.skyCube->IsEmpty())
 		{

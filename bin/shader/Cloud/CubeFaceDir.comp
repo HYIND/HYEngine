@@ -1,0 +1,27 @@
+// cube array 六个面的方向映射。与大气 skyCube / 天空盒 cube 的约定一致：
+// layer 0..5 = +X, -X, +Y, -Y, +Z, -Z。
+#ifndef CUBE_FACE_DIR_COMP
+#define CUBE_FACE_DIR_COMP
+
+vec3 GetViewDirForCube(vec2 uv, int face)
+{
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    float tanHalfFov = tan(radians(90.0f) * 0.5f);
+    vec2 localRayXY = ndc * tanHalfFov;
+
+    vec3 dir;
+    switch (face)
+    {
+        case 0:  dir = vec3( 1.0f, localRayXY.y, -localRayXY.x); break; // +X
+        case 1:  dir = vec3(-1.0f, localRayXY.y,  localRayXY.x); break; // -X
+        case 2:  dir = vec3( localRayXY.x, 1.0f, -localRayXY.y); break; // +Y
+        case 3:  dir = vec3( localRayXY.x,-1.0f,  localRayXY.y); break; // -Y
+        case 4:  dir = vec3( localRayXY.x, localRayXY.y, 1.0f); break; // +Z
+        case 5:  dir = vec3(-localRayXY.x, localRayXY.y,-1.0f); break; // -Z
+        default: dir = vec3( localRayXY.x, localRayXY.y, 1.0f); break;
+    }
+    return normalize(dir);
+}
+
+#endif

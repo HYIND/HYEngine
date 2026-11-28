@@ -54,4 +54,5 @@ private:
 
 	std::shared_ptr<Atmo::AtmosphereParams> _lastParams;
 	uint64_t _skyCubeRevision = 0;	// skyCube 内容变化时递增，跨帧保存在 Pass 里（RenderState 每帧新建）
+	uint64_t _transmittanceRevision = 0;	// transmittanceLut 内容变化时递增（纹理对象复用，只能靠 revision 通知消费端）
 };

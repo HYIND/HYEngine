@@ -1,0 +1,103 @@
+// 体积云天空 cube：独立产云，不读大气 / 天空盒背景。
+// 输出 RGBA16F：RGB = 云自身单散射颜色 S，A = 云透射率 T（标量，云的消光不区分通道）。
+// 背景合成由 IBLPreCalculatePass 的 CloudSkyComposite.comp 完成：
+//   L_final = S + T * L_bg
+// 云参数变化只重算云 cube；背景（大气 / 天空盒）切换只重合成。
+//
+// 依赖（与 VolumeLut.comp 保持同名同布局）：
+//   binding 0  AtmoParams       -> PlanetRadius / 采样数 / CubeCapturePosition
+//   set 3      Light SSBO       -> dirLightMetaData（CloudLighting 用太阳光）
+//   binding 2  CloudCubeParams  -> AtmoVolumeEnable / JitterEnable / JitterSeed / Reserved
+//                                  AtmoVolumeEnable 只控制太阳光的大气透射 LUT 衰减，和背景选择无关
+//   binding 6  sampler2D        -> 大气透射率 LUT（AtmoVolumeEnable 时有效，否则绑 1x1 占位）
+//   binding 9  CloudParams      -> 体积云参数
+//   binding 10 sampler3D        -> 128^3 FBM 形状噪声
+//   binding 11 sampler2D        -> 64x64 蓝噪声
+//   binding 12 image2DArray     -> 输出云 cube（rgba16f，只写 level 0，mip 由 CPU 生成）
+
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 8
+#endif
+#ifndef work_size_y
+#define work_size_y 8
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/Atmosphere/AtmoPublic.comp"
+#include "shader/Helper/lightingHelper.comp"
+#include "shader/Cloud/CubeFaceDir.comp"
+
+layout (binding = 2) uniform CloudCubeParams
+{
+    bool AtmoVolumeEnable;
+    bool JitterEnable;
+    uint JitterSeed;
+    uint Reserved;
+};
+
+layout (binding = 6) uniform sampler2D transmittanceLut;
+
+// 与 VolumetricCloudShaderParams / VolumeLut.comp 的 CloudParams 一一对应
+layout (binding = 9) uniform CloudParams
+{
+    vec3 cloudAlbedo;
+    float cloudBottomHeight;
+    vec3 cloudAmbientColor;
+    float cloudTopHeight;
+    float coverage;
+    float density;
+    float shapeScale;
+    float detailScale;
+    float detailStrength;
+    float phaseG;
+    float phaseBlend;
+    float powder;
+    float maxTraceDistance;
+    float erosionDepth;
+    uint viewStepCount;
+    uint lightStepCount;
+} cloudParams;
+
+layout (binding = 10) uniform sampler3D cloudShapeNoise;
+layout (binding = 11) uniform sampler2D blueNoise;
+
+layout (binding = 12, rgba16f) uniform image2DArray outputCloudCube;
+
+// AtmoVolume.comp 里的 AtmoSingleScatterToFrag 会调用 InDirShadow()。
+// 该函数原本由 VolumeLut.comp 提供，依赖阴影图与 camera UBO；云 cube 是稳定的天空资产，
+// 没有场景阴影图，这里给一个不投影的桩即可（顺序必须在 include AtmoVolume 之前）。
+bool InDirShadow(DirLight light, vec3 fragPos)
+{
+    return false;
+}
+
+// 必须在 AtmoVolume.comp / CloudVolume.comp 之前声明 transmittanceLut。
+#include "shader/Volume/AtmoVolume.comp"
+#include "shader/Volume/CloudVolume.comp"
+
+void main()
+{
+    ivec3 arraySize = imageSize(outputCloudCube);
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    int face = int(gl_GlobalInvocationID.z);
+
+    if (coord.x >= arraySize.x || coord.y >= arraySize.y || face >= 6 || face >= arraySize.z)
+        return;
+
+    vec2 uv = (vec2(coord) + vec2(0.5f)) / vec2(arraySize.xy);
+    vec3 viewDir = GetViewDirForCube(uv, face);
+
+    // 云板是世界 Y 向上的水平层，捕获点沿用大气的 CubeCapturePosition
+    vec3 startPos = CubeCapturePosition;
+    vec3 targetPos = startPos + viewDir * cloudParams.maxTraceDistance;
+
+    vec3 T = vec3(1.0f);
+    vec3 S = vec3(0.0f);
+    CloudSingleScatterToFrag(startPos, targetPos, T, S, JitterEnable, JitterSeed);
+
+    // 消光不区分 RGB，T 三通道相等，存 alpha 即可；合成端用 cloud.a * L_bg。
+    imageStore(outputCloudCube, ivec3(coord, face), vec4(S, T.r));
+}

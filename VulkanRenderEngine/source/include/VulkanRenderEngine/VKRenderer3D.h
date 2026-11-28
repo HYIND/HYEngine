@@ -157,7 +157,7 @@ private:
     // 场景渲染图的 Pass：第一次构建渲染图时创建，resize 按新尺寸重建渲染图时挂到新图上复用
     struct ScenePasses
     {
-        std::shared_ptr<RenderPassBase> atmospherePreCalculate, skyboxPreCalculate, iblPreCalculate, hzb, lightingShadowDepth, geometry, ssao, lighting, skyBox;
+        std::shared_ptr<RenderPassBase> atmospherePreCalculate, skyboxPreCalculate, cloudPreCalculate, iblPreCalculate, hzb, lightingShadowDepth, geometry, ssao, lighting, skyBox;
         std::shared_ptr<RenderPassBase> rayTraceGeneral, rayTraceReflect, rayTraceGI, ssr, ssgi;
         std::shared_ptr<RenderPassBase> ddgiUpdate, ddgiBlend, ddgiApply, ddgiProbeDraw;
         std::shared_ptr<RenderPassBase> indirectDiffuseCombin, indirectSpecularCombin, indirectPathTracingCombin, combinIndirectLighting;
@@ -170,7 +170,7 @@ private:
         void ForEach(F&& f)
         {
             for (auto* pass : {
-                &atmospherePreCalculate, &skyboxPreCalculate, &iblPreCalculate, &hzb, &lightingShadowDepth, &geometry, &ssao, &lighting, &skyBox,
+                &atmospherePreCalculate, &skyboxPreCalculate, &cloudPreCalculate, &iblPreCalculate, &hzb, &lightingShadowDepth, &geometry, &ssao, &lighting, &skyBox,
                 &rayTraceGeneral, &rayTraceReflect, &rayTraceGI, &ssr, &ssgi,
                 &ddgiUpdate, &ddgiBlend, &ddgiApply, &ddgiProbeDraw,
                 &indirectDiffuseCombin, &indirectSpecularCombin, &indirectPathTracingCombin, &combinIndirectLighting,

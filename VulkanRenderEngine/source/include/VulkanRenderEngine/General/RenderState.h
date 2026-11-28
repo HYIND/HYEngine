@@ -229,6 +229,7 @@ struct RenderState
 		std::shared_ptr<TextureCube> diffuse;
 		std::shared_ptr<TextureCube> prefilter;
 		std::shared_ptr<Texture2D> brdfLUT;
+		std::shared_ptr<TextureCube> finalSkyCube;	// 云 + 背景合成后的最终天空 cube，反射 / GI 与 IBL 共用
 	} iblParams;
 
 	struct SkyBoxParams {
@@ -240,10 +241,19 @@ struct RenderState
 	struct SkyAtmosphereParams {
 		bool hasSkyAtmospherePreData = false;
 		std::shared_ptr<Texture2D> transmittanceLut;
+		uint64_t transmittanceRevision = 0;	// transmittanceLut 内容变化时递增（纹理对象复用，指针不变），供云等消费端判断 dirty
 		std::shared_ptr<Texture2D> skyViewLut;
 		std::shared_ptr<TextureCube> skyCube;
 		uint64_t skyCubeRevision = 0;	// skyCube 内容变化时递增，供 IBLPreCalculatePass 判断 dirty
 	} skyAtmosphereParams;
+
+	// 体积云预计算产物：独立的云 cube，RGB = 云自身单散射 S，A = 透射率 T，不读大气 / 天空盒背景。
+	// 与背景的合成（S + T * L_bg）在 IBLPreCalculatePass 里做，产物是 state.iblParams.finalSkyCube。
+	struct CloudCubeParams {
+		std::shared_ptr<TextureCube> skyCube;
+		uint64_t skyCubeRevision = 0;	// 云参数变化时递增
+		bool hasCloudPreData = false;
+	} cloudCubeParams;
 
 	// 渲染记录，由renderer填入
 	struct RenderRecord {
