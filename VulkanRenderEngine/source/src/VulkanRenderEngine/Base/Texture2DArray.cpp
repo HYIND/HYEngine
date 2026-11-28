@@ -297,6 +297,11 @@ vk::Format Texture2DArray::GetFormat() const
 	return m_Format;
 }
 
+vk::ImageLayout Texture2DArray::GetLayout(uint32_t level) const
+{
+	return _image->GetCurrentLayout(level);
+}
+
 vk::Filter Texture2DArray::GetMinFilter() const
 {
 	return m_config.minFilter;

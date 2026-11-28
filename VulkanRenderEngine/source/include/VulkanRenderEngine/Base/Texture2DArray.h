@@ -35,6 +35,7 @@ public:
 	bool IsEmpty() const;
 
 	vk::Format GetFormat() const;
+	vk::ImageLayout GetLayout(uint32_t level = 0) const;
 	vk::Filter GetMinFilter() const;
 	vk::Filter GetMagFilter() const;
 	vk::SamplerAddressMode GetWrapU() const;
