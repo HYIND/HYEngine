@@ -11,6 +11,7 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Atmosphere/AtmoPublic.comp"
+#include "shader/Atmosphere/AtmoMultiScattering.comp"
 #include "shader/Helper/lightingHelper.comp"
 
 layout (binding = 1, rgba16f) uniform image2D outputImage;
@@ -239,7 +240,9 @@ vec3 SingleScatterToFrag(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 lig
         // 已累积的光线厚度转化为当前段的消光率
         vec3 tramsmittanceTestToCam = exp(-camSumExtinction);
 
-        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
+        vec3 scatteringWithMultiple = tramsmittanceLightToTest * scattering
+                                    + AtmoMultipleScatteringSource(testPoint, toLightDir);
+        vec3 inScattering = scatteringWithMultiple * tramsmittanceTestToCam * stepSize * lightColor;
         color += inScattering;
     }
 

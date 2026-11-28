@@ -10,6 +10,7 @@
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in; 
 
 #include "shader/Atmosphere/AtmoPublic.comp"
+#include "shader/Atmosphere/AtmoMultiScattering.comp"
 
 layout (binding = 1, rgba16f) uniform writeonly image2DArray outputCube;
 layout (binding = 2) uniform sampler2D transmittanceLut;
@@ -141,8 +142,9 @@ vec3 singleScatterSkyColor(vec3 startPosInPlanet, vec3 targetPosInPlanet, vec3 l
         vec3 atmosphereEnd = testPoint + toLightDir * tEnd;
 
         vec3 tramsmittanceLightToTest = TransmittanceWithLut(atmosphereStart, atmosphereEnd);                       // 太阳到采样点之间的透光率
-        vec3 scattering = Scattering(testPoint, toLightDir, viewDir);                                               // 散射光比例
-        vec3 inScattering = tramsmittanceLightToTest * scattering * tramsmittanceTestToCam * stepSize * lightColor;    // 采样点的光照计算
+        vec3 scattering = tramsmittanceLightToTest * Scattering(testPoint, toLightDir, viewDir)
+                        + AtmoMultipleScatteringSource(testPoint, toLightDir);
+        vec3 inScattering = scattering * tramsmittanceTestToCam * stepSize * lightColor;
         color += inScattering;
     }
 

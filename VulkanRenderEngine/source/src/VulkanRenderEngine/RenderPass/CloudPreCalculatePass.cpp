@@ -29,6 +29,8 @@ CloudPreCalculatePass::CloudPreCalculatePass(const std::string& cubeShaderPath)
 		.AddUnifromBuffer(9)				// CloudParams
 		.AddUnifromTexture(10)				// sampler3D 形状噪声
 		.AddUnifromTexture(11)				// sampler2D 蓝噪声
+		.AddUnifromTexture(13)				// samplerCube 天空辐照度（iblParams.skyDiffuse，环境项来源）
+		.AddUnifromTexture(14)				// sampler2D 大气多重散射 LUT（AtmoVolume 公共函数依赖）
 		.AddStorageImage2DArray(12);		// 输出云 cube（RGB=S，A=T）
 
 	if (config.Validate())
@@ -53,7 +55,6 @@ CloudCubeShaderParams CloudPreCalculatePass::BuildCloudParams(const RenderState&
 	CloudCubeShaderParams params{};
 	params.cloudAlbedo = p.cloudAlbedo;
 	params.cloudBottomHeight = p.cloudBottomHeight;
-	params.cloudAmbientColor = p.cloudAmbientColor;
 	params.cloudTopHeight = p.cloudTopHeight;
 	params.coverage = std::clamp(p.coverage, 0.0f, 0.999f);
 	params.density = std::max(p.density, 0.0f);
@@ -61,12 +62,18 @@ CloudCubeShaderParams CloudPreCalculatePass::BuildCloudParams(const RenderState&
 	params.detailScale = p.detailScale;
 	params.detailStrength = std::clamp(p.detailStrength, 0.0f, 1.0f);
 	params.phaseG = p.phaseG;
-	params.phaseBlend = p.phaseBlend;
+	params.multiScatterContribution = std::clamp(p.multiScatterContribution, 0.0f, 1.0f);
+	params.multiScatterOcclusion = std::clamp(p.multiScatterOcclusion, 0.01f, 1.0f);
+	params.multiScatterEccentricity = std::clamp(p.multiScatterEccentricity, 0.0f, 1.0f);
 	params.powder = p.powder;
 	params.maxTraceDistance = p.maxTraceDistance;
 	params.erosionDepth = p.erosionDepth;
 	params.viewStepCount = std::max(1u, p.viewStepCount);
 	params.lightStepCount = std::max(1u, p.lightStepCount);
+	params.multiScatterOctaves = std::clamp(p.multiScatterOctaves, 1u, 4u);
+	params.skyFillStrength = std::clamp(p.skyFillStrength, 0.0f, 2.0f);
+	params.skyFillDesaturation = std::clamp(p.skyFillDesaturation, 0.0f, 1.0f);
+	params.skyFillBottomOcclusion = std::clamp(p.skyFillBottomOcclusion, 0.0f, 1.0f);
 	return params;
 }
 
@@ -74,7 +81,6 @@ bool CloudPreCalculatePass::SameParams(const CloudCubeShaderParams& a, const Clo
 {
 	return glm::all(glm::equal(a.cloudAlbedo, b.cloudAlbedo))
 		&& a.cloudBottomHeight == b.cloudBottomHeight
-		&& glm::all(glm::equal(a.cloudAmbientColor, b.cloudAmbientColor))
 		&& a.cloudTopHeight == b.cloudTopHeight
 		&& a.coverage == b.coverage
 		&& a.density == b.density
@@ -82,12 +88,18 @@ bool CloudPreCalculatePass::SameParams(const CloudCubeShaderParams& a, const Clo
 		&& a.detailScale == b.detailScale
 		&& a.detailStrength == b.detailStrength
 		&& a.phaseG == b.phaseG
-		&& a.phaseBlend == b.phaseBlend
+		&& a.multiScatterContribution == b.multiScatterContribution
+		&& a.multiScatterOcclusion == b.multiScatterOcclusion
+		&& a.multiScatterEccentricity == b.multiScatterEccentricity
 		&& a.powder == b.powder
 		&& a.maxTraceDistance == b.maxTraceDistance
 		&& a.erosionDepth == b.erosionDepth
 		&& a.viewStepCount == b.viewStepCount
-		&& a.lightStepCount == b.lightStepCount;
+		&& a.lightStepCount == b.lightStepCount
+		&& a.multiScatterOctaves == b.multiScatterOctaves
+		&& a.skyFillStrength == b.skyFillStrength
+		&& a.skyFillDesaturation == b.skyFillDesaturation
+		&& a.skyFillBottomOcclusion == b.skyFillBottomOcclusion;
 }
 
 void CloudPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, RenderGraph::FrameDataRegistry& registry, const RenderGraph::PassFrameContext& ctx, RenderState& state)
@@ -109,7 +121,8 @@ void CloudPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Re
 	const bool needUpdate = !_generated
 		|| !SameParams(params, _lastParams)
 		|| transmittanceLut != _lastTransmittanceLut
-		|| atmo.transmittanceRevision != _lastTransmittanceRevision;
+		|| atmo.transmittanceRevision != _lastTransmittanceRevision
+		|| state.iblParams.skyDiffuseRevision != _lastSkyDiffuseRevision;
 
 	if (needUpdate)
 	{
@@ -163,6 +176,12 @@ void CloudPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Re
 			binding.SetUniformTexture3D(_cloudShapeNoise, vk::ImageAspectFlagBits::eColor, 10);
 		if (_blueNoise)
 			binding.SetUniformTexture(_blueNoise, vk::ImageAspectFlagBits::eColor, 11);
+		if (state.iblParams.skyDiffuse && !state.iblParams.skyDiffuse->IsEmpty())
+			binding.SetUniformTextureCube(state.iblParams.skyDiffuse, vk::ImageAspectFlagBits::eColor, 13);
+		if (state.skyAtmosphereParams.multiScatteringLut && !state.skyAtmosphereParams.multiScatteringLut->IsEmpty())
+			binding.SetUniformTexture(state.skyAtmosphereParams.multiScatteringLut, vk::ImageAspectFlagBits::eColor, 14);
+		else
+			binding.SetUniformTexture(_dummyTransmittanceLut, vk::ImageAspectFlagBits::eColor, 14);
 		binding.SetStorageImage2DArrayLevel(_cloudCube, vk::ImageAspectFlagBits::eColor, 0, 1, 12);
 
 		_cubeGenerateShader.Bind(cmd, binding);
@@ -178,6 +197,7 @@ void CloudPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Re
 		_lastParams = params;
 		_lastTransmittanceLut = transmittanceLut;
 		_lastTransmittanceRevision = atmo.transmittanceRevision;
+		_lastSkyDiffuseRevision = state.iblParams.skyDiffuseRevision;
 		_generated = true;
 		++_cloudCubeRevision;
 	}

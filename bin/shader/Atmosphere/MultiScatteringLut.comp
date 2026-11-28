@@ -1,0 +1,103 @@
+#version 460 core
+
+#ifndef work_size_x
+#define work_size_x 8
+#endif
+#ifndef work_size_y
+#define work_size_y 8
+#endif
+
+layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
+
+#include "shader/Atmosphere/AtmoPublic.comp"
+
+layout(binding = 1, rgba16f) uniform writeonly image2D outputMultiScatteringLut;
+layout(binding = 2) uniform sampler2D transmittanceLut;
+
+const uint DirectionSampleCount = 64u;
+const uint PathSampleCount = 12u;
+const float GoldenAngle = 2.39996322972865332;
+
+vec4 SampleTransmittance(float height, float cosTheta)
+{
+    float u = clamp(height / max(AtmosphereHeight, 1.0), 0.0, 1.0);
+    float v = acos(clamp(cosTheta, -1.0, 1.0)) / PI;
+    return texture(transmittanceLut, vec2(u, v));
+}
+
+vec3 GetScatteringCoefficient(float height)
+{
+    height = max(height, 0.0);
+    return RayleighCoefficient(height) + MieCoefficient(height);
+}
+
+vec3 GetExtinctionCoefficient(float height)
+{
+    height = max(height, 0.0);
+    return GetScatteringCoefficient(height)
+         + MieAbsorption(height)
+         + OzoneAbsorption(height);
+}
+
+void main()
+{
+    ivec2 size = imageSize(outputMultiScatteringLut);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, size)))
+        return;
+
+    // U = sun zenith cosine; V = normalized altitude.
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    float cosSunZenith = uv.x * 2.0 - 1.0;
+    float sinSunZenith = sqrt(max(1.0 - cosSunZenith * cosSunZenith, 0.0));
+    vec3 toSun = normalize(vec3(sinSunZenith, cosSunZenith, 0.0));
+    float height = uv.y * AtmosphereHeight;
+    vec3 samplePoint = vec3(0.0, PlanetRadius + height, 0.0);
+
+    vec3 secondOrder = vec3(0.0);
+    float transfer = 0.0;
+
+    for (uint directionIndex = 0u; directionIndex < DirectionSampleCount; ++directionIndex)
+    {
+        float z = 1.0 - 2.0 * (float(directionIndex) + 0.5) / float(DirectionSampleCount);
+        float radius = sqrt(max(1.0 - z * z, 0.0));
+        float phi = GoldenAngle * float(directionIndex);
+        vec3 rayDir = vec3(radius * cos(phi), z, radius * sin(phi));
+
+        float tStart, tEnd;
+        if (!GetAtmosphereRaySegment(samplePoint, rayDir, tStart, tEnd) || tEnd <= tStart)
+            continue;
+
+        float ds = (tEnd - tStart) / float(PathSampleCount);
+        vec3 opticalDepth = vec3(0.0);
+
+        for (uint stepIndex = 0u; stepIndex < PathSampleCount; ++stepIndex)
+        {
+            float t = tStart + (float(stepIndex) + 0.5) * ds;
+            vec3 q = samplePoint + rayDir * t;
+            float qHeight = max(length(q) - PlanetRadius, 0.0);
+            vec3 betaS = GetScatteringCoefficient(qHeight);
+            vec3 extinction = GetExtinctionCoefficient(qHeight);
+            vec3 viewTransmittance = exp(-opticalDepth - extinction * (0.5 * ds));
+            opticalDepth += extinction * ds;
+
+            transfer += dot(betaS * viewTransmittance, vec3(0.2126, 0.7152, 0.0722)) * ds;
+
+            vec4 sunT = SampleTransmittance(qHeight, dot(normalize(q), toSun));
+            if (sunT.a < 0.0)
+                continue;
+
+            // Unit sun illuminance: the actual light color/intensity is applied at runtime.
+            vec3 singleScatterAtQ = Scattering(q, toSun, rayDir) * sunT.rgb;
+            secondOrder += viewTransmittance * singleScatterAtQ * ds;
+        }
+    }
+
+    float inverseDirectionCount = 1.0 / float(DirectionSampleCount);
+    secondOrder *= inverseDirectionCount;
+    transfer = clamp(transfer * inverseDirectionCount, 0.0, 0.95);
+
+    // Isotropic higher orders are approximated by an infinite geometric series.
+    vec3 psiMS = secondOrder / max(1.0 - transfer, 0.05);
+    imageStore(outputMultiScatteringLut, pixel, vec4(psiMS, transfer));
+}

@@ -30,6 +30,7 @@ class AtmospherePreCalculatePass : public RenderPassBase
 public:
 	AtmospherePreCalculatePass(
 		const std::string& transmittanceLutShaderPath,
+		const std::string& multiScatteringLutShaderPath,
 		const std::string& skyViewLutLutShaderPath,
 		const std::string& skyCubeGenerateShaderPath
 	);
@@ -40,15 +41,18 @@ public:
 
 private:
 	void CaulateTransmittanceLut(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding);
+	void CalculateMultiScatteringLut(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding);
 	void CaulateSkyViewLut(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding, RenderState& state);
 	void CaulateSkyCube(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding);
 
 private:
 	ComputePipeline _transmittanceLutShader;
+	ComputePipeline _multiScatteringLutShader;
 	ComputePipeline _skyViewLutshader;
 	ComputePipeline _skyCubeGenerateShader;
 
 	std::shared_ptr<Texture2D> _transmittanceLut;
+	std::shared_ptr<Texture2D> _multiScatteringLut;
 	std::shared_ptr<Texture2D> _skyViewLut;
 	std::shared_ptr<TextureCube> _skyCube;
 

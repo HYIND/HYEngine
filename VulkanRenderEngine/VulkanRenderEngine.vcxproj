@@ -347,6 +347,7 @@
     <ClCompile Include="source\src\VulkanRenderEngine\General\DDGISharedState.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkinnedPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyBoxPass.cpp" />
+    <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SkyIBLDiffusePreCalculatePass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSAOPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSGIPass.cpp" />
     <ClCompile Include="source\src\VulkanRenderEngine\RenderPass\SSRPass.cpp" />

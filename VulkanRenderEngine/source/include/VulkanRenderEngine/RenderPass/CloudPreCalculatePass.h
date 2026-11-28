@@ -11,11 +11,11 @@
 
 // 体积云天空 cube 参数。布局与 VolumeLut.comp / CloudCubeGenerate.comp 的 CloudParams 一致。
 // 注意：CloudCubeGenerate.comp 的 RGB 是云自身散射 S，A 是透射率 T；背景合成不在这里做。
+// 环境项不在参数里：云的环境光 = 天空辐照度（iblParams.skyDiffuse）× albedo，在 shader 内计算。
 struct alignas(16) CloudCubeShaderParams
 {
 	glm::vec3 cloudAlbedo;
 	float cloudBottomHeight;
-	glm::vec3 cloudAmbientColor;
 	float cloudTopHeight;
 
 	float coverage;
@@ -24,14 +24,20 @@ struct alignas(16) CloudCubeShaderParams
 	float detailScale;
 	float detailStrength;
 	float phaseG;
-	float phaseBlend;
+	float multiScatterContribution;
+	float multiScatterOcclusion;
+	float multiScatterEccentricity;
 	float powder;
 	float maxTraceDistance;
 	float erosionDepth;
 	uint32_t viewStepCount;
 	uint32_t lightStepCount;
+	uint32_t multiScatterOctaves;
+	float skyFillStrength;
+	float skyFillDesaturation;
+	float skyFillBottomOcclusion;
 };
-static_assert(sizeof(CloudCubeShaderParams) == 80, "CloudParams 布局要和 shader 一致");
+static_assert(sizeof(CloudCubeShaderParams) == 96, "CloudParams 布局要和 shader 一致");
 
 // 体积云预计算 Pass：产出独立的云 cube（RGB=S，A=T），不读大气 / 天空盒背景，并上报 revision。
 // 放在 Execute 里执行，IBLPreCalculatePass 依赖本节点，把云 cube 与当前背景 cube 合成最终天空后再生成 IBL。
@@ -63,4 +69,5 @@ private:
 	CloudCubeShaderParams _lastParams{};
 	std::shared_ptr<Texture2D> _lastTransmittanceLut;
 	uint64_t _lastTransmittanceRevision = 0;
+	uint64_t _lastSkyDiffuseRevision = 0;
 };

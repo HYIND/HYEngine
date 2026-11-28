@@ -20,7 +20,6 @@ struct alignas(16) VolumetricCloudShaderParams
 {
 	glm::vec3 cloudAlbedo;
 	float cloudBottomHeight;
-	glm::vec3 cloudAmbientColor;
 	float cloudTopHeight;
 
 	float coverage;
@@ -29,15 +28,21 @@ struct alignas(16) VolumetricCloudShaderParams
 	float detailScale;
 	float detailStrength;
 	float phaseG;
-	float phaseBlend;
+	float multiScatterContribution;
+	float multiScatterOcclusion;
+	float multiScatterEccentricity;
 	float powder;
 	float maxTraceDistance;
 	float erosionDepth;
 	uint32_t viewStepCount;
 	uint32_t lightStepCount;
+	uint32_t multiScatterOctaves;
+	float skyFillStrength;
+	float skyFillDesaturation;
+	float skyFillBottomOcclusion;
 };
 
-static_assert(sizeof(VolumetricCloudShaderParams) == 80);
+static_assert(sizeof(VolumetricCloudShaderParams) == 96);
 
 bool VolumePassShouldExecute(RenderState& state)
 {
@@ -280,7 +285,9 @@ VolumeLutPass::VolumeLutPass(const std::string& lutShaderPath, std::shared_ptr<V
 		.AddUnifromTexture(8)
 		.AddUnifromBuffer(9)		// 云参数
 		.AddUnifromTexture(10)		// sampler3D 形状噪声
-		.AddUnifromTexture(11);		// sampler2D 蓝噪声
+		.AddUnifromTexture(11)		// sampler2D 蓝噪声
+		.AddUnifromTexture(13)		// samplerCube 天空辐照度（iblParams.skyDiffuse，云环境项来源）
+		.AddUnifromTexture(14);		// sampler2D 大气多重散射 LUT
 
 	if (config.Validate())
 		_lutShader.Create(config);
@@ -309,7 +316,6 @@ void VolumeLutPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 	{
 		.cloudAlbedo = cloudOptions.cloudAlbedo,
 		.cloudBottomHeight = cloudOptions.cloudBottomHeight,
-		.cloudAmbientColor = cloudOptions.cloudAmbientColor,
 		.cloudTopHeight = cloudOptions.cloudTopHeight,
 		.coverage = std::clamp(cloudOptions.coverage, 0.0f, 0.999f),
 		.density = std::max(cloudOptions.density, 0.0f),
@@ -317,12 +323,18 @@ void VolumeLutPass::FrameBegin(RenderGraph::FrameDataRegistry& registry, RenderS
 		.detailScale = cloudOptions.detailScale,
 		.detailStrength = std::clamp(cloudOptions.detailStrength, 0.0f, 1.0f),
 		.phaseG = cloudOptions.phaseG,
-		.phaseBlend = cloudOptions.phaseBlend,
+		.multiScatterContribution = std::clamp(cloudOptions.multiScatterContribution, 0.0f, 1.0f),
+		.multiScatterOcclusion = std::clamp(cloudOptions.multiScatterOcclusion, 0.01f, 1.0f),
+		.multiScatterEccentricity = std::clamp(cloudOptions.multiScatterEccentricity, 0.0f, 1.0f),
 		.powder = cloudOptions.powder,
 		.maxTraceDistance = cloudOptions.maxTraceDistance,
 		.erosionDepth = cloudOptions.erosionDepth,
 		.viewStepCount = std::max(1u, cloudOptions.viewStepCount),
-		.lightStepCount = std::max(1u, cloudOptions.lightStepCount)
+		.lightStepCount = std::max(1u, cloudOptions.lightStepCount),
+		.multiScatterOctaves = std::clamp(cloudOptions.multiScatterOctaves, 1u, 4u),
+		.skyFillStrength = std::clamp(cloudOptions.skyFillStrength, 0.0f, 2.0f),
+		.skyFillDesaturation = std::clamp(cloudOptions.skyFillDesaturation, 0.0f, 1.0f),
+		.skyFillBottomOcclusion = std::clamp(cloudOptions.skyFillBottomOcclusion, 0.0f, 1.0f)
 	};
 	auto cloudParamsUBO = std::make_shared<UniformBlock>(sizeof(cloudParams));
 	cloudParamsUBO->WriteDataAsync(cmd, &cloudParams, sizeof(cloudParams));
@@ -408,11 +420,18 @@ void VolumeLutPass::DrawLut(
 	}
 	binding.SetUniformTexture(data.atlasShadowMap, vk::ImageAspectFlagBits::eDepth, 7);
 	binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 8);
+	// 大气关闭时 shader 不会读取该绑定；仍绑定有效纹理以满足固定描述符布局。
+	if (state.skyAtmosphereParams.multiScatteringLut && !state.skyAtmosphereParams.multiScatteringLut->IsEmpty())
+		binding.SetUniformTexture(state.skyAtmosphereParams.multiScatteringLut, vk::ImageAspectFlagBits::eColor, 14);
+	else
+		binding.SetUniformTexture(data.gPosition, vk::ImageAspectFlagBits::eColor, 14);
 
 	if (_cloudShapeNoise)
 		binding.SetUniformTexture3D(_cloudShapeNoise, vk::ImageAspectFlagBits::eColor, 10);
 	if (_blueNoise)
 		binding.SetUniformTexture(_blueNoise, vk::ImageAspectFlagBits::eColor, 11);
+	if (state.iblParams.skyDiffuse && !state.iblParams.skyDiffuse->IsEmpty())
+		binding.SetUniformTextureCube(state.iblParams.skyDiffuse, vk::ImageAspectFlagBits::eColor, 13);
 
 	_lutShader.Bind(cmd, binding);
 	cmd->dispatch((width + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (height + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);

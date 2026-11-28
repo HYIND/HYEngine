@@ -211,12 +211,18 @@ void to_json(nlohmann::json& json, const Scene3DRenderOption::VolumetricCloudPar
 		{"detailScale", params.detailScale},
 		{"detailStrength", params.detailStrength},
 		{"phaseG", params.phaseG},
-		{"phaseBlend", params.phaseBlend},
+		{"multiScatterContribution", params.multiScatterContribution},
+		{"multiScatterOcclusion", params.multiScatterOcclusion},
+		{"multiScatterEccentricity", params.multiScatterEccentricity},
 		{"powder", params.powder},
 		{"maxTraceDistance", params.maxTraceDistance},
 		{"erosionDepth", params.erosionDepth},
 		{"viewStepCount", params.viewStepCount},
-		{"lightStepCount", params.lightStepCount}
+		{"lightStepCount", params.lightStepCount},
+		{"multiScatterOctaves", params.multiScatterOctaves},
+		{"skyFillStrength", params.skyFillStrength},
+		{"skyFillDesaturation", params.skyFillDesaturation},
+		{"skyFillBottomOcclusion", params.skyFillBottomOcclusion}
 	};
 }
 
@@ -232,12 +238,18 @@ void from_json(const nlohmann::json& json, Scene3DRenderOption::VolumetricCloudP
 	ReadOptionField(json, "detailScale", params.detailScale);
 	ReadOptionField(json, "detailStrength", params.detailStrength);
 	ReadOptionField(json, "phaseG", params.phaseG);
-	ReadOptionField(json, "phaseBlend", params.phaseBlend);
+	ReadOptionField(json, "multiScatterContribution", params.multiScatterContribution);
+	ReadOptionField(json, "multiScatterOcclusion", params.multiScatterOcclusion);
+	ReadOptionField(json, "multiScatterEccentricity", params.multiScatterEccentricity);
 	ReadOptionField(json, "powder", params.powder);
 	ReadOptionField(json, "maxTraceDistance", params.maxTraceDistance);
 	ReadOptionField(json, "erosionDepth", params.erosionDepth);
 	ReadOptionField(json, "viewStepCount", params.viewStepCount);
 	ReadOptionField(json, "lightStepCount", params.lightStepCount);
+	ReadOptionField(json, "multiScatterOctaves", params.multiScatterOctaves);
+	ReadOptionField(json, "skyFillStrength", params.skyFillStrength);
+	ReadOptionField(json, "skyFillDesaturation", params.skyFillDesaturation);
+	ReadOptionField(json, "skyFillBottomOcclusion", params.skyFillBottomOcclusion);
 }
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Scene3DRenderOption::RayTraceGeneralParams,

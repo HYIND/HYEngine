@@ -72,21 +72,22 @@ float SampleCloudDensity(vec3 p)
     return density;
 }
 
-// 从采样点朝太阳累积光学厚度。上限是「走到云顶的距离」，不是 1e4——
-// 云是有界的，朝天上走 10km 早就出了云层，那一步完全是白算
-float GetCloudSunTransmittance(vec3 p, vec3 toLight)
+// 从采样点朝太阳累积光学厚度。上限取太阳光线离开云层的边界距离，避免在云外继续采样。
+float GetCloudSunOpticalDepth(vec3 p, vec3 toLight)
 {
     uint steps = max(cloudParams.lightStepCount, 1u);
 
-    float distToTop;
+    float distToCloudBoundary;
     if (toLight.y > 1e-4)
-        distToTop = (cloudParams.cloudTopHeight - p.y) / toLight.y;
+        distToCloudBoundary = (cloudParams.cloudTopHeight - p.y) / toLight.y;
+    else if (toLight.y < -1e-4)
+        distToCloudBoundary = (cloudParams.cloudBottomHeight - p.y) / toLight.y;
     else
-        distToTop = 2000.0;
+        distToCloudBoundary = 8000.0;
 
-    distToTop = clamp(distToTop, 50.0, 8000.0);
+    distToCloudBoundary = clamp(distToCloudBoundary, 50.0, 8000.0);
 
-    float stepLength = distToTop / float(steps);
+    float stepLength = distToCloudBoundary / float(steps);
     float opticalDepth = 0.0;
 
     for (uint i = 0; i < steps; ++i)
@@ -95,28 +96,84 @@ float GetCloudSunTransmittance(vec3 p, vec3 toLight)
         opticalDepth += SampleCloudDensity(q) * stepLength;
     }
 
-    return exp(-opticalDepth * cloudParams.density);
+    return opticalDepth * cloudParams.density;
 }
 
-vec3 CloudLighting(vec3 p, float density, vec3 viewDir)
+// 太阳中心是否被行星遮挡。地平线随云的高度下降，因此高云可在地面日落后继续短暂受光。
+// 太阳角半径用于对地平线处的遮挡做平滑近似（约 0.266 度）。
+float GetCloudSunVisibility(vec3 p, vec3 toLight)
 {
+    vec3 planetSpacePosition = p + vec3(0.0, PlanetRadius, 0.0);
+    float radialDistance = length(planetSpacePosition);
+    vec3 localUp = planetSpacePosition / max(radialDistance, 1.0);
+    float horizonElevation = -acos(clamp(PlanetRadius / max(radialDistance, PlanetRadius), 0.0, 1.0));
+    float sunElevation = asin(clamp(dot(localUp, toLight), -1.0, 1.0));
+
+    float tNear, tFar;
+    bool intersectsPlanet = RaySphereIntersection(
+        vec3(0.0), PlanetRadius, planetSpacePosition, toLight, tNear, tFar);
+    bool planetBlocksSunCenter = intersectsPlanet && tFar > 0.0;
+    const float sunAngularRadius = 0.00465;
+
+    if (!planetBlocksSunCenter && sunElevation >= horizonElevation + sunAngularRadius)
+        return 1.0;
+
+    return smoothstep(
+        horizonElevation - sunAngularRadius,
+        horizonElevation + sunAngularRadius,
+        sunElevation);
+}
+
+// 天空补光：天空辐照度 E 除 π 后乘云反照率；去饱和避免蓝天把白云染蓝，
+// 高度遮蔽近似云底受到上方云体遮挡。此项只会在基础散射阶累计一次。
+vec3 GetCloudAmbient(vec3 p)
+{
+    float heightFraction = clamp(
+        (p.y - cloudParams.cloudBottomHeight) / max(cloudParams.cloudTopHeight - cloudParams.cloudBottomHeight, 1.0),
+        0.0, 1.0);
+    vec3 skyIrradiance = textureLod(skyIrradianceCube, vec3(0.0, 1.0, 0.0), 0.0).rgb;
+    // Environment cube can be invalid during resource changes; do not let one bad sample
+    // poison the cloud cube and then the final sky/IBL composite.
+    if (any(isnan(skyIrradiance)) || any(isinf(skyIrradiance)))
+        return vec3(0.0);
+    skyIrradiance = clamp(skyIrradiance, vec3(0.0), vec3(65504.0));
+    vec3 skyRadiance = skyIrradiance * (1.0 / PI);
+    float luminance = dot(skyRadiance, vec3(0.2126, 0.7152, 0.0722));
+    skyRadiance = mix(skyRadiance, vec3(luminance), clamp(cloudParams.skyFillDesaturation, 0.0, 1.0));
+    float verticalOcclusion = mix(
+        clamp(cloudParams.skyFillBottomOcclusion, 0.0, 1.0),
+        1.0,
+        smoothstep(0.0, 1.0, heightFraction));
+    return skyRadiance * cloudParams.cloudAlbedo
+         * max(cloudParams.skyFillStrength, 0.0) * verticalOcclusion;
+}
+
+vec3 CloudLighting(vec3 p, float density, vec3 viewDir, float sunOpticalDepth,
+                   float sunVisibility,
+                   float scatterScale, float extinctionScale,
+                   float phaseScale, bool primaryScatter)
+{
+    // 场景没有方向光时不能读取 info[0]；天空补光在外层独立累计。
     if (dirLightMetaData.dirLightCount == 0u)
-        return cloudParams.cloudAmbientColor;
+        return vec3(0.0);
 
     DirLight light = dirLightMetaData.info[0];
     vec3 toLight = -normalize(light.direction);
+    if (sunVisibility <= 0.0)
+        return vec3(0.0);
 
-    // 双瓣 HG：前向瓣给银边和逆光透亮，后向瓣压住正对太阳时的过曝
+    // 随散射阶数增加，HG 相函数变宽，模拟光线经多次碰撞后方向性逐渐减弱。
     float cosTheta = dot(viewDir, toLight);
-    float phaseForward = HenyeyGreenstein(cosTheta, cloudParams.phaseG);
-    float phaseBackward = HenyeyGreenstein(cosTheta, -0.2);
-    float phase = mix(phaseBackward, phaseForward, cloudParams.phaseBlend);
+    float g = clamp(cloudParams.phaseG * phaseScale, -0.95, 0.95);
+    float phase = HenyeyGreenstein(cosTheta, g);
+    float lightTransmittance = exp(-sunOpticalDepth * extinctionScale);
 
-    float lightTransmittance = GetCloudSunTransmittance(p, toLight);
-
-    // powder：薄的地方正对太阳更亮，云团边缘才不会像一块死白的塑料
-    float powder = 1.0 - exp(-density * 8.0);
-    powder = mix(1.0, powder, cloudParams.powder);
+    // Powder 是单次散射的局部边缘增强；不施加到高阶项，避免再次压暗云体内部。
+    float powder = 1.0;
+    if (primaryScatter)
+    {
+        powder = mix(1.0, 1.0 - exp(-density * 8.0), cloudParams.powder);
+    }
 
     // 太阳光穿过大气剩下的那部分，和雾共用同一张 transmittance LUT
     vec3 sunAtmoTransmittance = vec3(1.0);
@@ -129,11 +186,11 @@ vec3 CloudLighting(vec3 p, float density, vec3 viewDir)
 
     vec3 sunColor = light.color * light.luxIntensity * light.volumetricScatteringIntensity;
 
-    return sunAtmoTransmittance * lightTransmittance * phase * powder * sunColor * cloudParams.cloudAlbedo
-         + cloudParams.cloudAmbientColor;
+    return sunVisibility * sunAtmoTransmittance * lightTransmittance * phase * powder * sunColor
+         * cloudParams.cloudAlbedo * (scatterScale / extinctionScale);
 }
 
-void CloudSingleScatterToFrag(vec3 startPos, vec3 targetPos,
+void CloudScatterToFrag(vec3 startPos, vec3 targetPos,
                               inout vec3 tramsmittance, inout vec3 scatterColor,
                               bool JitterEnable, uint JitterSeed)
 {
@@ -161,7 +218,30 @@ void CloudSingleScatterToFrag(vec3 startPos, vec3 targetPos,
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy) + ivec2(uint(JitterSeed) * 37u, uint(JitterSeed) * 17u);
     float jitter = JitterEnable ? texelFetch(blueNoise, pixel & 63, 0).r : 0.5;
 
-    vec3 transmittance = vec3(1.0);
+    // 每阶有独立的视线透射率。阶数 n 的 σs'=σs*a^n，σt'=σt*b^n；
+    // 令 a<=b 可避免高阶散射凭空增加介质能量。基础阶仍决定云的 alpha。
+    float viewTransmittance[4];
+    float octaveScatterScale[4];
+    float octaveExtinctionScale[4];
+    float octavePhaseScale[4];
+    uint octaveCount = clamp(cloudParams.multiScatterOctaves, 1u, 4u);
+    float a = clamp(cloudParams.multiScatterContribution, 0.0, 1.0);
+    float b = max(clamp(cloudParams.multiScatterOcclusion, 0.01, 1.0), a);
+    float c = clamp(cloudParams.multiScatterEccentricity, 0.0, 1.0);
+    float scatterScale = 1.0;
+    float extinctionScale = 1.0;
+    float phaseScale = 1.0;
+    for (uint octave = 0u; octave < octaveCount; ++octave)
+    {
+        viewTransmittance[octave] = 1.0;
+        octaveScatterScale[octave] = scatterScale;
+        octaveExtinctionScale[octave] = extinctionScale;
+        octavePhaseScale[octave] = phaseScale;
+        scatterScale *= a;
+        extinctionScale *= b;
+        phaseScale *= c;
+    }
+    float baseTransmittance = 1.0;
     vec3 scatter = vec3(0.0);
 
     for (uint i = 0; i < steps; ++i)
@@ -174,20 +254,38 @@ void CloudSingleScatterToFrag(vec3 startPos, vec3 targetPos,
             continue;
 
         float sigmaT = density * cloudParams.density;
-        float segmentTransmittance = exp(-sigmaT * stepLength);
+        float sunOpticalDepth = 0.0;
+        float sunVisibility = 0.0;
+        if (dirLightMetaData.dirLightCount > 0u)
+        {
+            vec3 toSun = -normalize(dirLightMetaData.info[0].direction);
+            sunVisibility = GetCloudSunVisibility(p, toSun);
+            if (sunVisibility > 0.0)
+                sunOpticalDepth = GetCloudSunOpticalDepth(p, toSun);
+        }
+        for (uint octave = 0u; octave < octaveCount; ++octave)
+        {
+            float stepT = exp(-sigmaT * octaveExtinctionScale[octave] * stepLength);
+            vec3 inScatter = CloudLighting(p, density, viewDir, sunOpticalDepth, sunVisibility,
+                octaveScatterScale[octave], octaveExtinctionScale[octave],
+                octavePhaseScale[octave], octave == 0u);
+            if (octave == 0u)
+                inScatter += GetCloudAmbient(p);
+            scatter += viewTransmittance[octave] * inScatter * (1.0 - stepT);
+            viewTransmittance[octave] *= stepT;
+        }
 
-        vec3 inScatter = CloudLighting(p, density, viewDir);
+        baseTransmittance *= exp(-sigmaT * stepLength);
 
-        // 段内解析积分：解析衰减比「每步乘一次 exp」准得多，步数省一半
-        scatter += transmittance * inScatter * (1.0 - segmentTransmittance);
-        transmittance *= segmentTransmittance;
-
-        // 已经不透明了，后面的步都是白算
-        if (transmittance.x < 0.003)
+        // 停止条件检查最高阶透射率；高阶消光较弱，基础阶变暗后仍可继续填充云内散射。
+        float maxRemainingTransmittance = 0.0;
+        for (uint octave = 0u; octave < octaveCount; ++octave)
+            maxRemainingTransmittance = max(maxRemainingTransmittance, viewTransmittance[octave]);
+        if (maxRemainingTransmittance < 0.003)
             break;
     }
 
-    tramsmittance *= transmittance;
+    tramsmittance *= vec3(baseTransmittance);
     scatterColor += scatter;
 }
 

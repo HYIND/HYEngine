@@ -5,6 +5,7 @@ using namespace Atmo;
 
 AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 	const std::string& transmittanceLutShaderPath,
+	const std::string& multiScatteringLutShaderPath,
 	const std::string& skyViewLutLutShaderPath,
 	const std::string& skyCubeGenerateShaderPath
 )
@@ -28,13 +29,29 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		ComputePipelineConfig config;
 		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
 		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
+		config.computePath = multiScatteringLutShaderPath;
+
+		config
+			.AddUnifromBuffer(0)
+			.AddStorageImage(1)
+			.AddUnifromTexture(2);
+
+		if (config.Validate())
+			_multiScatteringLutShader.Create(config);
+	}
+
+	{
+		ComputePipelineConfig config;
+		config.AddDefineMacro("work_size_x", GlobalConfig::Global_WorkSize_X);
+		config.AddDefineMacro("work_size_y", GlobalConfig::Global_WorkSize_Y);
 		config.computePath = skyViewLutLutShaderPath;
 
 		config
 			.AddCameraUnifromDataBinding()
 			.AddUnifromBuffer(0)
 			.AddStorageImage(1)
-			.AddUnifromTexture(2);
+			.AddUnifromTexture(2)
+			.AddUnifromTexture(14);
 
 		if (config.Validate())
 			_skyViewLutshader.Create(config);
@@ -49,7 +66,8 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		config
 			.AddUnifromBuffer(0)
 			.AddStorageImage2DArray(1)
-			.AddUnifromTexture(2);
+			.AddUnifromTexture(2)
+			.AddUnifromTexture(14);
 
 		if (config.Validate())
 			_skyCubeGenerateShader.Create(config);
@@ -65,6 +83,7 @@ AtmospherePreCalculatePass::AtmospherePreCalculatePass(
 		config.anisotropy = false;
 		config.gammaCorrection = false;
 		_transmittanceLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR16G16B16A16Sfloat, config);
+		_multiScatteringLut = std::make_shared<Texture2D>(32, 32, vk::Format::eR16G16B16A16Sfloat, config);
 		_skyViewLut = std::make_shared<Texture2D>(256, 256, vk::Format::eR16G16B16A16Sfloat, config);
 
 
@@ -127,9 +146,19 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 			|| params1.MieAnisotropy != params2.MieAnisotropy
 			|| params1.ScatterPathSampleCount != params2.ScatterPathSampleCount;
 		};
+	static auto GetShouldUpdateMultiScatteringLut = [](AtmosphereParams& params1, AtmosphereParams& params2) ->bool {
+		return params1.PlanetRadius != params2.PlanetRadius
+			|| params1.AtmosphereHeight != params2.AtmosphereHeight
+			|| params1.RayleighScatteringScalarHeight != params2.RayleighScatteringScalarHeight
+			|| params1.MieScatteringScalarHeight != params2.MieScatteringScalarHeight
+			|| params1.OzoneLevelCenterHeight != params2.OzoneLevelCenterHeight
+			|| params1.OzoneLevelWidth != params2.OzoneLevelWidth
+			|| params1.MieAnisotropy != params2.MieAnisotropy;
+		};
 
 	bool shouldUpdateTransmittanceLut = !_lastParams || GetShouldUpdateTransmittanceLut(params, *_lastParams);
-	bool shouldUpdateSkyCube = shouldUpdateTransmittanceLut || GetShouldUpdateSkyCube(params, *_lastParams);
+	bool shouldUpdateMultiScatteringLut = !_lastParams || GetShouldUpdateMultiScatteringLut(params, *_lastParams);
+	bool shouldUpdateSkyCube = shouldUpdateTransmittanceLut || shouldUpdateMultiScatteringLut || GetShouldUpdateSkyCube(params, *_lastParams);
 
 	auto cmd = VKCONTEXT->GetCommandBuffer();
 
@@ -138,6 +167,12 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 		CaulateTransmittanceLut(cmd, binding);
 		_transmittanceLut->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 		++_transmittanceRevision;
+	}
+
+	if (shouldUpdateMultiScatteringLut)
+	{
+		CalculateMultiScatteringLut(cmd, binding);
+		_multiScatteringLut->Barrier(cmd, nullptr, ImageLayout::BindStage::Compute, ImageLayout::BindUsage::Read);
 	}
 
 	if (shouldUpdateSkyCube)
@@ -166,6 +201,7 @@ void AtmospherePreCalculatePass::FrameBegin(RenderGraph::FrameDataRegistry& regi
 	state.skyAtmosphereParams.hasSkyAtmospherePreData = true;
 	state.skyAtmosphereParams.transmittanceLut = _transmittanceLut;
 	state.skyAtmosphereParams.transmittanceRevision = _transmittanceRevision;
+	state.skyAtmosphereParams.multiScatteringLut = _multiScatteringLut;
 	state.skyAtmosphereParams.skyViewLut = _skyViewLut;
 	state.skyAtmosphereParams.skyCube = _skyCube;
 	state.skyAtmosphereParams.skyCubeRevision = _skyCubeRevision;
@@ -185,6 +221,20 @@ void AtmospherePreCalculatePass::CaulateTransmittanceLut(const std::shared_ptr<V
 	cmd->dispatch((_transmittanceLut->GetWidth() + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (_transmittanceLut->GetHeight() + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
 }
 
+void AtmospherePreCalculatePass::CalculateMultiScatteringLut(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding)
+{
+	if (!_multiScatteringLut || _multiScatteringLut->IsEmpty())
+		return;
+
+	binding.SetStorageImage(_multiScatteringLut, vk::ImageAspectFlagBits::eColor, 1);
+	binding.SetUniformTexture(_transmittanceLut, vk::ImageAspectFlagBits::eColor, 2);
+	_multiScatteringLutShader.Bind(cmd, binding);
+	cmd->dispatch(
+		(_multiScatteringLut->GetWidth() + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X,
+		(_multiScatteringLut->GetHeight() + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y,
+		1);
+}
+
 void AtmospherePreCalculatePass::CaulateSkyViewLut(const std::shared_ptr<VKWrapper::VKCommandBuffer>& cmd, ComputeBindingRecord& binding, RenderState& state)
 {
 	if (!_skyViewLut || _skyViewLut->IsEmpty())
@@ -193,6 +243,7 @@ void AtmospherePreCalculatePass::CaulateSkyViewLut(const std::shared_ptr<VKWrapp
 	binding.SetCameraUnifromData(state.camera.curUBO, state.camera.prevUBO);
 	binding.SetStorageImage(_skyViewLut, vk::ImageAspectFlagBits::eColor, 1);
 	binding.SetUniformTexture(_transmittanceLut, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(_multiScatteringLut, vk::ImageAspectFlagBits::eColor, 14);
 
 	_skyViewLutshader.Bind(cmd, binding);
 	cmd->dispatch((_skyViewLut->GetWidth() + GlobalConfig::Global_WorkSize_X - 1) / GlobalConfig::Global_WorkSize_X, (_skyViewLut->GetHeight() + GlobalConfig::Global_WorkSize_Y - 1) / GlobalConfig::Global_WorkSize_Y, 1);
@@ -206,6 +257,7 @@ void AtmospherePreCalculatePass::CaulateSkyCube(const std::shared_ptr<VKWrapper:
 	// 只写第 0 级（storage image 的视图只能有一个 mip），其余级之后 GenerateTextureMipMaps 生成
 	binding.SetStorageImage2DArrayLevel(_skyCube, vk::ImageAspectFlagBits::eColor, 0, 1, 1);
 	binding.SetUniformTexture(_transmittanceLut, vk::ImageAspectFlagBits::eColor, 2);
+	binding.SetUniformTexture(_multiScatteringLut, vk::ImageAspectFlagBits::eColor, 14);
 
 	_skyCubeGenerateShader.Bind(cmd, binding);
 	cmd->dispatch(

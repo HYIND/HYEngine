@@ -27,6 +27,7 @@
 layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1) in;
 
 #include "shader/Atmosphere/AtmoPublic.comp"
+#include "shader/Atmosphere/AtmoMultiScattering.comp"
 #include "shader/Helper/lightingHelper.comp"
 #include "shader/Cloud/CubeFaceDir.comp"
 
@@ -41,11 +42,11 @@ layout (binding = 2) uniform CloudCubeParams
 layout (binding = 6) uniform sampler2D transmittanceLut;
 
 // 与 VolumetricCloudShaderParams / VolumeLut.comp 的 CloudParams 一一对应
+// 环境项不在这里：天空辐照度从 binding 13 的 skyDiffuse cube 取（见 CloudLighting）
 layout (binding = 9) uniform CloudParams
 {
     vec3 cloudAlbedo;
     float cloudBottomHeight;
-    vec3 cloudAmbientColor;
     float cloudTopHeight;
     float coverage;
     float density;
@@ -53,16 +54,25 @@ layout (binding = 9) uniform CloudParams
     float detailScale;
     float detailStrength;
     float phaseG;
-    float phaseBlend;
+    float multiScatterContribution;
+    float multiScatterOcclusion;
+    float multiScatterEccentricity;
     float powder;
     float maxTraceDistance;
     float erosionDepth;
     uint viewStepCount;
     uint lightStepCount;
+    uint multiScatterOctaves;
+    float skyFillStrength;
+    float skyFillDesaturation;
+    float skyFillBottomOcclusion;
 } cloudParams;
 
 layout (binding = 10) uniform sampler3D cloudShapeNoise;
 layout (binding = 11) uniform sampler2D blueNoise;
+
+// 原始天空（大气 / 天空盒，不含云）的辐照度 cube：SkyIBLDiffusePreCalculatePass 产出，永远有效（无背景时为黑）
+layout (binding = 13) uniform samplerCube skyIrradianceCube;
 
 layout (binding = 12, rgba16f) uniform image2DArray outputCloudCube;
 
@@ -96,7 +106,7 @@ void main()
 
     vec3 T = vec3(1.0f);
     vec3 S = vec3(0.0f);
-    CloudSingleScatterToFrag(startPos, targetPos, T, S, JitterEnable, JitterSeed);
+    CloudScatterToFrag(startPos, targetPos, T, S, JitterEnable, JitterSeed);
 
     // 消光不区分 RGB，T 三通道相等，存 alpha 即可；合成端用 cloud.a * L_bg。
     imageStore(outputCloudCube, ivec3(coord, face), vec4(S, T.r));

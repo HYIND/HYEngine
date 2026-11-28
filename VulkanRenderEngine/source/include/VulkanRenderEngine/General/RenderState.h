@@ -230,6 +230,11 @@ struct RenderState
 		std::shared_ptr<TextureCube> prefilter;
 		std::shared_ptr<Texture2D> brdfLUT;
 		std::shared_ptr<TextureCube> finalSkyCube;	// 云 + 背景合成后的最终天空 cube，反射 / GI 与 IBL 共用
+
+		// 原始天空（大气 / 天空盒，不含云）的辐照度 cube：云环境项的物理来源 E_sky。
+		// 由 SkyIBLDiffusePreCalculatePass 生产，永远有效（无背景时为黑）。
+		std::shared_ptr<TextureCube> skyDiffuse;
+		uint64_t skyDiffuseRevision = 0;			// skyDiffuse 内容变化时递增，云 cube 据此触发重算
 	} iblParams;
 
 	struct SkyBoxParams {
@@ -242,6 +247,7 @@ struct RenderState
 		bool hasSkyAtmospherePreData = false;
 		std::shared_ptr<Texture2D> transmittanceLut;
 		uint64_t transmittanceRevision = 0;	// transmittanceLut 内容变化时递增（纹理对象复用，指针不变），供云等消费端判断 dirty
+		std::shared_ptr<Texture2D> multiScatteringLut;
 		std::shared_ptr<Texture2D> skyViewLut;
 		std::shared_ptr<TextureCube> skyCube;
 		uint64_t skyCubeRevision = 0;	// skyCube 内容变化时递增，供 IBLPreCalculatePass 判断 dirty

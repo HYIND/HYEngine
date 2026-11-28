@@ -125,7 +125,7 @@ struct Scene3DRenderOption
 	} exponentialHeightFogParams;
 
 	struct AtmosphereParams {
-		glm::vec3 CubeCapturePosition = glm::vec3(0, 500, 0);
+		glm::vec3 CubeCapturePosition = glm::vec3(0, 1000, 0);
 		float PlanetRadius = 6370 * 1e3;
 		float AtmosphereHeight = 100 * 1e3;
 		float RayleighScatteringScalarHeight = 8 * 1e3;
@@ -155,18 +155,24 @@ struct Scene3DRenderOption
 		float cloudTopHeight = 4000.0f;									// 云顶高度（米）
 
 		float coverage = 0.45f;				// 覆盖率 0~1，越大云越多
-		float density = 0.03f;				// 密度缩放（1/米），密度为 1 时的消光系数
+		float density = 0.015f;				// 密度缩放（1/米），密度为 1 时的消光系数
 		float shapeScale = 1.0f / 20000.0f;	// 世界坐标 -> 形状噪声坐标（1/米）
 		float detailScale = 1.0f / 2000.0f;	// 细节噪声的缩放（1/米）
 		float detailStrength = 0.35f;		// 细节侵蚀强度
-		float phaseG = 0.8f;				// 双瓣 HG 的前向 g
-		float phaseBlend = 0.5f;			// 前向瓣 / 后向瓣的混合比
-		float powder = 1.0f;				// powder 效应强度
+		float phaseG = 0.2f;				// 双瓣 HG 的前向 g
+		float multiScatterContribution = 0.8f;	// 每增加一阶的散射系数衰减 a
+		float multiScatterOcclusion = 0.85f;	// 每增加一阶的消光系数衰减 b（必须 >= a）
+		float multiScatterEccentricity = 0.5f;	// 每阶 HG g 的衰减 c，高阶散射更接近各向同性
+		float powder = 0.4f;				// powder 效应强度
 		float maxTraceDistance = 30000.0f;	// 视线追踪最远距离（米）
 		float erosionDepth = 400.0f;		// 云顶、云底的软收边深度（米）
 
 		uint32_t viewStepCount = 32;		// 视线步数
 		uint32_t lightStepCount = 6;		// 光步步数
+		uint32_t multiScatterOctaves = 4;	// 总散射阶数，1=仅单次散射
+		float skyFillStrength = 0.6f;		// 天空补光强度，单独作用一次
+		float skyFillDesaturation = 0.9f;	// 天空补光去饱和度：0=原色，1=灰度
+		float skyFillBottomOcclusion = 0.4f;	// 云底补光比例；云顶逐渐恢复至 1
 	} volumetricCloudParams;
 
 	// 半透明渲染方式

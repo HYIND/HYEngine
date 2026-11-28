@@ -84,9 +84,13 @@ void IBLPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 	const bool hasBackground = sel.backgroundCube && !sel.backgroundCube->IsEmpty();
 
 	// 一个源都没有：IBL 为空。消费者用 IBLReady() 判断，走无环境光的分支。
+	// 只清本 Pass 拥有的字段，skyDiffuse 由 SkyIBLDiffusePreCalculatePass 生产，不能覆盖。
 	if (!hasCloud && !hasBackground)
 	{
-		state.iblParams = {};
+		state.iblParams.diffuse = nullptr;
+		state.iblParams.prefilter = nullptr;
+		state.iblParams.brdfLUT = nullptr;
+		state.iblParams.finalSkyCube = nullptr;
 		_lastSelection = {};
 		return;
 	}
@@ -125,6 +129,18 @@ void IBLPreCalculatePass::Execute(RenderGraph::PassFrameCmdContext& cmdCtx, Rend
 		}
 
 		// IBL 三件套。BRDF LUT 不依赖天空图，只算一次。
+		if (needComposite)
+		{
+			// 含云：diffuse / prefilter 都从合成后的 finalSkyCube 生成
+			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
+			_iblBuilder.CalculateCubeDiffuse(cmd, _diffuse, iblSource, diffuseParams);
+		}
+		else if (state.iblParams.skyDiffuse && !state.iblParams.skyDiffuse->IsEmpty())
+		{
+			// 无云：最终天空就是背景本身，diffuse 直接复用 SkyIBLDiffusePreCalculatePass 的结果，省一次卷积
+			_diffuse = state.iblParams.skyDiffuse;
+		}
+		else
 		{
 			IBLImageBuilder::DiffuseGenerateParams diffuseParams{};
 			_iblBuilder.CalculateCubeDiffuse(cmd, _diffuse, iblSource, diffuseParams);

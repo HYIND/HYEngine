@@ -23,6 +23,7 @@
 #include "VulkanRenderEngine/RenderPass/PreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/AtmospherePreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/CloudPreCalculatePass.h"
+#include "VulkanRenderEngine/RenderPass/SkyIBLDiffusePreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/IBLPreCalculatePass.h"
 #include "VulkanRenderEngine/RenderPass/VolumeCalculatePass.h"
 
@@ -577,11 +578,15 @@ void VKRenderer3D::InitSceneRenderGraph()
 		auto atmospherePreCalculateTask = pool.Submit([] {
 			return std::make_unique<AtmospherePreCalculatePass>(
 				"shader/Atmosphere/TransmittanceLut.comp",
+				"shader/Atmosphere/MultiScatteringLut.comp",
 				"shader/Atmosphere/SkyViewLut.comp",
 				"shader/Atmosphere/SkyCubeGenerate.comp");
 			});
 		auto cloudPreCalculateTask = pool.Submit([] {
 			return std::make_unique<CloudPreCalculatePass>("shader/Cloud/CloudCubeGenerate.comp");
+			});
+		auto skyIblDiffuseTask = pool.Submit([] {
+			return std::make_unique<SkyIBLDiffusePreCalculatePass>();
 			});
 
 		// 光追三件套：General 只建几个空 buffer，留在本线程建（Reflect / GI / DDGIUpdate 要用它的 GeneralBuffer，连接在汇合后做）
@@ -660,6 +665,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 		auto atmospherePreCalculatePass = atmospherePreCalculateTask->get();
 		auto skyboxPreCalculatePass = skyboxPreCalculateTask->get();
 		auto cloudPreCalculatePass = cloudPreCalculateTask->get();
+		auto skyIblDiffusePass = skyIblDiffuseTask->get();
 		auto iblPreCalculatePass = iblPreCalculateTask->get();
 		auto hzbPass = hzbTask->get();
 		auto lightingShadowDepthPass = lightingShadowDepthTask->get();
@@ -727,6 +733,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 		passes->atmospherePreCalculate = std::move(atmospherePreCalculatePass);
 		passes->skyboxPreCalculate = std::move(skyboxPreCalculatePass);
 		passes->cloudPreCalculate = std::move(cloudPreCalculatePass);
+		passes->skyIblDiffusePreCalculate = std::move(skyIblDiffusePass);
 		passes->iblPreCalculate = std::move(iblPreCalculatePass);
 		passes->hzb = std::move(hzbPass);
 		passes->lightingShadowDepth = std::move(lightingShadowDepthPass);
@@ -838,6 +845,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 	auto preCalculateNode = _sceneRenderGraph->AddNode("preCalculateNode");
 	auto atmospherePreCalculateNode = _sceneRenderGraph->AddNode("atmospherePreCalculateNode");
 	auto skyboxPreCalculateNode = _sceneRenderGraph->AddNode("skyboxPreCalculateNode");
+	auto skyIblDiffusePreCalculateNode = _sceneRenderGraph->AddNode("skyIblDiffusePreCalculateNode");
 	auto cloudPreCalculateNode = _sceneRenderGraph->AddNode("cloudPreCalculateNode");
 	auto iblPreCalculateNode = _sceneRenderGraph->AddNode("iblPreCalculateNode");
 	auto hzbNode = _sceneRenderGraph->AddNode("hzbNode");
@@ -901,11 +909,15 @@ void VKRenderer3D::InitSceneRenderGraph()
 
 	skyboxPreCalculateNode->SetRenderPass(P.skyboxPreCalculate);
 
+	// 原始天空 diffuse：排在背景源（大气 / 天空盒）之后、云之前——云的环境项从这里取
+	skyIblDiffusePreCalculateNode->SetRenderPass(P.skyIblDiffusePreCalculate)
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode);
+
 	cloudPreCalculateNode->SetRenderPass(P.cloudPreCalculate)
-		.After(atmospherePreCalculateNode, lightingShadowDepthNode);
+		.After(atmospherePreCalculateNode, skyIblDiffusePreCalculateNode, lightingShadowDepthNode);
 
 	iblPreCalculateNode->SetRenderPass(P.iblPreCalculate)
-		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, cloudPreCalculateNode);
+		.After(atmospherePreCalculateNode, skyboxPreCalculateNode, cloudPreCalculateNode, skyIblDiffusePreCalculateNode);
 
 	hzbNode->SetRenderPass(P.hzb)
 		.Temp(ResourceData{ resbuilder.CreateTexture(width, height, vk::Format::eD32Sfloat, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, "hzbPass_temp"), graphicsWriteLayout })
@@ -1242,7 +1254,7 @@ void VKRenderer3D::InitSceneRenderGraph()
 				ResourceData{ gDepthStencilHistory, computeReadLayout }
 			)
 			.FrameLocal(ResourceData{ gDepthStencil, computeReadLayout })
-			.After(atmospherePreCalculateNode, lightingShadowDepthNode, geometryNode)
+			.After(atmospherePreCalculateNode, skyIblDiffusePreCalculateNode, lightingShadowDepthNode, geometryNode)
 			.Before(volumeCombineNode);
 
 		volumeCombineNode->SetRenderPass(P.volumeCombine)

@@ -11,6 +11,7 @@ layout(local_size_x = work_size_x, local_size_y = work_size_y, local_size_z = 1)
 
 #include "shader/dataDef/camerauboDef.comp"
 #include "shader/Atmosphere/AtmoPublic.comp"
+#include "shader/Atmosphere/AtmoMultiScattering.comp"
 #include "shader/Helper/lightingHelper.comp"
 
 layout (binding = 2) uniform Params
@@ -34,7 +35,6 @@ layout (binding = 9) uniform CloudParams
 {
     vec3 cloudAlbedo;
     float cloudBottomHeight;
-    vec3 cloudAmbientColor;
     float cloudTopHeight;
     float coverage;
     float density;
@@ -42,16 +42,25 @@ layout (binding = 9) uniform CloudParams
     float detailScale;
     float detailStrength;
     float phaseG;
-    float phaseBlend;
+    float multiScatterContribution;
+    float multiScatterOcclusion;
+    float multiScatterEccentricity;
     float powder;
     float maxTraceDistance;
     float erosionDepth;
     uint viewStepCount;
     uint lightStepCount;
+    uint multiScatterOctaves;
+    float skyFillStrength;
+    float skyFillDesaturation;
+    float skyFillBottomOcclusion;
 } cloudParams;
 
-layout (binding = 10) uniform sampler3D cloudShapeNoise; 
-layout (binding = 11) uniform sampler2D blueNoise;       
+layout (binding = 10) uniform sampler3D cloudShapeNoise;
+layout (binding = 11) uniform sampler2D blueNoise;
+
+// 原始天空（大气 / 天空盒，不含云）的辐照度 cube：SkyIBLDiffusePreCalculatePass 产出，永远有效（无背景时为黑）
+layout (binding = 13) uniform samplerCube skyIrradianceCube;
 
 bool InDirShadow(DirLight light, vec3 fragPos)
 {
@@ -121,7 +130,7 @@ void CalculateAtmoVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmitt
 
     vec3 T = vec3(1);
     vec3 sc = vec3(0);
-    AtmoSingleScatterToFrag(startPosInPlanet, targetPosInPlanet, dirLightMetaData.info[0], T, sc, JitterEnable, JitterEnable ? GetJetterValue(0) : 0);
+    AtmoScatterToFrag(startPosInPlanet, targetPosInPlanet, dirLightMetaData.info[0], T, sc, JitterEnable, JitterEnable ? GetJetterValue(0) : 0);
     atomTramsmittanceFragToCam *= T;
     scatterColor +=sc;
 }
@@ -139,7 +148,7 @@ void CalculateCloudVolume(vec3 startPos, vec3 targetPos, inout vec3 atomTramsmit
 {
     vec3 T = vec3(1);
     vec3 sc = vec3(0);
-    CloudSingleScatterToFrag(startPos, targetPos, T, sc, JitterEnable, JitterEnable ? GetJetterValue(2) : 0);
+    CloudScatterToFrag(startPos, targetPos, T, sc, JitterEnable, JitterEnable ? GetJetterValue(2) : 0);
     atomTramsmittanceFragToCam *= T;
     scatterColor += sc;
 }
