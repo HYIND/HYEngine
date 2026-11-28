@@ -12,6 +12,28 @@
 #include <deque>
 #include <unordered_map>
 
+// 推送常量的着色器阶段：建管线布局（CreatePipelineLayout）和推送（SetPushConstants）必须用同一组，
+// 否则验证层报 VUID-vkCmdPushConstants-offset-01795。图形管线只有顶点 + 片元着色器，所以不用 eAllGraphics
+static vk::ShaderStageFlags PushConstantStages(ImageLayout::BindStage stage)
+{
+	switch (stage)
+	{
+	case ImageLayout::BindStage::Graphics:
+		return vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+	case ImageLayout::BindStage::Compute:
+		return vk::ShaderStageFlagBits::eCompute;
+	case ImageLayout::BindStage::RayTracing:
+		return vk::ShaderStageFlagBits::eRaygenKHR
+			| vk::ShaderStageFlagBits::eClosestHitKHR
+			| vk::ShaderStageFlagBits::eMissKHR
+			| vk::ShaderStageFlagBits::eAnyHitKHR
+			| vk::ShaderStageFlagBits::eIntersectionKHR
+			| vk::ShaderStageFlagBits::eCallableKHR;
+	default:
+		return {};
+	}
+}
+
 static std::tuple<std::string, bool> ReadFromFile(const std::string& path)
 {
 	std::ifstream file;
@@ -608,20 +630,9 @@ void Pipeline::SetPushConstants(const std::shared_ptr<VKWrapper::VKCommandBuffer
 	if (!cmd)
 		return;
 
-	vk::ShaderStageFlags flags;
-	if (m_bindStage == ImageLayout::BindStage::Graphics)
-		flags = vk::ShaderStageFlagBits::eAllGraphics;
-	else if (m_bindStage == ImageLayout::BindStage::Compute)
-		flags = vk::ShaderStageFlagBits::eCompute;
-	else if (m_bindStage == ImageLayout::BindStage::RayTracing)
-		flags = vk::ShaderStageFlagBits::eRaygenKHR
-		| vk::ShaderStageFlagBits::eClosestHitKHR
-		| vk::ShaderStageFlagBits::eMissKHR
-		| vk::ShaderStageFlagBits::eAnyHitKHR
-		| vk::ShaderStageFlagBits::eIntersectionKHR
-		| vk::ShaderStageFlagBits::eCallableKHR;
-
-	cmd->pushConstants(m_layout, flags, offset, size, data);
+	// 阶段必须和建管线布局时的推送常量范围一致（CreatePipelineLayout 用同一个函数）。
+	// 以前这里图形管线用 eAllGraphics，而布局只声明了顶点 + 片元，验证层报 VUID-vkCmdPushConstants-offset-01795
+	cmd->pushConstants(m_layout, PushConstantStages(m_bindStage), offset, size, data);
 }
 
 vk::Pipeline Pipeline::GetHandle() const { return m_pipeline; }
@@ -679,19 +690,7 @@ vk::Result Pipeline::CreatePipelineLayout(const PipelineConfig& config) {
 	std::vector<vk::PushConstantRange> pushConstants;
 	pushConstants.reserve(config.pushConstantSizes.size());
 
-	vk::ShaderStageFlags flags;
-	if (m_bindStage == ImageLayout::BindStage::Graphics)
-		flags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
-	else if (m_bindStage == ImageLayout::BindStage::Compute)
-		flags = vk::ShaderStageFlagBits::eCompute;
-	else if (m_bindStage == ImageLayout::BindStage::RayTracing)
-		flags =
-		vk::ShaderStageFlagBits::eRaygenKHR
-		| vk::ShaderStageFlagBits::eClosestHitKHR
-		| vk::ShaderStageFlagBits::eMissKHR
-		| vk::ShaderStageFlagBits::eAnyHitKHR
-		| vk::ShaderStageFlagBits::eIntersectionKHR
-		| vk::ShaderStageFlagBits::eCallableKHR;
+	const vk::ShaderStageFlags flags = PushConstantStages(m_bindStage);
 
 	uint32_t offset = 0;
 	for (const auto& size : config.pushConstantSizes)
